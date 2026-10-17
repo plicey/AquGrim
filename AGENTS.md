@@ -86,3 +86,17 @@ Automated: `npm test` and `npm run smoke:plugins`.
 - `work/` – `build.sh` temp folder (gitignored)
 - `releases/` – `build.sh` final artifacts (gitignored)
 - `AquaStar Screenshots/` – runtime screenshots (gitignored)
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues (uplicey/AquGrim) tracked via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical roles with default names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `GLOSSARY.md` + `docs/adr/`. See `docs/agents/domain.md`.
