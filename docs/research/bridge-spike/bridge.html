@@ -1,0 +1,14 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+<script>
+  var q = new URLSearchParams(location.search);
+  var obj = document.createElement('object');
+  obj.id = 'movie'; obj.type = 'application/x-shockwave-flash'; obj.width = '100%'; obj.height = '100%'; obj.data = 'bridge6.swf';
+  var fv = document.createElement('param'); fv.name = 'flashvars';
+  fv.value = 'swf=' + encodeURIComponent(q.get('swf')) + '&share=' + (q.get('share') || '0');
+  obj.appendChild(fv);
+  var mv = document.createElement('param'); mv.name = 'movie'; mv.value = 'bridge6.swf'; obj.appendChild(mv);
+  [['allowscriptaccess','always'],['allownetworking','all'],['wmode','opaque'],['quality','best']].forEach(function(p){
+    var el = document.createElement('param'); el.name = p[0]; el.value = p[1]; obj.appendChild(el);
+  });
+  document.body.appendChild(obj);
+</script></body></html>
