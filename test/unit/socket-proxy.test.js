@@ -32,6 +32,18 @@ test('the AQW plugin declares exactly the hosts its server list uses', () => {
   assert.strictEqual(aqwRuffle.socket.policyPort, 843);
 });
 
+test('relay origin allowlist: only the app\'s own wrapper may open a tunnel', () => {
+  // Browsers cannot forge Origin, so this is what stops a local web page from tunnelling
+  // through the relay to the game's servers while a Ruffle session is running.
+  assert.strictEqual(socketProxy.isAllowedOrigin('file://'), true, 'the app\'s wrapper is a file:// page');
+  assert.strictEqual(socketProxy.isAllowedOrigin('FILE://'), true, 'case-insensitive');
+  assert.strictEqual(socketProxy.isAllowedOrigin('https://evil.example'), false);
+  assert.strictEqual(socketProxy.isAllowedOrigin('http://localhost:3000'), false, 'local web pages are still web pages');
+  assert.strictEqual(socketProxy.isAllowedOrigin('null'), false, 'sandboxed iframes and data: URLs report null');
+  assert.strictEqual(socketProxy.isAllowedOrigin(''), false, 'deny by default');
+  assert.strictEqual(socketProxy.isAllowedOrigin(undefined), false, 'a client sending no Origin is refused');
+});
+
 test('relay forwards to an allowed host and refuses everything else', async () => {
   socketProxy.allowHosts(['localhost']);
 
@@ -46,9 +58,10 @@ test('relay forwards to an allowed host and refuses everything else', async () =
   const echoPort = echo.address().port;
 
   socketProxy.start();
-  const open = function (query) {
+  const open = function (query, origin) {
     return new Promise(function (resolve) {
-      const ws = new WebSocket(socketProxy.proxyUrl + '/?' + query);
+      const opts = origin === null ? {} : { origin: origin === undefined ? 'file://' : origin };
+      const ws = new WebSocket(socketProxy.proxyUrl + '/?' + query, opts);
       const result = { messages: [], closeCode: null };
       ws.on('open', function () {
         ws.send(Buffer.from('ping'));
@@ -78,6 +91,13 @@ test('relay forwards to an allowed host and refuses everything else', async () =
 
     const missing = await open('host=localhost');
     assert.strictEqual(missing.closeCode, 1008, 'missing port is refused');
+
+    const foreignOrigin = await open('host=localhost&port=' + echoPort, 'https://evil.example');
+    assert.deepStrictEqual(foreignOrigin.messages, [], 'a foreign origin reaches nothing');
+    assert.strictEqual(foreignOrigin.closeCode, 1008, 'foreign origin is closed with policy violation');
+
+    const noOrigin = await open('host=localhost&port=' + echoPort, null);
+    assert.strictEqual(noOrigin.closeCode, 1008, 'a client sending no Origin is refused');
   } finally {
     socketProxy.stop();
     await new Promise(function (resolve) {
