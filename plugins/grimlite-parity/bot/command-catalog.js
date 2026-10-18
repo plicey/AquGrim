@@ -42,7 +42,7 @@ const GROUPS = {
     CmdClearTemp: 'Misc', CmdClientMessage: 'Misc', CmdDelay: 'Misc', CmdGotoLabel: 'Misc',
     CmdGotoPlayer: 'Misc', CmdIndex: 'Misc', CmdInt: 'Misc', CmdInt2: 'Misc', CmdLabel: 'Misc',
     CmdLoadBot: 'Misc', CmdLog: 'Misc', CmdLogout: 'Misc', CmdPacket: 'Misc',
-    CmdPacketDelay: 'Misc', CmdPacketSpammer: 'Misc', CmdProvoke: 'Misc', CmdRestart: 'Misc',
+    CmdPacketDelay: 'Misc', CmdPacketSpammer: 'Misc', CmdPing: 'Misc', CmdProvoke: 'Misc', CmdRestart: 'Misc',
     CmdReturn: 'Misc', CmdSetFPS: 'Misc', CmdSpecialHandler: 'Misc', CmdStop: 'Misc',
     CmdTauntcycle: 'Misc', CmdToggleProvoke: 'Misc',
     CmdAcceptQuest: 'Quest', CmdAddQuestList: 'Quest', CmdCompleteQuest: 'Quest',
@@ -162,6 +162,7 @@ const DISPLAY = {
     CmdPacket: (c) => (c.ForClient || c.Client ? 'To client' : 'To server') +
         ' [' + text(c.SpamTimes) + 'x]: ' + text(c.Packet),
     CmdPacketDelay: (c) => (c.Client ? 'Send delayed client packet: ' : 'Send delayed packet: ') + text(c.Packet),
+    CmdPing: (c) => 'Ping: ' + text(c.Count) + 'x beep ' + (c.PopMsg ? 'and pop msg' : ''),
     CmdPacketSpammer: function (c) {
         if (c.type === 0) return 'Add to P.S: ' + text(c.Packet);
         if (c.type === 1) return 'Remove from P.S: ' + text(c.Packet);

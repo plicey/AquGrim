@@ -141,19 +141,64 @@ async function activate(host) {
     // own session, variables, ints and index: the reference is a singleton because it is
     // single-client, and spec #19 overrides that for this app.
     //
+    // The shell seams the misc commands need (#40) ride along from here, because the plugin shell
+    // is what owns them: the relay is host.packets (packet-send, the same path the spammer window
+    // writes through), the alert sound is Electron's own, bot files are the user's, and the bots
+    // directory is the one the Bot Manager already uses.
+    //
+    // A seam that is absent is left absent on purpose: the engine then says which command it
+    // cannot carry out rather than appearing to run one that does nothing.
+    // The same default the Bot Manager declares below, hoisted so the two cannot drift: a
+    // CmdLoadBot that resolved against one directory while the tree listed another would be a
+    // file the user can see and the engine cannot reach.
+    const defaultBotsDirectory = path.join(host.appDataDirectory, 'Bots');
+    // And the directory the user actually chose, which is the Bot Manager's own setting: a bot
+    // saved from the tree with a relative path resolves against the same root the tree lists.
+    const botSettings = require('./bot/display-settings.js').create({
+        store: host.getStore(require('./bot/display-settings.js').STORE_NAMESPACE),
+        defaultBotsDirectory: defaultBotsDirectory
+    });
+    // The Options window's feature (#34), which the engine's provoke commands move. It is built
+    // further down, beside its own window; the holder exists so the two can be wired in either
+    // order without one reaching into the other's binding before it is set.
+    let optionsFeature = null;
+    // What the bot session reads the game through. The session wants both halves of the bridge:
+    // the platform's raw channel (`attach()`, `call(name, args)` - #28) for the two paths it owns
+    // itself, and this plugin's game access (bridge.js) for the loader's own helper names (#48),
+    // which is where `loaderCall` lives. Every other feature is handed the game access alone and
+    // never needs the raw channel; a bot does, so the two are put together here once rather than
+    // the session growing a second way to reach the game.
+    const gameAccess = require('./bridge.js').createGameAccess(host);
+    const botBridge = Object.assign({}, host.bridge, { loaderCall: gameAccess.loaderCall });
     const runtime = botRuntime.createRuntimeManager({
-        // `packets` is the platform's tap (#26), and it is what the aura statements read: the
-        // reference's own aura cache is filled by its packet handlers, not by a game lookup
-        // (ticket #42, bot/auras.js). The session subscribes once and the runtime gives the
-        // subscription back when that window's bot entry is dropped.
+        // The session reads the game through `botBridge` (the raw channel plus #48's loader
+        // surface, above); `packets` is the platform's tap (#26), which the aura statements read:
+        // the reference's own aura cache is filled by its packet handlers, not by a game lookup
+        // (ticket #42, bot/auras.js). It subscribes once, and the runtime gives the subscription
+        // back when that window's bot entry is dropped.
         createSession: function () {
-            return botSession.createSession({
-                bridge: host.bridge,
-                packets: host.packets,
-                log: host.log
-            });
+            return botSession.createSession({ bridge: botBridge, packets: host.packets, log: host.log });
         },
-        log: function (line) { host.log('bot: ' + line); }
+        log: function (line) { host.log('bot: ' + line); },
+        packets: host.packets,
+        beep: function (count) {
+            const times = count === undefined ? 1 : Math.max(0, Number(count) || 0);
+            const shell = require('electron').shell;
+            for (let i = 0; i < times; i++) shell.beep();
+        },
+        botsDirectory: function () { return botSettings.botsDirectory() || defaultBotsDirectory; },
+        exists: function (file) { return require('fs').existsSync(file); },
+        readFile: function (file) { return require('fs').readFileSync(file, 'utf8'); },
+        // CmdProvoke / CmdToggleProvoke move the Options window's own Provoke tick (#34), which is
+        // the same want the reference reads out of OptionsManager.ProvokeMonsters. That window is
+        // built below, so this reads the holder above rather than the binding it will hold.
+        options: {
+            setToggle: function (id, on) {
+                if (!optionsFeature) return false;
+                return optionsFeature.setToggle(id, on);
+            },
+            state: function () { return optionsFeature ? optionsFeature.state() : {}; }
+        }
     });
 
     // What a bot is filed under: the game window the bridge channel is bound to, and `game` while
@@ -245,9 +290,12 @@ async function activate(host) {
         runtime: runtime,
         windowKeyFor: gameWindowKey,
         store: host.getStore(require('./bot/display-settings.js').STORE_NAMESPACE),
+        // The very settings instance the engine resolves paths with, so the directory this
+        // window's tree shows and the directory a CmdLoadBot reads are one value.
+        settings: botSettings,
         // The reference puts its Bots/ folder beside the executable (Application.StartupPath); here
         // that is the app's own data directory, beside the store the plugin already keeps there.
-        defaultBotsDirectory: path.join(host.appDataDirectory, 'Bots'),
+        defaultBotsDirectory: defaultBotsDirectory,
         message: function () { return host.getLocaleStrings('botManagerMessages') || {}; },
         showOpenDialog: function (owner, options) {
             return require('electron').dialog.showOpenDialog(owner, options);
@@ -284,6 +332,7 @@ async function activate(host) {
         store: host.getStore('options'),
         log: function (msg) { host.log(msg); }
     });
+    optionsFeature = optionsWindow.feature;
     const hotkeys = createHotkeys({
         store: host.getStore('hotkeys'),
         // A bound key fires only while this app has focus, except "Minimize to tray"
