@@ -41,7 +41,9 @@ function sessions() {
       manaMax: function () { return Promise.resolve(100); },
       setSpawnPoint: function () { return Promise.resolve(); },
       rest: function () { return Promise.resolve(); },
-      exitCombat: function () { return Promise.resolve(); }
+      exitCombat: function () { return Promise.resolve(); },
+      // The session's own release (#42): a window that closes gives its tap subscription back.
+      close: function () { session.calls.push('close'); return Promise.resolve(); }
     };
     made[key] = session;
     return session;
@@ -138,7 +140,12 @@ test('closing a window stops its bot and drops its state entirely', async () => 
 
   await r.manager.windowClosed('win-a');
   assert.strictEqual(r.manager.state('win-a').running, false, 'that window\'s bot is stopped');
+  assert.ok(r.sessions['win-a'].calls.indexOf('close') !== -1,
+    'and its session gave its own subscriptions back (#42: the packet tap); ' +
+    r.sessions['win-a'].calls.join(','));
   assert.strictEqual(r.manager.state('win-b').running, true, 'the other window keeps running');
+  assert.strictEqual(r.sessions['win-b'].calls.indexOf('close'), -1,
+    'the window that is still open keeps its subscription');
   assert.deepStrictEqual(r.manager.windows(), ['win-b'], 'the closed window has no entry left');
   await r.manager.windowClosed('win-b');
 });

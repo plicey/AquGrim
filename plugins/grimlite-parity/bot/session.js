@@ -65,6 +65,25 @@
 // rejects naming the ticket that owns it, and this module passes that reason through rather than
 // answering a default. A statement that cannot be told reports it.
 //
+// The state-reading statements (tickets #41, #42) widened it; these are #42's own, and every one
+// of them is a loader name the surface answers except the target id, which is named where it is
+// read below:
+//
+//   hasTarget()                  -> boolean  this character has a live target (HasTarget)
+//   targetHealth()               -> number   that target's HP (GetTargetHealth)
+//   targetId()                   -> number|null  its MonMapID, or null when nothing is targeted
+//   state()                      -> number   Player.State: 0 Dead, 1 Idle, 2 InCombat (State)
+//   selfId()                     -> number   this character's id, which aura frames are keyed by
+//   selfAura(name)               -> number   tapped stack count of one aura on this character
+//   targetAura(name)             -> number   the same for the current target
+//   monsterAuraDuration(id, name)-> number   ms left of one aura on one monster, 0 for none
+//   lastAnimationMessage()       -> string   the last anims[].msg the tap saw, lowercased
+//   consumeAnimation()           -> void     clear it, which is what a matching statement does
+//   close()                      -> void     give this window's tap subscription back
+//
+// The four aura reads are the tap's, not the game's: see bot/auras.js for where each number is
+// derived from, and why the wire's seconds become milliseconds on the way in.
+//
 // A refusal that means *this window is gone* - rather than the game being busy or a path not
 // resolving - carries `windowGone: true`. The engine ends that window's bot on it, and treats
 // every other refusal as something to wait out; that is the difference between a closed window
@@ -87,6 +106,10 @@
 //   SetSpawnPoint    world.setSpawnPoint(world.strFrame, world.strPad)
 //   Rest             world.rest()
 //   CancelTarget     world.cancelTarget(), twice, in the loader's own order
+//   HasTarget        world.myAvatar.target.dataLeaf.intHP > 0
+//   GetTargetHealth  world.myAvatar.target.dataLeaf.intHP
+//   State            world.myAvatar.dataLeaf.intState
+//   UserID           world.myAvatar.uid  - the id an aura frame's `p:` prefix is compared with
 //   Cell/Map         world.strFrame / world.strMapName
 //   Gold/Level       world.myAvatar.objData.intGold / dataLeaf.intLevel
 //   IsMember         world.myAvatar.objData.iUpgDays >= 0
@@ -118,7 +141,12 @@
 const PATHS = {
     // The two reads above, and nothing else: everything the surface answers goes through it.
     name: 'world.myAvatar.objData.strUsername',
-    mapLoading: 'world.mapLoadInProgress'
+    mapLoading: 'world.mapLoadInProgress',
+    // Player.CurrentTargetId's own body exactly: Flash.GetGameObject(
+    // "world.myAvatar.target.objData.MonMapID"). The loader registers no name for it, so unlike
+    // every other read here there is nothing to ask by name - which is why it is written out, and
+    // why it is written out once, here.
+    targetId: 'world.myAvatar.target.objData.MonMapID'
 };
 
 // The loader's own translations, for the log and for tests: each name the reference calls, what
@@ -231,6 +259,22 @@ const LOADER_BODIES = {
         body: 'if(myAvatar.target == myAvatar) world.cancelTarget()',
         why: 'the comparison is between two live avatar objects, which cannot cross the bridge'
     },
+    // #42's own two: the id an aura frame's `p:` prefix is compared with, and the aura state
+    // itself, which is not a loader call at all - the reference's cache is filled by its packet
+    // handlers (Flash.cs ProcessPacketFromServer, ProcessPext, ProcessPacketFromClient), so this
+    // build derives it from the packet tap. Recorded so a reader can check that derivation against
+    // the reference rather than trusting it.
+    UserID: { helper: 'UserID', body: 'world.myAvatar.uid - the id an aura frame is keyed by' },
+    AuraCache: {
+        helper: 'GetAurasValue / AuraDuration',
+        body: 'AuraManager.SelfAura and AuraManager.EnemyAura(MonMapID), filled from the frames ' +
+            'Flash.cs ProcessPacketFromServer and ProcessPext read; the target id itself is ' +
+            'Player.CurrentTargetId -> world.myAvatar.target.objData.MonMapID',
+        reason: 'this cache is not a loader call at all: the reference fills it from its packet ' +
+            'handlers, so this build derives it from the packet tap (bot/auras.js). The two lookup ' +
+            'names beside it, GetAurasValue and AuraDuration, are refused by the surface for the ' +
+            'same reason (#42)'
+    },
     // Not on the surface: see the two named above.
     GetUsername: { path: PATHS.name, body: 'the game own objData.strUsername; the loader holds its own copy (ticket #35)' },
     MapLoadComplete: { path: PATHS.mapLoading, body: 'world.mapLoadInProgress == false; the display-list half is ticket #41' },
@@ -284,6 +328,31 @@ function createSession(deps) {
     deps = deps || {};
     const bridge = deps.bridge;
     const log = deps.log || function () {};
+
+    // The tapped aura state (bot/auras.js). Subscribed once, when this session is made, so a frame
+    // that arrives between two calls is not missed: the reference's cache is filled the same way,
+    // by a handler registered for the session's whole life rather than around each read.
+    const auras = require('./auras.js').createAuraStore();
+    let tapFailure = null;
+    let release = null;
+    if (deps.packets && typeof deps.packets.on === 'function') {
+        try {
+            release = deps.packets.on('frame', function (frame) { auras.observe(frame); });
+        } catch (error) {
+            // A plugin without packet-tap, or an app session that is not steering traffic: the
+            // reason is kept and handed to whoever asks for an aura, rather than swallowed - a
+            // zero here would be indistinguishable from "the aura is gone".
+            tapFailure = message(error);
+        }
+    } else {
+        tapFailure = 'this session has no packet tap, so no aura state is being observed';
+    }
+
+    /** The tap, or a refusal naming what is missing. */
+    function tapped() {
+        if (tapFailure) throw refusal('auras come from the packet tap: ' + tapFailure);
+        return auras;
+    }
 
     async function attach() {
         if (!bridge) throw refusal(ERRORS.noChannel);
@@ -678,6 +747,103 @@ function createSession(deps) {
         setSpawnPoint: function () { return loaderCall('SetSpawnPoint'); },
         rest: function () { return loaderCall('Rest'); },
         exitCombat: function () { return loaderCall('CancelTarget'); },
+
+        /** Player.HasTarget: the loader's own helper, which is intHP > 0 on the target. */
+        hasTarget: function () {
+            return loaderCall('HasTarget').then(function (value) {
+                return value === true || value === 1 || value === 'true';
+            });
+        },
+
+        /** Player.GetTargetHealth: GetTargetHealth through the loader surface. */
+        targetHealth: function () { return numberFrom('GetTargetHealth', loaderCall('GetTargetHealth')); },
+
+        /** Player.CurrentState: the loader's State, whose 2 is Player.State.InCombat. */
+        state: function () { return numberFrom('State', loaderCall('State')); },
+
+        /**
+         * Player.CurrentTargetId, and the one read the loader registers no name for, so it is
+         * this module's own path (PATHS.targetId, Player.cs line 240 exactly).
+         *
+         * Nothing targeted answers null rather than 0: a walk over an absent target gives null,
+         * and 0 is a MonMapID a monster could have, so reading it as a number would key the aura
+         * cache on a monster that is not there. A value that is not a number is a refusal.
+         */
+        targetId: function () {
+            return readPath(PATHS.targetId).then(function (value) {
+                if (value === null || value === undefined) return null;
+                const number = Number(value);
+                if (!isFinite(number)) {
+                    throw refusal('CurrentTargetId is not a number the game answered (' +
+                        JSON.stringify(value) + ')');
+                }
+                return number;
+            });
+        },
+
+        /**
+         * The loader's UserID: the id an aura frame's `p:` prefix is compared with, and the one
+         * piece of the aura cache's own key that is not on the wire. Read here and handed to the
+         * cache, so a `p:` frame for anybody else is dropped rather than kept under a key nothing
+         * will ever look up.
+         */
+        selfId: async function () {
+            const id = await numberFrom('UserID', loaderCall('UserID'));
+            // A session with no tap has no cache to key, and that gap is the aura reads' refusal
+            // to make rather than this one's: the id itself was read all the same.
+            if (!tapFailure) auras.setSelf('p:' + id);
+            return id;
+        },
+
+        /**
+         * Player.GetAuras(true, name) for a name outside its own "locked" special case: the tapped
+         * cache's value, in stacks (auras.js). A tap that is not there is a refusal naming what is
+         * missing, never a zero - zero is what "the stack is gone" reads as.
+         */
+        selfAura: async function (name) {
+            const store = tapped();
+            const id = await session.selfId();
+            return store.value('p:' + id, name);
+        },
+
+        /**
+         * Player.GetAuras(false, name) - the target's stacks, from the same cache, keyed by the
+         * target's own MonMapID. With nothing targeted the answer is 0, which is exactly what the
+         * reference's GetAurasValue returns in that case rather than an error.
+         */
+        targetAura: async function (name) {
+            const store = tapped();
+            if (!(await session.hasTarget())) return 0;
+            const id = await session.targetId();
+            if (id === null || id === undefined) return 0;
+            return store.value('m:' + id, name);
+        },
+
+        /**
+         * AuraManager.EnemyAura(id).GetRemainingTime(name), in milliseconds-removed: the monster's
+         * own id is the statement's targetId field, so it is handed in rather than read here.
+         */
+        monsterAuraDuration: async function (id, name) {
+            return tapped().remaining('m:' + id, name);
+        },
+
+        /** Configuration.LastAnimationMessage, which the tap's anims handler fills (auras.js). */
+        lastAnimationMessage: async function () { return tapped().lastAnimationMessage(); },
+        consumeAnimation: async function () { tapped().consumeAnimation(); },
+
+        /**
+         * Give this window's tap subscription back. The bot is per window and its subscription
+         * outlives every call on it, so the window's own close is where it is released - a
+         * subscription that is never released is the leak the platform's release return exists
+         * to prevent.
+         */
+        close: async function () {
+            if (typeof release === 'function') {
+                const off = release;
+                release = null;
+                off();
+            }
+        },
 
         /** The loader's bodies, exposed so the window and the tests can name their source. */
         bodies: function () { return LOADER_BODIES; }

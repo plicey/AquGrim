@@ -171,7 +171,14 @@ async function activate(host) {
     const gameAccess = require('./bridge.js').createGameAccess(host);
     const botBridge = Object.assign({}, host.bridge, { loaderCall: gameAccess.loaderCall });
     const runtime = botRuntime.createRuntimeManager({
-        createSession: function () { return botSession.createSession({ bridge: botBridge, log: host.log }); },
+        // The session reads the game through `botBridge` (the raw channel plus #48's loader
+        // surface, above); `packets` is the platform's tap (#26), which the aura statements read:
+        // the reference's own aura cache is filled by its packet handlers, not by a game lookup
+        // (ticket #42, bot/auras.js). It subscribes once, and the runtime gives the subscription
+        // back when that window's bot entry is dropped.
+        createSession: function () {
+            return botSession.createSession({ bridge: botBridge, packets: host.packets, log: host.log });
+        },
         log: function (line) { host.log('bot: ' + line); },
         packets: host.packets,
         beep: function (count) {

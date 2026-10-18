@@ -685,6 +685,18 @@ const SURFACE = {
     BuyItemQtyById: { why: 'the reference resolves a shop item by id pair; ticket #39 owns shops' },
     LoadBankItems: { why: 'the loader sends its own loadBank frame; ticket #29\'s window uses the game path' },
     MuteToggle: { why: 'the reference mutes its own chat box; not a game call' },
+    // The one pair the reference never uses for its own statements: #42 derives aura state from
+    // the packet tap instead (bot/auras.js), because the reference's statements read a cache the
+    // frames fill rather than a lookup, and a lookup answers a packet stale. Kept named so a
+    // caller that asks for them gets that reason rather than a bare "no member".
+    GetAurasValue: {
+        why: 'its body reads the avatar\'s live aura array one frame behind the game; the aura ' +
+            'state is derived from the packet tap instead (bot/auras.js, ticket #42)'
+    },
+    AuraDuration: {
+        why: 'its body reads the avatar\'s live aura array and the frame timestamp; the aura ' +
+            'state and its remaining time come from the packet tap instead (bot/auras.js, #42)'
+    },
     UseSkill: {
         why: 'the reference hands the live action object to world.testAction (and world.setTarget ' +
             'for a friendly one); both take a live object the JSON bridge cannot carry, so the ' +
@@ -705,8 +717,6 @@ const SURFACE = {
             'cancelling; a live Avatar cannot travel through a JSON bridge (ticket #38). The game ' +
             'own CancelTarget is implemented and is what CmdCancelTarget uses'
     },
-    GetAurasValue: { why: 'the reference reads live aura arrays off the avatar; ticket #42 owns auras' },
-    AuraDuration: { why: 'the reference reads live aura arrays off the avatar; ticket #42 owns auras' },
     MapLoadComplete: { why: 'the reference inspects its own display list; ticket #41 owns state' },
     RejectDrop: { why: 'the reference walks its own drop stack UI; ticket #33 owns drops' },
 
