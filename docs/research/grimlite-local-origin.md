@@ -1,6 +1,6 @@
 # Does the AQW client run when its game files come from a local origin?
 
-Ticket: [#15](https://github.com/plicey/AquaGrim/issues/15) - wayfinder research. The AFK (no-login) half.
+Ticket: [#15](https://github.com/plicey/AquGrim/issues/15) - wayfinder research. The AFK (no-login) half.
 
 **Verdict: yes for everything up to the account login, and the login screen renders from a local origin with no errors and zero 404s. The client POSTs its credentials to `api/login/now` through the local origin, and the real upstream answers it (a wrong password produces the real "username not found" message). The one thing still unproven is unchanged and needs an account: that the client's socket connect goes to the local relay after a successful login. In every run here the relay saw no connections, because no run ever got past credential validation.**
 

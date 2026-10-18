@@ -1,7 +1,7 @@
 # Local-origin spike artifacts
 
 Throwaway sources for the spike recorded in [../grimlite-local-origin.md](../grimlite-local-origin.md)
-(ticket [#15](https://github.com/plicey/AquaGrim/issues/15)). Not wired into the app; nothing here ships.
+(ticket [#15](https://github.com/plicey/AquGrim/issues/15)). Not wired into the app; nothing here ships.
 
 | File | Role |
 |------|------|
