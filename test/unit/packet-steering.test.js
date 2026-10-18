@@ -9,6 +9,7 @@ const path = require('path');
 
 const platform = require('../../res/platform');
 const packetLayer = require('../../res/platform/packet-layer.js');
+const bodyService = require('../../res/platform/body-service.js');
 
 const DECLARATION = {
   id: 'steer-login',
@@ -329,4 +330,34 @@ test('activating the parity plugin hands the platform exactly one steering decla
   } finally {
     await layer.close();
   }
+});
+
+// The refusal path is the ticket's point, so it must not leave anything listening behind: a body
+// service bound before the relay refused would hold a loopback port nothing will ever close.
+test('a refused relay leaves no loopback listener behind', async () => {
+  const session = fakeSession();
+  const built = [];
+  const layer = packetLayer.createPacketLayer({
+    declarations: [Object.assign({}, DECLARATION, { policyDomain: '*' })],
+    session: session,
+    ctx: { settings: { packetSteering: true }, logLine: function () {} },
+    // The body service is injected the way the platform injects its own deps, so the test can prove
+    // that a refusal never gets as far as binding a loopback port.
+    createBodyService: function (options) {
+      const service = bodyService.createBodyService(options);
+      built.push(service);
+      return service;
+    }
+  });
+  const error = await layer.start().then(function () { return null; }, function (e) { return e; });
+  assert.ok(error && /domain/.test(error.message), 'the relay refused: ' + (error && error.message));
+
+  // Building the service is free; binding is not. The gates are checked before any listener opens,
+  // so the service exists but never held a port.
+  assert.strictEqual(built.length, 1, 'the layer composed its body service');
+  built.forEach(function (service) {
+    assert.strictEqual(service.port, null,
+      'a refused layer must not leave a loopback port bound');
+  });
+  await layer.close();
 });

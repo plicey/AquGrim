@@ -127,7 +127,9 @@ function createPacketLayer(options) {
             });
             const steering = { engaged: engaged, unengaged: unengaged };
 
-            bodyService = createBodyService({
+            // Injecting the body service keeps its construction (and so its bind) visible to tests,
+            // which is how "a refusal binds nothing" is checked without Electron.
+            bodyService = (typeof options.createBodyService === 'function' ? options.createBodyService : createBodyService)({
                 matchesPattern: sessionRules.matchesPattern,
                 rules: declarations.filter(function (d) { return enabled(d); }).map(sessionRuleFor),
                 onLog: onLog
@@ -144,12 +146,20 @@ function createPacketLayer(options) {
             let rules = [];
 
             if (engaged.length) {
-                await bodyService.start();
-                // The relay refuses when steering is not engaged, which is the whole point: it is
-                // never allowed to come up pretending it steers while the client could fall back.
-                await relay.start({ steering: steering });
-                relayRunning = true;
-                rules = declarations.filter(function (d) { return enabled(d); }).map(sessionRuleFor);
+                try {
+                    // The relay's gates are checked first, and they bind nothing: a refusal must not
+                    // leave a loopback port open. It is never allowed to come up pretending it steers
+                    // while the client could fall back to an unsteered transport.
+                    await relay.start({ steering: steering });
+                    await bodyService.start();
+                    relayRunning = true;
+                    rules = declarations.filter(function (d) { return enabled(d); }).map(sessionRuleFor);
+                } catch (error) {
+                    // Late failures (a port that cannot be bound) still release whatever was bound.
+                    await relay.close();
+                    await bodyService.close();
+                    throw error;
+                }
             } else {
                 unengaged.forEach(function (id) {
                     onLog('packet layer: steering is off for rule ' + id + ', so no relay is started');
