@@ -27,6 +27,18 @@ function register(host, windowTitle) {
         }, {
             label: labels.grimliteMenu || 'Grimlite',
             submenu: [
+                // The reference keeps Char Select as its own top-level menu, leftmost in its menu
+                // bar (Root.cs:1150-1152 lists it before Tools/Packets/About). Here it is the first
+                // entry of the one menu this port contributes, which is the same position in the
+                // order the user reads.
+                {
+                    label: labels.grimliteCharSelect || 'Char Select',
+                    accelerator: keybinds.grimliteCharSelect,
+                    registerAccelerator: false,
+                    click: function () {
+                        host.windows.openFeatureWindow(windows.LOGIN_WINDOW_ID);
+                    }
+                },
                 // Bot file first: it is the window that works on a document of the user's own,
                 // like the reference's Bot Manager.
                 {

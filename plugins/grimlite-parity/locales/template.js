@@ -35,6 +35,7 @@ exports.menuMessages = {
     grimliteEyedropper: "",
     grimliteNotepad: "",
     grimliteAbout: "",
+    grimliteCharSelect: "",
     grimliteBank: "",
     grimliteLoaders: "",
     grimliteSets: "",
@@ -74,6 +75,7 @@ exports.windowTitles = {
     eyedropper: "",
     notepad: "",
     about: "",
+    charSelect: "",
     cosmetics: "",
     options: "",
     hotkeys: "",
@@ -242,4 +244,25 @@ exports.tampererMessages = {
     sendToServer: "",
     sendToClient: "",
     clear: ""
+};
+
+exports.loginMessages = {
+    title: "",
+    savedHeading: "",
+    empty: "",
+    usernamePlaceholder: "",
+    passwordPlaceholder: "",
+    add: "",
+    added: "",
+    usernameRequired: "",
+    addFailed: "",
+    signIn: "",
+    signingIn: "",
+    signedIn: "",
+    signInFailed: "",
+    remove: "",
+    importFile: "",
+    imported: "",
+    connected: "",
+    disconnected: ""
 };

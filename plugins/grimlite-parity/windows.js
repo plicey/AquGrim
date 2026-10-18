@@ -9,6 +9,7 @@ const BOT_FILE_PRELOAD = path.join(featureRoot, 'bot-file', 'preload_bot_file.js
 const BOT_FILE_WINDOW_ID = 'grimlite-parity-bot-file';
 const BANK_WINDOW_ID = 'grimlite-parity-bank';
 const SETS_WINDOW_ID = 'grimlite-parity-sets';
+const LOGIN_WINDOW_ID = 'grimlite-parity-char-select';
 const NOTEPAD_WINDOW_ID = 'grimlite-parity-notepad';
 const EYEDROPPER_WINDOW_ID = 'grimlite-parity-eyedropper';
 const ABOUT_WINDOW_ID = 'grimlite-parity-about';
@@ -139,6 +140,17 @@ function register(host, windowTitle) {
             config: windowConfig(host, 'about', 'preload_about.js', { width: 520, height: 560 })
         },
         {
+            // The reference's Char Select is a top-level menu whose items are the saved usernames
+            // (Root.cs:1150-1152); a menu cannot say where the credentials are held or offer a
+            // removal, so criterion 4 and the Remove half of criterion 5 get a window.
+            id: LOGIN_WINDOW_ID,
+            title: function () {
+                return windowTitle('charSelect', 'Grimlite Parity - Char Select');
+            },
+            url: pageUrl('login', 'login.html'),
+            config: windowConfig(host, 'login', 'preload_login.js', { width: 460, height: 480 })
+        },
+        {
             id: LOGGER_WINDOW_ID,
             title: function () {
                 return windowTitle('packetLogger', 'Packet logger');
@@ -234,6 +246,7 @@ module.exports = {
     BOT_FILE_WINDOW_ID: BOT_FILE_WINDOW_ID,
     BANK_WINDOW_ID: BANK_WINDOW_ID,
     SETS_WINDOW_ID: SETS_WINDOW_ID,
+    LOGIN_WINDOW_ID: LOGIN_WINDOW_ID,
     DEVTEST_PAGE: DEVTEST_PAGE,
     DEVTEST_WINDOW_ID: DEVTEST_WINDOW_ID,
     COSMETICS_WINDOW_ID: COSMETICS_WINDOW_ID,

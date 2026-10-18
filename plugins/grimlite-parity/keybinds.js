@@ -7,6 +7,7 @@ const DEFAULTS = {
     grimliteEyedropper: 'Alt+Shift+E',
     grimliteNotepad: 'Alt+Shift+N',
     grimliteAbout: 'Alt+Shift+A',
+    grimliteCharSelect: 'Alt+Shift+H',
     grimliteParityDevTest: 'Alt+Shift+D',
     grimliteBank: 'Alt+Shift+K',
     // The reference's own action list carries "Show Loaders" (Hotkeys.cs:398); this port gives
@@ -48,6 +49,15 @@ function register(host) {
             id: 'grimliteAbout',
             action: function () {
                 host.windows.openFeatureWindow(windows.ABOUT_WINDOW_ID);
+            }
+        },
+        {
+            // The reference's own action list has no Char Select entry: its char list is a menu,
+            // not a hotkey (Hotkeys.cs has no Char Select action). This port gives the window a
+            // default on a key no binding of the app's or the game plugin's own uses.
+            id: 'grimliteCharSelect',
+            action: function () {
+                host.windows.openFeatureWindow(windows.LOGIN_WINDOW_ID);
             }
         },
         {
