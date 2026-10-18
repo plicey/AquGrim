@@ -37,6 +37,19 @@ unchanged is still the file the reference wrote. It builds and displays the comm
 the reference's own display text, form labels and construction - but does not execute it: running
 a bot is the engine, ticket #37.
 
+The controls that act on the running game are honest about a split that decides what this app can
+read at all. The reference client does not read the stock game for most of its own data: it ships
+its own loader (`Loader/grimoire.swf`), implements a helper surface there, and calls that. Our
+bridge loads the stock game, so a name that lives only in the reference's loader answers "no
+member ... at world". `bot/game-reads.js` records which controls those are, name by name. The
+reachable ones - `Get current cell`, and `Get` on the Hunt tab - read `world.strFrame`,
+`world.strPad` and `world.strMapName` through the generic bridge surface, which is the same
+source the reference's own loader reads for its cell and pad. The rest report the helper they wait
+for (`Position`, `RoomNumber`, `SetSpawnPoint`, `ReloadMap`, `HideConnMC`, `SetFPS`), or the
+reason they are not wired (frame injection is the unverified `sendClientPacket` path, ticket #28;
+the name and guild substitutions belong to the engine, ticket #37). No control silently does
+nothing, because an empty cell box is indistinguishable from a real reading.
+
 The Notepad's `debugskill` and `mapitems` helpers read the equipped class and the map-item
 history. Those reads land with the bridge (ticket #28); until then the source reports nothing
 rather than a stand-in value, so a dump never claims state the app has not read.

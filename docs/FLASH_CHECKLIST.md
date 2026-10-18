@@ -226,6 +226,29 @@ Active plugin **Grimlite Parity**, restart, then **Grimlite → Bot Manager** (o
 - [ ] **Enable Bot / Disable Bot** writes the flag the reference writes; nothing here starts the
       engine - running a bot is ticket #37
 
+### The controls that read the running game
+
+The reference serves most of these from its own loader (Loader/grimoire.swf) rather than from the
+stock game, and our bridge loads the stock game. Each name below was measured against both SWFs;
+the reachable ones read the same dot-paths the reference's own loader reads, and the rest say
+which helper they are waiting for instead of quietly returning nothing. Sign in before these.
+
+- [ ] **Get current cell** (Map tab) puts the real cell in *Cell* and the pad in *Pad*; with Alt
+      held it appends ",cell" / ",pad" to what is already there, like the reference
+- [ ] **Get** (Hunt tab) fills *Map*, *Cell* and *Pad* from where the player is
+- [ ] With Ctrl or Alt held, **Get** reports that the room number is not available instead of
+      half-filling the box: that value comes from the reference's loader and the stock game has
+      no equivalent
+- [ ] **Current position**, the **<** / **>** join buttons, **Set Spawnpoint**, **Reload Map**,
+      **Hide Loading** and **Set FPS** each say which helper they wait for, without throwing and
+      without filling anything in
+- [ ] **Set** (level) explains that it would inject a frame, which this window does not send yet
+- [ ] The name and guild **Set** buttons explain that the substitution belongs to the bot engine
+- [ ] **Test** (Options → the drop-sound list) makes the system alert sound
+- [ ] With no game window open, any of the above reports that there is no game window
+- [ ] With a game window open but **no character signed in**, a reachable read says the game
+      reports nothing yet, rather than showing an empty cell
+
 ---
 
 ## Adventure Quest Worlds
