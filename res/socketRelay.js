@@ -100,6 +100,7 @@ function createRelay(options) {
     function toServer(state, frame) {
         onFrame({ id: state.id, direction: 'toServer', data: frame });
         const upstream = upstreamFor(state);
+        if (!upstream) return;   // the connection closed while this frame was in flight
         if (state.upstreamReady) upstream.write(Buffer.concat([frame, NUL]));
         else state.carry.push(frame);
     }
@@ -241,6 +242,7 @@ function createRelay(options) {
             const bytes = Buffer.isBuffer(frame) ? frame : Buffer.from(String(frame), 'utf8');
             if (direction === 'toClient') { state.client.write(Buffer.concat([bytes, NUL])); return true; }
             const upstream = upstreamFor(state);
+            if (!upstream) return false;   // closed between the lookup and the write
             if (state.upstreamReady) upstream.write(Buffer.concat([bytes, NUL]));
             else state.carry.push(bytes);
             return true;

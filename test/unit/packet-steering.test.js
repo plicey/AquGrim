@@ -200,8 +200,8 @@ test('no relay comes up when the steering flag is off, and the reason is reporte
   }
 });
 
-test('the AQW plugin declares its steering behind an opt-in flag and names no platform fact', () => {
-  const declarations = require('../../plugins/adventure-quest-worlds/packets.js').steeringDeclarations();
+test('the parity plugin declares its steering behind an opt-in flag and names no platform fact', () => {
+  const declarations = require('../../plugins/grimlite-parity/packets.js').steeringDeclarations();
   assert.ok(Array.isArray(declarations) && declarations.length >= 1);
   const declaration = declarations[0];
   assert.strictEqual(declaration.settingKey, 'packetSteering');
@@ -277,5 +277,56 @@ test('steering is all-or-nothing: one row outside the allowlist leaves the whole
   } finally {
     await layer.close();
     upstream.close();
+  }
+});
+
+// The plugin's own activation is what a human would otherwise have to eyeball on a display: the
+// declaration reaches the platform from a real activate() with the manifest's real permissions.
+test('activating the parity plugin hands the platform exactly one steering declaration', async () => {
+  const repoRoot = path.join(__dirname, '../..');
+  const appVersion = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')).version;
+  const discovered = platform.discoverPlugins({
+    bundledDir: path.join(repoRoot, 'plugins'),
+    appVersion: appVersion,
+    log: function () {}
+  });
+  const plugin = discovered.plugins.filter(function (p) {
+    return p.manifest.id === 'grimlite-parity';
+  })[0];
+  assert.ok(plugin, 'the parity plugin must be discovered: ' + discovered.errors.join('; '));
+
+  const activated = await platform.activatePlugin(plugin, {
+    appVersion: appVersion,
+    appDataDirectory: path.join(__dirname, '../tmp-plugin-data'),
+    clearRequireCache: true,
+    log: function () {},
+    deps: { openFeatureWindow: function () { return {}; } }
+  });
+  const recorded = activated.host._getState().packetSteering;
+  assert.strictEqual(recorded.length, 1, 'exactly one declaration, from a plugin holding packet-tap');
+  assert.strictEqual(recorded[0].settingKey, 'packetSteering');
+  assert.ok(recorded[0].urls.length >= 1);
+
+  // And the opt-in is off until the player turns it on: default settings engage nothing.
+  const defaults = activated.host._getState().optionDefaults || {};
+  assert.strictEqual(defaults.packetSteering, false, 'steering is the player opt-in');
+
+  const offered = (activated.host._getState().settingsSections || []).filter(function (section) {
+    return (section.fields || []).some(function (field) { return field.key === 'packetSteering'; });
+  });
+  assert.strictEqual(offered.length, 1, 'the switch is reachable in Settings');
+
+  // With the opt-in still off, the layer engages nothing and no relay appears.
+  const layer = packetLayer.createPacketLayer({
+    declarations: recorded,
+    ctx: { settings: defaults, logLine: function () {} }
+  });
+  const started = await layer.start();
+  try {
+    assert.deepStrictEqual(started.steering.engaged, []);
+    assert.strictEqual(started.relay.running, false);
+    assert.strictEqual(started.rules.length, 0);
+  } finally {
+    await layer.close();
   }
 });

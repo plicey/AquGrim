@@ -23,3 +23,18 @@ exports.windowTitles = {
     primary: "",
     placeholder: ""
 };
+
+exports.settingsMessages = {
+    labels: {
+
+    },
+    optionLabels: {
+        packetSteering: ""
+    },
+    optionHints: {
+        packetSteering: ""
+    },
+    settingsSections: {
+        packets: ""
+    }
+};
