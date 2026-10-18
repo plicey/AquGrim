@@ -50,52 +50,8 @@ if (!USE_GPU) {
 }
 app.setPath('userData', path.join(OUT, 'userdata'));   // keep the real profile untouched
 
-// --- local TCP relay (the #3 spike shape): policy locally, everything else upstream ---
-function startRelay(port, target, onLog) {
-    const parts = target.split(':');
-    const tHost = parts[0];
-    const tPort = Number(parts[1]);
-    const POLICY = "<cross-domain-policy><allow-access-from domain='*' to-ports='*'/></cross-domain-policy>" + String.fromCharCode(0);
-    const server = net.createServer(function (client) {
-        let upstream = null;
-        let sawGameTraffic = false;
-        onLog('connect', client.remoteAddress + ':' + client.remotePort);
-        function openUpstream() {
-            if (upstream) return;
-            upstream = net.createConnection({ host: tHost, port: tPort });
-            upstream.on('connect', function () { onLog('upstream-open', tHost + ':' + tPort); });
-            upstream.on('data', function (d) {
-                onLog('S->C ' + d.length + 'b', clean(d.toString('latin1')));
-                client.write(d);
-            });
-            upstream.on('error', function (e) { onLog('upstream-error', e.message); client.destroy(); });
-            upstream.on('close', function () { onLog('upstream-close', ''); client.destroy(); });
-        }
-        client.on('data', function (d) {
-            const text = d.toString('latin1');
-            if (!sawGameTraffic && text.indexOf('policy-file-request') >= 0) {
-                onLog('C->S-policy-request', clean(text));
-                client.write(POLICY);
-                onLog('S->C-policy', clean(POLICY));
-                return;      // the real AQW servers keep the socket open after the policy too
-            }
-            sawGameTraffic = true;
-            if (!upstream) {
-                onLog('C->S-game-traffic-opens-upstream', clean(text));
-                openUpstream();
-            } else {
-                onLog('C->S ' + d.length + 'b', clean(text));
-            }
-            upstream.write(d);
-        });
-        client.on('error', function () {});
-        client.on('close', function () { onLog('client-close', ''); if (upstream) upstream.destroy(); });
-    });
-    return new Promise(function (resolve) {
-        server.on('error', function (e) { onLog('relay-error', e.message); resolve(null); });
-        server.listen(port, '127.0.0.1', function () { resolve(server); });
-    });
-}
+// --- local TCP relay (shared with selftest.js so the relay logic has one home) ---------
+const { createRelay } = require('./relay.js');
 
 // --- main ----------------------------------------------------------------------------
 app.whenReady().then(async function () {
@@ -107,11 +63,19 @@ app.whenReady().then(async function () {
     });
 
     const relayLines = [];
-    const relay = await startRelay(RELAY_PORT, RELAY_TARGET, function (kind, msg) {
-        relayLines.push({ t: stamp(), kind: kind, message: msg });
-        log('RELAY', kind + ' | ' + msg);
+    const relay = createRelay({
+        port: RELAY_PORT,
+        target: RELAY_TARGET,
+        onLog: function (kind, msg) {
+            relayLines.push({ t: stamp(), kind: kind, message: msg });
+            log('RELAY', kind + ' | ' + msg);
+        }
     });
-    if (!relay) log('RELAY-ERROR', 'could not listen on ' + RELAY_PORT);
+    try {
+        await relay.listen();
+    } catch (e) {
+        log('RELAY-ERROR', 'could not listen on ' + RELAY_PORT + ': ' + e.message);
+    }
 
     const gw = createGateway({
         port: GW_PORT,
@@ -120,6 +84,10 @@ app.whenReady().then(async function () {
         userAgent: args.ua || null,
         wrapper: path.join(__dirname, 'wrapper.html'),
         rewrite: { host: '127.0.0.1', port: RELAY_PORT },
+        // Steering is the point of the run: serve the server list with sIP/iPort pointing at
+        // the relay so the client's own connect lands on loopback. --steer=0 keeps upstream's
+        // real list, for a run that only wants to prove the client boots normally.
+        steer: args.steer === undefined ? true : (args.steer !== '0' && args.steer !== false),
         quiet: !!args.quietGw
     });
     await gw.start();
@@ -196,7 +164,7 @@ app.whenReady().then(async function () {
     fs.writeFileSync(path.join(OUT, 'summary.json'), JSON.stringify(summary, null, 2));
     log('SUMMARY', path.join(OUT, 'summary.json'));
 
-    if (relay) relay.close();
+    await relay.close();
     await gw.close();
     app.exit(0);
 }).catch(function (e) {

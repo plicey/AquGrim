@@ -14,8 +14,13 @@
 //   /wrapper.html       -> --wrapper=<file>, served here so page and SWF share one origin
 //   /__status           -> counters + full request log as JSON
 //   /__servers          -> the live server list with sIP/iPort rewritten to --rewrite=<port>
+//   /game/api/data/servers -> same rewrite when --rewrite is set (--steer=0 disables), which
+//                          is what the client's own request for the list receives
 //   /__control?synth=1  -> flip gameversion synthesis at runtime (human-driven runs)
 //   /__reset            -> clear the log
+// Methods: GET/HEAD pass through and POST carries its body -- the account login POSTs
+// credentials to /game/api/login/now, so a GET-only gateway answers 501 and the login
+// screen hangs on "Authenticating Account Info".
 // Upstream 3xx responses are followed here (up to 5 hops) so the client only ever talks to
 // 127.0.0.1. Anything not matched is proxied to game.aq.com verbatim, so a 404 in the log
 // is upstream's answer rather than a gateway gap.
@@ -95,7 +100,8 @@ function createGateway(opts) {
     const selfOrigin = 'http://127.0.0.1:' + port;
     const allowDomain = opts.allowDomain || '*';
     const quiet = !!opts.quiet;
-    const rewrite = opts.rewrite || null;   // {host, port} for /__servers
+    const rewrite = opts.rewrite || null;   // {host, port} for /__servers and --steer
+    const steer = !!opts.steer;             // serve the rewritten list at its real path too
     const logStream = opts.logFile ? fs.createWriteStream(opts.logFile, { flags: 'a' }) : null;
     const entries = [];
     const counters = Object.create(null);
@@ -128,10 +134,18 @@ function createGateway(opts) {
         res.end(body);
     }
 
+    // The WAF in front of game.aq.com answers 403 to bare requests: it wants an Accept
+    // header and a browser-shaped User-Agent, which curl sends by default and Node does not.
+    const BROWSER_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36';
     function fetchUpstream(url, cb) {
         const target = new URL(url);
-        const headers = { host: target.host, 'accept-encoding': 'identity', 'cache-control': 'no-cache' };
-        if (opts.userAgent) headers['user-agent'] = opts.userAgent;
+        const headers = {
+            host: target.host,
+            accept: '*/*',
+            'accept-encoding': 'identity',
+            'cache-control': 'no-cache',
+            'user-agent': opts.userAgent || BROWSER_UA
+        };
         const req = https.request(target, { method: 'GET', headers: headers }, function (r) {
             const chunks = [];
             r.on('data', function (c) { chunks.push(c); });
@@ -177,9 +191,16 @@ function createGateway(opts) {
             path: decodeURIComponent(new URL(startUrl).pathname) + u.search,
             status: null
         };
-        follow(startUrl, 0);
+        // The login flow POSTs credentials to api/login/now, so request bodies have to
+        // reach the upstream. Read the body once and reuse it across redirect hops.
+        const chunks = [];
+        req.on('data', function (c) { chunks.push(c); });
+        req.on('end', function () {
+            entry.bodyBytes = chunks.reduce(function (n, c) { return n + c.length; }, 0);
+            follow(startUrl, 0, Buffer.concat(chunks));
+        });
 
-        function follow(url, depth) {
+        function follow(url, depth, body) {
             const target = new URL(url);
             const headers = {};
             for (const k of Object.keys(req.headers)) {
@@ -190,6 +211,7 @@ function createGateway(opts) {
             headers['accept-encoding'] = 'identity';
             if (opts.userAgent) headers['user-agent'] = opts.userAgent;
 
+            if (body && body.length) headers['content-length'] = body.length;
             const upstream = https.request(target, { method: req.method, headers: headers }, function (upRes) {
                 const status = upRes.statusCode;
                 const loc = upRes.headers.location;
@@ -197,7 +219,7 @@ function createGateway(opts) {
                     upRes.resume();
                     const next = new URL(loc, url).toString();
                     entry.hops = (entry.hops || []).concat([{ status: status, to: next }]);
-                    follow(next, depth + 1);
+                    follow(next, depth + 1, body);
                     return;
                 }
                 entry.status = status;
@@ -241,6 +263,7 @@ function createGateway(opts) {
                 if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'text/plain' });
                 res.end('gateway upstream error: ' + e.message);
             });
+            if (body && body.length) upstream.write(body);
             upstream.end();
         }
     }
@@ -277,15 +300,21 @@ function createGateway(opts) {
             serveRewrittenServers(res);
             return;
         }
+        // The real path the client uses. steering is opt-in because a run that only wants
+        // to prove "the client boots normally from a local origin" must see upstream's list.
+        if (steer && pathname === '/game/api/data/servers') {
+            serveRewrittenServers(res);
+            return;
+        }
         if (opts.wrapper && pathname === '/wrapper.html') {
             sendLocal(res, fs.readFileSync(opts.wrapper), MIME['.html'], { path: pathname });
             return;
         }
-        if (req.method !== 'GET' && req.method !== 'HEAD') {
+        if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'POST') {
             record({ method: req.method, path: pathname + u.search, status: 501, local: true,
-                note: 'gateway only proxies GET' });
+                note: 'gateway proxies GET and POST only' });
             res.writeHead(501, { 'Content-Type': 'text/plain' });
-            res.end('gateway only proxies GET');
+            res.end('gateway proxies GET and POST only');
             return;
         }
         if (controls.paused) {
@@ -330,7 +359,8 @@ if (require.main === module) {
         logFile: args.logFile || null,
         userAgent: args.userAgent || null,
         wrapper: args.wrapper ? path.resolve(args.wrapper) : null,
-        rewrite: args.rewrite ? { host: '127.0.0.1', port: Number(args.rewrite) } : null
+        rewrite: args.rewrite ? { host: '127.0.0.1', port: Number(args.rewrite) } : null,
+        steer: args.rewrite ? args.steer !== '0' : false
     });
     gw.start().then(function (origin) {
         console.log('[gw] listening on ' + origin + (args.synth ? ' (--synth)' : ''));
