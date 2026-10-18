@@ -101,12 +101,23 @@ It sits on the bridge channel #28 landed (`host.bridge.attach()` / `call(name, a
 the generic layer (`getGameObject`, `callGameFunction`, `setGameObject`, ...), so this module is
 where a feature's want ("read the inventory", "equip this item") becomes the game's own call
 name. Which of those names can answer is evidence, not guesswork: the reference calls a *loader*
-it ships, and 100 of its 146 names exist only there - `GetInventoryItems`, `TransferToBank` and
-`UsedBankSlots` among them - while only 33 are in the game itself (`Equip`, `BankSlots`, `Jump`,
-`State`, `Cell`, `Pad`, `Map` and friends). The bridge loads the stock game, so a loader-only
-name is answered `no member ... at world`; this adapter passes that answer through and adds why,
-rather than inventing a result or blocking the call outright - the day the bridge implements that
-surface, these calls start working with no change here.
+it ships, and 100 of its 146 names exist only there. Which of *these* names are in that hundred was
+then checked against the decompressed stock game itself, with a stricter test than the research
+count used: a name counts only when it is an exact ABC string-pool entry **and** a multiname
+references it. By that test the game answers none of `GetInventoryItems`, `TransferToBank`,
+`TransferToInventory`, `UsedBankSlots`, `BankSlots` or `Equip` - `BankSlots` occurs only inside
+longer literals (`txtBankSlots`, `iMaxBankSlots`), and `Equip` is a pool entry with zero
+multiname references. The bridge loads the stock game, so each is answered `no member ... at
+world`; this adapter passes that answer through and adds why, rather than inventing a result or
+blocking the call outright - the day the bridge implements that surface, these calls start working
+with no change here.
+
+The game's own bank machinery is differently named and was verified the same way: `initBank`,
+`bankFromInv`, `bankToInv`, `bankSwapInv`, `addToBank`, `removeFromBank`, `isItemInBank`,
+`getBankItem`, `bankItems`, `bankArr`, `iBankCount`, the `sendBank*Request` senders and
+`world.bank.items` are all in the pool with live references. None of them answers to the
+reference's vocabulary, so reaching them is a design decision for the bridge ticket, not a rename
+this module may make on its own.
 
 **The bridge still owes the loader's surface** before Bank can transfer anything: see the ticket
 #29 section of `docs/FLASH_CHECKLIST.md`.

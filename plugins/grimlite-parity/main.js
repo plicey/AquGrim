@@ -101,7 +101,6 @@ async function activate(host) {
         bridge: host.bridge
     }).register(host);
 
->>>>>>> origin/codex/grimlite-parity
     // The Cosmetics window (#30): a page beside the game that reads the room's players and their
     // wear through the bridge and writes one slot at a time. It holds game-bridge, which the
     // manifest already declares; nothing here needs a new permission.

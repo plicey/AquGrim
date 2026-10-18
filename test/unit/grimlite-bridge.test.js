@@ -167,3 +167,30 @@ test('the adapter exposes only what this plugin\'s features ask for', () => {
     'equipItem', 'readBankSlots', 'readInventory', 'sleep', 'transferToBank'
   ]);
 });
+
+// What the bridge still owes, pinned so the list cannot drift silently: every call name above
+// that lives in the reference's own loader and not in the stock game, verified by exact
+// ABC string-pool membership against the decompressed game SWF (see the ticket #29 section of
+// docs/FLASH_CHECKLIST.md for the check and the result per name).
+test('the loader-only list is exactly the names this module calls', () => {
+  // Verified against the decompressed game SWF: each of these is absent from the stock game's ABC
+  // string pool (or, for Equip, present with zero multiname references, so a literal and not a
+  // member) and present in the reference loader's. Names the reference carries but this module
+  // never calls - GetBankItems, TransferToInventory, BankSwap, IsActionAvailable - are not here,
+  // because the list would then claim more than the code asks for.
+  assert.deepStrictEqual(Object.keys(bridge.LOADER_ONLY).sort(), [
+    'BankSlots', 'Equip', 'GetInventoryItems', 'TransferToBank', 'UsedBankSlots'
+  ]);
+});
+
+test('an equip the game cannot answer is annotated with the loader reason too', async () => {
+  // Equip is the one loader-only name the Sets window calls: the game carries the letters as a
+  // UI label but no member answers to it, so the failure has to explain itself the same way.
+  const channel = fakeChannel({ Equip: JSON.stringify({ error: 'no member Equip at world' }) });
+  const game = bridge.createGameAccess(fakeHost(channel));
+
+  await assert.rejects(function () { return game.equipItem('Sword of Awe'); }, function (error) {
+    return error.message.indexOf('no member Equip at world') === 0 &&
+      error.message.indexOf(bridge.ERRORS.loaderSurface('Equip')) !== -1;
+  });
+});

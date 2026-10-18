@@ -152,13 +152,42 @@ opt-in is on (and the window says so if you press Start without it).
 ## Grimlite Parity — Bank and Sets (ticket #29) — needs the real game and dialogs
 
 **Blocked on the bridge growing the reference loader's call surface.** The bridge (#28, merged)
-loads the *stock* game, and the Bank's calls are among the 100 names the reference reaches
-through the loader it ships rather than through the game: `GetInventoryItems`, `TransferToBank`
-and `UsedBankSlots` are loader-only, while only 33 names are in both
-(`docs/research/grimlite-capabilities.md` section 3). So today a transfer reports
-`no member TransferToBank at world - "TransferToBank" belongs to the reference client's own
-loader...` instead of pretending to have moved something, and the adapter starts working the day
-the bridge implements that surface, with no change to these windows.
+loads the *stock* game, and every call these two windows make is a name only the reference's own
+loader carries. Checked against the decompressed game SWF `/var/tmp/aq-origin/game.swf` (and the
+reference loader `Loader/grimoire.swf` to confirm each name is really its own), by exact ABC
+string-pool membership plus at least one multiname reference - a pool entry nothing references is
+a literal, not a callable member:
+
+| Call this feature makes | What the window uses it for | In the stock game | In the reference loader |
+|---|---|---|---|
+| `GetInventoryItems` | the list Bank and Sets both work from | no | yes |
+| `BankSlots` | the total half of Bank All's free-space gate | no (only inside `txtBankSlots`, `iMaxBankSlots` literals) | yes |
+| `UsedBankSlots` | the used half of that gate | no | yes |
+| `TransferToBank` | every transfer both Bank buttons make | no | yes |
+| `Equip` | one equip per item of a set | no (a pool entry, but zero multiname references) | yes |
+
+The reference carries more loader-only names than these - `GetBankItems` (read the bank),
+`TransferToInventory` (withdraw), `BankSwap`, `GetBankItemByName`, `GetBankItemByName2`,
+`ShowBank`, `GetBank`, `LoadBankItems`, `IsActionAvailable` (the equip lock),
+`InventorySlots` and `UsedInventorySlots` - but none of them is reachable from BankForm.cs or
+Set.cs, so a surface built for these two windows does not need them. BankForm.cs makes exactly five
+calls: `Player.Inventory.Items` twice, `Player.Bank.TransferToBank` on each match, and
+`Player.Bank.AvailableSlots` (`BankSlots` minus `UsedBankSlots`) once per non-AC item. Set.cs and
+CmdEquipSet.cs add only `Player.Inventory.Items` and `Player.Equip`.
+
+So today a transfer reports `no member TransferToBank at world - "TransferToBank" belongs to the
+reference client's own loader...` instead of pretending to have moved something, and the adapter
+starts working the day the bridge implements that surface, with no change to these windows.
+
+**What the game does carry, for whoever implements that surface.** The stock game's own bank
+machinery is differently named and real: `initBank`, `bankFromInv`, `bankToInv`,
+`bankSwapInv`, `addToBank`, `removeFromBank`, `isItemInBank`, `isItemInInventory`,
+`getBankItem`, `bankItems`, `bankArr`, `iBankCount`, `sendBankFromInvRequest`,
+`sendBankToInvRequest`, `sendBankSwapInvRequest`, `toggleBank`, `bankHasRequested` and the
+`world.bank.items` path - all verified in the pool with live references. The bank's *capacity*
+is a UI-slot literal (`iMaxBankSlots`) and a server-driven count (`iBankCount`), not a call, so
+the free-space gate "Bank All" needs has no direct equivalent and is the part that stays unverified
+until the surface exists.
 
 The window shells, the list model, the persistence and the set file format are covered by
 `npm test`; these boxes are the live half.

@@ -10,11 +10,20 @@
 //
 // Which names can answer is evidence, not guesswork. The reference calls a loader it ships
 // (`Loader/grimoire.swf`), and 100 of the 146 names it uses exist only in that loader, not in the
-// game: GetInventoryItems, TransferToBank, TransferToInventory, UsedBankSlots, IsActionAvailable
-// and ~95 more are loader-only, while only 33 names are in both - among them Equip, Jump,
-// BankSlots, State, Cell, Pad and Map (docs/research/grimlite-capabilities.md section 3). The
-// bridge loads the *stock* game, so a loader-only name is one the game answers `no member ... at
-// world` to until the bridge grows that surface itself.
+// game (docs/research/grimlite-capabilities.md section 3). The bridge loads the *stock* game, so a
+// loader-only name is one the game answers `no member ... at world` to until the bridge grows that
+// surface itself.
+//
+// Which of this module's names are loader-only was then checked against the decompressed game SWF
+// rather than taken from that count, and the check is stricter than a substring search: a name is
+// callable only when it is an exact ABC string-pool entry *and* some multiname references it (a
+// pool entry nothing references is a literal - a label, an id, a path - not a member anyone can
+// call). By that test the game has none of GetInventoryItems, TransferToBank, TransferToInventory,
+// UsedBankSlots, BankSlots or Equip: BankSlots appears only inside longer literals like
+// `txtBankSlots` and `iMaxBankSlots`, and Equip is a pool entry with zero multiname references.
+// The game's own bank machinery is differently named and reachable only as paths and packets
+// (bankFromInv / bankToInv / sendBankFromInvRequest and world.bank.items), which is a design for
+// the bridge ticket rather than something to guess at here.
 //
 // So every call goes through and reports what actually happened; nothing here invents a result,
 // and a name the game cannot answer is annotated with what that means rather than left as a bare
@@ -25,7 +34,16 @@ const UNCHANNELLED = 'this app has no game bridge channel';
 
 // The reference loader's own call names this module uses. Kept as data so the failure a user
 // sees can explain itself, and so the list of what the bridge still owes is in one place.
+//
+// Only the names this module actually calls: a name nothing here calls would make the list claim
+// more than the code does. The reference's own bank surface carries more loader-only names than
+// these - GetBankItems, TransferToInventory, BankSwap, GetBankItemByName, IsActionAvailable and
+// InventorySlots among them - but its BankForm reaches none of them: it reads only the inventory
+// and gates Bank All on AvailableSlots (= BankSlots - UsedBankSlots). Those names belong to the
+// follow-up bridge ticket, and the ticket #29 section of docs/FLASH_CHECKLIST.md lists them for it.
 const LOADER_ONLY = {
+    BankSlots: true,
+    Equip: true,
     GetInventoryItems: true,
     TransferToBank: true,
     UsedBankSlots: true
