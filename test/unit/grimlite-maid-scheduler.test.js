@@ -76,7 +76,7 @@ async function settledTicks(fake, count) {
   return answer;
 }
 
-test('every loader helper the maid uses is one the surface names, and the ones it cannot drive are declared', () => {
+test('every loader helper the maid uses is one the surface names and implements', () => {
   // The table is asserted against the surface ticket #48 built, the way bot/session.js does, so a
   // name that is only spelled here cannot pass as one that works.
   const surface = createLoaderSurface(function () { return Promise.resolve(null); }, function () {});
@@ -85,15 +85,15 @@ test('every loader helper the maid uses is one the surface names, and the ones i
   const unimplemented = Object.keys(maidModel.HELPERS).filter(function (name) {
     return implemented.indexOf(name) === -1;
   });
-  // The three names the surface carries and cannot drive: #38 owns combat, and each of the
-  // reference's own bodies needs a live ActionScript object that cannot cross the bridge as JSON.
-  // They are declared rather than hidden, the maid still calls them, and the refusal is reported -
-  // never a cast that did not happen. Sorted, because the order is the surface's, not this test's.
-  assert.deepStrictEqual(unimplemented.sort(), ['AttackMonster', 'AttackMonsterByMonMapId', 'UseSkill']);
+  // Ticket #49 made the last three answer: the attack and the cast hand the game a live object, and
+  // the bridge movie resolves that object in its own ApplicationDomain rather than over the wire.
+  // So the maid's whole helper list is live, and the declared-and-blocked table is now empty.
+  assert.deepStrictEqual(unimplemented, [], 'every helper the maid calls must be implemented');
   ['AttackMonster', 'AttackMonsterByMonMapId', 'UseSkill'].forEach(function (name) {
     assert.ok(named.indexOf(name) !== -1, name + ' is a name the reference registers');
-    assert.ok(/#38/.test(maidModel.BLOCKED[name]), name + ' must name its owning ticket');
   });
+  assert.deepStrictEqual(Object.keys(maidModel.BLOCKED), [],
+    'nothing the maid calls is blocked any more');
 });
 
 test('the maid follows its target with the reference\'s own goto frame', async () => {
@@ -464,10 +464,11 @@ test('the two keys toggle the two states, whichever way the window or the key as
     require('path').join(__dirname, '../../plugins/grimlite-parity/features/maid/maid.html'), 'utf8')));
 });
 
-test('a refused skill is reported with the surface\'s own words, never as a cast that happened', async () => {
+test('a skill the game could not answer is reported, never counted as a cast that happened', async () => {
   const game = fakeGame(standing({ HasTarget: true }));
-  // Only the game's own names answer here; UseSkill does not, which is today's state of the
-  // surface (#38 owns combat).
+  // This stand-in answers only the names it was given, so UseSkill is refused by it. The point is
+  // unchanged whatever the reason: the maid reports the failure into its note and its state rather
+  // than returning a cast. (UseSkill itself is implemented - ticket #49.)
   const fake = fakeMaid(game, { config: config.stateFrom({ RelogDelay: 0, SkillDelay: 0 }) });
   fake.maid.setTarget('master');
   fake.maid.setEnabled(true);

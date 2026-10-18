@@ -266,14 +266,17 @@ connection, and that is reported rather than queued. The subscription is taken t
 requires one to be: nothing at activation, and released again when neither the window is open nor
 the Maid is running.
 
-### What is still waiting for the bridge
+### The calls that hand the game a live object
 
-`UseSkill` is the one loader name the Maid uses that the surface carries and cannot drive yet: the
-reference's own body checks readiness, walks the avatar and calls `world.testAction` on a live
-action object, which cannot cross the bridge as JSON. That is ticket #38's half. The Maid calls the
-name anyway, reports the surface's own refusal with the reason and the owning ticket, and lists it
-in the state the window shows - it never reports a cast that did not happen. `AttackMonster` and
-`AttackMonsterByMonMapId` are implemented (`world.setTarget`), which is why the attack half runs.
+`AttackMonster`, `AttackMonsterByMonMapId`, `UseSkill`, `ForceUseSkill`, `CancelTargetSelf`
+and `SetTargetPvP` each end in a game function typed on a live AS3 object - an `Avatar` for
+`world.setTarget`, an action object for `world.testAction`. Such an object cannot cross
+`ExternalInterface`, and that is where the boundary is: the game is loaded into the bridge movie's
+own `ApplicationDomain`, so the movie resolves the object itself and hands it to the game
+in-domain (ticket #49). The Maid, the bot engine and the surface all ask for these by the
+reference's own name and pass the primitive - the name, the MonMapID, the skill index - with no
+change to any of them.
+
 Boss behaviour and the auto-zone handlers are ticket #44's and are deliberately absent here.
 
 

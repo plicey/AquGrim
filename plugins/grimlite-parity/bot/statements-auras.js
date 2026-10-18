@@ -258,9 +258,9 @@ const handlers = {
     CmdSpecialAnims: async function (ctx, command) {
         // Two modes. With no skill index it is a plain conditional: skip while the last animation
         // message has not appeared, consume the message on a match. With one it casts that skill
-        // through Player.ForceUseSkill and never skips - and that call is ticket #38's (combat) in
-        // loader-surface.js, so the cast is reported by name rather than faked, the way CmdStop
-        // reports the options this loop does not apply.
+        // through Player.ForceUseSkill and never skips. That call used to be refused by the loader
+        // surface (its argument is a live action object); ticket #49 made it answer, so this casts
+        // for real rather than reporting a cast it could not make.
         const raw = ctx.resolve(command.Value1);
         const terms = String(raw === undefined || raw === null ? '' : raw).toLowerCase()
             .split(',')
@@ -279,8 +279,26 @@ const handlers = {
         if (skill.length) {
             if (!matched) return undefined;
             await read(ctx, 'Special Anims', 'consumeAnimation', []);
-            return 'CmdSpecialAnims would cast skill ' + skill + ' here; that is ' +
-                'Player.ForceUseSkill, which ticket #38 (combat) owns, so nothing was cast';
+            // The reference's own body: wait the cooldown out in bounded steps (three tries, each
+            // never longer than a second), force the cast, then re-read the readiness - a skill
+            // still ready after the cast did not fire, and is forced exactly once more.
+            let attempts = 3;
+            while (attempts-- > 0) {
+                const ready = await read(ctx, 'Special Anims', 'skillAvailable', [skill]);
+                if (!ready.ok) return 'CmdSpecialAnims could not tell whether skill ' + skill +
+                    ' is ready: ' + ready.why;
+                if (Number(ready.value) <= 0) break;
+                await ctx.sleep(Math.min(Number(ready.value), 1000));
+            }
+            const cast = await read(ctx, 'Special Anims', 'forceUseSkill', [skill]);
+            if (!cast.ok) return 'CmdSpecialAnims could not cast skill ' + skill + ': ' + cast.why;
+            await ctx.sleep(150);
+            const after = await read(ctx, 'Special Anims', 'skillAvailable', [skill]);
+            if (after.ok && Number(after.value) <= 0) {
+                const retry = await read(ctx, 'Special Anims', 'forceUseSkill', [skill]);
+                if (!retry.ok) return 'CmdSpecialAnims could not cast skill ' + skill + ': ' + retry.why;
+            }
+            return undefined;
         }
         if (!matched) {
             ctx.skipNext();

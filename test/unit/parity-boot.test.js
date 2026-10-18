@@ -140,6 +140,47 @@ test('the bridge is asked for no compiled-in game file, so a game update needs n
   });
 });
 
+test('the bridge movie performs the six live-object calls in its own domain', function () {
+  // Ticket #49. Each of these hands the game a live AS3 object, which cannot cross
+  // ExternalInterface - so the movie has to resolve it and make the call itself, in the domain the
+  // game's classes were loaded into. The source is checked here, and the built asset below is
+  // checked for the same names, so neither half can land without the other.
+  const source = fs.readFileSync(path.join(PARITY, 'bridge/AquaBridge.as'), 'utf8');
+
+  ['AttackMonster', 'AttackMonsterByMonMapId', 'UseSkill', 'ForceUseSkill', 'CancelTargetSelf',
+    'SetTargetPvP'].forEach(function (name) {
+    assert.ok(source.indexOf("addCallback('" + name + "'") !== -1,
+      'the bridge must register the callback ' + name);
+  });
+
+  // The object plumbing is the movie's own: it resolves through the game's accessors and calls the
+  // game's own sinks, which is what makes the object the game's rather than a copy.
+  assert.ok(/getMonstersByCell/.test(source),
+    'the monster is resolved through the game own accessor, not by walking members by hand');
+  assert.ok(/\.setTarget\(/.test(source) && /\.approachTarget\(\)/.test(source),
+    'setTarget then approachTarget are the two calls the loader makes, in that order');
+  // The order is the loader's own (Player.as 242): target first, then walk to it. Reversed, the
+  // avatar walks toward whatever was targeted before.
+  const body = source.slice(source.indexOf('aqAttackMonster('), source.indexOf('aqAttackMonsterByMonMapId('));
+  assert.ok(body.indexOf('.setTarget(') !== -1 && body.indexOf('.approachTarget()') !== -1 &&
+    body.indexOf('.setTarget(') < body.indexOf('.approachTarget()'),
+    'AttackMonster must set the target before it approaches');
+  assert.ok(/\.testAction\(/.test(source) && /actions\.active\[/.test(source),
+    'the skill is the live entry of world.actions.active, handed to world.testAction');
+
+  // The caroling early return (World.as 8374) and the bUntargetSelf preference (8381) live inside
+  // world.setTarget, not in the loader - so calling setTarget is what reproduces them, and writing
+  // the target member directly is what would lose them.
+  assert.ok(/addCallback\('AttackMonster', aqAttackMonster\)/.test(source),
+    'the attack goes through a named callback, which is where the plumbing lives');
+
+  // The loader's own guards, which only exist on the game's side of this call: setTarget's
+  // caroling-map early return and the user's bUntargetSelf preference are World.as 8374 and 8381,
+  // reached by calling setTarget rather than by assigning myAvatar.target directly.
+  assert.ok(!/myAvatar\.target\s*=\s*monster/.test(source),
+    'the target is set through world.setTarget, which is where the game keeps its own guards');
+});
+
 test('the built bridge asset carries the call surface the manifest declares', function () {
   const asset = path.join(PARITY, 'assets/aqua-bridge.swf');
   assert.ok(fs.existsSync(asset), 'the bridge SWF must ship with the plugin');

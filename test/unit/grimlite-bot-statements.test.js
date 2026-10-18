@@ -614,10 +614,11 @@ test('name equals compares the character name the loader holds, ignoring case', 
 });
 
 test('the monster statements ask the reference own names and report what the surface says', async () => {
-  // IsMonsterAvailable, GetMonsterHealth and GetVisibleMonstersInCell are all composed from live
-  // monster objects, which is ticket #38's. The statement asks for them anyway, so the day #38
-  // lands it works with no change here - and until then the refusal is the reason it reports.
-  function refuses() { return new Error('not implemented: the reference scans live monsters; ticket #38 owns combat'); }
+  // IsMonsterAvailable, GetMonsterHealth and GetVisibleMonstersInCell answer live state (ticket
+  // #38 made the reads work and #49 the calls that act on them). This half is what a statement
+  // does when the read fails for any reason - the game is not loaded, the cell cannot be read -
+  // so the refusal here is the stand-in's, and the assertion is that it is reported, not swallowed.
+  function refuses() { return new Error('the game did not answer this read'); }
   const cases = [
     ['CmdMonsterInRoom', 'Darkon', null],
     ['CmdMonsterNotInRoom', 'Darkon', null],
@@ -635,8 +636,8 @@ test('the monster statements ask the reference own names and report what the sur
     assert.strictEqual(made.index(), 2, entry[0] + ' cannot be told, so it skips the command under it');
     assert.ok(logs(made, /cannot be evaluated/, entry[0]), entry[0] + ': ' + made.records.join('|'));
     assert.ok(made.records.some(function (line) {
-      return line.indexOf(entry[0]) !== -1 && /#38/.test(line);
-    }), entry[0] + ' must name the ticket that owns the gap: ' + made.records.join('|'));
+      return line.indexOf(entry[0]) !== -1 && /did not answer/.test(line);
+    }), entry[0] + ' must carry the reason it could not decide: ' + made.records.join('|'));
   }
 
   // And the comparisons themselves, once there are answers.

@@ -95,6 +95,12 @@ package {
             addCallback('isNull', aqIsNull);
             addCallback('sendClientPacket', aqSendClientPacket);
             addCallback('pollEvents', aqPollEvents);
+            addCallback('AttackMonster', aqAttackMonster);
+            addCallback('AttackMonsterByMonMapId', aqAttackMonsterByMonMapId);
+            addCallback('UseSkill', aqUseSkill);
+            addCallback('ForceUseSkill', aqForceUseSkill);
+            addCallback('CancelTargetSelf', aqCancelTargetSelf);
+            addCallback('SetTargetPvP', aqSetTargetPvP);
         }
 
         private function addCallback(name:String, fn:Function):void {
@@ -208,6 +214,266 @@ package {
             var drained:Array = events;
             events = [];
             return toJson(drained);
+        }
+
+        // ------------------------------------------------------- the live-object calls (#49)
+
+        // Six of the reference loader's helpers hand the game a live ActionScript object - an
+        // Avatar to world.setTarget, an action object to world.testAction. Those objects cannot
+        // cross ExternalInterface, and they do not have to: the JSON boundary is the page <-> this
+        // movie hop, while the game's classes live in THIS movie's own ApplicationDomain (see
+        // loadGame), so an object resolved here IS the game's object and can be passed to a game
+        // method in-domain, exactly as the reference's own loader does it. Each callback below is
+        // therefore the reference's body with the primitive the caller can carry as its argument.
+        //
+        // The monsters and skills are resolved by calling the game's OWN accessors rather than by
+        // walking its members by hand, and the target is set by calling world.setTarget rather
+        // than by assigning myAvatar.target: setTarget is where the game keeps its own guards -
+        // the caroling-map early return for a non-player target (World.as 8374) and the user's
+        // bUntargetSelf preference (8381) - so calling it is what reproduces them.
+
+        /** The live world object. Resolved through the same dot-path reader the callbacks use. */
+        private function world():Object {
+            var w:Object = resolve('world');
+            if (w == null) throw new Error('the game has no world yet');
+            return w;
+        }
+
+        /**
+         * World.as GetMonsterByName: the first living monster in the player's own cell whose name
+         * plate contains the want (or the want is "*"), walked in the game's own order.
+         */
+        private function monsterByName(name:String):Object {
+            var want:String = String(name).toLowerCase();
+            var w:Object = world();
+            var list:Object = w.getMonstersByCell(w.strFrame);
+            for each (var monster:Object in list) {
+                var clip:Object = monster.pMC;
+                if (clip != null) {
+                    var plate:Object = clip.pname;
+                    var named:String = String(plate.ti.text).toLowerCase();
+                    if ((named.indexOf(want) > -1 || name == '*') &&
+                        Number(monster.dataLeaf.intState) > 0) {
+                        return monster;
+                    }
+                }
+            }
+            return null;
+        }
+
+        /**
+         * World.as GetMonsterByMonMapId: the same walk, matched on dataLeaf.MonMapID. The loader
+         * does not lower-case this one, because the id is compared as written.
+         */
+        private function monsterByMonMapId(id:String):Object {
+            var want:String = String(id);
+            var w:Object = world();
+            var list:Object = w.getMonstersByCell(w.strFrame);
+            for each (var monster:Object in list) {
+                var clip:Object = monster.pMC;
+                if (clip != null) {
+                    var monMapId:String = String(monster.dataLeaf.MonMapID);
+                    if ((monMapId.indexOf(want) > -1 || id == '*') &&
+                        Number(monster.dataLeaf.intState) > 0) {
+                        return monster;
+                    }
+                }
+            }
+            return null;
+        }
+
+        /** world.actions.active[parseInt(index)], the live action object the loader works on. */
+        private function actionAt(index:String):Object {
+            var parsed:Number = parseInt(String(index));
+            var actions:Object = world().actions;
+            // The loader reads the member without a guard and faults on a missing index. An
+            // unparsable index is refused here rather than coerced: int(NaN) is 0, and casting
+            // whatever happens to sit in slot 0 is a worse answer than saying the index is wrong.
+            var action:Object = isNaN(parsed) ? null : actions.active[int(parsed)];
+            if (action == null) throw new Error('the game has no skill at index ' + index);
+            return action;
+        }
+
+        /**
+         * The loader's own IsSkillReady (Player.as 106), private to its Player class so there is
+         * no game member to call: the greater of the global cooldown left and this skill's own,
+         * both scaled by the avatar's haste. It also consumes the action's OldCD, which is what
+         * the game sets when a packet resets a cooldown (Game.as 4310) - dropping that would make
+         * this disagree with the reference on the frame after a reset.
+         */
+        private function skillReady(action:Object):int {
+            var w:Object = world();
+            var now:Number = new Date().getTime();
+            var haste:Number = 1 - Math.min(Math.max(Number(w.myAvatar.dataLeaf.sta.$tha), -1), 0.5);
+            var cd:Number;
+            if (action.OldCD != null) {
+                cd = Math.round(Number(action.OldCD) * haste);
+                delete action.OldCD;
+            } else {
+                cd = Math.round(Number(action.cd) * haste);
+            }
+            var global:Number = Number(w.GCD) - (now - Number(w.GCDTS));
+            if (global < 0) global = 0;
+            var own:Number = cd - (now - Number(action.ts));
+            if (own < 0) own = 0;
+            return Math.max(global, own);
+        }
+
+        /**
+         * Player.ForceUseSkill: cast this skill only when it is ready, unlocked and known. The
+         * readiness half is the loader's own; the locked half is the game's own action flags.
+         */
+        private function forceUseSkillAt(index:String):void {
+            var action:Object = actionAt(index);
+            if (skillReady(action) == 0) {
+                if (Boolean(action.isOK) && !action.skillLock) {
+                    world().testAction(action);
+                }
+            }
+        }
+
+        /**
+         * Player.AttackMonster: setTarget then approachTarget, both and in that order, as the
+         * loader writes them. A name no monster answers to is a no-op there and is a no-op here.
+         */
+        private function aqAttackMonster(name:String):String {
+            var out:String;
+            try {
+                var monster:Object = monsterByName(String(name));
+                if (monster != null) {
+                    var w:Object = world();
+                    w.setTarget(monster);
+                    w.approachTarget();
+                }
+                out = 'ok';
+            } catch (e:Error) {
+                out = jsonError(e);
+            }
+            return out;
+        }
+
+        /** Player.AttackMonsterByMonMapId: the same two calls, resolved by MonMapID instead. */
+        private function aqAttackMonsterByMonMapId(id:String):String {
+            var out:String;
+            try {
+                var monster:Object = monsterByMonMapId(String(id));
+                if (monster != null) {
+                    var w:Object = world();
+                    w.setTarget(monster);
+                    w.approachTarget();
+                }
+                out = 'ok';
+            } catch (e:Error) {
+                out = jsonError(e);
+            }
+            return out;
+        }
+
+        /**
+         * Player.ForceUseSkill, the callback half. A cast the loader decides not to make - a
+         * skill on cooldown, locked, or one the game has not unlocked - answers ok, because
+         * refusing to act is what that body does.
+         */
+        private function aqForceUseSkill(index:String):String {
+            var out:String;
+            try {
+                forceUseSkillAt(String(index));
+                out = 'ok';
+            } catch (e:Error) {
+                out = jsonError(e);
+            }
+            return out;
+        }
+
+        /**
+         * Player.UseSkill, branch for branch in the loader's own order: a self-targeted or
+         * friendly skill is cast outright; a self target is dropped by assigning null (which is
+         * what the loader does here, not cancelTarget); otherwise the avatar walks into range and
+         * the cast is forced.
+         */
+        private function aqUseSkill(index:String):String {
+            var out:String;
+            try {
+                var w:Object = world();
+                var action:Object = actionAt(String(index));
+                if (action.tgt == 's' || action.tgt == 'f') {
+                    forceUseSkillAt(String(index));
+                } else if (w.myAvatar.target == w.myAvatar) {
+                    w.myAvatar.target = null;
+                } else if (w.myAvatar.target != null && Number(w.myAvatar.target.dataLeaf.intHP) > 0) {
+                    w.approachTarget();
+                    forceUseSkillAt(String(index));
+                }
+                out = 'ok';
+            } catch (e:Error) {
+                out = jsonError(e);
+            }
+            return out;
+        }
+
+        /**
+         * Player.CancelTargetSelf: cancel only when the avatar is targeting itself. The compare is
+         * between the live objects, which is the whole reason this cannot be a page-side test.
+         */
+        private function aqCancelTargetSelf():String {
+            var out:String;
+            try {
+                var w:Object = world();
+                if (w.myAvatar.target == w.myAvatar) w.cancelTarget();
+                out = 'ok';
+            } catch (e:Error) {
+                out = jsonError(e);
+            }
+            return out;
+        }
+
+        /**
+         * Player.SetTargetPvP: take a same-cell, living avatar on another PvP team as the target
+         * when nothing is targeted, and the named one when the name is given. The loader's own
+         * two conditions are kept as written, including the second one's read of the *current*
+         * target - which is how it avoids re-targeting the player it already holds.
+         */
+        private function aqSetTargetPvP(username:String):String {
+            var out:String;
+            try {
+                var w:Object = world();
+                var want:String = username == null ? null : String(username);
+                var avatars:Object = w.avatars;
+                var myLeaf:Object = w.myAvatar.dataLeaf;
+                for (var uid:* in avatars) {
+                    var avatar:Object = avatars[uid];
+                    var leaf:Object = avatar.dataLeaf;
+                    if (leaf != null && leaf.strFrame == w.strFrame &&
+                        leaf.pvpTeam != myLeaf.pvpTeam &&
+                        !avatar.isMyAvatar &&
+                        Number(leaf.intState) > 0) {
+                        if (w.myAvatar.target == null) w.setTarget(avatar);
+                        if (want != null) {
+                            var held:Object = w.myAvatar.target;
+                            // The loader dereferences the target here with no guard, which faults
+                            // whenever nothing is targeted (its first branch declined - caroling,
+                            // or the user's own bUntargetSelf) or the target is a monster, whose
+                            // dataLeaf carries strMonName and no strUsername. Both mean "this
+                            // avatar is not the one being held", so they are read that way instead
+                            // of faulting: the scan exists to pick a PvP target, and refusing to
+                            // do it because the player happened to hold a monster is not the aim.
+                            var heldName:String = '';
+                            if (held != null && held.dataLeaf != null &&
+                                held.dataLeaf.strUsername != null) {
+                                heldName = String(held.dataLeaf.strUsername).toLowerCase();
+                            }
+                            if (String(leaf.strUsername).toLowerCase() == want.toLowerCase() &&
+                                heldName != want.toLowerCase()) {
+                                w.setTarget(avatar);
+                            }
+                        }
+                    }
+                }
+                out = 'ok';
+            } catch (e:Error) {
+                out = jsonError(e);
+            }
+            return out;
         }
 
         // ---------------------------------------------------------------- reading and writing

@@ -500,8 +500,9 @@ function createEngine(deps) {
 
     /**
      * Player.AttackMonster: an "id..." name is a MonMapID, anything else is the monster's name.
-     * The call is the one thing this build cannot make (its argument is a live Avatar), so the
-     * refusal is returned as a reason for the caller to log - never swallowed, never faked.
+     * The name is all the movie needs: it resolves the live Avatar itself and hands it to
+     * world.setTarget (ticket #49). What comes back is reported as a reason for the caller to log
+     * - never swallowed, never faked.
      */
     function attackMonster(name) {
         const text = String(name === undefined || name === null ? '' : name);
