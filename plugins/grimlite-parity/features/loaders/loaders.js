@@ -9,6 +9,9 @@
 
 const grabbers = require('./grabbers.js');
 const xml = require('./xml.js');
+// The Bot Manager's own document mechanics (#36): the four lists a grabber's actions write into
+// already exist, and adding to them is the same Contains-guarded append the reference does.
+const editorModel = require('../../bot/editor.js');
 
 const ERRORS = {
     noRows: 'Nothing has been grabbed yet, so there is nothing to save.',
@@ -22,22 +25,69 @@ const SAVE_TITLE = 'Save grabber data';
 const FILTER = { name: 'XML files', extensions: ['xml'] };
 
 /**
- * The bot lists, as the grabber's own actions use them. The reference writes into the Bot
- * Manager's four list boxes (BotManager.AddDrop / AddItem / AddQuest / AddCommand). No window in
- * this build is holding a bot document yet, so the default reports that in words rather than
- * claiming to have added a row nobody kept. When the Bot Manager's lists are reachable, an
- * object of this shape is what gets injected here.
+ * The bot lists, as the grabber's own actions use them: the Bot Manager's Drops, Items, Quests
+ * and Commands lists (BotManager.AddDrop / AddItem / AddQuest / AddCommand, BotManager.cs
+ * 2112-2140). \`deps.bot\` is the document the Bot Manager is editing; a list a document does not
+ * hold yet is created empty, exactly as the reference's own listboxes start.
+ *
+ * Without a document there is nothing to add a row to, so each action reports that in words
+ * rather than claiming to have added a row nobody kept.
  */
-function createBotLists() {
-    function unwired() {
-        return { added: 0, wired: false, reason: ERRORS.noLists };
+function createBotLists(deps) {
+    const document = deps && deps.bot && typeof deps.bot === 'object' ? deps.bot : null;
+    if (!document) {
+        function unwired() {
+            return { added: 0, wired: false, reason: ERRORS.noLists };
+        }
+        return {
+            addDrops: unwired,
+            addItems: unwired,
+            addQuests: unwired,
+            addCommands: unwired
+        };
     }
+    const editor = editorModel.create(document);
+
+    /** The list itself, whether the document wraps it or holds it bare. */
+    function listOf(key) {
+        const value = document[key];
+        if (Array.isArray(value)) return value;
+        if (value && Array.isArray(value.$values)) return value.$values;
+        document[key] = [];
+        return document[key];
+    }
+
+    /** AddDrop / AddItem / AddQuest all guard with Contains; AddCommand does not. */
+    function add(key, values, unique) {
+        const list = listOf(key);
+        let added = 0;
+        values.forEach(function (value) {
+            const text = key === 'Quests' || typeof value !== 'string' ? String(value.Id) : value;
+            if (unique && list.some(function (held) {
+                return String(held.Id === undefined ? held : held.Id) === text;
+            })) return;
+            list.push(value);
+            added++;
+        });
+        return { added: added, wired: true, key: key, list: list };
+    }
+
     return {
-        addDrops: unwired,
-        addItems: unwired,
-        addQuests: unwired,
-        addCommands: unwired
+        addDrops: function (names) { return add('Drops', list(names), true); },
+        addItems: function (names) { return add('Items', list(names), true); },
+        addQuests: function (rows) { return add('Quests', list(rows), true); },
+        // AddCommand appends whatever it is given, inserted at the selection like the reference's
+        // own AddCommand(cmd, true) does not - the grabber's Add buy command passes no list
+        // position, so it goes on the end.
+        addCommands: function (commands) { return add('Commands', list(commands), false); },
+        document: function () { return document; },
+        editor: function () { return editor; }
     };
+}
+
+/** A value as a list, so one name and one command read the same way as many. */
+function list(value) {
+    return Array.isArray(value) ? value : [value];
 }
 
 /** MenuItems' "Copy all" and MenuQuest's "Copy all Reqs" from the row contexts they carry. */
@@ -140,19 +190,23 @@ function createLoadersFeature(host, deps) {
             return { ok: true, via: loaded.via };
         }
 
-        const id = Number(box);
-        if (!box || !isFinite(id)) {
+        if (!/^[0-9]+$/.test(box)) {
             return { ok: false, error: 'That is not a ' + target + ' id.' };
         }
+        const id = parseInt(box, 10);
         if (target === 'shop') return game.loadShop(id);
         if (target === 'hairShop') return game.loadHairShop(id);
         return { ok: false, error: 'unknown loader target "' + target + '"' };
     }
 
-    /** btnLoad's own expansion of one id through the count control. */
+    /**
+     * btnLoad's own expansion of one id through the count control. numTQuests is a
+     * DarkNumericUpDown: a whole number, 1 at the bottom (the reference reads it as an int and
+     * only expands while it is above zero).
+     */
     function expand(id, count) {
-        if (!isFinite(id) || id <= 0) return null;
-        const times = Number(count);
+        if (!isFinite(id) || id <= 0 || Math.floor(id) !== id) return null;
+        const times = Math.floor(Number(count));
         if (!isFinite(times) || times < 1) return null;
         return grabbers.questList(id, times).split(',').map(function (part) {
             return parseInt(part, 10);

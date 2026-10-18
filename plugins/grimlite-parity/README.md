@@ -128,3 +128,30 @@ this module may make on its own.
 - **Bank** (Alt+Shift+K) — transfer by category and AC-ness, plus Bank All (#29).
 - **Sets** — save, list, load, clear and equip `.gset` sets (#29).
 - **Parity placeholder** (Alt+Shift+G).
+
+## Loaders and grabbers (#31)
+
+`features/loaders/` is the reference's Tools -> Loaders/grabbers window: four loaders (hair shop,
+shop, quest, armour customizer) with its quest-count control, its `F Accept` batch and its ghost
+variant, and eight grabbers (shop items, quest ids, quest items with drop rates, inventory, temp
+inventory, bank, monsters, all monsters) with search, name/id ordering, the reference's XML export
+and its per-row and aggregate right-click menus.
+
+It extends the game access above rather than adding a second adapter: `features/loaders/game.js`
+exports `createGameAccess(bridge, log)` with the same attach-once and report-what-happened rules,
+plus the reads and the loaders this window needs. Wiki links go through `host.windows.openUrl`,
+so they open in the app's own browser window rather than the system browser the reference uses.
+
+What each loader can reach, and what it is still waiting for, is tabulated in the ticket #31
+section of `docs/FLASH_CHECKLIST.md`. The short version: all four loaders work by falling back to
+the game's own request, every grabber reads a game object, and `Complete`, `SetEquip`,
+`BuyItemQtyById` and the loader-only read names report themselves by name until the bridge grows
+the reference loader's surface.
+
+## Windows
+
+ - **Bot file** (Alt+Shift+B) — open, edit and save a `.gbot` (#24).
+ - **Bank** (Alt+Shift+K) — transfer by category and AC-ness, plus Bank All (#29).
+ - **Sets** — save, list, load, clear and equip `.gset` sets (#29).
+- **Loaders/grabbers** (Alt+Shift+L) — the four loaders, the eight grabbers and their menus (#31).
+ - **Parity placeholder** (Alt+Shift+G).

@@ -732,6 +732,55 @@ test('a row\'s Equip SWF is acted on, and Buy This Item names what it is waiting
   assert.ok(/BuyItemQtyById/.test(buy.error), buy.error);
 });
 
+// The bot lists live in the Bot Manager's document (#36, merged). The seam takes the document
+// the window is editing and adds the same rows BotManager.AddDrop/AddItem/AddQuest/AddCommand add,
+// with the reference's own Contains guards.
+test('the bot lists add to the Bot Manager\'s document, unique and in its own shape', () => {
+
+  // The document starts with a wrapped Drops list (what a .gbot file holds) and no Items key at
+  // all, which is what a list the reference's own listbox has never held looks like.
+  const document = { Drops: { $values: ['Rock'] }, Items: [] };
+  const lists = loaders.createBotLists({ bot: document });
+  const held = function (key) {
+    return document[key].$values || document[key];
+  };
+
+  assert.strictEqual(lists.addDrops(['Rock', 'Dew']).added, 1);
+  assert.strictEqual(lists.addItems(['Rock']).added, 1);
+  assert.strictEqual(lists.addQuests([{ Id: 10, Text: '10' }]).added, 1);
+  assert.strictEqual(lists.addCommands([{ $type: 'CmdBuy' }]).added, 1);
+  assert.deepStrictEqual(held('Drops'), ['Rock', 'Dew']);
+  assert.deepStrictEqual(held('Items'), ['Rock']);
+  assert.deepStrictEqual(held('Quests'), [{ Id: 10, Text: '10' }]);
+  assert.deepStrictEqual(held('Commands'), [{ $type: 'CmdBuy' }]);
+
+  // AddDrop and AddItem guard with Contains (BotManager.cs:2134/2229), and AddQuest's guard is
+  // the same one on the Quest object, whose ToString is its id.
+  assert.strictEqual(lists.addDrops(['Rock']).added, 0);
+  assert.strictEqual(lists.addQuests([{ Id: 10, Text: '10' }]).added, 0);
+  // AddCommand has no guard at all: the reference appends whatever it is given.
+  assert.strictEqual(lists.addCommands([{ $type: 'CmdBuy' }]).added, 1);
+  // A list the document never held is created empty rather than refused.
+  assert.strictEqual(lists.addItems(['Dew']).added, 1);
+  assert.deepStrictEqual(held('Items'), ['Rock', 'Dew']);
+});
+
+// The window's own wiring: the lists a grabber writes into are the Bot Manager's document, so a
+// grabbed item reaches a saved .gbot rather than a copy nobody sees.
+test('the loaders feature writes its list actions into the bot document it is given', async () => {
+  const bot = { Drops: [] };
+  const instance = feature({ botLists: loaders.createBotLists({ bot: bot }) });
+
+  const result = await instance.act('addToBoth', { names: ['Rock'] });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.added, 1);
+  assert.deepStrictEqual(bot.Drops, ['Rock']);
+
+  // And a bot with no document behind it still says so rather than failing silently.
+  const orphan = feature();
+  assert.strictEqual((await orphan.act('addToBoth', { names: ['Rock'] })).ok, false);
+});
+
 // ---------------------------------------------------------------- the window's channels
 
 test('the parity plugin registers the loaders window in the app\'s window conventions', async () => {
