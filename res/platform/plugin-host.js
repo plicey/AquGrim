@@ -200,6 +200,15 @@ function createPluginHost(options) {
         pluginDataDirectory: options.pluginDataDirectory ||
             path.join(options.appDataDirectory || '', 'plugins', pluginId),
 
+        /**
+         * Gate a Host method on a manifest permission, naming the missing one. Every
+         * guarded Host method goes through this, so a plugin without the permission gets
+         * the same message wherever it calls from.
+         */
+        requirePermission: function (method, permission) {
+            requirePermission(method, permission);
+        },
+
         getStore: function (ns) {
             requirePermission('getStore', 'persistent-store');
             if (typeof ns !== 'string' || !ns) {

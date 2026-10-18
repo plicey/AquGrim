@@ -1,0 +1,22 @@
+{
+  "id": "grimlite-parity",
+  "name": "Grimlite Parity",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "main": "main.js",
+  "description": "Grimlite-Li parity for Adventure Quest Worlds: client-side tools, packet tools and the bot engine.",
+  "author": "AquaStar",
+  "minAppVersion": "2.0.0",
+  "capabilities": [
+    "game-launch",
+    "feature-windows",
+    "menus",
+    "keybinds",
+    "locales"
+  ],
+  "permissions": [
+    "game-bridge",
+    "packet-tap",
+    "packet-send"
+  ]
+}

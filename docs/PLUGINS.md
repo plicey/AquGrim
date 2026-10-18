@@ -390,7 +390,7 @@ See `plugins/adventure-quest-worlds/web/contribute.js` for the full contribution
 | `id` | yes | kebab-case id |
 | `name` | yes | Shown in Settings |
 | `version` | yes | Your plugin version |
-| `apiVersion` | yes | Must be `1` |
+| `apiVersion` | yes | `1` or `2` (see below). Any other value → **load failure** |
 | `main` | yes | Relative path to CJS entry, no `..` |
 | `minAppVersion` | yes | AquaStar semver floor (e.g. `1.12.2`) |
 | `permissions` | no | Unknown entries → **load failure** |
@@ -415,8 +415,38 @@ See `plugins/adventure-quest-worlds/web/contribute.js` for the full contribution
 | `spawn-helper-process` | `windows.spawnHelperProcess` |
 | `unsafe-renderer` | Feature windows with Flash plugins / `webSecurity: false` |
 | `game-origin` | `host.declareGameOrigin` |
+| `game-bridge` | Reserved: the SWF bridge channel (`bridge.attach()` / `bridge.call()`) *(apiVersion 2)* |
+| `packet-tap` | Reserved: reading relayed game frames *(apiVersion 2)* |
+| `packet-send` | Reserved: writing a frame back through the relay *(apiVersion 2)* |
 
 Missing permission → throw during `activate` → activation fails.
+
+The three **reserved** permissions are the names the game access API will use. The methods they
+gate arrive with the parity work; the names and the refusal do not change. Until they do,
+`host.requirePermission(method, permission)` is the single gate every guarded method goes
+through, and it reports a missing one as
+`Plugin "<id>" called <method> without permission "<permission>"`. It is platform wiring, not a
+plugin API: a plugin never calls it.
+
+### apiVersion
+
+`apiVersion` is the platform contract your plugin was written against, not your plugin's own
+version. `1` is the original contract; `2` adds the game access permissions above (bridge, packet
+tap, packet send) and nothing else. The list of versions this app can run lives in
+`res/platform/manifest-schema.js` (`SUPPORTED_API_VERSIONS`).
+
+- A `1` plugin keeps loading, with the same permissions, meanings and messages it had before,
+  and sees nothing new.
+- A `2` plugin may declare the game access permissions. A `2` plugin does **not** inherit
+  `unprefixedIpc` (that back-compat affordance is version 1's alone).
+- A plugin declaring a version this app does not support is refused at discovery with
+  `apiVersion N is not supported (this app supports 1 and 2)`, so it never activates and fails
+  later at its first guarded call. `minAppVersion` is the second half of the gate: set it to the
+  app release that first shipped the capabilities you use, and the same older app refuses your
+  plugin with `minAppVersion X requires a newer AquaStar (have Y)`.
+
+Both refusals are logged as `Discovery: Invalid manifest in <dir>: …` and the rest of the plugins
+still load.
 
 ---
 
@@ -530,7 +560,7 @@ Ship it: commit under `plugins/`, bump AquaStar if needed, tag a release. Portab
 
 Checklist:
 
-- [ ] Valid `plugin.json` (`apiVersion: 1`, permissions match Host calls)
+- [ ] Valid `plugin.json` (`apiVersion` supported by the app, permissions match Host calls)
 - [ ] `setPrimaryGame` + `isGameUrl` + `trustFlashUrls`
 - [ ] At least one way to open a new game window (keybind and/or menu)
 - [ ] No use of platform-reserved keybind ids
