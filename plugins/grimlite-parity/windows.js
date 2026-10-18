@@ -17,6 +17,8 @@ const DEVTEST_WINDOW_ID = 'grimlite-parity-devtest';
 const COSMETICS_WINDOW_ID = 'grimlite-parity-cosmetics';
 const LOGGER_WINDOW_ID = 'grimlite-parity-packet-logger';
 const BOT_MANAGER_WINDOW_ID = 'grimlite-parity-bot-manager';
+const OPTIONS_WINDOW_ID = 'grimlite-parity-options';
+const HOTKEYS_WINDOW_ID = 'grimlite-parity-hotkeys';
 
 // Every one of these is a page inside this plugin: no Flash, no Node in the page, and IPC
 // through its own sandbox-safe preload (docs/PLUGINS.md §4.7/§4.8).
@@ -150,12 +152,48 @@ function register(host, windowTitle) {
             },
             url: pageUrl('bot-manager', 'bot-manager.html'),
             config: windowConfig(host, 'bot-manager', 'preload_bot_manager.js', { width: 1004, height: 640 })
+        },
+        {
+            // The reference has no Options form - its seven toggles are a menu (Root.cs:983-996) -
+            // so this is the window the port puts them in, in the menu's own order.
+            id: OPTIONS_WINDOW_ID,
+            title: function () {
+                return windowTitle('options', 'Options');
+            },
+            url: pageUrl('options', 'options.html'),
+            config: windowConfig(host, 'options', 'preload_options.js', { width: 380, height: 380 })
+        },
+        {
+            // Hotkeys.cs's own client area is 303x306 and its form is FixedSingle.
+            id: HOTKEYS_WINDOW_ID,
+            title: function () {
+                return windowTitle('hotkeys', 'Hotkeys');
+            },
+            url: pageUrl('hotkeys', 'hotkeys.html'),
+            config: windowConfig(host, 'hotkeys', 'preload_hotkeys.js', { width: 320, height: 330 })
         }
     ]);
 }
 
 module.exports = {
     register: register,
+    // Every id this file registers, so a caller that has to look one up (the Hotkeys window's
+    // action targets) reads the same list the registration uses instead of a second copy.
+    WINDOW_IDS: [
+        PLACEHOLDER_WINDOW_ID,
+        BOT_FILE_WINDOW_ID,
+        BANK_WINDOW_ID,
+        SETS_WINDOW_ID,
+        DEVTEST_WINDOW_ID,
+        COSMETICS_WINDOW_ID,
+        NOTEPAD_WINDOW_ID,
+        EYEDROPPER_WINDOW_ID,
+        ABOUT_WINDOW_ID,
+        LOGGER_WINDOW_ID,
+        BOT_MANAGER_WINDOW_ID,
+        OPTIONS_WINDOW_ID,
+        HOTKEYS_WINDOW_ID
+    ],
     PLACEHOLDER_PAGE: PLACEHOLDER_PAGE,
     PLACEHOLDER_WINDOW_ID: PLACEHOLDER_WINDOW_ID,
     BOT_FILE_PAGE: BOT_FILE_PAGE,
@@ -170,5 +208,7 @@ module.exports = {
     EYEDROPPER_WINDOW_ID: EYEDROPPER_WINDOW_ID,
     ABOUT_WINDOW_ID: ABOUT_WINDOW_ID,
     LOGGER_WINDOW_ID: LOGGER_WINDOW_ID,
-    BOT_MANAGER_WINDOW_ID: BOT_MANAGER_WINDOW_ID
+    BOT_MANAGER_WINDOW_ID: BOT_MANAGER_WINDOW_ID,
+    OPTIONS_WINDOW_ID: OPTIONS_WINDOW_ID,
+    HOTKEYS_WINDOW_ID: HOTKEYS_WINDOW_ID
 };

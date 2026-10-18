@@ -18,7 +18,9 @@ exports.dialogMessages = {
             expand(k.grimliteAbout) + '' +
             '' +
             expand(k.grimliteParityPlaceholder) + '' +
-            expand(k.grimliteParityDevTest) + '';
+            expand(k.grimliteParityDevTest) + '' +
+            expand(k.grimliteOptions) + '' +
+            expand(k.grimliteHotkeys) + '';
     }
 };
 
@@ -32,6 +34,8 @@ exports.menuMessages = {
     grimliteBank: "",
     grimliteSets: "",
     grimliteCosmetics: "",
+    grimliteOptions: "",
+    grimliteHotkeys: "",
     grimlitePlaceholder: "",
     grimliteDevTest: "",
     packetsMenu: "",
@@ -63,6 +67,8 @@ exports.windowTitles = {
     notepad: "",
     about: "",
     cosmetics: "",
+    options: "",
+    hotkeys: "",
     devtest: "",
     packetLogger: ""
 };
@@ -178,4 +184,22 @@ exports.cosmeticsMessages = {
         cape: "",
         misc: ""
     }
+};
+
+exports.optionsMessages = {
+    title: "",
+    walkSpeed: "",
+    start: "",
+    stop: "",
+    stopped: ""
+};
+
+exports.hotkeysMessages = {
+    title: "",
+    add: "",
+    remove: "",
+    save: "",
+    saved: "",
+    empty: "",
+    selectFirst: ""
 };

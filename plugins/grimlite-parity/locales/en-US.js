@@ -13,7 +13,9 @@ exports.dialogMessages = {
             expand(k.grimliteAbout) + ' - About this port and the reference it follows\n' +
             'Packets -> Sniffer - Packet logger (client and server traffic)\n' +
             expand(k.grimliteParityPlaceholder) + ' - Parity placeholder window\n' +
-            expand(k.grimliteParityDevTest) + ' - Dev Test (call a game function)';
+            expand(k.grimliteParityDevTest) + ' - Dev Test (call a game function)\n' +
+            expand(k.grimliteOptions) + ' - Options: the reference\'s own option toggles\n' +
+            expand(k.grimliteHotkeys) + ' - Hotkeys: bind one key to one action';
     }
 };
 
@@ -27,6 +29,8 @@ exports.menuMessages = {
     grimliteBank: 'Bank',
     grimliteSets: 'Sets',
     grimliteCosmetics: 'Cosmetics',
+    grimliteOptions: 'Options',
+    grimliteHotkeys: 'Hotkeys',
     grimlitePlaceholder: 'Parity placeholder window',
     grimliteDevTest: 'Dev Test',
     packetsMenu: 'Packets',
@@ -60,6 +64,8 @@ exports.windowTitles = {
     notepad: 'Grimlite Parity - Notepad',
     about: 'Grimlite Parity - About',
     cosmetics: 'Grimlite Parity - SWF Cosmetics',
+    options: 'Options',
+    hotkeys: 'Hotkeys',
     devtest: 'Dev Test',
     packetLogger: 'Packet logger'
 };
@@ -188,4 +194,26 @@ exports.cosmeticsMessages = {
         cape: 'Grab Cape',
         misc: 'Grab Ground'
     }
+};
+
+// The Options window (ticket #34). The seven toggle labels and "Walkspeed" are the reference's
+// own (Root.cs:1007-1104); the rest is what a page needs to explain itself.
+exports.optionsMessages = {
+    title: 'Options',
+    walkSpeed: 'Walkspeed',
+    start: 'Start applying',
+    stop: 'Stop applying',
+    stopped: 'The option loop is stopped. Ticks are remembered and sent again when it starts.'
+};
+
+// The Hotkeys window (ticket #34). Hotkeys.cs's own words are Save / Add / Remove and the
+// window title "Hotkeys"; its two combos carry the vocabulary in actions.js.
+exports.hotkeysMessages = {
+    title: 'Hotkeys',
+    add: 'Add',
+    remove: 'Remove',
+    save: 'Save',
+    saved: 'Saved $1 binding(s).',
+    empty: 'Nothing is bound yet.',
+    selectFirst: 'Select a binding first.'
 };

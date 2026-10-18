@@ -105,6 +105,25 @@ function register(host, windowTitle) {
                     click: function () {
                         host.windows.openFeatureWindow(windows.COSMETICS_WINDOW_ID);
                     }
+                },
+                // The reference puts its toggles under an Options menu (Root.cs:983-996) and its
+                // binding list under Tools -> Hotkeys (Root.cs:786-794). This port has one Grimlite
+                // menu, so both live here, under the reference's own words.
+                {
+                    label: labels.grimliteOptions || 'Options',
+                    accelerator: keybinds.grimliteOptions,
+                    registerAccelerator: false,
+                    click: function () {
+                        host.windows.openFeatureWindow(windows.OPTIONS_WINDOW_ID);
+                    }
+                },
+                {
+                    label: labels.grimliteHotkeys || 'Hotkeys',
+                    accelerator: keybinds.grimliteHotkeys,
+                    registerAccelerator: false,
+                    click: function () {
+                        host.windows.openFeatureWindow(windows.HOTKEYS_WINDOW_ID);
+                    }
                 }
             ]
         }];
