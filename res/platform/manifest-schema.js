@@ -8,6 +8,7 @@ const KNOWN_PERMISSIONS = {
     'inject-scripts': true,
     'persistent-store': true,
     'spawn-helper-process': true,
+    'game-origin': true,
     'unsafe-renderer': true
 };
 

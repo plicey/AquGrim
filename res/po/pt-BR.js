@@ -88,6 +88,7 @@ exports.settingsMessages = {
     optionLabels: {
         appLanguage: "Idioma",
         customUrl: "URL customizada do jogo",
+        localOrigin: "Origem local do jogo",
         recordingFormat: "Formato de Gravação",
         renderMode: "Renderizador de Flash",
         ruffleUpdateChannel: "Canal de Atualização do Ruffle",
@@ -98,6 +99,7 @@ exports.settingsMessages = {
     optionHints: {
         appLanguage: "Idioma da interface do AquaStar e do plugin ativo. É preciso reiniciar depois de mudar.",
         customUrl: "Carrega uma URL de SWF diferente do jogo primário do plugin ativo. Deixe vazio para o padrão do plugin. Ignorada se um arquivo SWF local (abaixo) estiver ativo.",
+        localOrigin: "Serve os arquivos do jogo do plugin ativo a partir de um endereço local (127.0.0.1) em vez dos servidores ao vivo. Desative para carregar das URLs ao vivo. É preciso reiniciar depois de mudar.",
         recordingFormat: "Formato do arquivo ao gravar a tela do jogo (Ctrl+J). MP4 não está disponível nesta versão do Electron.",
         renderMode: "Qual runtime Flash carrega as janelas de jogo do plugin ativo. Ao trocar para Ruffle, reinicie para aplicar.",
         ruffleUpdateChannel: "Latest usa a versão estável mais recente do Ruffle. Nightly inclui mudanças experimentais mais novas. Para aplicar uma troca de canal, feche o AquaStar completamente e abra-o novamente; não use somente o botão Reiniciar.",

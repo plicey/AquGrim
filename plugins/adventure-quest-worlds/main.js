@@ -65,13 +65,32 @@ async function activate(host) {
     const session = require('./session.js');
     const windowTitle = require('./window-title.js');
     const ruffle = require('./ruffle.js');
+    const gameOrigin = require('./game-origin.js');
 
     await followLauncherLoader(host, urls);
+
+    // The game's own paths are served from loopback so the page that embeds the game and the
+    // game SWF share one origin - what makes a same-origin bridge legal later. The platform
+    // knows no game: it is told these routes and asks this plugin how a URL maps onto them.
+    // Opt-in ("localOrigin": true): the live URLs stay the default path, and any failure
+    // falls back to them rather than to nothing.
+    const settings = (typeof host.getPlatformSettings === 'function' && host.getPlatformSettings()) || {};
+    if (settings.localOrigin === true) {
+        try {
+            const baseUrl = await host.declareGameOrigin({ routes: gameOrigin.routes() });
+            host.log('game origin: ' + baseUrl);
+        } catch (err) {
+            host.log('game origin unavailable (' + (err && err.message ? err.message : err) +
+                ') - using live URLs');
+        }
+    }
 
     host.setPrimaryGame({
         id: 'aqw-main',
         // Platform overrides (customUrl / local SWF) are applied by the runtime on top of this.
         getUrl: function () { return urls.loaderUrl(); },
+        // How this game's URL maps onto the loopback origin is this plugin's business.
+        toServeFromOrigin: gameOrigin.toServeFromOrigin,
         title: function (ctx) {
             return windowTitle.primaryTitle(ctx);
         },

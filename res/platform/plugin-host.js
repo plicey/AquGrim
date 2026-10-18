@@ -40,6 +40,7 @@ function createPluginHost(options) {
 
     const state = {
         primaryGame: null,
+        gameOrigin: null,
         launches: [],
         sessionRules: [],
         navigationHooks: null,
@@ -376,6 +377,41 @@ function createPluginHost(options) {
                 throw new Error('[AquaStar:plugins] setPrimaryGame requires isGameUrl()');
             }
             state.primaryGame = cfg;
+        },
+
+        /**
+         * Serve this plugin's game paths from a loopback origin and answer with its base URL.
+         * routes: [{ prefix, origin }] - longest matching prefix wins, path preserved.
+         */
+        declareGameOrigin: function (declaration) {
+            requirePermission('declareGameOrigin', 'game-origin');
+            const routes = declaration && declaration.routes;
+            if (!Array.isArray(routes) || !routes.length || !routes.every(function (route) {
+                if (!route || typeof route.prefix !== 'string' || !route.prefix) return false;
+                if (typeof route.origin !== 'string') return false;
+                try {
+                    const protocol = new URL(route.origin).protocol;
+                    return protocol === 'http:' || protocol === 'https:';
+                } catch (e) { return false; }
+            })) {
+                throw new Error(
+                    '[AquaStar:plugins] declareGameOrigin expects routes: [{ prefix, origin }]'
+                );
+            }
+            if (state.gameOrigin) {
+                throw new Error(
+                    '[AquaStar:plugins] game origin already declared by plugin "' + pluginId + '"'
+                );
+            }
+            if (typeof deps.startGameOrigin !== 'function') {
+                throw new Error('[AquaStar:plugins] game origin not wired');
+            }
+            state.gameOrigin = { routes: routes };
+            return Promise.resolve(deps.startGameOrigin({ routes: routes, pluginId: pluginId }))
+                .then(function (baseUrl) {
+                    state.gameOrigin.baseUrl = baseUrl;
+                    return baseUrl;
+                });
         },
 
         trustFlashUrls: function (urls) {

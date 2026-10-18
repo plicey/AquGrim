@@ -179,3 +179,30 @@ test('an upstream outage surfaces instead of hanging, and a redirect loop never 
     await upstream.close();
   }
 });
+test('the page that embeds the game is served from the origin, not proxied upstream', async function () {
+  const os = require('os');
+  const fs = require('fs');
+  const path = require('path');
+  const page = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aquastar-origin-')), 'wrapper.html');
+  fs.writeFileSync(page, '<object data="game.swf"></object>');
+
+  const upstream = await startUpstream(plain('upstream:'));
+  const proxy = createOriginProxy({
+    routes: [{ prefix: '/', origin: upstream.origin }],
+    files: { '/wrapper.html': page }
+  });
+  const origin = await proxy.listen(0);
+  try {
+    const served = await request(origin + '/wrapper.html?swf=%2Fgame%2Fx.swf');
+    assert.strictEqual(served.status, 200);
+    assert.strictEqual(served.body, '<object data="game.swf"></object>');
+    assert.strictEqual(upstream.seen.length, 0, 'a local page is served here, never fetched upstream');
+
+    // Everything else is still mirrored.
+    const mirrored = await request(origin + '/game/gamefiles/Loader4.swf');
+    assert.strictEqual(mirrored.body, 'upstream:/game/gamefiles/Loader4.swf');
+  } finally {
+    await proxy.close();
+    await upstream.close();
+  }
+});

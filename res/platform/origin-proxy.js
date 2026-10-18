@@ -7,6 +7,8 @@
 // page and SWF from one loopback origin is what makes a same-origin bridge legal.
 
 const http = require('http');
+const https = require('https');
+const fs = require('fs');
 
 const MAX_REDIRECTS = 5;
 
@@ -26,6 +28,9 @@ function upstreamFor(routes, pathname) {
 function createOriginProxy(opts) {
     opts = opts || {};
     const routes = opts.routes || [];
+    // Local files the origin answers itself (the page that embeds the game): served from the
+    // game's own origin so page and SWF are same-origin, which a file:// page is not.
+    const files = opts.files || {};
     const log = opts.log || function () {};
     let publishedPort = null;
 
@@ -37,7 +42,8 @@ function createOriginProxy(opts) {
         delete headers['transfer-encoding'];
         headers.host = target.host;   // upstreams answer by Host, not by the loopback address
         if (body && body.length) headers['content-length'] = String(body.length);
-        const upstream = http.request(target, { method: req.method, headers: headers }, function (upRes) {
+        const transport = target.protocol === 'https:' ? https : http;
+        const upstream = transport.request(target, { method: req.method, headers: headers }, function (upRes) {
             const chunks = [];
             upRes.on('data', function (c) {
                 chunks.push(c);
@@ -82,6 +88,23 @@ function createOriginProxy(opts) {
     }
 
     const server = http.createServer(function (req, res) {
+        const requested = new URL(req.url, 'http://127.0.0.1');
+        const filePath = files[decodeURIComponent(requested.pathname)];
+        if (filePath && (req.method === 'GET' || req.method === 'HEAD')) {
+            try {
+                const body = fs.readFileSync(filePath);
+                res.writeHead(200, {
+                    'Content-Type': 'text/html; charset=utf-8',
+                    'Content-Length': body.length,
+                    'Cache-Control': 'no-store'
+                });
+                res.end(req.method === 'HEAD' ? undefined : body);
+            } catch (error) {
+                res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+                res.end('local origin cannot read ' + filePath + ': ' + error.message);
+            }
+            return;
+        }
         const chunks = [];
         req.on('data', function (c) {
             chunks.push(c);

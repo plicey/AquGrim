@@ -24,6 +24,7 @@
     "inject-scripts",
     "persistent-store",
     "spawn-helper-process",
+    "game-origin",
     "unsafe-renderer"
   ],
   "fetchAllowlist": [
