@@ -681,16 +681,29 @@ test('Special Anims holds on any of its comma-separated terms, and consumes the 
   assert.strictEqual(blank.index(), 2, 'with no term to look for it never holds');
 });
 
-test('Special Anims with a skill index never skips and reports the cast it cannot make', async () => {
-  // The reference's skill branch calls Player.ForceUseSkill, which the loader surface refuses
-  // (ticket #38 owns combat). It must not pretend to have cast anything.
-  const made = engineWith(auraAnswers({ lastAnimationMessage: 'resist' }));
+test('Special Anims with a skill index casts through ForceUseSkill and never skips', async () => {
+  // CmdSpecialAnims.cs: the skill branch is a bounded cooldown wait, a ForceUseSkill, a 150ms
+  // delay, then one more force when the skill still reads as ready - and it never skips the
+  // command under it. Ticket #49 is what makes the cast itself possible: the surface used to
+  // refuse Player.ForceUseSkill because its argument is a live action object.
+  // A skill that is on cooldown when the statement looks, and goes on cooldown for real once
+  // forced - which is what tells the reference's own retry apart from its success path.
+  let ready = 500;
+  let casts = 0;
+  const made = engineWith(auraAnswers({
+    lastAnimationMessage: 'resist',
+    skillAvailable: function () { return ready; },
+    forceUseSkill: function () { casts++; ready = 4000; return true; }
+  }));
   await made.start(botOf([statement('CmdSpecialAnims', 'resist', '3'), { $type: 'x' }]));
   await made.tick();
   assert.strictEqual(made.index(), 1, 'skill mode never skips');
-  assert.ok(made.records.some(function (line) {
-    return /CmdSpecialAnims/.test(line) && /ForceUseSkill|#38/.test(line);
-  }), 'the reason names the call it cannot make: ' + made.records.join(' | '));
+  assert.deepStrictEqual(made.asked.filter(function (one) { return one.name === 'forceUseSkill'; })
+    .map(function (one) { return one.args; }), [['3']],
+    'a cast that lands leaves the skill cooling down, which is what stops the retry');
+  assert.strictEqual(casts, 1, 'so it is forced exactly once');
+  assert.ok(made.asked.some(function (one) { return one.name === 'skillAvailable'; }),
+    'and its readiness is what gates the cast');
 });
 
 test('a read that cannot be established is reported, and never answers for the game', async () => {

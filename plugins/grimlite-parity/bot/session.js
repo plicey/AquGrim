@@ -30,14 +30,13 @@
 //   monsterAvailable(m) / monsterHealth(m)     the live monster reads (ticket #38)
 //   monstersInCell(cell)                  the loader's own eight-field projection
 
-// Four of the reference's combat names cannot be answered, and each for the same measured
-// reason rather than for want of a ticket: `AttackMonster`, `AttackMonsterByMonMapId`, `UseSkill`,
-// `ForceUseSkill` and `CancelTargetSelf` all end in `world.setTarget(liveAvatar)` or
-// `world.testAction(liveAction)`. Both take a live AS3 object; the game's own accessors
-// (`getMonster(id)`, `getActionByRef(ref)`, `getAutoAttack()`) return those same live objects; and
-// the bridge carries JSON, which a display object cannot be. So those five refusals are reported
-// by name - see `attackMonster` and `useSkill` below - and the reads they would have been built on
-// all answer. Nothing here invents a target.
+// The five combat names that hand the game a live object - `AttackMonster`,
+// `AttackMonsterByMonMapId`, `UseSkill`, `ForceUseSkill` and `CancelTargetSelf` - used to be
+// refused here, on the finding that `world.setTarget(liveAvatar)` and `world.testAction(liveAction)`
+// take an object the bridge cannot carry. Ticket #49 measured where that boundary actually is:
+// `ExternalInterface`, not the game. The game's classes live in the bridge movie's own
+// `ApplicationDomain`, so the movie resolves the object on its side and hands it to the game
+// in-domain, and these calls are made like any other (see `attackMonster` and `useSkill` below).
 //
 // Ticket #41 widened it with the reads its statements need, each one a loader helper by its own
 // name, so a statement never spells a path out:
@@ -199,8 +198,10 @@ const LOADER_BODIES = {
         body: 'GetMonsterByMonMapId(id) != null, the same walk matched on dataLeaf.MonMapID'
     },
     GetMonsterHealth: { helper: 'GetMonsterHealth', body: 'GetMonsterByName(name).dataLeaf.intHP' },
-    // The five the surface refuses, recorded so the module states them rather than implying them.
-    GetVisibleMonstersInCell: { helper: 'GetVisibleMonstersInCell', body: 'a reshape of live monster objects (refused: #38)' },
+    GetVisibleMonstersInCell: {
+        helper: 'GetVisibleMonstersInCell',
+        body: 'a reshape of live monster objects, done leaf by leaf on this side (#38)'
+    },
     State: { helper: 'State', body: 'world.myAvatar.dataLeaf.intState' },
     Pad: { helper: 'Pad', body: 'world.strPad' },
     Position: { helper: 'Position', body: 'JSON of [myAvatar.pMC.x, myAvatar.pMC.y]' },
@@ -238,28 +239,23 @@ const LOADER_BODIES = {
     },
     AttackMonster: {
         helper: 'AttackMonster',
-        body: 'world.setTarget(GetMonsterByName(name)) + world.approachTarget()',
-        why: 'the argument world.setTarget takes is a live Avatar, which cannot cross the bridge'
+        body: 'world.setTarget(GetMonsterByName(name)) + world.approachTarget()'
     },
     AttackMonsterByMonMapId: {
         helper: 'AttackMonsterByMonMapId',
-        body: 'world.setTarget(GetMonsterByMonMapId(id)) + world.approachTarget()',
-        why: 'the argument world.setTarget takes is a live Avatar, which cannot cross the bridge'
+        body: 'world.setTarget(GetMonsterByMonMapId(id)) + world.approachTarget()'
     },
     UseSkill: {
         helper: 'UseSkill',
-        body: 'world.approachTarget() then ForceUseSkill(index)',
-        why: 'the argument world.testAction takes is the live action object, which cannot cross'
+        body: 'world.approachTarget() then ForceUseSkill(index)'
     },
     ForceUseSkill: {
         helper: 'ForceUseSkill',
-        body: 'IsSkillReady(action) == 0 && action.isOK && !action.skillLock -> world.testAction(action)',
-        why: 'the argument world.testAction takes is the live action object, which cannot cross'
+        body: 'IsSkillReady(action) == 0 && action.isOK && !action.skillLock -> world.testAction(action)'
     },
     CancelTargetSelf: {
         helper: 'CancelTargetSelf',
-        body: 'if(myAvatar.target == myAvatar) world.cancelTarget()',
-        why: 'the comparison is between two live avatar objects, which cannot cross the bridge'
+        body: 'if(myAvatar.target == myAvatar) world.cancelTarget()'
     },
     // #42's own two: the id an aura frame's `p:` prefix is compared with, and the aura state
     // itself, which is not a loader call at all - the reference's cache is filled by its packet
@@ -643,10 +639,10 @@ function createSession(deps) {
 
         /**
          * CmdCancelTarget's own three calls, in its own order: CancelTarget (which the loader's
-         * body runs twice), then CancelTargetSelf, then CancelAutoAttack. CancelTargetSelf is one
-         * of the five names that cannot cross the bridge, and the reference's own body makes it a
-         * no-op unless the avatar is targeting itself - so it is reported and the two that matter
-         * still run, rather than the command failing whole over a self-target check.
+         * body runs twice), then CancelTargetSelf, then CancelAutoAttack. The middle one is made by
+         * the movie (ticket #49), which compares the two live avatar objects there; the reference's
+         * own body makes it a no-op unless the avatar is targeting itself, so a failure still only
+         * costs the self-target check and the two that matter run.
          */
         cancelTargets: async function () {
             await loaderCall('CancelTarget');
@@ -690,8 +686,8 @@ function createSession(deps) {
         },
 
         /**
-         * Point the avatar at a monster - the one thing this build cannot do, and it says so
-         * rather than sending a string where the game wants a live Avatar.
+         * Point the avatar at a monster. The name is what the loader's own signature takes; the
+         * movie resolves the live Avatar it names and hands it to world.setTarget (ticket #49).
          */
         attackMonster: function (name) { return loaderCall('AttackMonster', [String(name)]); },
         attackMonsterByMonMapId: function (id) { return loaderCall('AttackMonsterByMonMapId', [String(id)]); },
@@ -711,8 +707,9 @@ function createSession(deps) {
         },
         /**
          * Player.WalkToPoint. The loader's body drives the avatar's own MovieClip before it asks
-         * the world to move, and a live clip cannot cross the bridge, so this is a call that may
-         * well be refused - the caller reports what it did rather than assuming it moved.
+         * the world to move. Unlike the six combat names (ticket #49), the movie registers no
+         * callback for this one, so it is refused by the surface - the caller reports what it did
+         * rather than assuming it moved.
          */
         walkToPoint: function (x, y) { return loaderCall('WalkToPoint', [String(x), String(y)]); },
         join: function (map, cell, pad) {

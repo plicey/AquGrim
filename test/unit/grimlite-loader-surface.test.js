@@ -470,3 +470,72 @@ test('BuyItem resolves the row by name and sends the single buy request', () => 
     assert.ok(error.message.indexOf('iron sword') !== -1, 'the refusal names the item');
   });
 });
+// ------------------------------------------------- the six live-object calls (ticket #49)
+
+// These six used to refuse: each hands a live ActionScript object to the game, and this surface
+// carries JSON. The measured answer is that the object never has to cross - the page<->movie
+// boundary is ExternalInterface and the game's classes live in the bridge movie's own
+// ApplicationDomain, so the bridge resolves the object on its own side and passes it in-domain.
+// The rows therefore send the primitives and let the bridge do the plumbing, under the
+// reference's own names, so a feature still asks for `AttackMonster` and nothing changes there.
+const LIVE_OBJECT_CALLS = ['AttackMonster', 'AttackMonsterByMonMapId', 'UseSkill', 'ForceUseSkill',
+    'CancelTargetSelf', 'SetTargetPvP'];
+
+test('the six live-object calls are implemented rather than refused', () => {
+    const done = surface.implemented();
+    LIVE_OBJECT_CALLS.forEach((name) => {
+        assert.ok(surface.names().indexOf(name) !== -1, name + ' is a name the reference registers');
+        assert.ok(done.indexOf(name) !== -1, name + ' must be implemented, not refused');
+        assert.ok(!surface.SURFACE[name].why, name + ' must not carry a refusal reason any more');
+    });
+});
+
+test('each live-object call asks the bridge callback of the reference own name', () => {
+    // The bridge registers one callback per name, and does the object resolution in AS3 - so the
+    // row is the name itself and the argument is the primitive, never a path.
+    // The stand-in here records the callback name directly rather than modelling a game path:
+    // these rows are not paths, which is the whole point of them.
+    const made = [];
+    const bridge = {
+        call: function (callback, args) {
+            made.push({ callback: callback, args: args });
+            return Promise.resolve('ok');
+        }
+    };
+    const game = access(bridge);
+    return Promise.all([
+        game.call('AttackMonster', ['Gravelyn']),
+        game.call('AttackMonsterByMonMapId', ['17']),
+        game.call('UseSkill', ['2']),
+        game.call('ForceUseSkill', ['2']),
+        game.call('CancelTargetSelf', []),
+        game.call('SetTargetPvP', ['someone'])
+    ]).then(() => {
+        assert.deepStrictEqual(made.map((one) => one.callback), LIVE_OBJECT_CALLS,
+            'each row must reach the bridge under its own reference name');
+        assert.deepStrictEqual(made.map((one) => one.args), [
+            ['Gravelyn'], ['17'], ['2'], ['2'], [], ['someone']
+        ], 'the primitive the loader takes must arrive unchanged, and nothing else');
+    });
+});
+
+test('the PvP row sends the null the reference passes when its box is cleared', () => {
+    // PvP.cs: `Player.SetTargetPvP(chkEnableAutoTarget.Checked ? dropPlayers.SelectedItem.ToString()
+    // : null)`. A missing argument has to reach the movie as null, because that is the branch that
+    // scans for anyone instead of for the named player.
+    const made = [];
+    const game = surface.createLoaderSurface(function (callback, args) {
+        made.push({ callback: callback, args: args });
+        return Promise.resolve('ok');
+    });
+    return game.call('SetTargetPvP', []).then(() => {
+        assert.deepStrictEqual(made[0].args, [null], 'an absent name is sent as null');
+    });
+});
+
+test('the refusals that remain are not the six', () => {
+    // A name still refused has to say why in the reference's own terms; the six now answer.
+    const refused = surface.names().filter((name) => surface.implemented().indexOf(name) === -1);
+    assert.deepStrictEqual(LIVE_OBJECT_CALLS.filter((name) => refused.indexOf(name) !== -1), [],
+        'these used to refuse and must not any more');
+});
