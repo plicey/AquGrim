@@ -56,8 +56,14 @@ function runtimeWith(game) {
   const records = [];
   return runtimeModel.createRuntimeManager({
     createSession: function () {
-      // The session a window gets takes its bridge from the manager, the way main.js's does.
-      return sessionModel.createSession({ bridge: game.bridge, log: function () {} });
+      // The session a window gets takes its bridge and its packet tap from the manager, the way
+      // main.js's does. The tap is what the aura statements read (#42); this fake hands over a
+      // subscription that records nothing, which is all a bot with no aura statement needs.
+      return sessionModel.createSession({
+        bridge: game.bridge,
+        packets: tap,
+        log: function () {}
+      });
     },
     sleep: function () { return Promise.resolve(); },
     log: function (line) { records.push(line); }
@@ -67,6 +73,13 @@ function runtimeWith(game) {
 function command(className, properties) {
   return catalog.makeCommand(className, properties);
 }
+
+// The platform's packet tap, in the shape plugins/grimlite-parity/main.js passes on: subscribe,
+// fan out, release.
+const tap = {
+  on: function () { return function () {}; },
+  emit: function () {}
+};
 
 test('a bot built from flow statements ends, on demand and on its own stop', async () => {
   // A goto that loops once, an int that counts the pass, a label, and a stop - the flow vocabulary

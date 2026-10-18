@@ -279,6 +279,11 @@ function createEngine(deps) {
             sleep: sleep,
             log: log,
             resolve: resolve,
+            // Bot.IsVar / Bot.GetVar, which the statement classes call directly: an operand in
+            // [brackets] is a variable reference, anything else is a literal, and that rule is
+            // the reference's own test rather than ResolveVars' substitution.
+            isVar: isVar,
+            getVar: getVar,
             vars: vars,
             ints: ints,
             read: read,
@@ -1236,6 +1241,14 @@ function createEngine(deps) {
     // so they resolve their own fields and skip the command under them the same way. Merged rather
     // than inlined so that #42's own table is a second line here and nothing else.
     Object.assign(handlers, statements.HANDLERS);
+
+    // The aura, target and combat statements (#42), merged second and deliberately. The two tables
+    // overlap in exactly one name, CmdNameEquals: the reference reads Player.Username, which #42's
+    // ticket owns, and #41 registers it too. The ticket's own ruling is that the later ticket takes
+    // it, and merging this table last is how that reads in code - the body that runs is the one
+    // written against the reference's own `Equals(..., OrdinalIgnoreCase)`, which compares the
+    // operands as they are rather than trimming them first.
+    Object.assign(handlers, require('./statements-auras.js').handlers);
     /** How many kills one hunt command attempts before it reports rather than loops forever. */
     const HUNT_ROUNDS = 10;
     /** And how many map joins, which is the reference's own Try shape for a hunt. */

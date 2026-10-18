@@ -142,7 +142,17 @@ async function activate(host) {
     // single-client, and spec #19 overrides that for this app.
     //
     const runtime = botRuntime.createRuntimeManager({
-        createSession: function () { return botSession.createSession({ bridge: host.bridge, log: host.log }); },
+        // `packets` is the platform's tap (#26), and it is what the aura statements read: the
+        // reference's own aura cache is filled by its packet handlers, not by a game lookup
+        // (ticket #42, bot/auras.js). The session subscribes once and the runtime gives the
+        // subscription back when that window's bot entry is dropped.
+        createSession: function () {
+            return botSession.createSession({
+                bridge: host.bridge,
+                packets: host.packets,
+                log: host.log
+            });
+        },
         log: function (line) { host.log('bot: ' + line); }
     });
 

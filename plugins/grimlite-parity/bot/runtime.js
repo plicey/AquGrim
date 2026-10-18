@@ -97,6 +97,19 @@ function createRuntimeManager(deps) {
         const id = keyOf(key);
         if (!entries.has(id)) return { ok: true, stopped: false };
         await stop(id);
+        // The session's own subscriptions go with it. Since #42 the session holds one on the
+        // platform's packet tap (the aura cache), and the tap hands out a release for exactly this
+        // moment: a window that closed without giving it back would leave a subscriber behind for
+        // the life of the app. A session that holds nothing implements no close, which is why this
+        // is asked for rather than assumed.
+        const session = entries.get(id).engine.session;
+        if (session && typeof session.close === 'function') {
+            try {
+                await session.close();
+            } catch (error) {
+                if (deps.log) deps.log('the window\'s session did not close cleanly: ' + ((error && error.message) || error));
+            }
+        }
         entries.delete(id);
         return { ok: true, stopped: true };
     }
