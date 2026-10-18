@@ -16,6 +16,7 @@ const DEVTEST_PAGE = path.join(featureRoot, 'devtest', 'devtest.html');
 const DEVTEST_WINDOW_ID = 'grimlite-parity-devtest';
 const COSMETICS_WINDOW_ID = 'grimlite-parity-cosmetics';
 const LOGGER_WINDOW_ID = 'grimlite-parity-packet-logger';
+const BOT_MANAGER_WINDOW_ID = 'grimlite-parity-bot-manager';
 
 // Every one of these is a page inside this plugin: no Flash, no Node in the page, and IPC
 // through its own sandbox-safe preload (docs/PLUGINS.md §4.7/§4.8).
@@ -139,6 +140,16 @@ function register(host, windowTitle) {
             },
             url: pageUrl('packets', 'logger.html'),
             config: windowConfig(host, 'packets', 'preload_logger.js', { width: 620, height: 520 })
+        },
+        {
+            // The editor: the reference's own window is the widest of them, because the eleven tabs
+            // and the six lists share the form (BotManager.Designer.cs is 1004x631).
+            id: BOT_MANAGER_WINDOW_ID,
+            title: function () {
+                return windowTitle('botManager', 'Bot Manager');
+            },
+            url: pageUrl('bot-manager', 'bot-manager.html'),
+            config: windowConfig(host, 'bot-manager', 'preload_bot_manager.js', { width: 1004, height: 640 })
         }
     ]);
 }
@@ -158,5 +169,6 @@ module.exports = {
     NOTEPAD_WINDOW_ID: NOTEPAD_WINDOW_ID,
     EYEDROPPER_WINDOW_ID: EYEDROPPER_WINDOW_ID,
     ABOUT_WINDOW_ID: ABOUT_WINDOW_ID,
-    LOGGER_WINDOW_ID: LOGGER_WINDOW_ID
+    LOGGER_WINDOW_ID: LOGGER_WINDOW_ID,
+    BOT_MANAGER_WINDOW_ID: BOT_MANAGER_WINDOW_ID
 };

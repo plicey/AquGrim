@@ -12,6 +12,7 @@ exports.dialogMessages = {
         return '' +
             expand(k.grimliteBotFile) + '' +
             expand(k.grimliteBank) + '' +
+            expand(k.grimliteBotManager) + '' +
             expand(k.grimliteEyedropper) + '' +
             expand(k.grimliteNotepad) + '' +
             expand(k.grimliteAbout) + '' +
@@ -24,6 +25,7 @@ exports.dialogMessages = {
 exports.menuMessages = {
     grimliteMenu: "",
     grimliteBotFile: "",
+    grimliteBotManager: "",
     grimliteEyedropper: "",
     grimliteNotepad: "",
     grimliteAbout: "",
@@ -55,6 +57,7 @@ exports.windowTitles = {
     botFile: "",
     bank: "",
     sets: "",
+    botManager: "",
     placeholder: "",
     eyedropper: "",
     notepad: "",
@@ -129,6 +132,36 @@ exports.eyedropperMessages = {
 
 exports.aboutMessages = {
     reloadHint: ""
+};
+
+exports.botManagerMessages = {
+    title: "",
+    load: "",
+    save: "",
+    ok: "",
+    cancel: "",
+    raw: "",
+    copy: "",
+    copyHint: "",
+    paste: "",
+    pasteHint: "",
+    opened: "",
+    saved: "",
+    customizer: "",
+    fonts: "",
+    multiline: "",
+    tabpages: "",
+    addFolder: "",
+    numberOfBots: "",
+    empty: "",
+    rowHint: "",
+    colour: "",
+    centered: "",
+    size: "",
+    saveSize: "",
+    chooseDirectoryTitle: "",
+    addFolderFailed: "",
+    read: ""
 };
 
 exports.cosmeticsMessages = {
