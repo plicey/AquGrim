@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Packet logger</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
+  }
+  body { display: flex; flex-direction: column; }
+
+  #toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #2c2c2c; flex: 0 0 auto; }
+  #toolbar button { background: #232323; color: #e6e6e6; border: 1px solid #383838; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px; }
+  #toolbar button:hover { background: #2c2c2c; }
+  #toolbar button:disabled { color: #6f6f6f; cursor: default; background: #1b1b1b; }
+  #toolbar button.active { background: #2b6fce; border-color: #2b6fce; color: #fff; }
+  #spacer { flex: 1 1 auto; }
+  #filter {
+    flex: 0 0 220px; font-family: inherit; background: #1b1b1b; border: 1px solid #333;
+    border-radius: 4px; padding: 6px 8px; color: #dcdcdc;
+  }
+  #filter:focus { outline: none; border-color: #4da3ff; }
+
+  #status { flex: 0 0 auto; padding: 7px 12px; color: #9a9a9a; font-size: 12px; border-bottom: 1px solid #2c2c2c; }
+  #status.watching { color: #7fd08a; }
+
+  #frames { flex: 1 1 auto; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+  #frames li { display: flex; gap: 8px; padding: 4px 12px; border-bottom: 1px solid #1c1c1c; align-items: baseline; }
+  #frames li:hover { background: #171717; }
+  #frames .direction { flex: 0 0 62px; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; padding-top: 1px; }
+  #frames .toServer .direction { color: #f0c987; }
+  #frames .toClient .direction { color: #7ec8f2; }
+  #frames .text {
+    flex: 1 1 auto; min-width: 0; font-family: Consolas, "Courier New", monospace;
+    font-size: 12px; white-space: pre-wrap; word-break: break-all; user-select: text;
+  }
+  #empty { flex: 0 0 auto; padding: 18px 12px; color: #6f6f6f; }
+  #empty.hidden { display: none; }
+</style>
+</head>
+<body>
+  <div id="toolbar">
+    <button id="start">Start</button>
+    <button id="stop">Stop</button>
+    <button id="copy">Copy</button>
+    <button id="clear">Clear</button>
+    <span id="spacer"></span>
+    <input id="filter" type="text" placeholder="Filter">
+  </div>
+  <div id="status"></div>
+  <ul id="frames"></ul>
+  <div id="empty"></div>
+
+  <script src="frames.js"></script>
+  <script src="logger_renderer.js"></script>
+</body>
+</html>
