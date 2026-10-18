@@ -1111,3 +1111,95 @@ static check that they agree.
   real character is the milestone; the tables and their tests are what make a wrong path a
   reviewable claim rather than a guess.
 
+## In-game chrome strip (ticket #45) - needs a display, a real game and an account
+
+The reference draws a 27 px toolbar above its Flash panel (`splitContainer1`, `Root.cs:620`) with
+six controls on it. This port draws the same strip as HTML above the surface, inside the wrapper
+page the game SWF already loads through (`res/swf_wrapper.html`): a layout change, not a second
+window and not a second compositing layer over a `wmode=direct` surface.
+
+What `npm test` covers: the strip's height and the fact that the surface keeps the game's own size
+with it up or down, the arithmetic of the toggle in both directions (including a window the user
+resized while the strip was up, and a toggle that cannot be honoured on a page that has no strip
+element), the capture region a screenshot uses, the six controls and their order, the three
+refusals being the engine's own strings, the read-then-call sequence against a fake session, and
+that every name the strip reads is one the loader surface answers.
+
+What needs a real client: everything below.
+
+### The strip and the surface
+
+- [ ] The strip is above the game, 27 px tall, and the surface fills everything below it with no
+      letterboxing, no clipped bottom edge and no stretched aspect
+- [ ] The window opens at 960x557 with the strip up (960x530 of game plus the strip)
+- [ ] Landing and refreshing a map does not move the strip or resize the surface
+- [ ] With the strip hidden (see the menu toggle below) the window is exactly 960x530 and the
+      game fills it exactly as it did before this ticket
+
+### Start Bot
+
+- [ ] Pressing **Start Bot** with the Bot Manager's command list empty leaves the tick off and
+      the reason shown is the engine's own ("this bot has no commands: add some before starting
+      it"), not a second wording invented by the strip
+- [ ] Pressing **Start Bot** while not signed in leaves the tick off with the engine's own "no
+      character is signed in" reason
+- [ ] Pressing **Start Bot** while a bot already runs in this window leaves the tick on and says
+      "a bot is already running in this window"
+- [ ] With commands in the list and a character signed in, the tick starts that bot: the Bot
+      Manager's own Enable tick follows, and the character begins to act
+- [ ] Unticking **Start Bot** stops the bot, and the tick's state on reopening the strip matches
+      whether the bot is really running (not what was last clicked)
+
+### Auto Attack
+
+- [ ] Ticking **Auto Attack** with nothing targeted attacks with the loader's own `*` and then
+      fights; unticking it stops the loop
+- [ ] Ticking it while not signed in, or while the bot is running, refuses with the engine's own
+      wording and leaves the tick off
+- [ ] The rotation casts 1, 2, 3, 4 and wraps, at roughly the reference's 150 ms pace
+- [ ] A cast the bridge refuses (a live-object limit, ticket #38) is shown on the strip and the
+      rotation keeps going rather than stopping
+- [ ] On a Chrono Shadow, Arcana Invoker or Archmage the class combo fires on its own condition
+      and the skill is cast through the forced path where the reference forces it
+
+### The cell and pad pickers
+
+- [ ] The cell box lists the map's own cells after it is filled; an unfilled box is empty rather
+      than full of stale names
+- [ ] Picking a cell moves the character to that cell, on the pad the pad box shows, or `Spawn`
+      when nothing is picked
+- [ ] Picking a pad moves the character to that pad within the cell it is standing in
+- [ ] The **x** refresh control refills the cell list, sets both boxes to where the character
+      stands, and re-issues the move
+- [ ] Both pickers and the refresh do nothing while nobody is signed in, and the refresh refuses
+      while the map is still loading
+
+### Bank
+
+- [ ] **Bank** opens this plugin's Bank window, which is what the reference's `Player.Bank.Show()`
+      is in this port
+
+### The menu toggle
+
+- [ ] The Game menu carries the strip's entry and it is a checkbox whose tick matches the layout
+- [ ] Unticking it hides the strip and returns the window to exactly 960x530, with the game
+      surface filling the window
+- [ ] Ticking it again restores the strip and the size the window had while it was up
+- [ ] Toggling twice never leaves a stale size (off then on then off lands on 960x530 both times)
+- [ ] A window opened while the strip is hidden is plain-sized and its tick is off
+
+### What could not be checked here, and why
+
+- **No strip has been seen.** The Electron app cannot be started in this environment (PPAPI Flash
+  and a real display are needed, and the app was never launched while this ticket was written), so
+  every box above is unticked on purpose. What is asserted instead is the arithmetic and the data:
+  the geometry, the capture rectangle, the controls, and the routing of each press into the engine
+  or into the loader's own names.
+- **A screenshot and a recording exclude the strip** by construction: `res/instances.js` captures
+  from below it (`captureRect`). That the capture looks right on screen is a display check.
+- **The recording path captures the window**, not a rectangle of its page, so it follows the
+  window's own size: with the strip up the recording includes it, and in the plain layout it does
+  not. Which of the two is wanted in a shared recording is the user's call, which is what the
+  toggle is for; the plain size stays exactly what the existing checklist expects.
+- **The surface's own aspect** depends on the game's `scale` parameter, which this ticket does not
+  touch: the wrapper still passes the plugin's own wrap config through.

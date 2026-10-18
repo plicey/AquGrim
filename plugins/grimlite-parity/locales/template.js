@@ -357,3 +357,13 @@ exports.maidMessages = {
     notSignedIn: "",
     partyCommands: ""
 };
+
+exports.chromeMessages = {
+    startBot: "",
+    autoAttack: "",
+    pad: "",
+    cell: "",
+    refreshCell: "",
+    bank: "",
+    menu: ""
+};

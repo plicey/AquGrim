@@ -282,6 +282,15 @@ function getFeatureWindow(id) {
     return null;
 }
 
+/**
+ * The active plugin's game-window chrome strip (ticket #45), or null when it declares none. The
+ * platform draws the strip's box, its height and its geometry; every control in it is the
+ * plugin's own data, which is what keeps this module free of any game's words.
+ */
+function getGameChrome() {
+    return (hostState && hostState.gameChrome) || null;
+}
+
 function listFeatureWindows() {
     return (hostState && hostState.featureWindows)
         ? hostState.featureWindows.slice()
@@ -541,6 +550,7 @@ module.exports = {
     listKeybindBindings: listKeybindBindings,
     getBrowserPreload: getBrowserPreload,
     getFeatureWindow: getFeatureWindow,
+    getGameChrome: getGameChrome,
     listFeatureWindows: listFeatureWindows,
     getTrustedFlashUrls: getTrustedFlashUrls,
     openPrimaryGame: openPrimaryGame,

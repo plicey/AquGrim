@@ -237,12 +237,20 @@ exports.getMenu = (keybinds, funcTakeSS, isContext) => {
     return sanitizeMenuAccelerators(template);
 };
 
-exports.getGameMenu = (keybinds) => {
+exports.getGameMenu = (keybinds, win) => {
     const menuMessages = locale.strings.menuMessages || {};
     const template = [
         platformAquaStarMenu(menuMessages, keybinds),
         platformToolsMenu(menuMessages, keybinds)
     ];
+
+    // The game window's chrome strip, when the active plugin declared one (ticket #45). The
+    // label and the state are the plugin's; the platform only places the entry and moves the
+    // window, so this platform still names no game.
+    const chromeItem = require('./game-chrome.js').gameChrome().menuItem({ win: win });
+    if (chromeItem) {
+        template.push({ label: chromeItem.label, submenu: [chromeItem] });
+    }
 
     if (menuRegistry.hasGameMenuPages && menuRegistry.hasGameMenuPages()) {
         const pages = gamePagesFromDescriptor(

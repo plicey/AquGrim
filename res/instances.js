@@ -4,6 +4,7 @@ const windowsMenu            = require('./windows/menu.js');
 const keybinds               = require('./keybindings.js');
 const socketProxy            = require('./socketProxy.js');
 const createFeatureWindowController = require('./windows/feature-window-controller.js');
+const { gameChrome, captureRect } = require('./windows/game-chrome.js');
 const {BrowserWindow, Menu}  = require('electron');
 
 let usedAltPagesNumbers = [];
@@ -52,6 +53,9 @@ function _normalizeWindowOpenKey(url) {
 function newBrowserWindow(new_path, isMainWin=false){
     var config;
     var originalPath = new_path;
+    // Whether this window's page is the wrapper the chrome strip is drawn in (res/swf_wrapper.html);
+    // set below by whichever embed branch loaded. Nothing else can carry a strip.
+    var wrappedForChrome = false;
     var gateKey = _normalizeWindowOpenKey(originalPath);
     var now = Date.now();
     if (gateKey && gateKey === _windowOpenGate.key &&
@@ -62,8 +66,9 @@ function newBrowserWindow(new_path, isMainWin=false){
     }
     _windowOpenGate = { key: gateKey, at: now };
 
+    var isGameWindow = !!(isMainWin || _isGameWindow(new_path));
     if (isMainWin) config = windowConfig.mainConfig;
-    else if (_isGameWindow(new_path)) config = windowConfig.gameConfig;
+    else if (isGameWindow) config = windowConfig.gameConfig;
     else config = windowConfig.winConfig;
     
     // How a game is opened is the owning plugin's call (its primary/launch "wrap" config):
@@ -85,16 +90,31 @@ function newBrowserWindow(new_path, isMainWin=false){
     // loads break under wmode=direct from file://). Applies even with useDirectWmode off.
     else if (_looksLikeSwfUrl(originalPath) && wrap && (wrap.wmode || wrap.scale)) {
         new_path = constant.wrapSwfUrl(new_path, { wmode: wrap.wmode, scale: wrap.scale });
+        wrappedForChrome = true;
     }
     // Default: wrap Flash SWFs of non-standalone games in an HTML page with wmode=direct.
     else if (constant.useDirectWmode && _looksLikeSwfUrl(originalPath) &&
         gameEntry && !gameEntry.standalone &&
         !(wrap && wrap.preferDirectWmode === false)) {
         new_path = constant.wrapSwfUrl(new_path);
+        wrappedForChrome = true;
     }
-    
+
+    // The chrome strip lives inside that wrapper page, which is the one page a strip can be drawn
+    // in (res/swf_wrapper.html). A window that loads it opens tall enough for the strip the active
+    // plugin declared and offers the toggle; a Ruffle page or a bare SWF cannot draw one, so it
+    // keeps the game's own size exactly and offers none (res/windows/game-chrome.js).
+    if (wrappedForChrome && isGameWindow) {
+        const strip = gameChrome().height();
+        if (strip > 0) {
+            config = Object.assign({}, config, { height: config.height + strip });
+        }
+    }
+
     const newWin = new BrowserWindow(config);
     newWin.aquaStarSwfUrl = originalPath;
+    // Says this window's page is the wrapper, so the platform may put a strip in it.
+    newWin.aquaStarChromeHost = wrappedForChrome;
     newWin.setMenuBarVisibility(false); //Remove default electron menu
     newWin.on('focus', () => { lastFocusedWindow = newWin; });
     newWin.loadURL(new_path);
@@ -160,7 +180,7 @@ function applyWindowMenu(win, originalPath) {
     var showGameMenu = (!keybinds.keybinds || keybinds.keybinds.showGameMenu !== false) &&
         !!entry && !entry.standalone && (entry === primary || _looksLikeSwfUrl(originalPath));
     var menuTemplate = showGameMenu
-        ? windowsMenu.getGameMenu(keybinds.keybinds || {})
+        ? windowsMenu.getGameMenu(keybinds.keybinds || {}, win)
         : windowsMenu.getMenu(keybinds.keybinds || {}, takeSS, false);
     if (menuTemplate && menuTemplate.length) {
         win.setMenu(Menu.buildFromTemplate(menuTemplate));
@@ -302,12 +322,11 @@ function takeSS(focusedWin, ret = null, destroyWindow = false){
     // Format is the rectangle one;
     var rect = null;
     if (ret == null || ret == undefined){
-        rect = {
-            x: 0,
-            y: 0,
-            width:  focusedWin.getContentSize()[0],
-            height: focusedWin.getContentSize()[1]
-        }
+        // A game window may carry a chrome strip above the Flash surface; a screenshot is of the
+        // game, so the strip is excluded (res/windows/game-chrome.js). With no strip up this is
+        // the whole content area, which is what this path captured before ticket #45.
+        rect = captureRect(focusedWin.getContentSize(),
+            gameChrome().stripHeight(focusedWin));
     }
     else { rect = ret;}
     return focusedWin.webContents.capturePage(rect)

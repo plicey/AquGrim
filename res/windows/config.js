@@ -20,11 +20,16 @@ function _browserPreloadPath() {
 }
 
 // Window shapes: "game"/"main" hold the game (Flash, no sandbox), anything else is a browser window.
+// The game's own content size. A game window's page may also carry the chrome strip above the
+// surface (res/windows/game-chrome.js): that page is the one place a strip can be drawn, so the
+// window that loads it opens taller, and every other game window keeps this size exactly.
+const gameContentSize = { width: 960, height: 530 };
+
 function _getWinConfig(type){
     const isGame = (type == "game" || type == "main");
     return {
-        width: 960,
-        height: 530,
+        width: gameContentSize.width,
+        height: gameContentSize.height,
         useContentSize: true,
         icon: iconPath,
         webPreferences: {
@@ -56,6 +61,7 @@ Object.defineProperty(exports, 'gameConfig', {
     get: function () { return _getWinConfig('game'); }
 });
 exports.getWinConfig = _getWinConfig;
+exports.gameContentSize = gameContentSize;
 
 // Settings screen - own preload, needed for IPC (read/write aquastar.json) under contextIsolation.
 exports.settingsConfig = {

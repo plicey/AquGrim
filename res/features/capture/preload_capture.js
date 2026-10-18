@@ -1,4 +1,17 @@
-const { ipcRenderer } = require("electron");
+const { ipcRenderer, contextBridge } = require("electron");
+
+// The chrome strip the game window may carry above the Flash surface (ticket #45). The page is
+// the platform's own wrapper (res/swf_wrapper.html) and draws whatever the active plugin
+// declared: this exposes the two calls, and pushes a new view whenever the layout changes.
+contextBridge.exposeInMainWorld("aquastarChrome", {
+  getView: function () { return ipcRenderer.invoke("getGameChromeView"); },
+  action: function (id, args) { return ipcRenderer.invoke("gameChromeAction", id, args); },
+  onView: function (listener) {
+    const wrapped = function (_event, view) { listener(view); };
+    ipcRenderer.on("gameChromeView", wrapped);
+    return function off() { ipcRenderer.removeListener("gameChromeView", wrapped); };
+  }
+});
 
 let mediaRecorder;
 let captureStream;
