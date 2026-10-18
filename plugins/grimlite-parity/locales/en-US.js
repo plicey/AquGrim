@@ -19,7 +19,9 @@ exports.dialogMessages = {
             expand(k.grimliteParityPlaceholder) + ' - Parity placeholder window\n' +
             expand(k.grimliteParityDevTest) + ' - Dev Test (call a game function)\n' +
             expand(k.grimliteOptions) + ' - Options: the reference\'s own option toggles\n' +
-            expand(k.grimliteHotkeys) + ' - Hotkeys: bind one key to one action';
+            expand(k.grimliteHotkeys) + ' - Hotkeys: bind one key to one action\n' +
+            expand(k.grimliteDrop) + ' - Drop Ui: what has dropped, and taking it\n' +
+            expand(k.grimliteFastTravels) + ' - Fast travels: the destination buttons and the map bypasser';
     }
 };
 
@@ -37,6 +39,8 @@ exports.menuMessages = {
     grimliteCosmetics: 'Cosmetics',
     grimliteOptions: 'Options',
     grimliteHotkeys: 'Hotkeys',
+    grimliteDrop: 'Drop Ui',
+    grimliteTravels: 'Fast travels',
     grimlitePlaceholder: 'Parity placeholder window',
     grimliteDevTest: 'Dev Test',
     packetsMenu: 'Packets',
@@ -76,6 +80,8 @@ exports.windowTitles = {
     cosmetics: 'Grimlite Parity - SWF Cosmetics',
     options: 'Options',
     hotkeys: 'Hotkeys',
+    drop: 'DropList',
+    travels: 'Fast travels',
     devtest: 'Dev Test',
     packetLogger: 'Packet logger',
     packetSpammer: 'Packet spammer',
@@ -230,6 +236,57 @@ exports.hotkeysMessages = {
     saved: 'Saved $1 binding(s).',
     empty: 'Nothing is bound yet.',
     selectFirst: 'Select a binding first.'
+};
+
+// The drop list window (ticket #33). Every word is the reference's own control text from
+// DropUi.Designer.cs - the four column headers, its three buttons, its tickbox and its count
+// label - plus the one dialog DropUi.btnClear_Click puts in front of Clear.
+exports.dropsMessages = {
+    title: 'DropList',
+    name: 'Name',
+    qty: 'Qty',
+    category: 'Category',
+    flags: 'AC | Member',
+    take: 'Take Drop',
+    blacklist: 'Reject & Blacklist',
+    clear: 'Clear',
+    rejectInGame: 'Reject ingame drop',
+    count: 'Drop count :',
+    pickFirst: 'Select a drop first.',
+    working: 'Taking...',
+    taken: 'Took {n} drop(s).',
+    rejectedN: 'Held {n} name(s) for this session.',
+    cleared: 'Cleared.',
+    confirmTitle: 'Caution',
+    confirmMessage: 'This action will clear all Blacklist and Current drops within the UI.\n' +
+        'Do you wish to proceed?',
+    confirmYes: 'Yes',
+    confirmNo: 'No'
+};
+
+// The Fast travels window (ticket #32). Its control words are the reference's own
+// (Grimoire/UI/Travel.cs: "Private", "Awe Enchantment Shop", "Map Bypasser", "Story Quest ID that
+// required to unlock the map", "Unlock", "Generated packet", "Copy"); the sentences a page needs
+// to report itself are written here.
+exports.travelMessages = {
+    title: 'Fast travels',
+    private: 'Private',
+    aweGroup: 'Awe Enchantment Shop',
+    bypasser: 'Map Bypasser',
+    bypassHint: 'Story Quest ID that required to unlock the map',
+    generatedPacket: 'Generated packet',
+    unlock: 'Unlock',
+    copy: 'Copy',
+    send: 'Send',
+    working: 'Working...',
+    joining: 'Joining {map}...',
+    walking: 'Walking to {cell} in {map}...',
+    questsLoaded: 'Asked the game for {n} quest(s).',
+    shopOpened: 'Opened shop {id}.',
+    bypassed: 'Storyline bypassed.',
+    copied: 'Copied.',
+    done: 'Done.',
+    failed: 'That did not run.'
 };
 
 // The Loaders and grabbers window (ticket #31). The dialog title and the filter are the

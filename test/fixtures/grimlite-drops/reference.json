@@ -1,0 +1,50 @@
+{
+  "source": "Grimlite-Li 816d9cd: Grimoire/Networking/Handlers/HandlerDropItem.cs and Grimoire/Tools/Flash.cs:695-715; the envelope shape is Grimoire/Networking/JsonMessage.cs (Object[\"b\"][\"o\"]).",
+  "note": "The drop list reads one item per frame: the client takes items.First().Value, so these frames carry one item each, exactly as the reference reads them. iRty / iStk / sLink are carried because the game s own DFRAME item object has them.",
+  "frames": [
+    {
+      "why": "HandlerDropItem.Handle: items -> First().Value -> World.OnItemDropped(item)",
+      "frame": "{\"t\":\"xt\",\"b\":{\"r\":-1,\"o\":{\"cmd\":\"dropItem\",\"items\":{\"10414\":{\"ItemID\":10414,\"sName\":\"Blinding Light of Destiny\",\"sType\":\"Sword\",\"bCoins\":0,\"bEquip\":0,\"bUpg\":0,\"iQty\":1,\"iStk\":1,\"iRty\":7,\"sLink\":\"none\"},\"5315\":{\"ItemID\":5315,\"sName\":\"Mystic Parchment\",\"sType\":\"Item\",\"bCoins\":1,\"bEquip\":0,\"bUpg\":1,\"iQty\":3,\"iStk\":99,\"iRty\":2,\"sLink\":\"none\"}}}}}",
+      "item": {
+        "id": 10414,
+        "name": "Blinding Light of Destiny",
+        "category": "Sword",
+        "isAcItem": false,
+        "isMemberOnly": false,
+        "quantity": 1
+      }
+    },
+    {
+      "why": "an AC, member-only item: bCoins and bUpg are the two BoolConverter fields DropUi draws as AC | Member",
+      "frame": "{\"t\":\"xt\",\"b\":{\"r\":-1,\"o\":{\"cmd\":\"dropItem\",\"items\":{\"5315\":{\"ItemID\":5315,\"sName\":\"Mystic Parchment\",\"sType\":\"Item\",\"bCoins\":1,\"bEquip\":0,\"bUpg\":1,\"iQty\":3}}}}}",
+      "item": {
+        "id": 5315,
+        "name": "Mystic Parchment",
+        "category": "Item",
+        "isAcItem": true,
+        "isMemberOnly": true,
+        "quantity": 3
+      }
+    },
+    {
+      "why": "not a drop: a JSON frame whose cmd is something else",
+      "frame": "{\"t\":\"xt\",\"b\":{\"r\":-1,\"o\":{\"cmd\":\"moveToArea\",\"areaName\":\"battleon-1\"}}}",
+      "item": null
+    },
+    {
+      "why": "an XT frame: the % byte the relay also carries",
+      "frame": "%xt%zm%getDrop%battleon-1%10414%",
+      "item": null
+    },
+    {
+      "why": "the take succeeded: Flash.cs:690-693 removes the item from the stack on bSuccess == 1",
+      "frame": "{\"t\":\"xt\",\"b\":{\"r\":-1,\"o\":{\"cmd\":\"getDrop\",\"ItemID\":10414,\"bSuccess\":1}}}",
+      "taken": { "id": 10414, "success": true }
+    },
+    {
+      "why": "the take failed (a full bag, or the item is already held): the row stays, as Game.as leaves it",
+      "frame": "{\"t\":\"xt\",\"b\":{\"r\":-1,\"o\":{\"cmd\":\"getDrop\",\"ItemID\":10414,\"bSuccess\":0}}}",
+      "taken": { "id": 10414, "success": false }
+    }
+  ]
+}
