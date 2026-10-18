@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- hand-made, the way a spammer file travels between users -->
+<autoer>
+  <packet>%xt%zm%aggroMon%1%2%3%</packet>
+  <packet>%xt%zm%gar%1%2%w%</packet>
+  <author>Someone else</author>
+  <spamspeed>750</spamspeed>
+  <note>A packet nested in another element is not a list entry
+    <packet>%xt%zm%not-a-list-entry%</packet>
+  </note>
+  <packet>&lt;msg t='sys'&gt;A &amp; B&lt;/msg&gt;</packet>
+</autoer>

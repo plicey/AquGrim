@@ -17,6 +17,8 @@ exports.dialogMessages = {
             expand(k.grimliteNotepad) + '' +
             expand(k.grimliteAbout) + '' +
             '' +
+            '' +
+            '' +
             expand(k.grimliteParityPlaceholder) + '' +
             expand(k.grimliteParityDevTest) + '';
     }
@@ -35,7 +37,9 @@ exports.menuMessages = {
     grimlitePlaceholder: "",
     grimliteDevTest: "",
     packetsMenu: "",
-    packetsSniffer: ""
+    packetsSniffer: "",
+    packetsSpammer: "",
+    packetsTamperer: ""
 };
 
 exports.botFileMessages = {
@@ -64,7 +68,9 @@ exports.windowTitles = {
     about: "",
     cosmetics: "",
     devtest: "",
-    packetLogger: ""
+    packetLogger: "",
+    packetSpammer: "",
+    packetTamperer: ""
 };
 
 exports.bankMessages = {
@@ -178,4 +184,29 @@ exports.cosmeticsMessages = {
         cape: "",
         misc: ""
     }
+};
+
+exports.spammerMessages = {
+    title: "",
+    add: "",
+    remove: "",
+    clear: "",
+    load: "",
+    save: "",
+    start: "",
+    stop: "",
+    sendOnce: "",
+    loadTitle: "",
+    saveTitle: "",
+    filterName: ""
+};
+
+exports.tampererMessages = {
+    title: "",
+    captureFromClient: "",
+    captureFromServer: "",
+    filterByText: "",
+    sendToServer: "",
+    sendToClient: "",
+    clear: ""
 };

@@ -12,6 +12,8 @@ exports.dialogMessages = {
             expand(k.grimliteNotepad) + ' - Notepad\n' +
             expand(k.grimliteAbout) + ' - About this port and the reference it follows\n' +
             'Packets -> Sniffer - Packet logger (client and server traffic)\n' +
+            'Packets -> Spammer - Packet spammer (repeat a saved list)\n' +
+            'Packets -> Tamperer - Packet Tamperer (edit and inject a frame)\n' +
             expand(k.grimliteParityPlaceholder) + ' - Parity placeholder window\n' +
             expand(k.grimliteParityDevTest) + ' - Dev Test (call a game function)';
     }
@@ -30,7 +32,9 @@ exports.menuMessages = {
     grimlitePlaceholder: 'Parity placeholder window',
     grimliteDevTest: 'Dev Test',
     packetsMenu: 'Packets',
-    packetsSniffer: 'Sniffer'
+    packetsSniffer: 'Sniffer',
+    packetsSpammer: 'Spammer',
+    packetsTamperer: 'Tamperer'
 };
 
 // The bot file window and the dialogs it opens. Titles match the reference's own dialogs
@@ -61,7 +65,9 @@ exports.windowTitles = {
     about: 'Grimlite Parity - About',
     cosmetics: 'Grimlite Parity - SWF Cosmetics',
     devtest: 'Dev Test',
-    packetLogger: 'Packet logger'
+    packetLogger: 'Packet logger',
+    packetSpammer: 'Packet spammer',
+    packetTamperer: 'Packet Tamperer'
 };
 
 // The Bank window (ticket #29). The reference's own labels, verbatim from
@@ -188,4 +194,32 @@ exports.cosmeticsMessages = {
         cape: 'Grab Cape',
         misc: 'Grab Ground'
     }
+};
+
+// The packet spammer (ticket #27). Every word is the reference's own control text
+// (PacketSpammer.InitializeComponent) and its two dialog titles (SaveConfig/LoadConfig).
+exports.spammerMessages = {
+    title: 'Packet spammer',
+    add: 'Add',
+    remove: 'Remove',
+    clear: 'Clear',
+    load: 'Load',
+    save: 'Save',
+    start: 'Start',
+    stop: 'Stop',
+    sendOnce: 'Send once',
+    loadTitle: 'Load spammer file',
+    saveTitle: 'Save spammer file',
+    filterName: 'XML files'
+};
+
+// The packet tamperer (ticket #27), word for word from PacketTamperer.Designer.cs.
+exports.tampererMessages = {
+    title: 'Packet Tamperer',
+    captureFromClient: 'Capture from client',
+    captureFromServer: 'Capture from server',
+    filterByText: 'Filter by text',
+    sendToServer: 'Send to server',
+    sendToClient: 'Send to client',
+    clear: 'Clear'
 };

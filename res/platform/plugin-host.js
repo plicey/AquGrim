@@ -689,6 +689,33 @@ function createPluginHost(options) {
                         'session: game traffic is not being steered');
                 }
                 return tap.subscribe(listener);
+            },
+
+            /**
+             * Write one frame back through the relay: {direction: 'toServer' | 'toClient',
+             * text}. Needs packet-send, which is a different permission from packet-tap on
+             * purpose - the logger reads and never writes.
+             *
+             * Returns whether the frame was written. False means there is no live connection to
+             * write on (nothing steered yet, or the client is between connections); the frame is
+             * neither queued nor invented, so a caller that must send says so to the user.
+             */
+            send: function (frame) {
+                requirePermission('packets.send', 'packet-send');
+                const candidate = frame || {};
+                if (candidate.direction !== 'toServer' && candidate.direction !== 'toClient') {
+                    throw new Error('[AquaStar:plugins] packets.send writes one of two directions, ' +
+                        '"toServer" or "toClient" (got "' + candidate.direction + '")');
+                }
+                if (typeof candidate.text !== 'string' || !candidate.text.length) {
+                    throw new Error('[AquaStar:plugins] packets.send expects the frame text');
+                }
+                const send = typeof deps.getPacketSender === 'function' ? deps.getPacketSender() : null;
+                if (typeof send !== 'function') {
+                    throw new Error('[AquaStar:plugins] this app session is not steering game ' +
+                        'traffic, so there is no relay to write a frame through');
+                }
+                return send(candidate.direction, candidate.text) === true;
             }
         },
 

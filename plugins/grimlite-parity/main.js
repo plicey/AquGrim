@@ -17,6 +17,8 @@ const botFile = require('./features/bot-file/bot-file.js');
 const bankWindow = require('./features/bank/bank-window.js');
 const setsWindow = require('./features/sets/sets-window.js');
 const logger = require('./features/packets/logger.js');
+const spammerWindow = require('./features/packets/spammer-window.js');
+const tampererWindow = require('./features/packets/tamperer-window.js');
 
 const resRoot = path.join(__dirname, '..', '..', 'res');
 
@@ -72,6 +74,12 @@ async function activate(host) {
     // The packet logger is this plugin's reading half of the platform tap: it subscribes, and
     // never writes a frame (that needs packet-send, which only the spammer and tamperer hold).
     logger.createLoggerFeature(host).register();
+
+    // The write half (#27): both windows send through host.packets.send (packet-send). The
+    // spammer never reads, so it needs packet-tap for nothing; the tamperer reads through the same
+    // tap the logger does, which is why it holds both permissions.
+    spammerWindow.createFromHost(host).attach();
+    tampererWindow.createFromHost(host).attach();
 
     // Bot files are user documents: this window opens one from the user's own directory, shows
     // it and writes the edit back through the same dialog.

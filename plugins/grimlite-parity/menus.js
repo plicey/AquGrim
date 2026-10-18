@@ -1,7 +1,7 @@
 const windows = require('./windows.js');
 
-// The reference's own navigation: Packets -> Sniffer opens the logger. The spammer and tamperer
-// join this submenu with their own tickets.
+// The reference's own navigation: Packets -> Sniffer, Spammer, Tamperer, in the order Root.cs adds
+// them. (Root.cs also adds an Interceptor, which is hidden upstream and stays unshipped here.)
 function register(host, windowTitle) {
     host.registerMenus(function (ctx) {
         const labels = (ctx && ctx.labels) || {};
@@ -12,6 +12,16 @@ function register(host, windowTitle) {
                 label: labels.packetsSniffer || 'Sniffer',
                 click: function () {
                     host.windows.openFeatureWindow(windows.LOGGER_WINDOW_ID);
+                }
+            }, {
+                label: labels.packetsSpammer || 'Spammer',
+                click: function () {
+                    host.windows.openFeatureWindow(windows.SPAMMER_WINDOW_ID);
+                }
+            }, {
+                label: labels.packetsTamperer || 'Tamperer',
+                click: function () {
+                    host.windows.openFeatureWindow(windows.TAMPERER_WINDOW_ID);
                 }
             }]
         }, {
@@ -114,5 +124,7 @@ function register(host, windowTitle) {
 module.exports = {
     register: register,
     PLACEHOLDER_WINDOW_ID: windows.PLACEHOLDER_WINDOW_ID,
-    LOGGER_WINDOW_ID: windows.LOGGER_WINDOW_ID
+    LOGGER_WINDOW_ID: windows.LOGGER_WINDOW_ID,
+    SPAMMER_WINDOW_ID: windows.SPAMMER_WINDOW_ID,
+    TAMPERER_WINDOW_ID: windows.TAMPERER_WINDOW_ID
 };

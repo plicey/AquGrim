@@ -469,7 +469,7 @@ See `plugins/adventure-quest-worlds/web/contribute.js` for the full contribution
 | `game-origin` | `host.declareGameOrigin` |
 | `game-bridge` | `host.bridge.attach()` / `call()` / `callbacks()` / `attachedWindow()` - the SWF bridge channel (4.11) *(apiVersion 2)* |
 | `packet-tap` | `packets.on('frame', fn)` - reading relayed game frames *(apiVersion 2)* |
-| `packet-send` | Reserved: writing a frame back through the relay *(apiVersion 2)* |
+| `packet-send` | `packets.send({ direction, text })` - writing a frame back through the relay *(apiVersion 2)* |
 
 Missing permission → throw, and during `activate` that fails the activation.
 
@@ -492,10 +492,29 @@ the plugin's own opt-in, so a tool that shows nothing should say so rather than 
 Reading game traffic needs `packet-tap`; writing it needs `packet-send`, which the packet
 logger does not hold.
 
+`packets.send({ direction, text })` writes one frame back through the relay and answers whether it
+went out:
+
+```js
+const written = host.packets.send({ direction: 'toServer', text: '%xt%zm%gar%1%2%w%' });
+// direction: 'toServer' (to the game) | 'toClient' (to the game's own client, i.e. a frame the
+//            server would have sent)
+// written:   true when the frame went out; false when there is no live connection to write on
+```
+
+A frame written this way is reported to the tap like any other traffic, on the side it was written
+to, so a tool that is watching sees what was injected. `false` is not a queue: nothing is held for
+later, because the usual reason is that the client is not connected (steering is off, or the
+session is between connections), and a caller that must send says so to the user instead of
+looking broken. A frame with no text, or a direction that is neither of the two, throws.
+
+The two permissions are deliberately separate: the packet logger reads and holds `packet-tap`
+only, a spammer writes and holds `packet-send` only, and a tamperer needs both because it shows
+one side while editing the other.
+
 The game access permissions above are `game-bridge` (the bridge channel, 4.11) and `packet-tap` /
-`packet-send` (the packet layer, `res/platform/packet-layer.js`). The one **reserved** name is
-`packet-send`: it is the name the rest of the game access API will use, its methods arrive with
-the ticket that needs them, and the name and the refusal do not change.
+`packet-send` (the packet layer, `res/platform/packet-layer.js`).
+
 `host.requirePermission(method, permission)` is the single gate every guarded method goes through
 - `packets.on` included - and it reports a missing one as
 `Plugin "<id>" called <method> without permission "<permission>"`. It is platform wiring, not a
@@ -537,8 +556,8 @@ Available on `host` inside `activate(host)`:
 
 **Network / pages:** `registerSessionRules([...])`, `registerNavigationHooks(hooks)`, `net.fetchText(url)`
 
-**Game access (apiVersion 2):** `packets.on('frame', listener)` (needs `packet-tap`); the bridge and
-frame writing arrive with their own tickets
+**Game access (apiVersion 2):** `packets.on('frame', listener)` (needs `packet-tap`),
+`packets.send({ direction, text })` (needs `packet-send`)
 
 **IPC / storage:** `ipc.handle` / `ipc.on` / `ipc.removeHandler`, `getStore(ns)`
 
