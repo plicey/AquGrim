@@ -21,6 +21,9 @@
 
 const bots = require('./bots.js');
 const catalog = require('./command-catalog.js');
+// The state-reading statements (#41) live in their own module: #42 adds its own table beside it,
+// and a union of two tables is a one-line change where one long inline object is not.
+const statements = require('./statements.js');
 
 /** The reference's own pacing constants: WaitUntil's default interval and the pause poll. */
 const DEFAULT_INTERVAL_MS = 1000;
@@ -221,12 +224,18 @@ function createEngine(deps) {
 
     // ---------------------------------------------------------------- the session reads
 
-    /** A read that cannot be established is a reason, not a value. */
-    function read(name) {
+    /**
+     * A read that cannot be established is a reason, not a value. An argument-carrying read (the
+     * statements of #41 ask the loader about a name, a cell or a quest id) is passed through as
+     * the session member's own arguments.
+     */
+    function read(name, args) {
         if (!session || typeof session[name] !== 'function') {
             return Promise.resolve({ ok: false, error: ERRORS.noSession });
         }
-        return Promise.resolve().then(function () { return session[name](); })
+        return Promise.resolve().then(function () {
+            return session[name].apply(session, Array.isArray(args) ? args : []);
+        })
             .then(function (value) { return { ok: true, value: value }; },
                 function (error) {
                     // The session marks a refusal that means the window is gone, so the loop can
@@ -420,6 +429,11 @@ function createEngine(deps) {
             if (resolve(command.Value1) === resolve(command.Value2)) ctx.skipNext();
         }
     };
+
+    // The state-reading statements (#41). They take the same (ctx, command) a handler here takes,
+    // so they resolve their own fields and skip the command under them the same way. Merged rather
+    // than inlined so that #42's own table is a second line here and nothing else.
+    Object.assign(handlers, statements.HANDLERS);
 
     // ---------------------------------------------------------------- the loop
 
