@@ -39,7 +39,8 @@ const LIST_KEYS = Object.keys(LIST_TYPES);
 // revisiting only if upstream adds an eighth forced member.
 const WRITE_ALWAYS = {
     'Grimoire.Botting.Commands.Item.CmdSell, Grimoire': { Qty: '1' },
-    'Grimoire.Botting.Commands.Map.CmdMoveToCell, Grimoire': { stop: false, maxcell: 5 },
+    // CmdMoveToCell2 is the jump-between-cells command; CmdMoveToCell carries only Cell and Pad.
+    'Grimoire.Botting.Commands.Map.CmdMoveToCell2, Grimoire': { stop: false, maxcell: 5 },
     'Grimoire.Botting.Commands.Misc.CmdLoadBot, Grimoire': { PassDropList: true, PassSkillPreset: false },
     'Grimoire.Botting.Commands.Quest.CmdAcceptQuest, Grimoire': { ghostAccept: false },
     'Grimoire.Botting.Commands.Quest.CmdCompleteQuest, Grimoire': { ReAccept: false }

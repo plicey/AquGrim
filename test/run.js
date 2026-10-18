@@ -35,6 +35,8 @@ global.test = function (name, fn) {
   './unit/grimlite-bot-corpus.test.js',
   './unit/grimlite-bot-dialogs.test.js',
   './unit/grimlite-bot-window.test.js',
+  './unit/grimlite-bot-editor.test.js',
+  './unit/grimlite-bot-tabs.test.js',
   './unit/plugin-game-access.test.js',
   './unit/grimlite-parity.test.js',
   './unit/plugin-runtime.test.js',
