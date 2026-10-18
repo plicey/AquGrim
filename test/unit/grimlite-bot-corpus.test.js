@@ -65,6 +65,51 @@ test('every bot in the reference corpus parses, and re-serialises to the bytes i
   console.log('  (corpus: ' + files.length + ' bots parsed and re-serialised byte-exact)');
 });
 
+test('every $type the writer can emit is one the reference client resolves', () => {
+  // An unresolvable $type throws inside the reference's deserialiser and surfaces as a message
+  // box, so a bot written here may only carry names the client's own assembly declares. Two
+  // independent sources of truth: the shipped corpus (a real client wrote those files) and the
+  // C# that declares the classes.
+  const root = corpusRoot();
+  if (!root) {
+    console.log('  (skip $type assert: no reference clone on this machine)');
+    return;
+  }
+  const sourceRoot = path.join(root, '..', '..');
+  const csharp = [];
+  (function collect(dir) {
+    fs.readdirSync(dir, { withFileTypes: true }).forEach(function (entry) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (/^(bin|obj|\.git)$/.test(entry.name)) return;
+        collect(full);
+      } else if (entry.name.endsWith('.cs')) {
+        csharp.push(fs.readFileSync(full, 'utf8'));
+      }
+    });
+  })(path.join(sourceRoot, 'Grimoire'));
+  const all = csharp.join('\n');
+
+  const corpus = walk(root, []).map(function (file) {
+    return fs.readFileSync(file, 'utf8');
+  }).join('\n');
+
+  const unresolved = [];
+  Object.keys(bots.WRITE_ALWAYS).forEach(function (type) {
+    // either a bot the client shipped already carries the name, or the class is declared
+    const className = type.split(',')[0].split('.').pop();
+    if (corpus.indexOf('"' + type + '"') !== -1) return;
+    if (all.indexOf('class ' + className) !== -1) return;
+    unresolved.push(type);
+  });
+
+  assert.deepStrictEqual(unresolved, [],
+    'a type this writer emits is in neither the corpus nor the C# declarations');
+  // the C# really was read, or the check above would pass on an empty string
+  assert.ok(all.length > 100000, 'expected to read the reference C# tree, read ' + all.length + ' chars');
+  assert.strictEqual(bots.CONFIGURATION_TYPE.split(',')[0].split('.').pop(), 'Configuration');
+});
+
 test('the corpus covers the shapes the ticket names, so a green run means something', () => {
   const root = corpusRoot();
   if (!root) {

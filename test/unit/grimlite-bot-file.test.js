@@ -132,7 +132,7 @@ test('every command the reference forces a default on is listed, so a new one is
     Quest: { $type: 'Grimoire.Game.Data.Quest, Grimoire', QuestID: 8912 },
     ghostAccept: false
   });
-  const text = bots.serializeBot({ Commands: bots.wrapList(bots.LIST_TYPES.commands, [accept]) });
+  const text = bots.serializeBot({ Commands: bots.wrapList('Commands', [accept]) });
   assert.ok(text.indexOf('"ghostAccept": false') !== -1, text);
   // a command with no forced member is passed through as the author built it
   assert.deepStrictEqual(
@@ -193,15 +193,15 @@ test('a gzipped description is read as its text and written back untouched', () 
 test('a hand-built bot serialises in the reference dialect and reads back', () => {
   const bot = {
     $type: bots.CONFIGURATION_TYPE,
-    Commands: bots.wrapList(bots.LIST_TYPES.commands, [
+    Commands: bots.wrapList('Commands', [
       { $type: 'Grimoire.Botting.Commands.Map.CmdJoin, Grimoire', Map: 'yulgar-1', Cell: 'Enter', Pad: 'Spawn', Try: 1 }
     ]),
-    Skills: bots.wrapList(bots.LIST_TYPES.skills, []),
-    Quests: bots.wrapList(bots.LIST_TYPES.quests, []),
+    Skills: bots.wrapList('Skills', []),
+    Quests: bots.wrapList('Quests', []),
     Author: '',
     Description: '',
-    Boosts: bots.wrapList(bots.LIST_TYPES.boosts, []),
-    Drops: bots.wrapList(bots.LIST_TYPES.strings, [])
+    Boosts: bots.wrapList('Boosts', []),
+    Drops: bots.wrapList('Drops', [])
   };
   const text = bots.serializeBot(bot);
   // two-space indentation, like the reference (Newtonsoft Formatting.Indented)

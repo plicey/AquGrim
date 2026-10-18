@@ -106,7 +106,12 @@ const ERRORS = {
     parse: 'This file is not a Grimlite bot (.gbot): it is not readable as a bot configuration.'
 };
 
-function wrapList(type, values) {
+/** A list field in the shape the reference writes it: keyed by field name, never by $type. */
+function wrapList(fieldKey, values) {
+    const type = LIST_TYPES[fieldKey];
+    if (!type) {
+        throw new Error('[AquaStar:grimlite-parity] not a list field of a bot: ' + fieldKey);
+    }
     return { $type: type, $values: Array.isArray(values) ? values : [] };
 }
 
@@ -152,7 +157,7 @@ function serializeBot(bot, options) {
     Object.keys(document).forEach(function (key) {
         const value = document[key];
         if (LIST_KEYS.indexOf(key) !== -1 && Array.isArray(value)) {
-            out[key] = wrapList(LIST_TYPES[key], value);
+            out[key] = wrapList(key, value);
         } else {
             out[key] = value;
         }
