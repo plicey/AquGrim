@@ -614,7 +614,7 @@ Platform ad-block is a platform-owned rule (`res/platform/platform-rules.js`) ap
 
 #### 3. Navigation / injection
 
-Unchanged intent; hooks receive `executeJavaScriptSafely`. Manifest must declare `injectHostPatterns` (e.g. `aqwwiki.wikidot.com`, `account.aq.com`); Host refuses injection when `ctx.url` host is outside the list.
+Unchanged intent; hooks receive `executeJavaScriptSafely`. Manifest must declare `injectHostPatterns` (e.g. `aqwwiki.wikidot.com`, `account.aq.com`); Host refuses injection when `ctx.url` host is outside the list. `host.registerNavigationHooks` wraps `onDidFinishLoad` with that check: exact hostname match, plus `file:` pages under the plugin root.
 
 #### 4. Feature windows
 
@@ -859,7 +859,7 @@ In-process CJS plugins that pass trust prompts are **full trust** (Node + Electr
 ### Manifest fields for policy
 
 - `fetchAllowlist` — enforced by `host.net.fetchText`
-- `injectHostPatterns` — enforced by navigation hook runner
+- `injectHostPatterns` — enforced by `host.registerNavigationHooks`
 - `spawn-helper-process` — script path must be under `pluginRoot` after `path.normalize` + `relative` check (`!rel.startsWith('..') && !path.isAbsolute(rel)`)
 
 ### Optional hardening (non-blocking)

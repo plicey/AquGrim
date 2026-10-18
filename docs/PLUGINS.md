@@ -232,7 +232,10 @@ host.registerNavigationHooks({
 });
 ```
 
-The Host refuses injection when the page host is outside `injectHostPatterns`.
+The Host refuses injection when the page host is outside `injectHostPatterns`. Matching is an
+exact hostname comparison (no wildcards or subdomain fallback), so list every host you inject
+into. The plugin's own `file:` pages, anywhere under its directory, are always allowed - that is
+how a plugin injects into its own local demo or dashboard pages.
 
 ### 4.4 Settings fields (Active plugin tab)
 
@@ -371,7 +374,7 @@ See `plugins/adventure-quest-worlds/web/contribute.js` for the full contribution
 | `permissions` | no | Unknown entries → **load failure** |
 | `capabilities` | no | Advisory list for humans/UI |
 | `fetchAllowlist` | if `net-fetch` | URL prefixes; `*` suffix allowed |
-| `injectHostPatterns` | if `inject-scripts` | Hostnames only |
+| `injectHostPatterns` | if `inject-scripts` | Exact page hostnames; the plugin's own `file:` pages are implicit |
 | `web.contribute` | no | Relative path to Node module |
 | `bundledDefault` | no | `true` on exactly one **bundled** plugin: the one that runs when `activePluginId` is empty and in safe mode. Ignored for local plugins |
 | `unprefixedIpc` | no | Bundled plugins only: keep IPC channel names unprefixed (back-compat). Everyone else is namespaced `plugin:<id>:<channel>` |
