@@ -12,7 +12,7 @@ function electronApi() {
 
 /**
  * @param {object} deps
- * @param {Function} deps.appVersion running app version, shown in the reference's shape
+ * @param {string} deps.appVersion running app version, shown in the reference's shape
  * @param {Function} [deps.getWindows] BrowserWindow.getAllWindows, for tests
  * @param {Function} [deps.openExternal] shell.openExternal, for tests
  * @param {Function} [deps.isGameUrl] the platform's game-window classifier
@@ -33,7 +33,7 @@ function createAbout(deps) {
     function register(host) {
         host.ipc.handle('aboutInfo', function () {
             return {
-                version: credits.versionLine(typeof deps.appVersion === 'function' ? deps.appVersion() : deps.appVersion),
+                version: credits.versionLine(deps.appVersion),
                 reference: credits.referenceLine(),
                 links: credits.creditLinks(),
                 messages: getMessages()
@@ -58,8 +58,8 @@ function createAbout(deps) {
                 windows: getWindows(),
                 isGameUrl: deps.isGameUrl,
                 onError: function (error, win) {
-                    host.log('could not reload a game window: ' + (error && error.message ? error.message : error));
-                    if (win && win.webContents) win.webContents.loadURL(win.webContents.getURL());
+                    host.log('could not reload a game window (' + (win && win.id) + '): ' +
+                        (error && error.message ? error.message : error));
                 }
             });
             return { reloaded: count, none: count === 0 };

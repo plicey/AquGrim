@@ -50,6 +50,7 @@ exports.settingsMessages = {
 
 exports.notepadMessages = {
     hint: "",
+    noGame: "",
     saveTitle: "",
     savedAs: "",
     saveFailed: ""

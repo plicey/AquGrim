@@ -48,7 +48,14 @@ function activate(host) {
         getMessages: function () { return messages('eyedropperMessages'); }
     }).register(host);
     createNotepad({
-        getMessages: function () { return messages('notepadMessages'); }
+        getMessages: function () { return messages('notepadMessages'); },
+        // The dialog belongs to the window that asked for it, so it is modal to that window.
+        getWindow: function (event) {
+            const electron = require('electron');
+            return electron && electron.BrowserWindow && event && event.sender
+                ? electron.BrowserWindow.fromWebContents(event.sender)
+                : undefined;
+        }
     }).register(host);
     createAbout({
         appVersion: host.appVersion,

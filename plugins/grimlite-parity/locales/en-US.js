@@ -48,6 +48,7 @@ exports.settingsMessages = {
 
 exports.notepadMessages = {
     hint: 'Drop a text file here to append it. Type debugskill for the equipped class\'s skill actions, or mapitems for the known map-item ids.',
+    noGame: 'Nothing to dump yet: the game is not being read.',
     saveTitle: 'Save notepad',
     savedAs: 'Saved to {path}',
     saveFailed: 'Could not save: {error}'

@@ -46,7 +46,7 @@
     <span id="grow"></span>
   </div>
   <div id="sheet" contenteditable="true" spellcheck="false" aria-label="Notepad"></div>
-  <div id="hint">Drop a text file here to append it.</div>
+    <div id="hint">Drop a text file here to append it.</div>
 
   <script>
     // The page owns the rich text: formatting is applied to the selection with execCommand,
@@ -60,6 +60,7 @@
       var colourInput = document.getElementById('colour');
       var hint = document.getElementById('hint');
       var bridge = window.aquastarNotepad || null;
+      var messages = {};
 
       function apply(command, value) {
         sheet.focus();
@@ -67,9 +68,25 @@
       }
 
       fontSelect.addEventListener('change', function () { apply('fontName', fontSelect.value); });
-      // execCommand's font size is a 1-7 bucket, so the simplest faithful control is its
-      // default body size; anything more needs a span wrapper per selection.
-      sizeInput.addEventListener('change', function () { apply('fontSize', '7'); });
+      // execCommand's font size is a 1-7 bucket, which cannot carry the pixel size the user
+      // typed. With a selection: apply the top bucket, then rewrite the tags it inserted as
+      // styled spans (any earlier ones are already spans, so these are the new ones). With no
+      // selection the size becomes the sheet's own, which is what later typing inherits.
+      sizeInput.addEventListener('change', function () {
+        var px = Math.max(8, Math.min(72, Number(sizeInput.value) || 13));
+        var selection = window.getSelection();
+        if (!selection || selection.isCollapsed) {
+          sheet.style.fontSize = px + 'px';
+          return;
+        }
+        apply('fontSize', '7');
+        Array.prototype.forEach.call(sheet.querySelectorAll('font[size="7"]'), function (node) {
+          var span = document.createElement('span');
+          span.style.fontSize = px + 'px';
+          while (node.firstChild) span.appendChild(node.firstChild);
+          node.parentNode.replaceChild(span, node);
+        });
+      });
       colourInput.addEventListener('input', function () { apply('foreColor', colourInput.value); });
 
       // The reference appends a dropped file's text; keep that, leaving the rest of the sheet
@@ -98,6 +115,16 @@
 
       function replaceSheet(text) {
         sheet.textContent = text;
+        // Replacing the children drops the caret; put it back at the end so the user can keep
+        // typing into the dump they just asked for.
+        var range = document.createRange();
+        range.selectNodeContents(sheet);
+        range.collapse(false);
+        var selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
       }
 
       // Notepad.cs checks on every change and replaces the whole box. This triggers on the
@@ -106,10 +133,14 @@
       sheet.addEventListener('input', function () {
         if (!bridge) return;
         var text = sheet.textContent || '';
-        if (/debugskills*$/.test(text)) {
-          bridge.skillDump().then(function (dump) { if (dump) replaceSheet(dump); });
-        } else if (/mapitemss*$/.test(text)) {
-          bridge.mapItemDump().then(function (dump) { if (dump) replaceSheet(dump); });
+        if (/debugskill\s*$/.test(text)) {
+          // An empty dump means the game has not been read (no equipped class yet): say so
+          // rather than replacing the note with nothing at all.
+          bridge.skillDump().then(function (dump) {
+            replaceSheet(dump || messages.noGame || '');
+          });
+        } else if (/mapitems\s*$/.test(text)) {
+          bridge.mapItemDump().then(function (dump) { replaceSheet(dump || ''); });
         }
       });
 
@@ -131,8 +162,9 @@
       }
 
       if (bridge) {
-        bridge.getMessages().then(function (messages) {
-          if (messages && messages.hint) hint.textContent = messages.hint;
+        bridge.getMessages().then(function (list) {
+          messages = list || {};
+          if (messages.hint) hint.textContent = messages.hint;
         });
       }
     })();
