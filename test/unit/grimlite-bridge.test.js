@@ -31,24 +31,41 @@ function fakeHost(channel) {
   return { log: function () {}, bridge: channel };
 }
 
-test('a game call goes over the bridge channel as the reference names it', async () => {
-  const channel = fakeChannel({ Equip: '"ok"' });
+test('equipping resolves the name to the item and hands the game its id, as the reference does', async () => {
+  // CmdEquip resolves a name to an inventory item and calls Player.Equip(item.Id); the loader's
+  // Equip then parses that id. Passing the name straight through would parseInt to NaN, so the
+  // resolution is the load-bearing part of this adapter.
+  const channel = fakeChannel({
+    'world.myAvatar.items': JSON.stringify([{ ItemID: 42, sName: 'Sword of Awe' }]),
+    'world.sendEquipItemRequest': '"ok"'
+  });
   const game = bridge.createGameAccess(fakeHost(channel));
 
   await game.equipItem('Sword of Awe');
 
-  // Zero-argument calls use the bridge's own zero-argument entry point, as the reference does.
   assert.deepStrictEqual(channel.calls[0], {
+    name: 'getGameObject',
+    args: ['world.myAvatar.items']
+  }, 'the item is looked up in the inventory first');
+  assert.deepStrictEqual(channel.calls[1], {
     name: 'callGameFunction',
-    args: ['Equip', 'Sword of Awe']
-  });
+    args: ['world.sendEquipItemRequest', { ItemID: 42 }]
+  }, 'then the game is handed the item id, not the name');
 });
 
-test('the inventory is read through the reference\'s own call and normalised', async () => {
+test('equipping a name the inventory does not hold says so, without calling the game', async () => {
+  const channel = fakeChannel({ 'world.myAvatar.items': JSON.stringify([]) });
+  const game = bridge.createGameAccess(fakeHost(channel));
+  await assert.rejects(function () { return game.equipItem('Nothing'); },
+    /no item named "Nothing" in the inventory/);
+  assert.strictEqual(channel.calls.length, 1, 'only the lookup should have happened');
+});
+
+test('the inventory is read through the reference\'s own name and normalised', async () => {
   // GetInventoryItems answers the InventoryItem JSON: ItemID / sName / sType / bCoins / bEquip,
   // with the two booleans written as the 0/1 the reference's BoolConverter reads.
   const channel = fakeChannel({
-    GetInventoryItems: JSON.stringify([
+    'world.myAvatar.items': JSON.stringify([
       { ItemID: 42, sName: 'Blinding Light of Destiny', sType: 'Sword', bCoins: 1, bEquip: 0 },
       { ItemID: 43, sName: 'ArchPaladin', sType: 'Class', bCoins: 0, bEquip: 1 }
     ])
@@ -62,22 +79,33 @@ test('the inventory is read through the reference\'s own call and normalised', a
 });
 
 test('the bank counts come back as numbers, from the call that reports each', async () => {
-  const channel = fakeChannel({ BankSlots: '100', UsedBankSlots: '37' });
+  // BankSlots and UsedBankSlots are the reference loader's names: the surface reaches the paths
+  // those bodies read, which is what makes these numbers arrive against the stock game.
+  const channel = fakeChannel({
+    'world.myAvatar.objData.iBankSlots': '100',
+    'world.myAvatar.iBankCount': '37'
+  });
   const game = bridge.createGameAccess(fakeHost(channel));
 
   assert.deepStrictEqual(await game.readBankSlots(), { total: 100, used: 37 });
-  assert.deepStrictEqual(channel.calls.map(function (c) { return c.args[0]; }).sort(),
-    ['BankSlots', 'UsedBankSlots']);
+  assert.deepStrictEqual(channel.calls.map(function (c) { return c.args[0]; }).sort(), [
+    'world.myAvatar.iBankCount', 'world.myAvatar.objData.iBankSlots'
+  ]);
 });
 
 test('a transfer asks the game for it by name, and hands back nothing invented', async () => {
-  const channel = fakeChannel({ TransferToBank: 'null' });
+  // TransferToBank's body resolves the name to the item object, then calls the game's own
+  // sendBankFromInvRequest with it - so the item, not the name, is what the game receives.
+  const channel = fakeChannel({
+    'world.myAvatar.items': JSON.stringify([{ ItemID: 7, sName: 'Sword of Awe' }]),
+    'world.sendBankFromInvRequest': 'null'
+  });
   const game = bridge.createGameAccess(fakeHost(channel));
 
   assert.strictEqual(await game.transferToBank('Sword of Awe'), undefined);
-  assert.deepStrictEqual(channel.calls[0], {
+  assert.deepStrictEqual(channel.calls[1], {
     name: 'callGameFunction',
-    args: ['TransferToBank', 'Sword of Awe']
+    args: ['world.sendBankFromInvRequest', { ItemID: 7, sName: 'Sword of Awe' }]
   });
 });
 
@@ -86,19 +114,18 @@ test('an error the game itself reports is surfaced, not swallowed', async () => 
   // path that is absent, or a game that never loaded. The caller must see that text - and when
   // the name is one only the reference loader carries, the reason comes with it.
   const channel = fakeChannel({
-    GetInventoryItems: JSON.stringify({ error: 'no member GetInventoryItems at world' })
+    'world.myAvatar.items': JSON.stringify({ error: 'no member items at world' })
   });
   const game = bridge.createGameAccess(fakeHost(channel));
 
   await assert.rejects(function () { return game.readInventory(); }, function (error) {
-    return error.message.indexOf('no member GetInventoryItems at world') === 0 &&
-      error.message.indexOf(bridge.ERRORS.loaderSurface('GetInventoryItems')) !== -1;
+    return error.message === 'no member items at world';
   });
 
   // Any other refusal is handed through untouched: this adapter does not editorialise a game
   // that failed for its own reasons.
   const other = bridge.createGameAccess(fakeHost(fakeChannel({
-    GetInventoryItems: JSON.stringify({ error: 'the game is not loaded yet' })
+    'world.myAvatar.items': JSON.stringify({ error: 'the game is not loaded yet' })
   })));
   await assert.rejects(function () { return other.readInventory(); }, function (error) {
     return error.message === 'the game is not loaded yet';
@@ -164,8 +191,28 @@ test('sleep is real pacing, not a game call', async () => {
 test('the adapter exposes only what this plugin\'s features ask for', () => {
   const game = bridge.createGameAccess(fakeHost(fakeChannel({})));
   assert.deepStrictEqual(Object.keys(game).sort(), [
-    'equipItem', 'readBankSlots', 'readInventory', 'sleep', 'transferToBank'
+    // The five named wants the Bank and Sets windows ask for, plus the reference loader's typed
+    // surface (ticket #48) as the one other door: loaderCall for a name, loaderSurface to list
+    // what it holds. Anything else added here should be a deliberate decision, which is the
+    // point of pinning the list.
+    'equipItem', 'loaderCall', 'loaderSurface', 'readBankSlots', 'readInventory', 'sleep',
+    'transferToBank'
   ]);
+});
+
+// Ticket #48: the loader surface sits behind the same adapter, so a feature never reaches the
+// bridge's generic callbacks for a name the reference loader would have answered.
+test('the adapter reaches the reference loader\'s surface through the same channel', async () => {
+  // fakeChannel answers by the path it is asked for, which is exactly what pins the mapping.
+  const channel = fakeChannel({ 'world.myAvatar.dataLeaf.intLevel': '42' });
+  const game = bridge.createGameAccess(fakeHost(channel));
+  const answer = await game.loaderCall('Level', []);
+  assert.strictEqual(answer, 42);
+  assert.deepStrictEqual(channel.calls[0],
+    { name: 'getGameObject', args: ['world.myAvatar.dataLeaf.intLevel'] },
+    'Level is a read, so it goes through getGameObject with the path the loader body reads');
+  const surface = game.loaderSurface();
+  assert.ok(surface.names().indexOf('GetBankItems') !== -1);
 });
 
 // What the bridge still owes, pinned so the list cannot drift silently: every call name above
@@ -183,14 +230,17 @@ test('the loader-only list is exactly the names this module calls', () => {
   ]);
 });
 
-test('an equip the game cannot answer is annotated with the loader reason too', async () => {
-  // Equip is the one loader-only name the Sets window calls: the game carries the letters as a
-  // UI label but no member answers to it, so the failure has to explain itself the same way.
-  const channel = fakeChannel({ Equip: JSON.stringify({ error: 'no member Equip at world' }) });
-  const game = bridge.createGameAccess(fakeHost(channel));
-
-  await assert.rejects(function () { return game.equipItem('Sword of Awe'); }, function (error) {
-    return error.message.indexOf('no member Equip at world') === 0 &&
-      error.message.indexOf(bridge.ERRORS.loaderSurface('Equip')) !== -1;
+test('an equip reaches the game through the surface, so a loader-only name is no longer a dead end', async () => {
+  // Before ticket #48 this adapter asked the game for "Equip" directly and the game answered
+  // "no member Equip at world". Now the surface knows what the loader's Equip body does, so the
+  // same request works: it is the reason this ticket exists.
+  const channel = fakeChannel({
+    'world.myAvatar.items': JSON.stringify([{ ItemID: 42, sName: 'Sword of Awe' }]),
+    'world.sendEquipItemRequest': '"ok"'
   });
+  const game = bridge.createGameAccess(fakeHost(channel));
+  await game.equipItem('Sword of Awe');
+  assert.deepStrictEqual(channel.calls.map(function (c) { return c.args[0]; }), [
+    'world.myAvatar.items', 'world.sendEquipItemRequest'
+  ]);
 });

@@ -32,6 +32,11 @@
 
 const UNCHANNELLED = 'this app has no game bridge channel';
 
+// The reference loader's typed surface (ticket #48): one row per helper name it registers, each
+// row reaching the game paths that helper's own body reads. Built on top of the generic channel
+// this module already drives, so no feature needs to know how a name maps to a path.
+const loaderSurface = require('./loader-surface.js');
+
 // The reference loader's own call names this module uses. Kept as data so the failure a user
 // sees can explain itself, and so the list of what the bridge still owes is in one place.
 //
@@ -166,9 +171,46 @@ function createGameAccess(host) {
         });
     }
 
+    /**
+     * The loader surface (ticket #48), bound to the raw channel rather than to `call` above:
+     * that one takes a game path and picks the callback for it, while the surface is handed the
+     * callback it wants directly, because a helper's body decides which one it needs.
+     */
+    function surface() {
+        return loaderSurface.createLoaderSurface(function (callback, callArgs) {
+            return ensure().then(function () {
+                return channel.call(callback, callArgs);
+            }).then(function (result) {
+                if (!result || !result.ok) {
+                    throw new Error((result && result.error) || ('the bridge could not ' + callback));
+                }
+                return decode(result.value);
+            });
+        }, log);
+    }
+
     return {
+        /**
+         * Call one of the reference loader's own helper names (ticket #48). This is the door for
+         * a name the game does not carry: the surface knows the path that name's loader body
+         * reads, so `GetBankItems` or `UsedBankSlots` answer where the game alone would refuse.
+         *
+         * @param {string} name the reference's own helper name
+         * @param {Array} [args]
+         * @returns {Promise<any>} what the game answered, or a rejection naming the reason
+         */
+        loaderCall: function (name, args) {
+            return surface().call(name, args);
+        },
+
+        /** The loader surface itself, for a caller that wants to list or probe names. */
+        loaderSurface: surface,
+
         readInventory: function () {
-            return call('GetInventoryItems', []).then(function (value) {
+            // Through the surface rather than the raw name: GetInventoryItems is the reference
+            // loader's name, which the stock game answers "no member" to, while the surface knows
+            // the path its body reads (world.myAvatar.items).
+            return surface().call('GetInventoryItems', []).then(function (value) {
                 const raw = Array.isArray(value) ? value : [];
                 return raw.map(inventoryItem);
             });
@@ -181,8 +223,9 @@ function createGameAccess(host) {
          * whether to fill the bank.
          */
         readBankSlots: function () {
-            return call('BankSlots', []).then(function (total) {
-                return call('UsedBankSlots', []).then(function (used) {
+            const game = surface();
+            return game.call('BankSlots', []).then(function (total) {
+                return game.call('UsedBankSlots', []).then(function (used) {
                     return { total: asNumber(total), used: asNumber(used) };
                 }, function (error) {
                     log('bank usage unavailable: ' + error.message);
@@ -192,11 +235,27 @@ function createGameAccess(host) {
         },
 
         transferToBank: function (name) {
-            return call('TransferToBank', [name]).then(function () {});
+            // The loader's TransferToBank takes the item's name and resolves it to the item object
+            // before calling the game; the surface does exactly that.
+            return surface().call('TransferToBank', [name]).then(function () {});
         },
 
+        /**
+         * Equip one inventory item by name. The reference resolves a name to the item and then
+         * hands the game the item's *id* - its CmdEquip does exactly that, and the loader's Equip
+         * parses the id - so this resolves first rather than passing a name into a call that
+         * expects a number.
+         */
         equipItem: function (name) {
-            return call('Equip', [name]).then(function () {});
+            const want = String(name === null || name === undefined ? '' : name).toLowerCase();
+            return surface().call('GetInventoryItems', []).then(function (value) {
+                const raw = Array.isArray(value) ? value : [];
+                const match = raw.filter(function (item) {
+                    return String(item && item.sName || '').toLowerCase() === want;
+                })[0];
+                if (!match) throw new Error('no item named "' + name + '" in the inventory');
+                return surface().call('Equip', [match.ItemID]);
+            }).then(function () {});
         },
 
         // Pacing is not game access, so it is real: a feature that waits keeps working whatever

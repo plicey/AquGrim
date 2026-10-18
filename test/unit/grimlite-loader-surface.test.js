@@ -1,0 +1,294 @@
+// Ticket #48: the reference loader's helper surface, answered by our bridge.
+//
+// The reference calls helper names its own loader registers (Loader/grimoire.swf) and roughly 100
+// of which the stock game does not carry. Those names used to be unanswerable - the game replies
+// "no member <name> at world" - and this module implements them as a table over the bridge's
+// generic callbacks, so they answer with no rebuilt SWF.
+//
+// What is asserted here, and why each matters:
+//   * the table covers every name the reference registers, checked against the loader's own
+//     Externalizer.as init() captured as a fixture, so a feature ticket can assert a name exists
+//     instead of discovering it does not;
+//   * an implemented name reads the path its loader body reads - the mapping is the load-bearing
+//     claim, and every expectation below names the loader file it came from;
+//   * a name the surface cannot answer fails with the reason, never a bare "no member";
+//   * nothing is invented: a name neither the game nor the reference has is refused as unknown.
+//
+// The fixture came from the decompiled loader, not from this code:
+//   /var/tmp/aq48/out-loader/scripts/grimoire/Externalizer.as
+//   /var/tmp/aq48/out-loader/scripts/grimoire/game/*.as
+
+const assert = require('assert');
+const path = require('path');
+const surface = require('../../plugins/grimlite-parity/loader-surface.js');
+
+const FIXTURE = path.join(__dirname, '..', 'fixtures', 'grimlite-loader-surface', 'registered.json');
+
+/**
+ * A stand-in for the bridge: it answers the paths and calls a test named, and refuses everything
+ * else in the movie's own words, so a typo in a path shows up as a failing expectation instead of
+ * passing quietly.
+ */
+function fakeBridge(answers, calls) {
+    const asked = [];
+    const made = [];
+    const bridge = {
+        asked: asked,
+        made: made,
+        call: function (callback, args) {
+            const name = args[0];
+            if (callback === 'getGameObject') {
+                asked.push(name);
+                if (Object.prototype.hasOwnProperty.call(answers, name)) {
+                    return Promise.resolve(answers[name]);
+                }
+                return Promise.reject(new Error('no member ' + name.split('.').pop() + ' at ' + name));
+            }
+            made.push({ callback: callback, path: name, args: args.slice(1) });
+            if (Object.prototype.hasOwnProperty.call(calls, name)) {
+                return Promise.resolve(calls[name]);
+            }
+            return Promise.reject(new Error('no member ' + name.split('.').pop() + ' at ' + name));
+        }
+    };
+    return bridge;
+}
+
+function access(bridge) {
+    return surface.createLoaderSurface(bridge.call);
+}
+
+test('the surface names every helper the reference loader registers', () => {
+    const fixture = require(FIXTURE);
+    const mine = surface.names();
+    const missing = fixture.registered.filter((name) => mine.indexOf(name) === -1);
+    // The seven generic callbacks are the bridge's own layer, which this ticket must not change
+    // (the game already answers them); the fixture marks them so this check stays exact.
+    const unaccounted = missing.filter((name) => fixture.generic.indexOf(name) === -1);
+    assert.deepStrictEqual(unaccounted, [], 'the loader registers these and the surface omits them');
+});
+
+test('the surface invents no name the reference loader does not register', () => {
+    const fixture = require(FIXTURE);
+    const invented = surface.names().filter((name) => fixture.registered.indexOf(name) === -1);
+    assert.deepStrictEqual(invented, [], 'these are not names the reference loader registers');
+});
+
+test('the implemented set is discoverable, so a feature ticket can assert what it needs', () => {
+    const done = surface.implemented();
+    ['GetInventoryItems', 'GetBankItems', 'BankSlots', 'UsedBankSlots', 'Health', 'Cell',
+        'GetTempItems', 'HouseSlots', 'GetEquip', 'InventorySlots'].forEach((name) => {
+        assert.ok(done.indexOf(name) !== -1, name + ' should be implemented');
+    });
+    assert.ok(done.length <= surface.names().length);
+});
+
+test('every read answers the path its own loader body reads', () => {
+    // Each expectation is the return statement of that helper in
+    // /var/tmp/aq48/out-loader/scripts/grimoire/game/*.as.
+    const reads = {
+        Cell: 'world.strFrame',
+        Pad: 'world.strPad',
+        Map: 'world.strMapName',
+        Health: 'world.myAvatar.dataLeaf.intHP',
+        HealthMax: 'world.myAvatar.dataLeaf.intHPMax',
+        Mana: 'world.myAvatar.dataLeaf.intMP',
+        ManaMax: 'world.myAvatar.dataLeaf.intMPMax',
+        State: 'world.myAvatar.dataLeaf.intState',
+        Level: 'world.myAvatar.dataLeaf.intLevel',
+        Gold: 'world.myAvatar.objData.intGold',
+        UserID: 'world.myAvatar.uid',
+        CharID: 'world.myAvatar.objData.CharID',
+        GetBankItems: 'world.bankinfo.items',
+        BankSlots: 'world.myAvatar.objData.iBankSlots',
+        UsedBankSlots: 'world.myAvatar.iBankCount',
+        GetInventoryItems: 'world.myAvatar.items',
+        InventorySlots: 'world.myAvatar.objData.iBagSlots',
+        UsedInventorySlots: 'world.myAvatar.items.length',
+        GetTempItems: 'world.myAvatar.tempitems',
+        GetHouseItems: 'world.myAvatar.houseitems',
+        HouseSlots: 'world.myAvatar.objData.iHouseSlots',
+        GetItemTree: 'world.invTree',
+        GetAvatars: 'world.avatars',
+        Players: 'world.uoTree',
+        PlayersInMap: 'world.areaUsers',
+        PlayerData: 'world.myAvatar.objData',
+        GetFactions: 'world.myAvatar.factions',
+        GetTargetHealth: 'world.myAvatar.target.dataLeaf.intHP',
+        RealAddress: 'objServerInfo.RealAddress',
+        RealPort: 'objServerInfo.RealPort',
+        ServerName: 'objServerInfo.sName'
+    };
+    const answers = {};
+    Object.keys(reads).forEach((name) => { answers[reads[name]] = name; });
+    const bridge = fakeBridge(answers, {});
+    const game = access(bridge);
+    const names = Object.keys(reads);
+    return Promise.all(names.map((name) => game.call(name, []).then((value) => {
+        assert.strictEqual(value, name, name + ' should read ' + reads[name]);
+    }))).then(() => {
+        const expectedPaths = names.map((name) => reads[name]);
+        bridge.asked.forEach((asked) => {
+            assert.ok(expectedPaths.indexOf(asked) !== -1, 'unexpected path read: ' + asked);
+        });
+    });
+});
+
+test('a read the loader shapes is shaped the same way here', () => {
+    const bridge = fakeBridge({
+        'world.myAvatar.dataLeaf.afk': 1,
+        'world.myAvatar.objData.iUpgDays': 10,
+        'world.myAvatar.objData.strClassName': 'dragonslayer',
+        'world.myAvatar.objData.strGender': 'm',
+        'world.curRoom': 42,
+        'world.strAreaName': 'yokai-1234'
+    }, {});
+    const game = access(bridge);
+    return Promise.all([
+        game.call('IsAfk', []),
+        game.call('IsMember', []),
+        game.call('Class', []),
+        game.call('Gender', []),
+        game.call('RoomId', []),
+        game.call('RoomNumber', [])
+    ]).then((v) => {
+        // Where the loader returns its own "True"/"False" strings, a JavaScript caller gets a
+        // boolean: the quoting exists for its C# parser, not for a caller here.
+        assert.strictEqual(v[0], true, 'IsAfk should be a boolean');
+        assert.strictEqual(v[1], true, 'IsMember is iUpgDays >= 0');
+        assert.strictEqual(v[2], 'DRAGONSLAYER', 'Class is upper-cased');
+        assert.strictEqual(v[3], 'M', 'Gender is upper-cased');
+        assert.strictEqual(v[4], '42', 'RoomId is a string of curRoom');
+        assert.strictEqual(v[5], '1234', 'RoomNumber is the part after the dash');
+    });
+});
+
+test('a call hands the game the arguments the loader shapes for it', () => {
+    const bridge = fakeBridge({}, {
+        'world.sendEquipItemRequest': 'ok',
+        'world.moveToCell': 'ok',
+        'world.tryQuestComplete': 'ok'
+    });
+    const game = access(bridge);
+    return Promise.all([
+        game.call('Equip', ['1234']),
+        game.call('Jump', ['Enter']),
+        game.call('Complete', ['99', 5, '-1', 'True'])
+    ]).then(() => {
+        const byPath = {};
+        bridge.made.forEach((m) => { byPath[m.path] = m; });
+        assert.deepStrictEqual(byPath['world.sendEquipItemRequest'].args,
+            [{ ItemID: 1234 }], 'Equip parses its id');
+        assert.deepStrictEqual(byPath['world.moveToCell'].args,
+            ['Enter', 'Spawn'], 'Jump defaults the pad');
+        assert.deepStrictEqual(byPath['world.tryQuestComplete'].args,
+            [99, -1, true, 5], 'Complete reorders its four arguments');
+    });
+});
+
+test('a transfer resolves the item by name, then hands the item object over', () => {
+    // Bank.TransferToBank: Inventory.GetItemByName(name), then world.sendBankFromInvRequest(item).
+    const inv = [{ sName: 'Sword', ItemID: 7, CharItemID: 70 }];
+    const bridge = fakeBridge({ 'world.myAvatar.items': inv }, { 'world.sendBankFromInvRequest': 'ok' });
+    const game = access(bridge);
+    return game.call('TransferToBank', ['sword']).then(() => {
+        assert.strictEqual(bridge.made[0].path, 'world.sendBankFromInvRequest');
+        assert.strictEqual(bridge.made[0].args[0], inv[0], 'the item object itself is handed over');
+    });
+});
+
+test('a transfer for an item the player does not have says so, and sends nothing', () => {
+    const bridge = fakeBridge({ 'world.myAvatar.items': [] }, { 'world.sendBankFromInvRequest': 'ok' });
+    const game = access(bridge);
+    return game.call('TransferToBank', ['nothing']).then(() => {
+        throw new Error('should have refused');
+    }, (error) => {
+        assert.ok(error.message.indexOf('nothing') !== -1, 'the refusal names the item');
+        assert.strictEqual(bridge.made.length, 0, 'nothing should have been sent');
+    });
+});
+
+test('a name the surface cannot answer fails with the reason, not a bare no member', () => {
+    const game = access(fakeBridge({}, {}));
+    return game.call('GetMonsterHealth', []).then(() => {
+        throw new Error('should have refused');
+    }, (error) => {
+        assert.ok(error.message.indexOf('loader') !== -1, 'the refusal says whose name it is');
+        assert.ok(error.message.indexOf('#38') !== -1, 'the refusal says where that work lives');
+        assert.ok(error.message.indexOf('no member') === -1, 'never a bare no member');
+    });
+});
+
+test('a name neither the game nor the reference has is refused as unknown', () => {
+    const game = access(fakeBridge({}, {}));
+    return game.call('TeleportToPony', []).then(() => {
+        throw new Error('should have refused');
+    }, (error) => {
+        assert.ok(error.message.indexOf('TeleportToPony') !== -1, 'the refusal names it');
+    });
+});
+
+test('a path the game does not carry surfaces the game\'s own words', () => {
+    const game = access(fakeBridge({}, {}));
+    return game.call('Health', []).then(() => {
+        throw new Error('should have refused');
+    }, (error) => {
+        assert.ok(error.message.indexOf('no member') === 0, 'the game\'s own message reaches the caller');
+    });
+});
+
+test('an argument-less call goes through the zero-argument callback, as the loader keeps it', () => {
+    const bridge = fakeBridge({}, { 'world.rest': 'ok', 'world.getQuests': 'ok' });
+    const game = access(bridge);
+    return Promise.all([game.call('Rest', []), game.call('GetQuests', ['1,2'])]).then(() => {
+        assert.strictEqual(bridge.made[0].callback, 'callGameFunction0',
+            'Rest takes no arguments and has its own callback');
+        assert.strictEqual(bridge.made[1].callback, 'callGameFunction',
+            'GetQuests takes an argument');
+        assert.deepStrictEqual(bridge.made[1].args, [['1', '2']], 'GetQuests splits its list');
+    });
+});
+
+test('a write goes through setGameObject with the value the loader parses', () => {
+    const written = [];
+    const game = surface.createLoaderSurface(function (callback, args) {
+        if (callback === 'setGameObject') {
+            written.push(args);
+            return Promise.resolve(args[1]);
+        }
+        return Promise.resolve(null);
+    });
+    return game.call('SetWalkSpeed', ['30']).then(() => {
+        assert.strictEqual(written.length, 1, 'one write');
+        assert.strictEqual(written[0][0], 'world.WALKSPEED');
+        assert.strictEqual(written[0][1], 30, 'the speed is parsed, as parseInt did');
+    });
+});
+
+test('the skill readiness check reads every path the loader reads', () => {
+    // IsSkillReady: the greater of the global cooldown left and this skill\'s own, both scaled by
+    // the avatar\'s haste. A one-second cooldown that has just started should read about 1000.
+    const bridge = fakeBridge({
+        'world.actions.active.2.cd': 1000,
+        'world.actions.active.2.ts': Date.now(),
+        'world.GCD': 0,
+        'world.GCDTS': Date.now(),
+        'world.myAvatar.dataLeaf.sta.$tha': 0
+    }, {});
+    const game = access(bridge);
+    return game.call('SkillAvailable', ['2']).then((value) => {
+        assert.ok(typeof value === 'number' && value > 900 && value < 1100,
+            'a just-started one-second cooldown reads about 1000, got ' + value);
+    });
+});
+
+test('selectArrayObjects projects one field off each entry, as the loader does', () => {
+    const bridge = fakeBridge({
+        'world.myAvatar.items': [{ sName: 'Sword' }, { sName: 'Shield' }]
+    }, {});
+    const game = access(bridge);
+    return game.call('selectArrayObjects', ['world.myAvatar.items', 'sName']).then((value) => {
+        assert.deepStrictEqual(value, ['Sword', 'Shield']);
+    });
+});
+
