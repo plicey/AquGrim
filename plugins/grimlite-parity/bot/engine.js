@@ -21,6 +21,8 @@
 
 const bots = require('./bots.js');
 const catalog = require('./command-catalog.js');
+const miscCommands = require('./misc-commands.js');
+const miscRules = require('./misc.js');
 // The state-reading statements (#41) live in their own module: #42 adds its own table beside it,
 // and a union of two tables is a one-line change where one long inline object is not.
 const statements = require('./statements.js');
@@ -136,9 +138,22 @@ function evaluate(input) {
  *
  * @param {object} deps
  * @param {object} deps.session      the injected game session (spec Seam 4); see session.js
+ * @param {object} [deps.handlers]   a second vocabulary to dispatch: the feature tickets' own
+ *                                   command classes (items and quests today), keyed the same way.
+ *                                   A key the engine already handles is left alone, so a feature
+ *                                   table can never replace the loop's own behaviour.
  * @param {(config: object) => Promise<any>} [deps.relogin]  the reference's AutoRelogin.Login
  * @param {(options: object) => Promise<any>} [deps.options] the reference's OptionsManager
  * @param {(ms: number) => Promise<void>} [deps.sleep]       pacing, injected so tests do not wait
+ * @param {object} [deps.packets] host.packets (send)
+ * @param {(count: number) => void} [deps.beep] the shell own alert sound
+ * @param {(file: string) => string} [deps.readFile] reads a bot file for CmdLoadBot
+ * @param {(file: string) => boolean} [deps.exists] whether that file is there
+ * @param {() => string} [deps.botsDirectory] where a relative bot path resolves
+ * @param {object} [deps.spammer] the spammer window own controls (#27)
+ * @param {object} [deps.timers] setTimeout/clearTimeout, injected for tests
+ * @param {(line: string) => void} [deps.logDebug] the Debug pane CmdLog writes to
+ * @param {() => void} [deps.logClear] the CLEAR marker own action on that pane
  * @param {(line: string) => void} [deps.log]
  */
 function createEngine(deps) {
@@ -159,6 +174,12 @@ function createEngine(deps) {
     let username = '';
     let lastCommand = null;
     let dispatched = [];       // what the loop actually ran, for the window and for tests
+    // Bot.Configurations / Bot.OldIndex / Bot.CurrentConfiguration: the stack a load-bot
+    // pushes onto and CmdReturn pops from, keyed by the configuration the loop is in.
+    const configurations = {};
+    const oldIndexes = {};
+    let currentConfiguration = 0;
+    let background = null;  // the background packet labels, while one is held
 
     function commands() {
         const list = config && config.Commands;
@@ -270,6 +291,113 @@ function createEngine(deps) {
         }
     }
 
+    // ---------------------------------------------------------------- the misc commands' seams
+
+    /**
+     * The option toggles (#34), as much of them as CmdProvoke and CmdToggleProvoke need. The
+     * reference reads and writes OptionsManager.ProvokeMonsters; this build hands the same want
+     * to whatever the Options window wired in, and says so when nothing is.
+     */
+    function options() {
+        const wired = deps.options;
+        if (!wired) return {};
+        return {
+            setProvoke: function (on) {
+                if (typeof wired.setProvoke === 'function') return wired.setProvoke(on);
+                if (typeof wired.setToggle === 'function') return wired.setToggle('provoke', on);
+                return false;
+            },
+            getProvoke: function () {
+                if (typeof wired.getProvoke === 'function') return wired.getProvoke();
+                if (typeof wired.state === 'function') return (wired.state() || {}).provoke === true;
+                return false;
+            }
+        };
+    }
+
+    /** Where a CmdLoadBot path resolves: the bots directory the user chose (#36). */
+    function botsDirectory() {
+        if (typeof deps.botsDirectory === 'function') return deps.botsDirectory() || '';
+        return typeof deps.botsDirectory === 'string' ? deps.botsDirectory : '';
+    }
+
+    /** CmdLoadBot's own path resolution (bot/misc.js), over the injected file system. */
+    function resolveBotFile(written, root) {
+        const exists = typeof deps.exists === 'function' ? deps.exists : function (file) {
+            try {
+                return require('fs').statSync(file).isFile();
+            } catch (error) {
+                return false;
+            }
+        };
+        return miscRules.resolveBotPath(written, root, exists);
+    }
+
+    /**
+     * CmdLoadBot's own body, less the parts this build has no system for (the bank and the quest
+     * list are #39's). What it does keep is the whole of the reference's own hand-over: the
+     * running configuration and index are pushed onto this engine's stack, the skill preset and
+     * the drop list pass or do not, and the loop restarts at the top of the loaded list. The
+     * stack is per engine, so one window's load-bot cannot move another window's bot.
+     */
+    function loadBot(loaded, opts) {
+        const wanted = opts || {};
+        const list = loaded && Array.isArray(loaded.Commands) ? loaded.Commands : [];
+        if (!list.length) {
+            return { ok: false, error: 'that bot has no commands, so the running one is kept' };
+        }
+        const previous = document;
+        const previousConfig = config;
+        configurations[currentConfiguration] = { document: previous, config: previousConfig };
+        oldIndexes[currentConfiguration] = index;
+        const oldSkills = wanted.PassSkillPreset && previousConfig &&
+            Array.isArray(previousConfig.Skills) && previousConfig.Skills.length
+            ? previousConfig.Skills : null;
+        const oldDrops = wanted.PassDropList && previousConfig && Array.isArray(previousConfig.Drops)
+            ? previousConfig.Drops : null;
+        if (oldSkills !== null) loaded.Skills = oldSkills;
+        if (oldDrops !== null) {
+            // `new HashSet<string>(newConfiguration.Drops, StringComparer.OrdinalIgnoreCase)
+            // .UnionWith(oldDropList)`: the old list is merged in, so nothing the running bot was
+            // picking up is dropped, and a drop named in different case is the same drop.
+            const merged = (Array.isArray(loaded.Drops) ? loaded.Drops : []).slice();
+            oldDrops.forEach(function (drop) {
+                const seen = merged.some(function (held) {
+                    return String(held).toLowerCase() === String(drop).toLowerCase();
+                });
+                if (!seen) merged.push(drop);
+            });
+            loaded.Drops = merged;
+        }
+        document = loaded;
+        config = bots.configuration(loaded);
+        index = -1;  // the loop's own increment makes that the top of the new list
+        currentConfiguration++;
+        return { ok: true };
+    }
+
+    /**
+     * CmdReturn: `int i = --instance.CurrentConfiguration`, then the configuration and the index
+     * it was left at come back. Nothing on the stack is a no-op, which is what the reference's
+     * own try-and-swallow does with it.
+     */
+    function returnToPushed() {
+        if (currentConfiguration <= 0) {
+            return { ok: false, error: 'this bot has not loaded another one, so there is nothing to return to' };
+        }
+        currentConfiguration--;
+        const entry = configurations[currentConfiguration];
+        const at = oldIndexes[currentConfiguration];
+        if (!entry || !entry.config || !Array.isArray(entry.config.Commands) ||
+            !entry.config.Commands.length || !(at > -1)) {
+            return { ok: false, error: 'the configuration it would return to is not on the stack' };
+        }
+        document = entry.document;
+        config = entry.config;
+        index = at;
+        return { ok: true };
+    }
+
     // ---------------------------------------------------------------- the command handlers
 
     /** What a handler is given. One object keeps the vocabulary readable. */
@@ -292,6 +420,12 @@ function createEngine(deps) {
             setIndex: setIndex,
             /** A statement that does not hold skips the one command under it (Index++). */
             skipNext: function () { return setIndex(index + 1); },
+            options: options,
+            /** The reference own Random, injected so a test can pin a 1e stamp. */
+            random: deps.random || null,
+            loadBot: loadBot,
+            returnToPushed: returnToPushed,
+            botsDirectory: botsDirectory,
             config: function () { return config; },
             setConfig: function (key, value) { setConfig(document, config, key, value); },
             stop: stop,
@@ -657,9 +791,12 @@ function createEngine(deps) {
         }
         return undefined;
     }
+    // A feature ticket's own vocabulary (#38-#42), dispatched after this table. Kept apart so the
+    // loop's flow commands cannot be shadowed by a feature that happens to name one the same.
+    const extraHandlers = deps.handlers && typeof deps.handlers === 'object' ? deps.handlers : {};
 
-    // ---------------------------------------------------------------- combat and map handlers
-
+    // The flow vocabulary this ticket owns. A class that is not here is reported by name and
+    // skipped, so a bot never hangs on a command this build cannot run yet.
     const handlers = {
         CmdBlank: function () {},
         CmdBlank2: function () {},
@@ -1269,6 +1406,36 @@ function createEngine(deps) {
         }
     };
 
+    // The miscellaneous commands (#40): one table, built with its own injected
+    // dependencies. Only its Cmd* members are handlers; the rest of the object is state.
+    const misc = miscCommands.createHandlers({
+        session: session,
+        sendPacket: deps.packets && typeof deps.packets.send === 'function'
+            ? function (frame) { return deps.packets.send(frame); }
+            : deps.sendPacket,
+        beep: deps.beep,
+        spammer: deps.spammer,
+        timers: deps.timers,
+        sleep: sleep,
+        log: log,
+        logDebug: deps.logDebug,
+        logClear: deps.logClear,
+        file: {
+            resolve: function (written, root) { return resolveBotFile(written, root); },
+            read: function (file) {
+                if (typeof deps.readFile !== 'function') {
+                    throw new Error('this build cannot read bot files from inside a running bot');
+                }
+                return deps.readFile(file);
+            },
+            parse: bots.parseBot
+        }
+    });
+    Object.keys(misc).forEach(function (key) {
+        if (key.indexOf('Cmd') === 0) handlers[key] = misc[key];
+    });
+    background = misc.background;
+
     // The state-reading statements (#41). They take the same (ctx, command) a handler here takes,
     // so they resolve their own fields and skip the command under them the same way. Merged rather
     // than inlined so that #42's own table is a second line here and nothing else.
@@ -1404,6 +1571,13 @@ function createEngine(deps) {
         if (!running) return;
         running = false;
         paused = false;
+        if (background && typeof background.labels !== 'undefined') {
+            background.labels.length = 0;
+            if (background.timer !== null && deps.timers && typeof deps.timers.clearTimeout === 'function') {
+                deps.timers.clearTimeout(background.timer);
+                background.timer = null;
+            }
+        }
         // CmdMoveToCell2's background jump holds the engine's own cancellation token, and the
         // reference's Stop is what a stopped bot expects to end it.
         if (jump.token) {
@@ -1511,7 +1685,8 @@ function createEngine(deps) {
 
         const className = catalog.classNameOf(command);
         dispatched.push({ index: at, className: className });
-        const handler = handlers[className];
+        // The engine's own flow vocabulary first, then whatever a feature ticket registered.
+        const handler = handlers[className] || extraHandlers[className];
         if (!handler) {
             log(className + ' is not implemented yet (#38-#42); skipping it');
         } else {
@@ -1584,11 +1759,18 @@ function createEngine(deps) {
         /** The reference keeps its index private; a test that has to place the bot needs it. */
         commands: commands,
         vars: function () { return vars; },
+        /** The loaded configuration's own lists, which CmdLoadBot passes through. */
+        skills: function () { return config && Array.isArray(config.Skills) ? config.Skills : []; },
+        drops: function () { return config && Array.isArray(config.Drops) ? config.Drops : []; },
+        /** The background packet labels being held, in the order they were added. */
+        background: function () { return background || { labels: [] }; },
         ints: function () { return ints; },
         resolve: resolve,
         waitUntil: waitUntil,
         /** The classes this engine executes; everything else is reported by name. */
-        handlers: function () { return handlers; }
+        handlers: function () { return handlers; },
+        /** The feature vocabulary this engine was given, if any. */
+        extraHandlers: function () { return extraHandlers; }
     };
 }
 

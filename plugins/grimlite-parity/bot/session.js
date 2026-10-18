@@ -750,19 +750,6 @@ function createSession(deps) {
         rest: function () { return loaderCall('Rest'); },
         exitCombat: function () { return loaderCall('CancelTarget'); },
 
-        /** Player.HasTarget: the loader's own helper, which is intHP > 0 on the target. */
-        hasTarget: function () {
-            return loaderCall('HasTarget').then(function (value) {
-                return value === true || value === 1 || value === 'true';
-            });
-        },
-
-        /** Player.GetTargetHealth: GetTargetHealth through the loader surface. */
-        targetHealth: function () { return numberFrom('GetTargetHealth', loaderCall('GetTargetHealth')); },
-
-        /** Player.CurrentState: the loader's State, whose 2 is Player.State.InCombat. */
-        state: function () { return numberFrom('State', loaderCall('State')); },
-
         /**
          * Player.CurrentTargetId, and the one read the loader registers no name for, so it is
          * this module's own path (PATHS.targetId, Player.cs line 240 exactly).

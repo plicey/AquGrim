@@ -991,3 +991,123 @@ call, so that is what this section is for.
 - **Boss behaviour and the auto-zone handlers** (`UltraBossExtra`, `SpecialMsg`, `SpecialAct`,
   `AntiCounter`, `CopyWalk`): the reference's per-boss handlers are ticket #44's; the four config
   keys are carried through the file and shown, and no handler reads them yet.
+
+## Grimlite Parity - the miscellaneous commands (ticket #40) - needs a real game and an account
+
+The commands the reference declares under `Grimoire/Botting/Commands/Misc/`: the ones with no game
+dependency (beep, ping, blank, delay, load-bot, log, the spammer's own controls) and the ones that
+steer the client (change name/guild, goto player, logout, packet helpers, provoke).
+
+Their bodies, argument shapes, defaults, path resolution and refusals are covered by `npm test`
+against fakes, and every game call they make is a loader name the bridge's surface answers (#48) -
+the two that are not (`SetFPS`, and `AttackMonster` behind the taunt rotation) report the reason
+instead of pretending. What needs a live client is whether the game acts on each call, and what the
+two shell seams do when a user is watching: Electron's alert sound and the relay's write path.
+
+- [ ] **Beep** and **Ping** make the system alert sound N times (10 by default), and **Ping** with *Pop msg* also logs the message
+- [ ] **Send client message** pushes one line into the game's own chat, warning-coloured with *IsWarning*, and a colour in *HexColor* wraps the text in that font tag
+- [ ] **Log** writes to the Bot Manager's log pane, **Log debug** to the debug pane, and a line containing `{CLEAR}` empties that pane and then appends itself
+- [ ] The **Log** substitutions read the running game: `{MAP}`, `{ROOM_ID}`, `{ROOM_NUM}`, `{GOLD}`, `{LEVEL}`, `{CELL}`, `{PAD}`, `{HEALTH}`, `{MANA}`, `{TIME}`, `{ITEM: name}`, `{REP CURRENT: faction}` and `{INT VALUE: n}`; a name the game does not have reads as zeros rather than blanking the line
+- [ ] **Mod message** on the same command pushes the coloured line into chat (one colour per backslash segment, FFFFFF where none is given)
+- [ ] **Change name** and **Change guild** repaint the name plate, the portrait and the avatar's own objData, upper-cased, as the loader does; with no guild the command writes nothing
+- [ ] **Goto player** reads the room's list *before* the goto, waits 500 ms when the player is already there, and otherwise polls until they walk in
+- [ ] **Logout** signs the character out and the bot keeps running
+- [ ] **Packet** sends *SpamTimes* frames *Delay* apart (1000 ms each by default) to the server or, with *ForClient*, to the client; a client-side `Level n` becomes the levelUp frame the client's chat handler expects
+- [ ] **Packet delay** waits first and sends once, and with no *Delay* set it sends straight away (the class carries no default, unlike **Packet**)
+- [ ] `{ROOM_ID}`, `{ROOM_NUMBER}`, `{GETMAP}` and `PLAYERNAME` are substituted, a run of dashes collapses to one, and an `1e<digits>` stamp becomes a random five-digit number
+- [ ] A frame the relay will not take is reported ("the frame was not written"), not counted as sent
+- [ ] **Packet spammer** adds, removes, clears, starts, stops, restarts and re-delays the Packet spammer window's own list; *GoPressTheGodDamnCorrectButton* does nothing, as it does upstream
+- [ ] **Background packet** with *ADD* starts a frame going out on the command's own Delay (500 ms by default) and keeps going while the label is held and *Packet* is not empty; *STOP* with the same label takes it back; **Stop bot** ends it as well
+- [ ] **Provoke** and **Toggle provoke** move the Options window's Provoke tick, and a refusal from the game reaches the bot's log
+- [ ] **Load bot** with the path a bot file carries resolves the way the reference resolves it, so a bot saved on Windows (`Bots/Arcana/x.gbot`) opens here too; *PassDropList* (on by default) unions the old drops in, ignoring case, and *PassSkillPreset* (off by default) keeps the running skill set
+- [ ] A path that is not there, a file that will not parse and a build with no reader each say which of the three it was
+- [ ] **Return** goes back to the configuration and index the last **Load bot** pushed, and with nothing pushed it does nothing rather than failing
+- [ ] **Set FPS** reports that the frame rate belongs to the reference's own stage, which this bridge cannot reach
+- [ ] **Special handler** with a zone reports that the auto-zone handlers are ticket #44's, and with no zone it returns silently, as the reference does
+- [ ] **Tauntcycle** reports the call its rotation needs and cannot make (the taunt re-target is `AttackMonster`, which hands the game a live monster object)
+- [ ] **Bank item list** does nothing at all, which is what its own `Execute` is
+---
+
+---
+
+## Item and quest commands (ticket #39) - needs a display, a real game and an account
+
+Everything in this section is about the *effect* of an item or quest command on a live server. The
+commands' own ordering, their refusals, the arithmetic behind a maximum buy and a maximum turn-in,
+and the tables they read the game through are all covered by `npm test`; what cannot be is whether
+the game acts on what they send, because that needs a character and a shop that exists.
+
+Every read and write here goes through the reference loader's own helper names
+(`bot/items.js`'s `LOADER_BODIES`, asserted against `loader-surface.js` by test) or through the
+four wants no loader name answers (`GAME_READS`, each recording the game source that proves the
+path). Reading `grimoire/game/{Shops,Quests,Bank,Inventory}.as` beside those two tables is the
+static check that they agree.
+
+### Buying and loading a shop
+
+- [ ] **Load Shop** (CmdLoad) with a shop id opens that shop in the game, and the log does not
+      name a refused helper
+- [ ] **Buy item** with a name buys that many: the bag gains the item, and a negative quantity
+      buys as many as the stack and the character's currency allow
+- [ ] **Buy item** with **ByID** buys the row with that item id *and* shop item id pair; a shop
+      that has no such row logs `[MaxBuy] Buy skipped due to max/requirement not meet`
+- [ ] **Buy item fast** (CmdBuyFast) buys without opening the shop first
+- [ ] **Load travel shop** (CmdLoadTravel) opens a shop without moving the character out of
+      combat first, which is the one difference from **Load Shop**
+- [ ] Buying from a shop that takes merge materials, or from one that costs ACs, resolves its
+      maximum against the right currency (gold against AC) - the audit trail of the buy is the
+      character's own balance afterwards
+
+### Selling and equipping
+
+- [ ] **Sell** with a quantity sells that many; `0` sells the whole stack and a negative leaves
+      that many behind
+- [ ] **Equip** with an item's name wears it; with a forge enhancement's name (**Valiance**,
+      **Praxis**, ...) it wears the item carrying that enhancement
+- [ ] **Equip** with **Safe** ticked waits out combat before it wears the item
+- [ ] **Equip** with a consumable's name (category **Item**) uses it through `EquipPotion` rather
+      than wearing it as gear
+- [ ] **Equip set** reports that this build reads a set from the Sets dialog rather than from
+      beside the executable, and wears nothing - that message is the expected result
+
+### Banking, drops and map items
+
+- [ ] **Bank transfer** with an item in the bag banks it, and with **from bank** ticked takes it
+      back out; a name on neither side logs `[Bank] <name> not found within your Bank/Inventory`
+- [ ] **Bank swap** swaps only when the bag and the bank both hold their half of the pair
+- [ ] **Get drop** takes the named drop and sends the frame the reference sends; its room comes
+      from the loader's own `RoomId`, which a live client is what confirms
+- [ ] **Get map item** with an id takes that item off the map and waits the reference's 1500 ms
+- [ ] **Whitelist** On/Off/Toggle flips the pickup flag, and Add/Remove edit the drop list
+
+### Quests
+
+- [ ] **Accept quest** loads an unloaded quest, accepts it, and does not send the accept when the
+      game already reports it in progress
+- [ ] **Accept quest** with **ghost** checked sends the raw frame and the quest arrives without
+      the client's own accept animation
+- [ ] A one-shot quest whose counter is already satisfied is skipped and the log names it
+- [ ] **Complete quest** once turns the quest in once; `-1` turns in as many as the counters allow
+- [ ] A turn-in with **ReAccept** ghost-accepts the quest again after it leaves both states
+- [ ] **Exit combat before quest** (Options) refreshes the cell and waits for the game's own
+      state to leave combat before the turn-in goes out
+- [ ] **Add quest list** / **Remove quest list** edit the Bot Manager's Quests list, and the rows
+      survive a Save to `.gbot`
+
+### What could not be checked here, and why
+
+- **CmdBuyBack** is a stub that logs the reason. The reference drives its buy-back over
+  account.aq.com's own HTML pages in a Windows-only namespace, which spec #19 puts out of scope as
+  unreachable upstream, and the reference's own 60-file bot corpus references the command zero
+  times. It has a handler so a file carrying one still opens, saves and runs.
+- **SetEquip** stays refused on the surface. The reference writes one slot of `objData.eqp` - a
+  live object graph a dot-path write cannot carry - and then swaps the movie clip. An item is worn
+  through `world.sendEquipItemRequest` instead, which is the loader's own `Equip` row and what
+  every equipping command here uses.
+- **The exit-combat loop is bounded** at five one-second refreshes where the reference's is
+  unbounded, so a window that went away mid-command reports what it saw rather than spinning the
+  app. The message names the bound.
+- **No helper and no path above has been exercised against a live client.** The first run on a
+  real character is the milestone; the tables and their tests are what make a wrong path a
+  reviewable claim rather than a guess.
+

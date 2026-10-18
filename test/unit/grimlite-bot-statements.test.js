@@ -853,8 +853,10 @@ test('a session read that cannot be established refuses rather than answering a 
   await assert.rejects(function () { return wrong.gold(); }, /not a number/);
 
   // A name the surface refuses carries the surface own reason, ticket and all.
-  const refused = sessionModel.createSession({ bridge: fakeBridge({}) });
-  await assert.rejects(function () { return refused.questCanComplete('102'); }, /#39/);
+  // The quest reads this ticket recorded as refused, pointing at #39, are #39's own now: it
+  // implemented CanComplete (and the quest tree behind it), so they answer instead of refusing.
+  const quests = sessionModel.createSession({ bridge: fakeBridge({ CanComplete: true }) });
+  assert.strictEqual(await quests.questCanComplete('102'), true);
 
   // The monster reads this ticket recorded as refused, pointing at #38, are #38's own now: the
   // surface implements the five, so they answer live state instead of a refusal.
@@ -865,6 +867,7 @@ test('a session read that cannot be established refuses rather than answering a 
   assert.deepStrictEqual(await monsters.visibleMonsters(), []);
 
   // And the drop list is this client's own rather than the game's: it says where it would come from.
+  const refused = sessionModel.createSession({ bridge: fakeBridge({}) });
   await assert.rejects(function () { return refused.dropStack(); }, /#33/);
   await assert.rejects(function () { return refused.dropStack(); }, /dropItem/);
 });

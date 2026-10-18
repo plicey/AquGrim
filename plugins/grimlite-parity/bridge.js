@@ -206,6 +206,30 @@ function createGameAccess(host) {
         /** The loader surface itself, for a caller that wants to list or probe names. */
         loaderSurface: surface,
 
+        /**
+         * The two doors the bot's item and quest commands (ticket #39) reach the game through: the
+         * reference loader's own names, and the generic callbacks by callback name. It is the same
+         * pair this module already drives - the loader surface for the first, the raw channel for
+         * the second - handed over in the shape bot/items.js consumes, so that module asks for
+         * wants rather than for callbacks and never keeps a second copy of the surface's table.
+         */
+        botGame: function () {
+            const loader = surface();
+            return {
+                helper: function (name, args) { return loader.call(name, args); },
+                call: function (callback, callArgs) {
+                    return ensure().then(function () {
+                        return channel.call(callback, callArgs);
+                    }).then(function (result) {
+                        if (!result || !result.ok) {
+                            throw new Error((result && result.error) || ('the bridge could not ' + callback));
+                        }
+                        return decode(result.value);
+                    });
+                }
+            };
+        },
+
         readInventory: function () {
             // Through the surface rather than the raw name: GetInventoryItems is the reference
             // loader's name, which the stock game answers "no member" to, while the surface knows
