@@ -60,7 +60,8 @@ test('PluginHost requires game-origin for declareGameOrigin', async () => {
 
   const handle = allowed.declareGameOrigin({ routes: routes, pluginId: 'perm-test' });
   assert.strictEqual(typeof handle.then, 'function', 'declaration resolves to the origin base URL');
-  assert.deepStrictEqual(started, [{ routes: routes, userAgent: null, pluginId: 'perm-test' }]);
+  // files is always present (empty unless the plugin serves files of its own from the origin).
+  assert.deepStrictEqual(started, [{ routes: routes, files: {}, userAgent: null, pluginId: 'perm-test' }]);
   assert.strictEqual(await handle, 'http://127.0.0.1:1234');
   assert.deepStrictEqual(allowed._getState().gameOrigin.routes, routes);
   assert.throws(function () {
