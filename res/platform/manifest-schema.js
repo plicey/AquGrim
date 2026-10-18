@@ -8,6 +8,7 @@ const KNOWN_PERMISSIONS = {
     'inject-scripts': true,
     'persistent-store': true,
     'spawn-helper-process': true,
+    'game-origin': true,
     'unsafe-renderer': true,
     // Game access (apiVersion 2). Read and write are separate so a read-only tool does not
     // need write access: the bridge channel, the packet tap, and frame injection.

@@ -347,7 +347,33 @@ Rules that keep it safe:
 - Cache the last good value in `host.getStore(...)`. Apply it synchronously at `activate()`; only wait (with a short timeout) when there is no fresh cache, and refresh in the background otherwise.
 - Offer an option to turn it off (AQW: `liveLoaderUrl`).
 
-### 4.9 Helper Electron processes (advanced)
+### 4.9 Serve the game from a loopback origin
+
+Permission: `game-origin`. Method: `await host.declareGameOrigin({ routes })`.
+
+Serves the plugin's game paths from `http://127.0.0.1:<port>` and forwards everything else to the
+route's upstream origin, following upstream 3xx server-side so the client never leaves loopback.
+Returns the origin's base URL, or rejects when no origin could be started.
+
+`routes` is `[{ prefix, origin }]`: the longest matching prefix decides the upstream, and the
+path is preserved. `{ prefix: '/', origin: 'https://game.example' }` mirrors that host as-is, so
+`https://game.example/game/x.swf` is served as `http://127.0.0.1:<port>/game/x.swf`. A mount
+like `{ prefix: '/assets/', origin: 'https://cdn.example' }` serves
+`https://cdn.example/ui/x.png` as `/assets/ui/x.png`.
+
+The window opens on whatever `getPrimaryUrl()` reports, so point the plugin's own primary at the
+origin: give the primary game a `toServeFromOrigin(url, baseUrl)` that returns the loopback URL
+for the paths the origin mirrors, and `isGameUrl` must recognise the loopback form too (window
+classification, the Flash trust list and the capture permission all key off it). A `file://`
+primary, `customUrl` and the platform's local SWF override keep working unchanged and win over
+the origin.
+
+A failure to start is the plugin's to catch: a plugin that cannot get an origin stays on its live
+URLs.
+
+Pass `userAgent` when the plugin has a session rule that rewrites `User-Agent` for its own
+hosts. Those rules match URL patterns, so they never see a loopback URL: the origin applies the
+plugin's policy to the upstream request instead, and the upstream keeps seeing what it saw before.
 
 Permission: `spawn-helper-process`. Script path must stay **inside the plugin directory** (no `..`).
 
@@ -392,6 +418,7 @@ See `plugins/adventure-quest-worlds/web/contribute.js` for the full contribution
 | `persistent-store` | `getStore` |
 | `spawn-helper-process` | `windows.spawnHelperProcess` |
 | `unsafe-renderer` | Feature windows with Flash plugins / `webSecurity: false` |
+| `game-origin` | `host.declareGameOrigin` |
 | `game-bridge` | Reserved: the SWF bridge channel (`bridge.attach()` / `bridge.call()`) *(apiVersion 2)* |
 | `packet-tap` | Reserved: reading relayed game frames *(apiVersion 2)* |
 | `packet-send` | Reserved: writing a frame back through the relay *(apiVersion 2)* |

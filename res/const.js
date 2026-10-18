@@ -105,6 +105,14 @@ exports.setUseDirectWmode = (val) => {
 }
 
 const swfWrapperUrl = _getFileUrl(path.join(appRoot, 'res', 'swf_wrapper.html'));
+// Where the wrapper page is served from. Normally the app's own file:// page; with the
+// loopback origin up (plugin-runtime startGameOrigin) it is the origin, so the page that
+// embeds the game and the game SWF share one origin.
+exports.swfWrapperPath = path.join(appRoot, 'res', 'swf_wrapper.html');
+let swfWrapperBase = '';
+exports.setSwfWrapperBase = function (base) {
+    swfWrapperBase = typeof base === 'string' ? base : '';
+};
 // opts: optional { wmode, scale } forwarded to swf_wrapper.html query string.
 // Plugins pick the options per game through their wrap config; the default is wmode=direct.
 // The wrapper's base= param keeps relative loads resolving against the game's own origin.
@@ -113,7 +121,7 @@ exports.wrapSwfUrl = function(swfUrl, opts) {
     var q = '?swf=' + encodeURIComponent(swfUrl);
     if (opts && opts.wmode) q += '&wmode=' + encodeURIComponent(opts.wmode);
     if (opts && opts.scale) q += '&scale=' + encodeURIComponent(opts.scale);
-    return swfWrapperUrl + q;
+    return (swfWrapperBase || swfWrapperUrl) + q;
 }
 
 // Ruffle (open-source Flash emulator) as an alternative to the PPAPI Flash plugin -
@@ -229,6 +237,10 @@ const originalOptions = {
     // Optional URL override for the active plugin's primary game. Ignored when a
     // local SWF override is active — see plugin-runtime getPrimaryUrl().
     customUrl:         "",
+    // Serve the active plugin's game from a loopback origin (the plugin declares it) so the
+    // page embedding the game and the SWF share one origin. Off by default: on, every game
+    // request goes through the app, which is a different default path for existing users.
+    localOrigin:       false,
     recordingFormat:   exports.defaultRecordingFormat,
     renderMode:        exports.defaultRenderMode,
     ruffleUpdateChannel: 'latest',

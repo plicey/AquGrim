@@ -29,6 +29,50 @@ function makeHost(manifest, deps) {
   });
 }
 
+test('PluginHost requires game-origin for declareGameOrigin', async () => {
+  const routes = [{ prefix: '/', origin: 'https://game.example' }];
+  const host = makeHost(baseManifest());
+  assert.throws(function () {
+    host.declareGameOrigin({ routes: routes });
+  }, /without permission "game-origin"/);
+  assert.strictEqual(host._getState().gameOrigin, null, 'a refused declaration changes nothing');
+
+  const started = [];
+  const deps = {
+    startGameOrigin: function (declared) {
+      started.push(declared);
+      return Promise.resolve('http://127.0.0.1:1234');
+    }
+  };
+  const allowed = makeHost(baseManifest({ permissions: ['game-origin'] }), deps);
+  assert.throws(function () {
+    allowed.declareGameOrigin();
+  }, /expects/);
+  assert.throws(function () {
+    allowed.declareGameOrigin({ routes: [] });
+  }, /expects/);
+  assert.throws(function () {
+    allowed.declareGameOrigin({ routes: [{ prefix: '/x/' }] });
+  }, /expects/);
+  assert.throws(function () {
+    allowed.declareGameOrigin({ routes: [{ prefix: '/x/', origin: 'not-a-url' }] });
+  }, /expects/);
+
+  const handle = allowed.declareGameOrigin({ routes: routes, pluginId: 'perm-test' });
+  assert.strictEqual(typeof handle.then, 'function', 'declaration resolves to the origin base URL');
+  assert.deepStrictEqual(started, [{ routes: routes, userAgent: null, pluginId: 'perm-test' }]);
+  assert.strictEqual(await handle, 'http://127.0.0.1:1234');
+  assert.deepStrictEqual(allowed._getState().gameOrigin.routes, routes);
+  assert.throws(function () {
+    allowed.declareGameOrigin({ routes: routes });
+  }, /already declared/);
+});
+
+test('the game-origin permission is known to the manifest schema', () => {
+  const schema = require('../../res/platform/manifest-schema.js');
+  assert.strictEqual(schema.KNOWN_PERMISSIONS['game-origin'], true);
+});
+
 test('PluginHost throws when registerSessionRules lacks web-request', () => {
   const host = makeHost(baseManifest());
   assert.throws(function () {

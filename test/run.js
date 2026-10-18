@@ -43,6 +43,7 @@ global.test = function (name, fn) {
   './unit/aqw-launcher-config.test.js',
   './unit/session-rules-multiplex.test.js',
   './unit/socket-proxy.test.js',
+  './unit/origin-proxy.test.js',
   './unit/aqw-charpage-print.test.js',
   './unit/platform-isolation.test.js',
   './unit/locale-templates.test.js',
@@ -51,7 +52,8 @@ global.test = function (name, fn) {
   './unit/namespaced-store.test.js',
   './unit/settings-resolve.test.js',
   './unit/pack-plugins.test.js',
-  './integration/json-store.test.js'
+  './integration/json-store.test.js',
+  './integration/local-origin.test.js'
 ].forEach((file) => require(path.join(__dirname, file)));
 
 (async () => {

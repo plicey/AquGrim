@@ -95,6 +95,8 @@ function activatePlugins() {
             platform.pluginRuntime.adopt(runtime.host, pluginInfo);
             // Older local SWF file names this plugin used to read (manifest customSwfAliases).
             constant.setCustomSwfAliases(runtime.plugin.manifest.customSwfAliases);
+            // The plugin declared its loopback origin during activate() (host.declareGameOrigin
+            // starts it there, before this adopt); the trust list must carry the origin URL.
             platform.pluginRuntime.applyFlashTrust(flash);
 
             platform.menuRegistry.adoptHostState(state, state.menuProviders || null);

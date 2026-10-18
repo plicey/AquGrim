@@ -68,6 +68,20 @@ Mark items with `[x]` when verified. Leave `[ ]` if not run yet.
 
 ---
 
+## Local game origin (ticket #23) - needs a display and the network
+
+Set `"localOrigin": true` in `aquastar.json` (Settings → General → "Local game origin") and restart.
+
+- [ ] Window opens and the game reaches the login screen: same rendering as before, no error page
+- [ ] No request reaches any host other than `127.0.0.1`
+- [ ] Five requests, none 404: `/wrapper.html`, `/game/gamefiles/Loader4.swf`, `/game/api/data/gameversion`, the game SWF it names, the title SWF it names
+- [ ] Login works: the account POST is answered (no hang on "Authenticating Account Info")
+- [ ] A version-payload outage does not wedge the boot: the loader retries and the window shows a failure rather than hanging
+- [ ] Default (`"localOrigin"` absent or false) still boots from the live URLs, unchanged
+- [ ] With a local SWF override or `customUrl` set, that URL still wins
+
+---
+
 ## Packaging smoke
 
 - [ ] `npm run smoke:plugins`

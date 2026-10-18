@@ -13,6 +13,168 @@ function fakeHost(state, pluginRoot) {
   };
 }
 
+test('Ruffle render mode keeps the live game URL: the origin is a PPAPI mechanism', async function () {
+  runtime.clear();
+  let renderMode = 'flash';
+  runtime.setDependencies({
+    instances: { newBrowserWindow: function () { return {}; } },
+    settings: function () {
+      return { renderMode: renderMode };
+    },
+    constant: { customSwfUrl: '', activeCustomSwfPath: '' },
+    createOriginProxy: function () {
+      return {
+        listen: function () {
+          return Promise.resolve('http://127.0.0.1:41000');
+        },
+        close: function () {
+          return Promise.resolve();
+        }
+      };
+    }
+  });
+  runtime.adopt(
+    fakeHost({
+      primaryGame: {
+        id: 'main',
+        getUrl: function () {
+          return 'https://game.example/game/gamefiles/Loader4.swf?ver=b';
+        },
+        isGameUrl: function () {
+          return true;
+        }
+      },
+      launches: [],
+      gameOrigin: { routes: [{ prefix: '/', origin: 'https://game.example' }] },
+      trustedFlashUrls: [],
+      keybinds: [],
+      keybindDefaults: {},
+      featureWindows: []
+    }),
+    { id: 'sample' }
+  );
+  await runtime.startGameOrigin();
+  assert.strictEqual(
+    runtime.getPrimaryUrl(),
+    'http://127.0.0.1:41000/game/gamefiles/Loader4.swf?ver=b'
+  );
+  // Ruffle loads the SWF into a file:// page, where a loopback URL is a cross-origin fetch
+  // that page cannot make: it gets the live URL instead of a black window.
+  renderMode = 'ruffle';
+  assert.strictEqual(runtime.getPrimaryUrl(), 'https://game.example/game/gamefiles/Loader4.swf?ver=b');
+  await runtime.stopGameOrigin();
+});
+
+test('plugin-runtime starts the declared game origin and routes the game URL through it', async () => {
+  runtime.clear();
+  const started = [];
+  const wrapperBases = [];
+  runtime.setDependencies({
+    instances: {
+      newBrowserWindow: function (url) {
+        return { url: url };
+      }
+    },
+    constant: {
+      customSwfUrl: '',
+      activeCustomSwfPath: '',
+      swfWrapperPath: '/app/res/swf_wrapper.html',
+      setSwfWrapperBase: function (base) {
+        wrapperBases.push(base);
+      }
+    },
+    settings: function () {
+      return {};
+    },
+    createOriginProxy: function (opts) {
+      started.push(opts);
+      return {
+        listen: function () {
+          return Promise.resolve('http://127.0.0.1:40000');
+        },
+        close: function () {
+          return Promise.resolve();
+        }
+      };
+    }
+  });
+  runtime.adopt(
+    fakeHost({
+      primaryGame: {
+        id: 'main',
+        getUrl: function () {
+          return 'https://game.example/game/gamefiles/Loader4.swf?ver=b';
+        },
+        isGameUrl: function (url) {
+          return url.indexOf('https://game.example/game/') === 0;
+        }
+      },
+      launches: [],
+      flashTrust: true,
+      gameOrigin: {
+        routes: [{ prefix: '/', origin: 'https://game.example' }]
+      },
+      trustedFlashUrls: [],
+      keybinds: [],
+      keybindDefaults: {},
+      featureWindows: []
+    }),
+    { id: 'sample' }
+  );
+
+  assert.strictEqual(
+    runtime.getPrimaryUrl(),
+    'https://game.example/game/gamefiles/Loader4.swf?ver=b',
+    'before the origin is up, the plugin URL is untouched'
+  );
+  await runtime.startGameOrigin();
+  assert.deepStrictEqual(started[0].routes, [{ prefix: '/', origin: 'https://game.example' }]);
+  // The page that embeds the game is served from the same origin as the game, not file://.
+  assert.deepStrictEqual(started[0].files, { '/wrapper.html': '/app/res/swf_wrapper.html' });
+  assert.deepStrictEqual(wrapperBases, ['http://127.0.0.1:40000/wrapper.html']);
+  assert.strictEqual(
+    runtime.getPrimaryUrl(),
+    'http://127.0.0.1:40000/game/gamefiles/Loader4.swf?ver=b',
+    'the game is served from loopback, path preserved'
+  );
+  // A game whose hosts are not a plain mirror says how its URL maps; the platform asks.
+  const delegated = [];
+  runtime.getPrimaryGame().toServeFromOrigin = function (url, baseUrl) {
+    delegated.push(url);
+    return baseUrl + '/proxied/game/gamefiles/Loader4.swf';
+  };
+  assert.strictEqual(runtime.getPrimaryUrl(), 'http://127.0.0.1:40000/proxied/game/gamefiles/Loader4.swf');
+  assert.deepStrictEqual(delegated, ['https://game.example/game/gamefiles/Loader4.swf?ver=b']);
+  delete runtime.getPrimaryGame().toServeFromOrigin;
+  assert.ok(
+    runtime.getTrustedFlashUrls().indexOf('http://127.0.0.1:40000/game/gamefiles/Loader4.swf?ver=b') !== -1,
+    'the plugin lists the origin URL as a game URL, so it is in the trust list'
+  );
+  // A local SWF override still wins: the origin is a route to the plugin's game, not a mode.
+  runtime.setDependencies({ constant: { customSwfUrl: 'file:///custom.swf', activeCustomSwfPath: '' } });
+  assert.strictEqual(runtime.getPrimaryUrl(), 'file:///custom.swf');
+  runtime.setDependencies({
+    constant: {
+      customSwfUrl: '',
+      activeCustomSwfPath: '',
+      swfWrapperPath: '/app/res/swf_wrapper.html',
+      setSwfWrapperBase: function (base) {
+        wrapperBases.push(base);
+      }
+    }
+  });
+  await runtime.stopGameOrigin();
+  assert.deepStrictEqual(wrapperBases, [
+    'http://127.0.0.1:40000/wrapper.html',
+    ''
+  ], 'stopping the origin restores the file:// wrapper');
+  assert.strictEqual(
+    runtime.getPrimaryUrl(),
+    'https://game.example/game/gamefiles/Loader4.swf?ver=b',
+    'stopping the origin restores the plugin URL'
+  );
+});
+
 test('plugin-runtime getPrimaryUrl prefers customUrl then primary getUrl', () => {
   runtime.clear();
   const opened = [];

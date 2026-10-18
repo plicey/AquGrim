@@ -10,12 +10,18 @@ let pluginRoot = '';
 let instancesApi = null;
 let constantApi = null;
 let BrowserWindowApi = null;
+let createOriginProxyApi = null;
+let settingsApi = null;
+let gameOriginProxy = null;
+let gameOriginBaseUrl = '';
 
 function clear() {
     host = null;
     hostState = null;
     pluginInfo = null;
     pluginRoot = '';
+    gameOriginProxy = null;
+    gameOriginBaseUrl = '';
 }
 
 function setDependencies(deps) {
@@ -23,6 +29,74 @@ function setDependencies(deps) {
     if (deps.instances) instancesApi = deps.instances;
     if (deps.constant) constantApi = deps.constant;
     if (deps.BrowserWindow) BrowserWindowApi = deps.BrowserWindow;
+    if (deps.createOriginProxy) createOriginProxyApi = deps.createOriginProxy;
+    if (deps.settings) settingsApi = deps.settings;
+}
+
+/** Current platform settings (renderMode, ...); read live, the user can change them. */
+function currentSettings() {
+    if (typeof settingsApi === 'function') return settingsApi() || {};
+    try {
+        return require('../keybindings.js').keybinds || {};
+    } catch (e) {
+        return {};
+    }
+}
+
+/**
+ * Start a plugin's loopback origin (host.declareGameOrigin passes the declaration; called with
+ * none it uses the adopted plugin's). This runs while the plugin is still activating, before
+ * adopt(), so the declaration is the source of truth and the plugin's own URL is what the
+ * platform uses until the origin is listening.
+ */
+function startGameOrigin(declaration) {
+    const declared = declaration || (hostState && hostState.gameOrigin);
+    if (!declared || !Array.isArray(declared.routes) || !declared.routes.length) {
+        return Promise.resolve(gameOriginBaseUrl);
+    }
+    if (gameOriginProxy) return Promise.resolve(gameOriginBaseUrl);
+    const create = createOriginProxyApi || require('./origin-proxy.js').createOriginProxy;
+    const constant = constantApi || require('../const.js');
+    // The page that embeds the game must come from the origin too (same-origin page + SWF),
+    // while every other wrapped game window keeps the platform's own file:// page.
+    const files = constant.swfWrapperPath ? { '/wrapper.html': constant.swfWrapperPath } : {};
+    const proxy = create({
+        routes: declared.routes,
+        files: files,
+        userAgent: typeof declared.userAgent === 'function' ? declared.userAgent : null,
+        log: function (line) { console.log('[AquaStar:origin] ' + line); }
+    });
+    return Promise.resolve(proxy.listen(0)).then(function (baseUrl) {
+        gameOriginProxy = proxy;
+        gameOriginBaseUrl = baseUrl;
+        if (typeof constant.setSwfWrapperBase === 'function') {
+            constant.setSwfWrapperBase(baseUrl + '/wrapper.html');
+        }
+        console.log('[AquaStar:origin] game origin on ' + baseUrl);
+        return baseUrl;
+    });
+}
+
+function stopGameOrigin() {
+    const proxy = gameOriginProxy;
+    gameOriginProxy = null;
+    gameOriginBaseUrl = '';
+    try {
+        const constant = constantApi || require('../const.js');
+        if (typeof constant.setSwfWrapperBase === 'function') constant.setSwfWrapperBase('');
+    } catch (e) { /* no runtime to reset */ }
+    return proxy ? Promise.resolve(proxy.close()).catch(function () {}) : Promise.resolve();
+}
+
+// Routes a plugin's game URL through the local origin: the same paths, other host.
+function toLocalOrigin(url) {
+    if (!gameOriginBaseUrl || typeof url !== 'string') return url;
+    try {
+        const target = new URL(url);
+        return gameOriginBaseUrl + target.pathname + target.search;
+    } catch (e) {
+        return url;
+    }
 }
 
 function adopt(activeHost, info) {
@@ -93,7 +167,18 @@ function getPrimaryUrl() {
     if (overrides.customUrl) return overrides.customUrl;
 
     const primary = getPrimaryGame();
-    if (primary && typeof primary.getUrl === 'function') return primary.getUrl();
+    if (primary && typeof primary.getUrl === 'function') {
+        const url = primary.getUrl();
+        // Ruffle loads the game into a file:// page, where a loopback URL is a cross-origin
+        // fetch that page cannot make - the origin is a PPAPI mechanism only.
+        if (currentSettings().renderMode === 'ruffle') return url;
+        // The plugin may know its hosts are not a plain mirror; ask it before assuming.
+        if (typeof primary.toServeFromOrigin === 'function') {
+            return primary.toServeFromOrigin(url, gameOriginBaseUrl);
+        }
+        // A file:// primary (a local SWF next to the game) is not on the origin's routes.
+        return /^https?:/.test(url) ? toLocalOrigin(url) : url;
+    }
     return '';
 }
 
@@ -379,6 +464,7 @@ function spawnHelperProcess(opts) {
 
 function createHostWindowDeps() {
     return {
+        startGameOrigin: startGameOrigin,
         openPrimaryGame: openPrimaryGame,
         openLaunch: openLaunch,
         openUrl: openUrl,
@@ -404,6 +490,9 @@ module.exports = {
     getState: getState,
     getPrimaryGame: getPrimaryGame,
     getPrimaryUrl: getPrimaryUrl,
+    startGameOrigin: startGameOrigin,
+    stopGameOrigin: stopGameOrigin,
+    toLocalOrigin: toLocalOrigin,
     getLaunch: getLaunch,
     listLaunches: listLaunches,
     isGameUrl: isGameUrl,
