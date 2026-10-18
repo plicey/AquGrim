@@ -26,6 +26,7 @@ exports.menuMessages = {
     grimliteEyedropper: "",
     grimliteNotepad: "",
     grimliteAbout: "",
+    grimliteCosmetics: "",
     grimlitePlaceholder: "",
     grimliteDevTest: "",
     packetsMenu: "",
@@ -53,6 +54,7 @@ exports.windowTitles = {
     eyedropper: "",
     notepad: "",
     about: "",
+    cosmetics: "",
     devtest: "",
     packetLogger: ""
 };
@@ -88,4 +90,20 @@ exports.eyedropperMessages = {
 
 exports.aboutMessages = {
     reloadHint: ""
+};
+
+exports.cosmeticsMessages = {
+    title: "",
+    loadSet: "",
+    saveSet: "",
+    filterName: "",
+    grabLinks: {
+        helm: "",
+        armor: "",
+        class: "",
+        weapon: "",
+        pet: "",
+        cape: "",
+        misc: ""
+    }
 };

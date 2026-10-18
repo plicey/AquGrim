@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SWF Cosmetics</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
+  }
+  body { padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; }
+  .top { display: flex; gap: 8px; align-items: center; }
+  select, input[type=text] {
+    background: #1b1b1b; color: #e6e6e6; border: 1px solid #2c2c2c; border-radius: 4px;
+    padding: 5px 7px; font: inherit; min-width: 0; width: 100%; box-sizing: border-box;
+  }
+  #players { flex: 1; }
+  button {
+    background: #262626; color: #e6e6e6; border: 1px solid #383838; border-radius: 4px;
+    padding: 5px 9px; cursor: pointer; white-space: nowrap; font: inherit;
+  }
+  button:hover { background: #303030; }
+  /* tableLayoutPanel2: the reference's seven grab links, above the grid. */
+  .grabs { display: flex; gap: 10px; justify-content: space-between; }
+  a.grab { color: #dcdcdc; cursor: pointer; text-decoration: underline; }
+  a.grab:hover { color: #fff; }
+  /* tableLayoutPanel3: label, file, link, Set - one row per slot, in the designer's order. */
+  .grid { display: grid; grid-template-columns: 52px 1fr 1fr 64px; gap: 3px 4px; align-items: center; }
+  .grid .slot { text-align: center; color: #dcdcdc; }
+  #items {
+    flex: 1 1 auto; min-height: 90px; overflow-y: auto; background: #1b1b1b; color: #e6e6e6;
+    border: 1px solid #2c2c2c; border-radius: 4px; font-family: ui-monospace, Consolas, monospace;
+    font-size: 12px; white-space: pre; padding: 6px 8px;
+  }
+  #items .row { cursor: default; }
+  #items .row.sel { background: #2d4a6b; }
+  /* tableLayoutPanel1: Equip All, Equip Selected, Clear All, Remove. */
+  .actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .files { display: flex; gap: 6px; justify-content: flex-end; }
+  #status { min-height: 16px; color: #9a9a9a; }
+  #status.err { color: #ff8a80; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <button id="refresh" title="Refresh the room's players">⟳</button>
+    <select id="players"></select>
+    <button id="grab">Grab</button>
+  </div>
+
+  <!--
+    The eight rows of CosmeticForm.Designer.cs's tableLayoutPanel3, in its own order:
+    Helm, Armor, Class, Weapon, Off.H, Pet, Cape, Misc, each a label, a file box, a link box and
+    a Set button. The reference's grid is static in its designer too; only the words of the Set
+    buttons come from the plugin, so the page and the slot map cannot drift apart.
+  -->
+  <div class="grabs">
+    <a class="grab" id="grab-helm">Grab Helm</a>
+    <a class="grab" id="grab-armor">Grab Armor</a>
+    <a class="grab" id="grab-class">Grab Class</a>
+    <a class="grab" id="grab-weapon">Grab Wep</a>
+    <a class="grab" id="grab-pet">Grab Pet</a>
+    <a class="grab" id="grab-cape">Grab Cape</a>
+    <a class="grab" id="grab-misc">Grab Ground</a>
+  </div>
+  <div class="grid">
+    <div class="slot">Helm</div>
+    <input type="text" id="file-helm" spellcheck="false">
+    <input type="text" id="link-helm" spellcheck="false">
+    <button id="set-helm">Set</button>
+
+    <div class="slot">Armor</div>
+    <input type="text" id="file-armor" spellcheck="false">
+    <input type="text" id="link-armor" spellcheck="false">
+    <button id="set-armor">Set</button>
+
+    <div class="slot">Class</div>
+    <input type="text" id="file-class" spellcheck="false">
+    <input type="text" id="link-class" spellcheck="false">
+    <button id="set-class">Set</button>
+
+    <div class="slot">Weapon</div>
+    <input type="text" id="file-weapon" spellcheck="false">
+    <input type="text" id="link-weapon" spellcheck="false">
+    <button id="set-weapon">Set</button>
+
+    <div class="slot">Off.H</div>
+    <input type="text" id="file-off" spellcheck="false">
+    <input type="text" id="link-off" spellcheck="false">
+    <button id="set-off">Set</button>
+
+    <div class="slot">Pet</div>
+    <input type="text" id="file-pet" spellcheck="false">
+    <input type="text" id="link-pet" spellcheck="false">
+    <button id="set-pet">Set</button>
+
+    <div class="slot">Cape</div>
+    <input type="text" id="file-cape" spellcheck="false">
+    <input type="text" id="link-cape" spellcheck="false">
+    <button id="set-cape">Set</button>
+
+    <div class="slot">Misc</div>
+    <input type="text" id="file-misc" spellcheck="false">
+    <input type="text" id="link-misc" spellcheck="false">
+    <button id="set-misc">Set</button>
+  </div>
+
+  <div id="items" tabindex="0" aria-label="Grabbed cosmetics"></div>
+
+  <div class="actions">
+    <button id="equipAll">Equip All</button>
+    <button id="equipSelected">Equip Selected</button>
+    <button id="clearAll">Clear All</button>
+    <button id="remove">Remove</button>
+  </div>
+  <div class="files">
+    <button id="save">Save</button>
+    <button id="load">Load</button>
+  </div>
+  <div id="status"></div>
+
+<script>
+(function () {
+  var api = window.aquastarCosmetics;
+  var players = document.getElementById('players');
+  var status = document.getElementById('status');
+  var items = document.getElementById('items');
+  var slots = ['helm', 'armor', 'class', 'weapon', 'off', 'pet', 'cape', 'misc'];
+  var rows = [];
+  var selected = [];
+
+  function setStatus(text, bad) {
+    status.textContent = text || '';
+    status.className = bad ? 'err' : '';
+  }
+
+  function box(id) { return document.getElementById(id); }
+
+  // A row's value as the reference's own _data writes it: its two boxes, joined.
+  function valueOf(slot) {
+    return box('file-' + slot).value + ';' + box('link-' + slot).value;
+  }
+
+  function putValue(slot, value) {
+    if (slots.indexOf(slot) === -1) return;
+    var text = String(value == null ? '' : value);
+    var at = text.indexOf(';');
+    box('file-' + slot).value = at === -1 ? text : text.slice(0, at);
+    box('link-' + slot).value = at === -1 ? '' : text.slice(at + 1);
+  }
+
+  // The list is the window's own state: rows arrive as the reference's ToString text, and every
+  // list action is answered from the plugin so the page and the slot map cannot disagree.
+  function paint() {
+    items.innerHTML = '';
+    rows.forEach(function (row, index) {
+      var line = document.createElement('div');
+      line.className = 'row' + (selected.indexOf(index) !== -1 ? ' sel' : '');
+      line.textContent = row.text;
+      line.addEventListener('click', function (event) {
+        var at = selected.indexOf(index);
+        if (event.ctrlKey || event.metaKey) {
+          if (at === -1) selected.push(index); else selected.splice(at, 1);
+        } else {
+          selected = [index];
+        }
+        paint();
+      });
+      // A double-click fills that row's boxes, the reference's own MouseDoubleClick handler.
+      line.addEventListener('dblclick', function () { fillRow(row); });
+      items.appendChild(line);
+    });
+  }
+
+  function fillRow(row) {
+    var at = row.text.indexOf(': ');
+    if (at === -1 || !row.row) return;
+    putValue(row.row, row.text.slice(at + 2));
+  }
+
+  function refreshPlayers() {
+    setStatus('');
+    return api.players().then(function (result) {
+      var list = (result && result.players) || [];
+      var previous = players.value;
+      players.innerHTML = '';
+      list.forEach(function (player) {
+        var option = document.createElement('option');
+        option.value = player.id;
+        option.textContent = player.label;
+        players.appendChild(option);
+      });
+      // The reference selects the first row after a refresh, when the room has one.
+      if (list.length) {
+        var keep = list.filter(function (player) { return String(player.id) === previous; })[0];
+        players.value = keep ? previous : list[0].id;
+      }
+      if (result && result.error) setStatus(result.error, true);
+    });
+  }
+
+  function chosen() {
+    return players.value === '' ? null : Number(players.value);
+  }
+
+  function grab() {
+    var id = chosen();
+    if (id === null) return;
+    setStatus('');
+    api.grab(id).then(function (result) {
+      if (!result || result.error) {
+        setStatus((result && result.error) || 'nothing was grabbed', true);
+        return;
+      }
+      rows = rows.concat(result.rows || []);
+      selected = [];
+      paint();
+      // The reference's Grab does not touch the boxes; its double-click and its links do.
+      setStatus(result.rows.length ? '' : 'that player is not wearing anything readable', !result.rows.length);
+    });
+  }
+
+  function grabSlot(slot) {
+    var id = chosen();
+    if (id === null) return;
+    api.grabSlot(id, slot, valueOf(slot)).then(function (result) {
+      if (result && result.applied) {
+        putValue(slot, result.fields.file + ';' + result.fields.link);
+        setStatus('');
+      } else {
+        // The reference's own guard: an occupied box is kept, not overwritten.
+        setStatus((result && result.error) || 'kept what was already in that box', false);
+      }
+    });
+  }
+
+  function equip(list) {
+    if (!list.length) return;
+    setStatus('');
+    api.equip(list).then(function (result) {
+      if (!result || result.error) {
+        setStatus((result && result.error) || 'the game refused the slot', true);
+        return;
+      }
+      var short = result.applied !== list.length;
+      setStatus(result.applied + ' of ' + list.length + ' equipped', short);
+    });
+  }
+
+  function remove(list) {
+    api.remove(rows, list).then(function (kept) {
+      rows = kept;
+      selected = [];
+      paint();
+    });
+  }
+
+  function values() {
+    var out = {};
+    slots.forEach(function (slot) { out[slot] = valueOf(slot); });
+    return out;
+  }
+
+  slots.forEach(function (slot) {
+    box('set-' + slot).addEventListener('click', function () {
+      api.setSlot(slot, valueOf(slot)).then(function (result) {
+        var ok = result && result.ok;
+        setStatus(ok ? '' : ((result && result.error) || 'the slot was refused'), !ok);
+      });
+    });
+  });
+  ['helm', 'armor', 'class', 'weapon', 'pet', 'cape', 'misc'].forEach(function (slot) {
+    box('grab-' + slot).addEventListener('click', function () { grabSlot(slot); });
+  });
+
+  box('refresh').addEventListener('click', refreshPlayers);
+  box('grab').addEventListener('click', grab);
+  box('equipAll').addEventListener('click', function () { equip(rows); });
+  box('equipSelected').addEventListener('click', function () {
+    // The reference equips its selection in the list's own order.
+    equip(rows.filter(function (row, index) { return selected.indexOf(index) !== -1; }));
+  });
+  box('remove').addEventListener('click', function () { remove(selected); });
+  box('clearAll').addEventListener('click', function () {
+    api.clear().then(function (blank) {
+      rows = blank.rows;
+      selected = [];
+      paint();
+      slots.forEach(function (slot) { putValue(slot, ''); });
+    });
+  });
+  box('save').addEventListener('click', function () {
+    api.save(values()).then(function (result) {
+      if (!result || result.canceled) return;
+      setStatus(result.error || 'saved', !!result.error);
+    });
+  });
+  box('load').addEventListener('click', function () {
+    api.load().then(function (result) {
+      if (!result || result.canceled) return;
+      if (result.error) { setStatus(result.error, true); return; }
+      slots.forEach(function (slot) { putValue(slot, result.values[slot]); });
+      setStatus('');
+    });
+  });
+  // Delete removes the selection, as the reference's own list does.
+  items.addEventListener('keydown', function (event) {
+    if (event.key === 'Delete') remove(selected);
+  });
+
+  // The plugin decides the grab links' words and the Set buttons'; the grid is the reference's
+  // own layout and is already written out above.
+  api.getMessages().then(function (messages) {
+    var links = (messages && messages.grabLinks) || {};
+    Object.keys(links).forEach(function (slot) {
+      var anchor = box('grab-' + slot);
+      if (anchor) anchor.textContent = links[slot];
+    });
+    if (messages && messages.title) document.title = messages.title;
+  }).then(refreshPlayers).catch(function (error) {
+    setStatus(String(error && error.message ? error.message : error), true);
+  });
+})();
+</script>
+</body>
+</html>

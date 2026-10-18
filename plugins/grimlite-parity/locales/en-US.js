@@ -21,6 +21,7 @@ exports.menuMessages = {
     grimliteEyedropper: 'Eye Dropper',
     grimliteNotepad: 'Notepad',
     grimliteAbout: 'About',
+    grimliteCosmetics: 'Cosmetics',
     grimlitePlaceholder: 'Parity placeholder window',
     grimliteDevTest: 'Dev Test',
     packetsMenu: 'Packets',
@@ -50,6 +51,7 @@ exports.windowTitles = {
     eyedropper: 'Grimlite Parity - Eye Dropper',
     notepad: 'Grimlite Parity - Notepad',
     about: 'Grimlite Parity - About',
+    cosmetics: 'Grimlite Parity - SWF Cosmetics',
     devtest: 'Dev Test',
     packetLogger: 'Packet logger'
 };
@@ -88,4 +90,22 @@ exports.eyedropperMessages = {
 
 exports.aboutMessages = {
     reloadHint: 'Reloads the game movie, like the reference\'s Load Game SWF.'
+};
+
+// The Cosmetics window (ticket #30). The slot labels, the list's own row words and the button
+// words are the reference's; only the sentences a page needs are written here.
+exports.cosmeticsMessages = {
+    title: 'SWF Cosmetics',
+    loadSet: 'Load Set',
+    saveSet: 'Save Set',
+    filterName: 'Grimoire sets',
+    grabLinks: {
+        helm: 'Grab Helm',
+        armor: 'Grab Armor',
+        class: 'Grab Class',
+        weapon: 'Grab Wep',
+        pet: 'Grab Pet',
+        cape: 'Grab Cape',
+        misc: 'Grab Ground'
+    }
 };
