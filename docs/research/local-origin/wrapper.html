@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html style="margin:0;padding:0;width:100%;height:100%;overflow:hidden;">
+<head>
+<meta charset="UTF-8">
+<title>AQW local-origin spike</title>
+<style>
+  html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#000; }
+  object { display:block; width:100%; height:100%; border:none; outline:none; }
+  /* The PPAPI surface is opaque to the page, so page-side errors are painted on top where
+     a screenshot still catches them. */
+  #hud { position:fixed; left:0; top:0; right:0; max-height:40%; overflow:hidden; z-index:9;
+         font:11px/1.35 monospace; color:#ff8080; background:rgba(0,0,0,.65); padding:2px 4px;
+         white-space:pre-wrap; pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="hud"></div>
+<script>
+  var lines = [];
+  window.aqHud = function (text) {
+    lines.push(String(text));
+    document.getElementById('hud').textContent = lines.join(String.fromCharCode(10));
+  };
+  window.addEventListener('error', function (e) { window.aqHud('page error: ' + (e.message || e.type)); });
+
+  (function () {
+    var params = new URLSearchParams(window.location.search);
+    var swfUrl = params.get('swf');
+    if (!swfUrl) { window.aqHud('no ?swf= given'); return; }
+
+    // Mirrors res/swf_wrapper.html: the loader resolves its siblings against its own
+    // directory, so <base> must be the SWF directory, on this same origin.
+    var swfBase = params.get('base') || '';
+    var wmode = params.get('wmode') || 'direct';
+    var scale = params.get('scale') || 'showall';
+
+    var obj = document.createElement('object');
+    obj.id = 'movie';
+    obj.type = 'application/x-shockwave-flash';
+    obj.data = swfUrl;
+    obj.width = '100%';
+    obj.height = '100%';
+    var paramsList = [
+      ['movie', swfUrl],
+      ['wmode', wmode],
+      ['scale', scale],
+      ['salign', 't'],
+      ['quality', 'best'],
+      ['bgcolor', '#000000'],
+      ['allowscriptaccess', 'always'],
+      ['allownetworking', 'all'],
+      ['allowfullscreen', 'true'],
+      ['base', swfBase]
+    ];
+    paramsList.forEach(function (p) {
+      if (!p[1] && p[1] !== '') return;
+      var el = document.createElement('param');
+      el.name = p[0];
+      el.value = p[1];
+      obj.appendChild(el);
+    });
+    document.body.appendChild(obj);
+    window.aqHud('embedded ' + swfUrl);
+  })();
+</script>
+</body>
+</html>
