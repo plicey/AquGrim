@@ -441,10 +441,36 @@ const SURFACE = {
     Buff: { why: 'the reference writes god-mode values onto itself; not a game call' },
     DestroyPlayers: { why: 'the reference calls destroyAvatar per live avatar object' },
     SetEquip: { why: 'the reference swaps live equipment clips (loadMovieAtES); ticket #39 owns items' },
-    ChangeName: { why: 'the reference paints its own name plates; not a game read' },
-    ChangeGuild: { why: 'the reference paints its own guild tags; not a game read' },
+    // Player.as paints the name plate, the portrait, objData.strUsername and the avatar's own
+    // objData in one body, all upper-cased: four writes to paths the game does carry.
+    ChangeName: {
+        compute: function (ctx, p) {
+            const name = String(p[0]).toUpperCase();
+            return Promise.all([
+                ctx.set('world.myAvatar.pMC.pname.ti.text', name),
+                ctx.set('world.ui.mcPortrait.strName.text', name),
+                ctx.set('world.myAvatar.objData.strUsername', name),
+                ctx.set('world.myAvatar.pMC.pAV.objData.strUsername', name)
+            ]);
+        }
+    },
+    ChangeGuild: {
+        compute: function (ctx, p) {
+            // The loader's own body is guarded by 'guild != null': no guild, no writes.
+            return ctx.get('world.myAvatar.objData.guild').then(function (guild) {
+                if (guild === null || guild === undefined) return null;
+                const name = String(p[0]).toUpperCase();
+                return Promise.all([
+                    ctx.set('world.myAvatar.pMC.pname.tg.text', name),
+                    ctx.set('world.myAvatar.objData.guild.Name', name),
+                    ctx.set('world.myAvatar.pMC.pAV.objData.guild.Name', name)
+                ]);
+            });
+        }
+    },
     ChangeAccessLevel: { why: 'the reference styles its own name plate and sets iUpgDays' },
-    ChangeColorName: { why: 'the reference sets a text colour on its own name plate' },
+    // Player.as: one write, the colour, onto the plate's own text field.
+    ChangeColorName: { set: 'world.myAvatar.pMC.pname.ti.textColor' },
     GetShops: { why: 'the reference keeps its own list of shops it has seen (LoadedShops)' },
     GetQuestTree: { why: 'the reference clones each quest and reshapes it (CloneObject); ticket #39 owns quests' },
     CanComplete: { why: 'the reference validates the quest and calls world.canTurnInQuest; ticket #39 owns quests' },
