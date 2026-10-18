@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Grimlite Parity - Eye Dropper</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
+  }
+  body { display: flex; flex-direction: column; box-sizing: border-box; padding: 10px; gap: 8px; }
+  #pick { padding: 10px; font-size: 14px; cursor: crosshair; }
+  /* The readout: the reference paints textBox1 with the captured colour and switches the text
+     between black and white on Color.GetBrightness(). */
+  #readout {
+    min-height: 44px; padding: 10px 12px; border: 1px solid #383838; border-radius: 4px;
+    font-family: "Consolas", "Courier New", monospace; font-size: 12px; white-space: pre-wrap;
+    background: #1b1b1b;
+  }
+  #history { flex: 1 1 auto; overflow-y: auto; background: #1b1b1b; border: 1px solid #2c2c2c;
+    border-radius: 4px; padding: 8px 10px; font-family: "Consolas", "Courier New", monospace; font-size: 12px;
+    white-space: pre-wrap; }
+  #hint { color: #6f6f6f; }
+  button { background: #232323; color: #e6e6e6; border: 1px solid #383838; border-radius: 4px; padding: 6px 10px; font-size: 12px; }
+  button:hover { background: #2c2c2c; }
+</style>
+</head>
+<body>
+  <button id="pick" type="button">Pick a colour from the screen</button>
+  <div id="readout">No colour picked yet.</div>
+  <div id="history" aria-label="Picked colours"></div>
+  <div id="hint">Click the button, then the pixel you want.</div>
+
+  <script>
+    (function () {
+      var bridge = window.aquastarEyedropper || null;
+      var readout = document.getElementById('readout');
+      var history = document.getElementById('history');
+      var hint = document.getElementById('hint');
+      var messages = {};
+
+      function append(text) {
+        history.textContent += text + '\n';
+      }
+
+      // Capture while the mouse is held down, like the reference's eyedropper control: press on
+      // the button and release over the pixel. MouseEvent.screenX/screenY are DIP against the
+      // display's own origin, which is the coordinate space the main process reads too.
+      var pickButton = document.getElementById('pick');
+      pickButton.addEventListener('pointerdown', function (event) {
+        if (!bridge) return;
+        event.preventDefault();
+        pickButton.setPointerCapture(event.pointerId);
+        readout.textContent = messages.capturing || 'Reading the screen…';
+        var released = false;
+        pickButton.addEventListener('pointerup', function onUp(upEvent) {
+          if (released) return;
+          released = true;
+          pickButton.removeEventListener('pointerup', onUp);
+          pick({ x: upEvent.screenX, y: upEvent.screenY });
+        });
+      });
+
+      function pick(point) {
+        bridge.pick(point).then(function (result) {
+          if (!result || !result.colour) {
+            readout.textContent = (result && result.error) || (messages.captureFailed || 'Could not read the screen.');
+            return;
+          }
+          readout.textContent = result.text;
+          readout.style.background = result.cssColour;
+          readout.style.color = result.textColour;
+          append(result.text);
+        });
+      }
+
+      if (bridge) {
+        bridge.getMessages().then(function (list) {
+          messages = list || {};
+          if (messages.hint) hint.textContent = messages.hint;
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
