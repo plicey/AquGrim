@@ -42,6 +42,7 @@ function createPluginHost(options) {
         primaryGame: null,
         launches: [],
         sessionRules: [],
+        packetSteering: [],
         navigationHooks: null,
         featureWindows: [],
         browserPreload: null,
@@ -347,6 +348,37 @@ function createPluginHost(options) {
                 assertUniqueIds(state.sessionRules, rule, 'session rule');
                 state.sessionRules.push(rule);
             });
+        },
+
+        /**
+         * Declare where this plugin's client takes its server list and how the rows are shaped, so
+         * the platform can steer the client onto the local relay (res/platform/packet-layer.js).
+         * The platform owns the mechanism and knows no game: every game-specific fact (URL, row
+         * field names, reachable hosts, policy domain) is the declaration's. Reading game traffic
+         * needs packet-tap; writing it needs packet-send.
+         */
+        registerPacketSteering: function (declaration) {
+            requirePermission('registerPacketSteering', 'packet-tap');
+            if (!declaration || typeof declaration !== 'object' || Array.isArray(declaration)) {
+                throw new Error('[AquaStar:plugins] registerPacketSteering expects a declaration object');
+            }
+            if (typeof declaration.id !== 'string' || !declaration.id) {
+                throw new Error('[AquaStar:plugins] packet steering declaration requires id');
+            }
+            if (!Array.isArray(declaration.urls) || !declaration.urls.length) {
+                throw new Error('[AquaStar:plugins] packet steering declaration requires urls');
+            }
+            if (typeof declaration.hostField !== 'string' || typeof declaration.portField !== 'string') {
+                throw new Error('[AquaStar:plugins] packet steering declaration requires hostField and portField');
+            }
+            if (typeof declaration.policyDomain !== 'string' || !declaration.policyDomain) {
+                throw new Error('[AquaStar:plugins] packet steering declaration requires policyDomain');
+            }
+            if (!Array.isArray(declaration.allowedHosts) || !declaration.allowedHosts.length) {
+                throw new Error('[AquaStar:plugins] packet steering declaration requires allowedHosts');
+            }
+            assertUniqueIds(state.packetSteering, declaration, 'packet steering declaration');
+            state.packetSteering.push(declaration);
         },
 
         registerNavigationHooks: function (hooks) {

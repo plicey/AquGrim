@@ -208,3 +208,108 @@ test('the relay names no game and never serves a wildcard policy', () => {
   });
   assert.strictEqual(source.indexOf("domain='*'"), -1, 'the relay never serves a wildcard policy');
 });
+
+test('a client cannot choose a host: the listener port is the target, so there is no host parameter', async () => {
+  const first = await standInUpstream();
+  const second = await standInUpstream();
+  const relay = socketRelay.createRelay({ allowedHosts: ['127.0.0.1'], policyDomain: 'game.example' });
+  await relay.start(STEERED);
+  const firstPort = await relay.targetPort({ host: '127.0.0.1', port: first.port });
+  const secondPort = await relay.targetPort({ host: '127.0.0.1', port: second.port });
+  try {
+    assert.notStrictEqual(firstPort, secondPort);
+    // Whatever a client says on the wire, it reaches only the server its port stands for.
+    await exchange(firstPort, ['%xt%zm%only-first%' + NUL], 250);
+    await exchange(secondPort, ['%xt%zm%only-second%' + NUL], 250);
+    assert.ok(first.seen.join('').indexOf('only-first') >= 0);
+    assert.strictEqual(first.seen.join('').indexOf('only-second'), -1,
+      'the first target must never receive what was sent to the second');
+    assert.ok(second.seen.join('').indexOf('only-second') >= 0);
+    assert.strictEqual(second.seen.join('').indexOf('only-first'), -1);
+  } finally {
+    await relay.close();
+    first.server.close();
+    second.server.close();
+  }
+});
+
+test('every listener is bound to loopback only, and closing releases the ports', async () => {
+  const upstream = await standInUpstream();
+  const started = await startedRelay(upstream);
+  const port = started.port;
+  try {
+    // A connection from anywhere else is impossible: the listener bound 127.0.0.1, not 0.0.0.0.
+    const nonLoopback = Object.keys(require('os').networkInterfaces()).reduce(function (found, name) {
+      if (found) return found;
+      (require('os').networkInterfaces()[name] || []).forEach(function (entry) {
+        if (!found && entry.family === 'IPv4' && !entry.internal) found = entry.address;
+      });
+      return found;
+    }, null);
+    if (nonLoopback) {
+      const refused = await new Promise(function (resolve) {
+        const socket = net.createConnection({ host: nonLoopback, port: port });
+        socket.on('connect', function () { socket.destroy(); resolve(false); });
+        socket.on('error', function () { resolve(true); });
+        setTimeout(function () { socket.destroy(); resolve(false); }, 1500);
+      });
+      assert.strictEqual(refused, true, 'the relay must not be reachable off loopback');
+    }
+  } finally {
+    await started.relay.close();
+    upstream.server.close();
+  }
+
+  const after = await new Promise(function (resolve) {
+    const socket = net.createConnection({ host: '127.0.0.1', port: port });
+    socket.on('connect', function () { socket.destroy(); resolve(false); });
+    socket.on('error', function () { resolve(true); });
+  });
+  assert.strictEqual(after, true, 'closing the relay releases its ports');
+});
+
+test('a policy request split across chunks is still recognised, and a mid-frame chunk is not lost', async () => {
+  const upstream = await standInUpstream();
+  const started = await startedRelay(upstream);
+  try {
+    // Flash may write the request in pieces; the relay must not treat a partial one as game traffic.
+    const out = await new Promise(function (resolve, reject) {
+      const socket = net.createConnection({ host: '127.0.0.1', port: started.port });
+      const got = [];
+      socket.on('connect', function () {
+        socket.write('<policy-file-');
+        setTimeout(function () {
+          socket.write('request/>' + NUL + "<msg t='sys'><body action='verChk' r='0'></body></msg>" + NUL);
+        }, 60);
+      });
+      socket.on('data', function (d) { got.push(d.toString('latin1')); });
+      socket.on('error', reject);
+      setTimeout(function () { socket.destroy(); resolve(got.join('')); }, 450);
+    });
+    assert.ok(out.indexOf('<cross-domain-policy>') >= 0, 'the split request was still answered: ' + JSON.stringify(out));
+    assert.ok(out.indexOf('apiOK') >= 0, 'and its following frame still reached upstream');
+  } finally {
+    await started.relay.close();
+    upstream.server.close();
+  }
+});
+
+test('the relay keeps no frame content of its own: frames are handed out, not accumulated', async () => {
+  const upstream = await standInUpstream();
+  const frames = [];
+  const started = await startedRelay(upstream, {
+    onFrame: function (frame) { frames.push(frame); }
+  });
+  try {
+    await exchange(started.port, ['%xt%zm%a-long-frame-value%' + NUL], 300);
+    assert.strictEqual(frames.length >= 1, true);
+    // The frame carries exactly what crossed, with the NUL delimiter removed.
+    assert.strictEqual(frames[0].data.toString('latin1'), '%xt%zm%a-long-frame-value%');
+    assert.strictEqual(frames[0].data.indexOf(0), -1, 'the delimiter is not part of the frame');
+    assert.strictEqual(typeof frames[0].id, 'number', 'every frame names its connection');
+    assert.strictEqual(frames[0].direction, 'toServer');
+  } finally {
+    await started.relay.close();
+    upstream.server.close();
+  }
+});

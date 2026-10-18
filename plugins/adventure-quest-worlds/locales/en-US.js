@@ -109,9 +109,11 @@ exports.settingsMessages = {
         featurePlayerName: "Show Player Character in Window Title",
         autoSync: "Auto Sync Inventory",
         liveLoaderUrl: "Follow Artix's Game Loader",
+        packetSteering: "Steer the game socket through a local relay",
     },
     optionHints: {
         liveLoaderUrl: "On startup, reads which game loader Artix Game Launcher currently uses (from artix.com) so AquaStar keeps working when Artix switches loaders. Falls back to the built-in loader if the page can't be read. Ignored when Custom URL or a custom SWF is set. Restart to apply.",
+        packetSteering: "Points the game at a local relay so AquaStar can see (and later send) the game's own packets. The relay answers Flash's policy request itself and forwards to the real servers; nothing is modified. Restart to apply. While this is on, the account password crosses the local relay in plaintext, exactly as it already crosses the network.",
         playerCharacter: "Letters and numbers only. Used by the Char Page shortcut (Alt+P) to open straight to this character.",
         featurePlayerName: "When on, replaces \"AquaStar\" in the main window title with your Player Character above.",
         autoSync: "Periodically syncs your Inventory/BuyBack data from account.aq.com in the background (about every 2 hours) once you've logged in there at least once via Alt+A. When off, sync only happens when you use a Sync Now button (in the Inventory window or on account.aq.com/Home).",

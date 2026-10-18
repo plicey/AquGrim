@@ -148,7 +148,10 @@ async function activate(host) {
         playerCharacter: '',
         featurePlayerName: false,
         autoSync: false,
-        liveLoaderUrl: true
+        liveLoaderUrl: true,
+        // Off by default: steering carries the session through a local process, so it is the
+        // player's call (Settings → Game), not something the client does to itself.
+        packetSteering: false
     });
 
     host.registerSettingsSection({
@@ -169,9 +172,14 @@ async function activate(host) {
         title: 'Game',
         order: 20,
         fields: [
-            { key: 'liveLoaderUrl', type: 'boolean' }
+            { key: 'liveLoaderUrl', type: 'boolean' },
+            { key: 'packetSteering', type: 'boolean' }
         ]
     });
+
+    // Where this game's client takes its server list, declared so the platform can steer it onto
+    // the local relay without knowing anything about this game (res/platform/packet-layer.js).
+    host.registerPacketSteering(require('./packets.js').steeringDeclarations()[0]);
 
     host.log('Adventure Quest Worlds plugin activated (adapter mode)');
 }

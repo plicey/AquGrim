@@ -244,3 +244,63 @@ test('body service refuses to start with a rule that has no URLs, and stops serv
   assert.ok(after, 'the port is released on close');
   upstream.server.close();
 });
+
+test('a rule may take its time: the replacement is awaited before the client is served', async () => {
+  const upstream = await standInUpstream();
+  const service = bodyService.createBodyService({
+    matchesPattern: matchesPattern,
+    rules: [{
+      id: 'steer-login',
+      urls: ['*://127.0.0.1/login/*'],
+      onResponseBody: function (context, body) {
+        // Steering picks the port it will point the client at, and that answer is not
+        // available synchronously: the replacement has to survive an await.
+        return new Promise(function (resolve) {
+          setTimeout(function () {
+            resolve(body.toString().replace('sock1.live.example', '127.0.0.1')
+              .replace('"iPort":5593', '"iPort":8712'));
+          }, 20);
+        });
+      }
+    }]
+  });
+  await service.start();
+  try {
+    const out = await fetchThrough(service, 'http://127.0.0.1:' + upstream.port + '/login/now');
+    const parsed = JSON.parse(out.body);
+    assert.strictEqual(parsed.servers[0].sIP, '127.0.0.1');
+    assert.strictEqual(parsed.servers[0].iPort, 8712);
+    assert.strictEqual(out.headers['content-length'], String(Buffer.byteLength(out.body)));
+  } finally {
+    await service.close();
+    upstream.server.close();
+  }
+});
+
+test('a rule that rejects is treated like one that throws: the original body is served', async () => {
+  const upstream = await standInUpstream();
+  const logged = [];
+  const service = bodyService.createBodyService({
+    matchesPattern: matchesPattern,
+    onLog: function (line) { logged.push(line); },
+    rules: [{
+      id: 'steer-login',
+      urls: ['*://127.0.0.1/login/*'],
+      onResponseBody: function () {
+        return Promise.reject(new Error('steering is not available'));
+      }
+    }]
+  });
+  await service.start();
+  try {
+    const out = await fetchThrough(service, 'http://127.0.0.1:' + upstream.port + '/login/now');
+    assert.strictEqual(out.status, 200);
+    assert.strictEqual(JSON.parse(out.body).servers[0].sIP, 'sock1.live.example',
+      'a rejected rewrite must not empty the response: ' + out.body);
+    assert.ok(logged.some(function (line) { return /steering is not available/.test(line); }),
+      'the failure is reported: ' + JSON.stringify(logged));
+  } finally {
+    await service.close();
+    upstream.server.close();
+  }
+});

@@ -105,10 +105,12 @@ exports.settingsMessages = {
         playerCharacter: "",
         featurePlayerName: "",
         autoSync: "",
-        liveLoaderUrl: ""
+        liveLoaderUrl: "",
+        packetSteering: ""
     },
     optionHints: {
         liveLoaderUrl: "",
+        packetSteering: "",
         playerCharacter: "",
         featurePlayerName: "",
         autoSync: ""

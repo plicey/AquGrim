@@ -90,12 +90,14 @@ function createBodyService(options) {
             // The service is the client now; a stale length from the browser must not truncate.
             if (body.length) headers['content-length'] = String(body.length);
 
-            requestUpstream(target, req.method, headers, body, 0).then(function (upstream) {
+            requestUpstream(target, req.method, headers, body, 0).then(async function (upstream) {
                 const rule = ruleFor(target);
                 let served = upstream.body;
                 if (rule) {
                     try {
-                        const replacement = rule.onResponseBody({
+                        // A rule may need to await something before it can answer (steering waits
+                        // on a relay port), so a returned promise is resolved, not stringified.
+                        const replacement = await rule.onResponseBody({
                             url: target,
                             method: req.method,
                             statusCode: upstream.status,
