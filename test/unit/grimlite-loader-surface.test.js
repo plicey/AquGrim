@@ -210,11 +210,13 @@ test('a transfer for an item the player does not have says so, and sends nothing
 
 test('a name the surface cannot answer fails with the reason, not a bare no member', () => {
     const game = access(fakeBridge({}, {}));
-    return game.call('GetMonsterHealth', []).then(() => {
+    // GetAurasValue is still refused - it reads live aura arrays, which is ticket #42's surface.
+    // (This assertion used to name GetMonsterHealth, which ticket #38 implemented.)
+    return game.call('GetAurasValue', []).then(() => {
         throw new Error('should have refused');
     }, (error) => {
         assert.ok(error.message.indexOf('loader') !== -1, 'the refusal says whose name it is');
-        assert.ok(error.message.indexOf('#38') !== -1, 'the refusal says where that work lives');
+        assert.ok(error.message.indexOf('#42') !== -1, 'the refusal says where that work lives');
         assert.ok(error.message.indexOf('no member') === -1, 'never a bare no member');
     });
 });

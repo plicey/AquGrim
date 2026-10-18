@@ -854,9 +854,15 @@ test('a session read that cannot be established refuses rather than answering a 
 
   // A name the surface refuses carries the surface own reason, ticket and all.
   const refused = sessionModel.createSession({ bridge: fakeBridge({}) });
-  await assert.rejects(function () { return refused.monsterHealth('Darkon'); }, /#38/);
   await assert.rejects(function () { return refused.questCanComplete('102'); }, /#39/);
-  await assert.rejects(function () { return refused.visibleMonsters(); }, /#38/);
+
+  // The monster reads this ticket recorded as refused, pointing at #38, are #38's own now: the
+  // surface implements the five, so they answer live state instead of a refusal.
+  const monsters = sessionModel.createSession({ bridge: fakeBridge({
+    GetMonsterHealth: 150, GetVisibleMonstersInCell: []
+  }) });
+  assert.strictEqual(await monsters.monsterHealth('Darkon'), 150);
+  assert.deepStrictEqual(await monsters.visibleMonsters(), []);
 
   // And the drop list is this client's own rather than the game's: it says where it would come from.
   await assert.rejects(function () { return refused.dropStack(); }, /#33/);

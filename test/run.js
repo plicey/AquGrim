@@ -85,6 +85,7 @@ global.test = function (name, fn) {
   './unit/grimlite-bot-manager-engine.test.js',
   './unit/grimlite-bot-e2e.test.js',
   './unit/grimlite-bot-statements.test.js',
+  './unit/grimlite-bot-combat.test.js',
   './integration/json-store.test.js',
   './integration/local-origin.test.js',
   './unit/grimlite-bank.test.js',

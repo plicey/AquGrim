@@ -794,3 +794,109 @@ whether the game acts on each call.
 - [ ] The four **Fast travels 2** buttons (Treetitanbattle, Ultradrakath, Tower of Doom 10, Necrodungeon) fake their quest's progress, wait, and then enter their room
 - [ ] **Unlock** with a quest id the client does not hold loads it and waits for it; with one the game never sends it reports the id and injects nothing
 - [ ] The generated packet is shown read-only, **Copy** puts the same text on the clipboard, and **Send** hands it to the client as a JSON frame
+## Combat and map commands (ticket #38) - needs a display, a real game and an account
+
+Everything below is about a bot **fighting and moving**. The command bodies, the loader reads they
+need, the waits and their timeouts are covered by `npm test` against injected fakes, with each
+expectation named to the reference file it came from (`Grimoire/Botting/Commands/Combat/*.cs`,
+`Map/*.cs`, and the reference loader's own `grimoire/game/Player.as` and `World.as`). None of the
+boxes can be ticked without a live client, and two of them are the whole point of the section.
+
+### Targeting by name and by monster id
+
+- [ ] **Kill Gravelyn** targets her and the character fights: the target's health bar appears
+- [ ] **Kill id:17** (or `id-17`, `id.17`, `id'17`) targets the monster whose `MonMapID` is 17,
+      which is the branch `Player.cs AttackMonster` sends to `AttackMonsterByMonMapId`
+- [ ] **Kill \*** fights whatever is in the cell, and does **not** re-target while a target is up
+- [ ] A name no monster in the cell carries is reported in the log and the bot carries on with the
+      next command rather than standing there
+
+### Skills
+
+- [ ] **Use Skill \*** with an index casts that skill at the current target, and leaves the
+      character walking into range first unless the class is a Chrono Shadow
+- [ ] **Use Skill [Wait]** waits out the cooldown the game reports and then casts
+- [ ] **Use Skill [Force]** casts with nothing targeted
+- [ ] A **Skill Set** command changes which skill the attack rotation starts from, which is the
+      label row `[NAME]` in the Skills list (Bot.cs's `SkillSet`)
+- [ ] A skill row the game refuses (a locked or unavailable skill) does not stop the fight
+
+### The fight and its exits
+
+- [ ] **Attack \*** with **Use Skill** ticked attacks and then runs the skill set, not one or the other
+- [ ] **Stop Attack** drops the target, and **Leave Combat** also jumps on the spot to break combat
+- [ ] **Rest** sits the character down, and **Rest fully** waits until both bars are full
+- [ ] **Rest** with **Exit Combat Before Rest** on jumps on the spot while the character is in combat
+- [ ] **AntiCounter** reports that it is not applied (see below) rather than appearing to pause
+
+### Map and movement
+
+- [ ] **Join: necrodungeon-a, r22, Down** reaches that map and cell, and a non-numeric room
+      (`-a`) is rolled into a number the way the reference rolls one
+- [ ] A join whose map never matches ends with `could not reach <map> in N try(ies)` in the log
+- [ ] **Join** with a `.swf` in the SWF box loads that map file (`World.LoadMap`) and waits for it
+- [ ] **Move to cell** keeps jumping until the cell reads back, and sends nothing when already there
+- [ ] **Start Jump between** moves the character on while the list carries on, and **Stop Cell Jump**
+      cancels it
+- [ ] **Set Spawnpoint** makes the character respawn where it stands (die and watch where you return)
+- [ ] **Join: ...** (CmdTravel) joins when the map differs and only steps to the cell when it does not
+- [ ] **Walk to: 250, 400** walks there; **Walk Randomly** picks its own point
+- [ ] **Join yulgar** ends with the bot stopped, as the reference's own command does
+- [ ] **Hunt** and **Quest Hunt** join their map and fight in it; **Follow kills: <name>** walks to
+      the player with `GoTo` and fights what is there
+
+### A saved bot runs unedited
+
+- [ ] Open the reference's own `Resources/Bots/kill_with_monster_id.gbot` in the Bot Manager and
+      run it: it joins `necrodungeon`, rolls a room, steps to `r22`, and fights by `KillPriority`
+      `id-49,id-50`
+
+### What could not be checked here, and why
+
+**The two calls that point the avatar cannot be made from this side of the bridge**, and that is a
+measured limit rather than an unfinished one. The reference loader's own bodies are
+`world.setTarget(World.GetMonsterByName(name))` plus `world.approachTarget()`, and
+`world.testAction(world.actions.active[i])`. Both game functions are typed on **live AS3 objects**
+(`World.as` 8372 `setTarget(param1:*)`, 8705 `testAction(param1:Object,...)`), and every way into
+them returns one: `getMonster(id)` (8075), `getMonstersByCell(cell)` (8128) and `getActionByRef(ref)`
+(9659) are all typed on live `Avatar`s and action objects, and the only member that reaches a
+monster by anything a bridge could carry is the **click handler**, which is handed a `MouseEvent`.
+The bridge serialises with `JSON.stringify` and falls back to `String(value)` for a value it cannot
+express, so a `MovieClip` cannot cross it. That leaves `AttackMonster`, `AttackMonsterByMonMapId`,
+`UseSkill`, `ForceUseSkill`, `CancelTargetSelf` and `SetTargetPvP` refused **by name**, with the
+reason and this ticket in the message, and a bot that uses them logs that line and moves on.
+
+**What does work** is everything the fight is *decided* on. The monster reads are answered by
+walking the game's own `Vector.<Avatar>` by index and reading primitive leaves off each entry - the
+same eight-field projection `World.as GetMonstersInCell` performs, done a step earlier because here
+the reshape has to happen on the far side of the wire - and `pMC` is probed with the bridge's own
+`isNull` rather than carried: `IsMonsterAvailable`, `IsMonsterAvailableByMonMapID`,
+`GetMonsterHealth`, `GetMonstersInCell` and `GetVisibleMonstersInCell` all answer, as do
+`HasTarget`, `GetTargetHealth`, `SkillAvailable`, `AllSkillsAvailable`, `State`, `Cell`, `Pad`,
+`Map`, `Position`, `Jump`, `Join`, `Rest`, `SetSpawnPoint`, `CancelTarget` and `CancelAutoAttack`.
+So a bot's targeting **decisions** are live and correct; only the two calls that act on them are not,
+and **a kill in this build therefore needs the character to be attacking already** (auto-attack on,
+or the player's own click) - a fake success here would have been worse than the refusal.
+
+- [ ] Confirm the refusal text reached the log rather than a silent no-op, and confirm the
+      character was **not** moved by it
+- [ ] With auto-attack on, run a `CmdKill` bot and confirm the rotation casts on cooldown and the
+      `SkillDelay`/`WaitForSkill` settings pace it as they do in the reference
+
+**Three more places this build reports rather than acts**, each because the option reaches something
+the engine does not have yet, and none of them silently ignored:
+
+- **AntiCounter** watches the reference's own packet tap for `prepares a counter attack` and the
+  Counter Attack aura fading. This engine has no tap, so the log says so once and the fight runs
+  without the pause.
+- **A skill aura condition** (`Skill.hasaura`) reads the avatar's own aura counts - the loader's
+  `GetAurasValue`, which is ticket #42's surface. The row is treated as ready, which is exactly what
+  the reference's own `Compare` does with a condition it cannot parse, and the log says so once.
+- **CmdKillFor / CmdShortHunt / CmdQuestHunt** are wired for their map, join and kill halves, but
+  their "until the item or quest is done" loops read the inventory (`GetInventoryItems`,
+  `GetTempItems` - both answered) and, for a quest, the quest's own required items
+  (`GetQuestTree` is refused: ticket #39). The loop is bounded and reports what it stopped short of
+  rather than running all night, which matters more here than upstream because a kill this build
+  cannot start is not a kill that can finish the loop.
+- **CmdFollow** cannot follow a player's cell as they walk: that reads the `uotls` packet off the
+  reference's own tap. It walks with `GoTo` and fights what is there, and says so once.
