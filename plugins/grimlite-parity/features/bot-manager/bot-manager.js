@@ -26,6 +26,15 @@ const FORM_SKIP = ['Tag', 'Description1', 'Description2', '$type', 'Text'];
 function createBotManager(deps) {
     deps = deps || {};
     const dialogs = deps.dialogs || createFromHost(deps.host, deps);
+    // The engine, per window, injected: `run` is the per-window runtime (#37) and gives this
+    // window its own bot with its own variables, ints and index. A window handed no runtime
+    // refuses to start rather than pretending to, so the control is never a silent no-op.
+    const runtime = deps.runtime || null;
+    const windowKey = deps.windowKey || 'default';
+    // Which window a request is for. One independent bot per game window (spec #19) means the
+    // runtime is keyed by the window the caller is acting for, so `windowKeyFor` can derive it
+    // from the IPC event; a build with a single window falls back to the fixed key.
+    const windowKeyFor = deps.windowKeyFor || function () { return windowKey; };
     const fs = deps.fs || require('fs');
     const readText = deps.readText || function (file) { return fs.readFileSync(file, 'utf8'); };
     const clipboard = deps.clipboard || {
@@ -48,6 +57,39 @@ function createBotManager(deps) {
         editor = editorModel.create(botDocument);
         currentPath = file || null;
         loaded = true;
+    }
+
+    /**
+     * chkEnableBot_CheckedChanged, in this port's words. The reference refuses on an empty list
+     * and on nobody signed in, and `ActiveBotEngine`'s setter refuses while one is already
+     * running; all three are the engine's own refusals, so this asks it and reports what it said.
+     *
+     * `enabled` is the tickbox's own start-vs-stop switch: Start() when it turns on, Stop() when
+     * it turns off. Nothing is remembered across a failed start - a refused tick is un-ticked, as
+     * the reference un-ticks it.
+     */
+    function enableBot(enabled, event) {
+        const key = windowKeyFor(event);
+        if (!runtime) {
+            return Promise.resolve(view({
+                enabled: false,
+                error: 'no bot engine is wired in this build (#37)'
+            }));
+        }
+        if (enabled === false) {
+            return Promise.resolve(runtime.stop(key)).then(function () {
+                return view({ enabled: false, error: null });
+            });
+        }
+        return Promise.resolve(runtime.start(key, botDocument)).then(function (result) {
+            if (!result || result.ok !== true) {
+                // A refused start leaves the tick off; the reason is what the window shows.
+                return view({ enabled: false, error: (result && result.error) || 'the bot did not start' });
+            }
+            return view({ enabled: true, error: null });
+        }, function (error) {
+            return view({ enabled: false, error: (error && error.message) || String(error) });
+        });
     }
 
     /** The customiser's own values, plus the metrics a list row is drawn with (BotManager_Load). */
@@ -521,6 +563,14 @@ function createBotManager(deps) {
                 if (argv[0] === 'Merge') settings.setUi('Merge', argv[1] === true);
                 else editor.setSetting(argv[0], argv[1]);
                 return view();
+            case 'botManagerEnable':
+                return enableBot(argv[0], event);
+            case 'botManagerState':
+                return (function () {
+                    if (!runtime) return view({ bot: null, enabled: false });
+                    const state = runtime.state(windowKeyFor(event));
+                    return view({ bot: state, enabled: state.running });
+                })();
             case 'botManagerStyle':
                 return styleAction(argv[0] || {});
             case 'botManagerTree':
@@ -554,7 +604,7 @@ function createBotManager(deps) {
                 'botManagerRaw', 'botManagerSetting', 'botManagerStyle', 'botManagerTree',
                 'botManagerChooseDirectory', 'botManagerAddFolder', 'botManagerTreeSelect',
                 'botManagerDrop', 'botManagerCopy', 'botManagerPaste', 'botManagerGame',
-                'botManagerBeep'];
+                'botManagerBeep', 'botManagerEnable', 'botManagerState'];
             channels.forEach(function (channel) {
                 host.ipc.handle(channel, function (event) {
                     const rest = Array.prototype.slice.call(arguments, 1);

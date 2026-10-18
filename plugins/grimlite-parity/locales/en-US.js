@@ -169,7 +169,9 @@ exports.botManagerMessages = {
     saveSize: 'Save Size',
     chooseDirectoryTitle: 'Choose your bots directory',
     addFolderFailed: 'That folder could not be added.',
-    read: 'Read from the game.'
+    read: 'Read from the game.',
+    botStarted: 'Bot started.',
+    botStopped: 'Bot stopped.'
 };
 
 // The Cosmetics window (ticket #30). The slot labels, the list's own row words and the button

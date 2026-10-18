@@ -161,7 +161,9 @@ exports.botManagerMessages = {
     saveSize: "",
     chooseDirectoryTitle: "",
     addFolderFailed: "",
-    read: ""
+    read: "",
+    botStarted: "",
+    botStopped: ""
 };
 
 exports.cosmeticsMessages = {

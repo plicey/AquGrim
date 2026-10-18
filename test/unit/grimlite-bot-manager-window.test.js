@@ -369,7 +369,8 @@ test('the window reaches its page only through its own namespaced channels', asy
     'botManagerBeep', 'botManagerCopy', 'botManagerDrop', 'botManagerGame', 'botManagerPaste',
     'botManagerEdit', 'botManagerForm', 'botManagerKey', 'botManagerLoad', 'botManagerMessages',
     'botManagerRaw', 'botManagerSave', 'botManagerSelect', 'botManagerSetting', 'botManagerSheet',
-    'botManagerStatements', 'botManagerStyle', 'botManagerTree', 'botManagerTreeSelect'
+    'botManagerStatements', 'botManagerStyle', 'botManagerTree', 'botManagerTreeSelect',
+    'botManagerEnable', 'botManagerState'
   ].sort());
 
   const featureRoot = path.join(__dirname, '../../plugins/grimlite-parity/features/bot-manager');
