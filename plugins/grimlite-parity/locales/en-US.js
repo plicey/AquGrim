@@ -7,13 +7,19 @@ exports.dialogMessages = {
         return 'Grimlite Parity\n' +
             expand(k.grimliteBotFile) + ' - Bot file: open and save a .gbot\n' +
             expand(k.grimliteBank) + ' - Bank window\n' +
+            expand(k.grimliteLoaders) + ' - Loaders and grabbers: load a shop, a quest or\n' +
+            '                the armour customizer, and grab live game data into a tree\n' +
             expand(k.grimliteBotManager) + ' - Bot Manager: the eleven-tab bot editor\n' +
             expand(k.grimliteEyedropper) + ' - Eye Dropper: read a colour off the screen\n' +
             expand(k.grimliteNotepad) + ' - Notepad\n' +
             expand(k.grimliteAbout) + ' - About this port and the reference it follows\n' +
             'Packets -> Sniffer - Packet logger (client and server traffic)\n' +
+            'Packets -> Spammer - Packet spammer (repeat a saved list)\n' +
+            'Packets -> Tamperer - Packet Tamperer (edit and inject a frame)\n' +
             expand(k.grimliteParityPlaceholder) + ' - Parity placeholder window\n' +
-            expand(k.grimliteParityDevTest) + ' - Dev Test (call a game function)';
+            expand(k.grimliteParityDevTest) + ' - Dev Test (call a game function)\n' +
+            expand(k.grimliteOptions) + ' - Options: the reference\'s own option toggles\n' +
+            expand(k.grimliteHotkeys) + ' - Hotkeys: bind one key to one action';
     }
 };
 
@@ -26,12 +32,17 @@ exports.menuMessages = {
     grimliteAbout: 'About',
     grimliteCharSelect: 'Char Select',
     grimliteBank: 'Bank',
+    grimliteLoaders: 'Loaders/grabbers',
     grimliteSets: 'Sets',
     grimliteCosmetics: 'Cosmetics',
+    grimliteOptions: 'Options',
+    grimliteHotkeys: 'Hotkeys',
     grimlitePlaceholder: 'Parity placeholder window',
     grimliteDevTest: 'Dev Test',
     packetsMenu: 'Packets',
-    packetsSniffer: 'Sniffer'
+    packetsSniffer: 'Sniffer',
+    packetsSpammer: 'Spammer',
+    packetsTamperer: 'Tamperer'
 };
 
 // The bot file window and the dialogs it opens. Titles match the reference's own dialogs
@@ -54,6 +65,7 @@ exports.windowTitles = {
     primary: 'AquaStar - Grimlite Parity',
     botFile: 'Grimlite Parity - Bot File',
     bank: 'Grimlite Parity - Bank',
+    loaders: 'Grimlite Parity - Loaders and grabbers',
     sets: 'Grimlite Parity - Set',
     botManager: 'Bot Manager',
     placeholder: 'Grimlite Parity - Placeholder',
@@ -62,8 +74,12 @@ exports.windowTitles = {
     about: 'Grimlite Parity - About',
     charSelect: 'Grimlite Parity - Char Select',
     cosmetics: 'Grimlite Parity - SWF Cosmetics',
+    options: 'Options',
+    hotkeys: 'Hotkeys',
     devtest: 'Dev Test',
-    packetLogger: 'Packet logger'
+    packetLogger: 'Packet logger',
+    packetSpammer: 'Packet spammer',
+    packetTamperer: 'Packet Tamperer'
 };
 
 // The Bank window (ticket #29). The reference's own labels, verbatim from
@@ -190,6 +206,63 @@ exports.cosmeticsMessages = {
         cape: 'Grab Cape',
         misc: 'Grab Ground'
     }
+};
+
+// The Options window (ticket #34). The seven toggle labels and "Walkspeed" are the reference's
+// own (Root.cs:1007-1104); the rest is what a page needs to explain itself.
+exports.optionsMessages = {
+    title: 'Options',
+    walkSpeed: 'Walkspeed',
+    start: 'Start applying',
+    stop: 'Stop applying',
+    stopped: 'The option loop is stopped. Ticks are remembered and sent again when it starts.'
+};
+
+// The Hotkeys window (ticket #34). Hotkeys.cs's own words are Save / Add / Remove and the
+// window title "Hotkeys"; its two combos carry the vocabulary in actions.js.
+exports.hotkeysMessages = {
+    title: 'Hotkeys',
+    add: 'Add',
+    remove: 'Remove',
+    save: 'Save',
+    saved: 'Saved $1 binding(s).',
+    empty: 'Nothing is bound yet.',
+    selectFirst: 'Select a binding first.'
+};
+
+// The Loaders and grabbers window (ticket #31). The dialog title and the filter are the
+// reference's own (Loaders.cs:141-147); the control words are in the page, which draws them.
+exports.loadersMessages = {
+    openTitle: 'Load grabber data',
+    nothingToSave: 'Nothing has been grabbed yet, so there is nothing to save.'
+};
+
+// The packet spammer (ticket #27). Every word is the reference's own control text
+// (PacketSpammer.InitializeComponent) and its two dialog titles (SaveConfig/LoadConfig).
+exports.spammerMessages = {
+    title: 'Packet spammer',
+    add: 'Add',
+    remove: 'Remove',
+    clear: 'Clear',
+    load: 'Load',
+    save: 'Save',
+    start: 'Start',
+    stop: 'Stop',
+    sendOnce: 'Send once',
+    loadTitle: 'Load spammer file',
+    saveTitle: 'Save spammer file',
+    filterName: 'XML files'
+};
+
+// The packet tamperer (ticket #27), word for word from PacketTamperer.Designer.cs.
+exports.tampererMessages = {
+    title: 'Packet Tamperer',
+    captureFromClient: 'Capture from client',
+    captureFromServer: 'Capture from server',
+    filterByText: 'Filter by text',
+    sendToServer: 'Send to server',
+    sendToClient: 'Send to client',
+    clear: 'Clear'
 };
 
 // The Char Select window (#35). The reference's own list is a menu of usernames; this port draws it

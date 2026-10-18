@@ -12,6 +12,7 @@ let constantApi = null;
 let BrowserWindowApi = null;
 let createOriginProxyApi = null;
 let packetTapApi = null;
+let resolvePacketSenderApi = null;
 let settingsApi = null;
 let gameOriginProxy = null;
 let gameOriginBaseUrl = '';
@@ -32,6 +33,9 @@ function setDependencies(deps) {
     if (deps.BrowserWindow) BrowserWindowApi = deps.BrowserWindow;
     if (deps.createOriginProxy) createOriginProxyApi = deps.createOriginProxy;
     if (deps.packetTap) packetTapApi = deps.packetTap;
+    // A resolver, not the sender itself: the packet layer is composed after plugins activate, so
+    // the write path only exists once the app is on its way to the first window.
+    if (deps.packetSender) resolvePacketSenderApi = deps.packetSender;
     if (deps.settings) settingsApi = deps.settings;
 }
 
@@ -472,6 +476,10 @@ function createHostWindowDeps() {
         startGameOrigin: startGameOrigin,
         // A plugin subscribing to game traffic gets the app's one tap, never a listener of its own.
         getPacketTap: function () { return packetTapApi; },
+        // The write half: the packet layer that boot built, or null when steering did not come up.
+        getPacketSender: function () {
+            return typeof resolvePacketSenderApi === 'function' ? resolvePacketSenderApi() : null;
+        },
         openPrimaryGame: openPrimaryGame,
         openLaunch: openLaunch,
         openUrl: openUrl,

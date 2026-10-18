@@ -61,7 +61,13 @@ function activatePlugins() {
         instances: inst,
         constant: constant,
         BrowserWindow: BrowserWindow,
-        packetTap: packetTap
+        packetTap: packetTap,
+        // Read live, not captured: the packet layer is composed later, on the way to the first
+        // window, so a sender captured here would be null forever. Null means steering is off or
+        // did not come up, which is what packets.send reports rather than swallowing the frame.
+        packetSender: function () {
+            return packetLayerState ? packetLayerState.send : null;
+        }
     });
 
     const safeMode = !bootFlags.pluginSystem;

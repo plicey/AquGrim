@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Packet spammer</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
+  }
+  body { display: flex; flex-direction: column; padding: 12px; box-sizing: border-box; gap: 8px; }
+  #packets {
+    flex: 1 1 auto; min-height: 90px; overflow-y: auto; margin: 0; padding: 2px;
+    list-style: none; background: #1b1b1b; border: 1px solid #333; border-radius: 4px;
+    font-family: Consolas, "Courier New", monospace; font-size: 12px;
+  }
+  #packets li { padding: 2px 6px; white-space: pre-wrap; word-break: break-all; cursor: pointer; }
+  #packets li.selected { background: #2b6fce; color: #fff; }
+  #packet { font-family: Consolas, "Courier New", monospace; }
+  input[type="text"], input[type="number"] {
+    font-family: inherit; font-size: 12px; background: #1b1b1b; border: 1px solid #333;
+    border-radius: 4px; padding: 4px 6px; color: #dcdcdc; box-sizing: border-box; width: 100%;
+  }
+  input:focus { outline: none; border-color: #4da3ff; }
+  .row { display: flex; gap: 8px; flex: 0 0 auto; }
+  .row > * { flex: 1 1 0; min-width: 0; }
+  .row .delay { flex: 0 0 74px; }
+  .spacer { flex: 1 1 0; }
+  button {
+    font: inherit; font-size: 12px; color: #e6e6e6; background: #232323; border: 1px solid #383838;
+    border-radius: 4px; padding: 5px 8px; cursor: pointer;
+  }
+  button:hover { background: #2c2c2c; }
+  button:disabled { color: #6f6f6f; cursor: default; background: #1b1b1b; }
+  button.active { background: #2b6fce; border-color: #2b6fce; color: #fff; }
+  #status { flex: 0 0 auto; min-height: 17px; color: #9a9a9a; font-size: 12px; }
+  #status.err { color: #ff8e8e; }
+  #status.ok { color: #7fd08a; }
+</style>
+</head>
+<body>
+  <ul id="packets"></ul>
+  <input id="packet" type="text" placeholder="%xt%zm%..." spellcheck="false">
+
+  <div class="row">
+    <input id="delay" class="delay" type="number" min="100" max="61000" step="10" value="1000" title="Delay">
+    <button id="remove">Remove</button>
+    <button id="clear">Clear</button>
+    <button id="add">Add</button>
+  </div>
+  <div class="row">
+    <span class="spacer"></span>
+    <button id="load">Load</button>
+    <button id="save">Save</button>
+  </div>
+  <div class="row">
+    <button id="sendOnce">Send once</button>
+    <span class="spacer"></span>
+    <button id="stop">Stop</button>
+    <button id="start">Start</button>
+  </div>
+  <div id="status"></div>
+
+  <script>
+  (function () {
+    const api = window.aquastarSpammer;
+    const list = document.getElementById('packets');
+    const packetBox = document.getElementById('packet');
+    const delayBox = document.getElementById('delay');
+    const status = document.getElementById('status');
+    const buttons = {
+      remove: document.getElementById('remove'), clear: document.getElementById('clear'),
+      add: document.getElementById('add'), load: document.getElementById('load'),
+      save: document.getElementById('save'), sendOnce: document.getElementById('sendOnce'),
+      stop: document.getElementById('stop'), start: document.getElementById('start')
+    };
+    const packets = [];
+    let selected = -1;
+    let running = false;
+    let sent = 0;
+    let failed = 0;
+
+    // PacketSpammer.SetButtonsEnabled: Start, Add, Clear and Load go dead while the spammer runs,
+    // so the list cannot be edited out from under the loop.
+    function draw() {
+      list.textContent = '';
+      packets.forEach(function (text, index) {
+        const item = document.createElement('li');
+        item.textContent = text;
+        if (index === selected) item.className = 'selected';
+        item.addEventListener('click', function () { select(index); });
+        list.appendChild(item);
+      });
+      buttons.start.disabled = running || packets.length === 0;
+      buttons.stop.disabled = !running;
+      buttons.add.disabled = running;
+      buttons.clear.disabled = running;
+      buttons.load.disabled = running;
+      buttons.remove.disabled = running;
+      buttons.save.disabled = packets.length === 0;
+      buttons.sendOnce.disabled = packetBox.value.length === 0;
+      buttons.start.classList.toggle('active', running);
+      status.className = failed ? 'err' : (running ? 'ok' : '');
+      status.textContent = running
+        ? 'Spamming ' + packets.length + ' packet(s), every ' + delayBox.value + ' ms \u2014 ' +
+          sent + ' sent' + (failed ? ', ' + failed + ' not written' : '') + '.'
+        : (failed
+          ? sent + ' sent, ' + failed + ' not written: the client is not connected to the relay'
+          : (packets.length ? sent + ' sent' : 'Add a packet to the list, then Start.'));
+    }
+
+    function select(index) {
+      // The reference's list has no selection-changed handler: clicking a row selects it (which is
+      // all Remove needs) and leaves the text box alone.
+      selected = index;
+      draw();
+    }
+
+    function add() {
+      // btnAdd_Click: a non-empty box is appended and cleared.
+      if (!packetBox.value.length) return;
+      packets.push(packetBox.value);
+      selected = packets.length - 1;
+      packetBox.value = '';
+      draw();
+    }
+
+    async function start() {
+      if (!packets.length) return;
+      running = true;
+      failed = 0;
+      sent = 0;
+      draw();
+      const answer = await api.start({ packets: packets, delay: Number(delayBox.value) });
+      running = answer.running;
+      draw();
+    }
+
+    async function stop() {
+      const answer = await api.stop();
+      running = answer.running;
+      sent = answer.sent;
+      failed = answer.failed;
+      draw();
+    }
+
+    buttons.add.addEventListener('click', add);
+    packetBox.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') add();
+    });
+    buttons.remove.addEventListener('click', function () {
+      // btnRemove_Click: only a selected entry is removed.
+      if (selected > -1) packets.splice(selected, 1);
+      selected = -1;
+      draw();
+    });
+    buttons.clear.addEventListener('click', function () {
+      packets.length = 0;
+      selected = -1;
+      draw();
+    });
+    buttons.start.addEventListener('click', start);
+    buttons.stop.addEventListener('click', stop);
+    buttons.sendOnce.addEventListener('click', async function () {
+      const answer = await api.sendOnce(packetBox.value);
+      sent = answer.sent ? sent + 1 : sent;
+      failed = answer.sent ? failed : failed + 1;
+      draw();
+    });
+    buttons.save.addEventListener('click', async function () {
+      // btnSave_Click saves only a non-empty list.
+      if (!packets.length) return;
+      const answer = await api.save({ packets: packets, delay: Number(delayBox.value) });
+      if (answer.canceled) return;
+      status.className = answer.error ? 'err' : 'ok';
+      status.textContent = answer.error || ('Saved to ' + answer.path + '.');
+    });
+    buttons.load.addEventListener('click', async function () {
+      const answer = await api.load();
+      if (answer.canceled) return;
+      if (answer.error) {
+        status.className = 'err';
+        status.textContent = answer.error;
+        return;
+      }
+      packets.length = 0;
+      answer.packets.forEach(function (text) { packets.push(text); });
+      delayBox.value = answer.delay;
+      selected = -1;
+      draw();
+      status.className = 'ok';
+      status.textContent = 'Loaded ' + packets.length + ' packet(s) from ' + answer.path + '.';
+    });
+
+    api.getMessages().then(function (messages) {
+      // IndexChanged: the row being sent is the selected one while the loop runs.
+      api.onIndex(function (index) {
+        selected = index;
+        draw();
+      });
+      document.title = messages.title || 'Packet spammer';
+      buttons.add.textContent = messages.add || 'Add';
+      buttons.clear.textContent = messages.clear || 'Clear';
+      buttons.remove.textContent = messages.remove || 'Remove';
+      buttons.load.textContent = messages.load || 'Load';
+      buttons.save.textContent = messages.save || 'Save';
+      buttons.sendOnce.textContent = messages.sendOnce || 'Send once';
+      buttons.stop.textContent = messages.stop || 'Stop';
+      buttons.start.textContent = messages.start || 'Start';
+      draw();
+    });
+    packetBox.addEventListener('input', draw);
+    draw();
+  })();
+  </script>
+</body>
+</html>

@@ -12,13 +12,19 @@ exports.dialogMessages = {
         return '' +
             expand(k.grimliteBotFile) + '' +
             expand(k.grimliteBank) + '' +
+            expand(k.grimliteLoaders) + '' +
+            '' +
             expand(k.grimliteBotManager) + '' +
             expand(k.grimliteEyedropper) + '' +
             expand(k.grimliteNotepad) + '' +
             expand(k.grimliteAbout) + '' +
             '' +
+            '' +
+            '' +
             expand(k.grimliteParityPlaceholder) + '' +
-            expand(k.grimliteParityDevTest) + '';
+            expand(k.grimliteParityDevTest) + '' +
+            expand(k.grimliteOptions) + '' +
+            expand(k.grimliteHotkeys) + '';
     }
 };
 
@@ -31,12 +37,17 @@ exports.menuMessages = {
     grimliteAbout: "",
     grimliteCharSelect: "",
     grimliteBank: "",
+    grimliteLoaders: "",
     grimliteSets: "",
     grimliteCosmetics: "",
+    grimliteOptions: "",
+    grimliteHotkeys: "",
     grimlitePlaceholder: "",
     grimliteDevTest: "",
     packetsMenu: "",
-    packetsSniffer: ""
+    packetsSniffer: "",
+    packetsSpammer: "",
+    packetsTamperer: ""
 };
 
 exports.botFileMessages = {
@@ -57,6 +68,7 @@ exports.windowTitles = {
     primary: "",
     botFile: "",
     bank: "",
+    loaders: "",
     sets: "",
     botManager: "",
     placeholder: "",
@@ -65,8 +77,12 @@ exports.windowTitles = {
     about: "",
     charSelect: "",
     cosmetics: "",
+    options: "",
+    hotkeys: "",
     devtest: "",
-    packetLogger: ""
+    packetLogger: "",
+    packetSpammer: "",
+    packetTamperer: ""
 };
 
 exports.bankMessages = {
@@ -180,6 +196,54 @@ exports.cosmeticsMessages = {
         cape: "",
         misc: ""
     }
+};
+
+exports.optionsMessages = {
+    title: "",
+    walkSpeed: "",
+    start: "",
+    stop: "",
+    stopped: ""
+};
+
+exports.hotkeysMessages = {
+    title: "",
+    add: "",
+    remove: "",
+    save: "",
+    saved: "",
+    empty: "",
+    selectFirst: ""
+};
+
+exports.loadersMessages = {
+    openTitle: "",
+    nothingToSave: ""
+};
+
+exports.spammerMessages = {
+    title: "",
+    add: "",
+    remove: "",
+    clear: "",
+    load: "",
+    save: "",
+    start: "",
+    stop: "",
+    sendOnce: "",
+    loadTitle: "",
+    saveTitle: "",
+    filterName: ""
+};
+
+exports.tampererMessages = {
+    title: "",
+    captureFromClient: "",
+    captureFromServer: "",
+    filterByText: "",
+    sendToServer: "",
+    sendToClient: "",
+    clear: ""
 };
 
 exports.loginMessages = {
