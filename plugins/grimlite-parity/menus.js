@@ -157,6 +157,17 @@ function register(host, windowTitle) {
                         host.windows.openFeatureWindow(windows.HOTKEYS_WINDOW_ID);
                     }
                 },
+                // The reference's own Tools entry, word for word (Root.cs:927 "Drop Ui"), the
+                // last item of that menu and reached from its own action (Hotkeys.cs:415
+                // "Show DropUi").
+                {
+                    label: labels.grimliteDrop || 'Drop Ui',
+                    accelerator: keybinds.grimliteDrop,
+                    registerAccelerator: false,
+                    click: function () {
+                        host.windows.openFeatureWindow(windows.DROP_WINDOW_ID);
+                    }
+                },
                 {
                     // The reference's Tools menu, word for word (Root.cs:775): its first entry,
                     // wired to its own "Show Fast Travels" action (Hotkeys.cs:402).

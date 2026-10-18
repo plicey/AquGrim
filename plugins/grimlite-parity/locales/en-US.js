@@ -20,6 +20,7 @@ exports.dialogMessages = {
             expand(k.grimliteParityDevTest) + ' - Dev Test (call a game function)\n' +
             expand(k.grimliteOptions) + ' - Options: the reference\'s own option toggles\n' +
             expand(k.grimliteHotkeys) + ' - Hotkeys: bind one key to one action\n' +
+            expand(k.grimliteDrop) + ' - Drop Ui: what has dropped, and taking it\n' +
             expand(k.grimliteFastTravels) + ' - Fast travels: the destination buttons and the map bypasser';
     }
 };
@@ -38,6 +39,7 @@ exports.menuMessages = {
     grimliteCosmetics: 'Cosmetics',
     grimliteOptions: 'Options',
     grimliteHotkeys: 'Hotkeys',
+    grimliteDrop: 'Drop Ui',
     grimliteTravels: 'Fast travels',
     grimlitePlaceholder: 'Parity placeholder window',
     grimliteDevTest: 'Dev Test',
@@ -78,6 +80,7 @@ exports.windowTitles = {
     cosmetics: 'Grimlite Parity - SWF Cosmetics',
     options: 'Options',
     hotkeys: 'Hotkeys',
+    drop: 'DropList',
     travels: 'Fast travels',
     devtest: 'Dev Test',
     packetLogger: 'Packet logger',
@@ -233,6 +236,32 @@ exports.hotkeysMessages = {
     saved: 'Saved $1 binding(s).',
     empty: 'Nothing is bound yet.',
     selectFirst: 'Select a binding first.'
+};
+
+// The drop list window (ticket #33). Every word is the reference's own control text from
+// DropUi.Designer.cs - the four column headers, its three buttons, its tickbox and its count
+// label - plus the one dialog DropUi.btnClear_Click puts in front of Clear.
+exports.dropsMessages = {
+    title: 'DropList',
+    name: 'Name',
+    qty: 'Qty',
+    category: 'Category',
+    flags: 'AC | Member',
+    take: 'Take Drop',
+    blacklist: 'Reject & Blacklist',
+    clear: 'Clear',
+    rejectInGame: 'Reject ingame drop',
+    count: 'Drop count :',
+    pickFirst: 'Select a drop first.',
+    working: 'Taking...',
+    taken: 'Took {n} drop(s).',
+    rejectedN: 'Held {n} name(s) for this session.',
+    cleared: 'Cleared.',
+    confirmTitle: 'Caution',
+    confirmMessage: 'This action will clear all Blacklist and Current drops within the UI.\n' +
+        'Do you wish to proceed?',
+    confirmYes: 'Yes',
+    confirmNo: 'No'
 };
 
 // The Fast travels window (ticket #32). Its control words are the reference's own
