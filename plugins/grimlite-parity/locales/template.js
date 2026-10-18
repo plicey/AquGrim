@@ -15,6 +15,8 @@ exports.dialogMessages = {
             expand(k.grimliteNotepad) + '' +
             expand(k.grimliteAbout) + '' +
             expand(k.grimliteParityPlaceholder) + '';
+            expand(k.grimliteParityPlaceholder) + '' +
+            expand(k.grimliteParityDevTest) + '';
     }
 };
 
@@ -24,7 +26,8 @@ exports.menuMessages = {
     grimliteEyedropper: "",
     grimliteNotepad: "",
     grimliteAbout: "",
-    grimlitePlaceholder: ""
+    grimlitePlaceholder: "",
+    grimliteDevTest: ""
 };
 
 exports.botFileMessages = {
@@ -47,7 +50,8 @@ exports.windowTitles = {
     placeholder: "",
     eyedropper: "",
     notepad: "",
-    about: ""
+    about: "",
+    devtest: ""
 };
 
 exports.settingsMessages = {

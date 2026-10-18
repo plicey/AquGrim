@@ -10,6 +10,8 @@ exports.dialogMessages = {
             expand(k.grimliteNotepad) + ' - Notepad\n' +
             expand(k.grimliteAbout) + ' - About this port and the reference it follows\n' +
             expand(k.grimliteParityPlaceholder) + ' - Parity placeholder window';
+            expand(k.grimliteParityPlaceholder) + ' - Parity placeholder window\n' +
+            expand(k.grimliteParityDevTest) + ' - Dev Test (call a game function)';
     }
 };
 
@@ -19,7 +21,8 @@ exports.menuMessages = {
     grimliteEyedropper: 'Eye Dropper',
     grimliteNotepad: 'Notepad',
     grimliteAbout: 'About',
-    grimlitePlaceholder: 'Parity placeholder window'
+    grimlitePlaceholder: 'Parity placeholder window',
+    grimliteDevTest: 'Dev Test'
 };
 
 // The bot file window and the dialogs it opens. Titles match the reference's own dialogs
@@ -44,7 +47,8 @@ exports.windowTitles = {
     placeholder: 'Grimlite Parity - Placeholder',
     eyedropper: 'Grimlite Parity - Eye Dropper',
     notepad: 'Grimlite Parity - Notepad',
-    about: 'Grimlite Parity - About'
+    about: 'Grimlite Parity - About',
+    devtest: 'Dev Test'
 };
 
 // Read by the Settings window (see res/features/settings/settings.html): the smoke keys the

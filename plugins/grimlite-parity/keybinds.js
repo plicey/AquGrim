@@ -5,7 +5,8 @@ const DEFAULTS = {
     grimliteBotFile: 'Alt+Shift+B',
     grimliteEyedropper: 'Alt+Shift+E',
     grimliteNotepad: 'Alt+Shift+N',
-    grimliteAbout: 'Alt+Shift+A'
+    grimliteAbout: 'Alt+Shift+A',
+    grimliteParityDevTest: 'Alt+Shift+D'
 };
 
 function register(host) {
@@ -39,6 +40,12 @@ function register(host) {
             id: 'grimliteBotFile',
             action: function () {
                 host.windows.openFeatureWindow(windows.BOT_FILE_WINDOW_ID);
+            }
+        },
+        {
+            id: 'grimliteParityDevTest',
+            action: function () {
+                host.windows.openFeatureWindow(windows.DEVTEST_WINDOW_ID);
             }
         }
     ]);

@@ -1,11 +1,15 @@
-// Grimlite-Li parity. The plugin exists, loads, and is selectable in Settings; the primary
-// surface is a local page until the bridge ticket (#28) gives the game something to drive.
-// The small surfacing windows (Notepad, Eye Dropper, About) are the windows that need no
-// game state, so they land first.
+// Grimlite-Li parity. The plugin boots the game through its own loopback origin and loads the
+// bridge SWF there: page, bridge and game share one origin, which is what lets the bridge put the
+// game's classes in its own ApplicationDomain (docs/research/grimlite-bridge-spike.md).
+//
+// Same-origin is not an optimization. PPAPI Flash inside Chromium grants no local-trusted
+// sandbox, so a bridge that loads the game cross-origin is denied every domain access. That is
+// why the game is served from loopback here rather than from game.aq.com: a live game URL would
+// mean a game with no bridge at all, so this plugin refuses to open one instead.
 
 const path = require('path');
-const url = require('url');
 
+const gameOrigin = require('./game-origin.js');
 const menus = require('./menus.js');
 const keybinds = require('./keybinds.js');
 const windows = require('./windows.js');
@@ -17,19 +21,45 @@ const createNotepad = require('./features/notepad/notepad.js').createNotepad;
 const createEyedropper = require('./features/eyedropper/eyedropper.js').createEyedropper;
 const createAbout = require('./features/about/about.js').createAbout;
 
-function activate(host) {
-    const placeholderUrl = url.pathToFileURL(windows.PLACEHOLDER_PAGE).href;
+const BRIDGE_TITLE = 'AquaStar - Grimlite Parity';
 
+/** The bridge SWF as the origin serves it, or '' when the origin is not up. */
+function bridgeUrl(baseUrl) {
+    return baseUrl ? baseUrl + gameOrigin.BRIDGE_PATH : '';
+}
+
+async function activate(host) {
     function windowTitle(key, fallback) {
         const titles = host.getLocaleStrings('windowTitles') || {};
         return titles[key] || fallback;
     }
 
+    let baseUrl = '';
+    try {
+        baseUrl = await host.declareGameOrigin({
+            routes: gameOrigin.routes(),
+            files: gameOrigin.files(),
+            // The plugin's hosts see loopback URLs, its UA policy matches the live ones.
+            userAgent: gameOrigin.userAgent
+        });
+        host.log('game origin: ' + baseUrl);
+    } catch (err) {
+        host.log('game origin unavailable (' + (err && err.message ? err.message : err) +
+            '): the bridge needs the game and itself on one origin, so no game window is opened');
+    }
+
     host.setPrimaryGame({
         id: 'grimlite-parity-shell',
-        getUrl: function () { return placeholderUrl; },
-        title: function () { return windowTitle('primary', 'AquaStar - Grimlite Parity'); },
-        isGameUrl: function (candidate) { return candidate === placeholderUrl; }
+        // The bridge SWF is the movie the window loads; it owns the game's load from there.
+        getUrl: function () { return bridgeUrl(baseUrl); },
+        title: function () { return windowTitle('primary', BRIDGE_TITLE); },
+        isGameUrl: function (candidate) {
+            return !!candidate && candidate === bridgeUrl(baseUrl);
+        },
+        // Nothing here needs the wmode=direct wrapper for relative loads: the bridge resolves
+        // every game path from its own base URL, and the game is served from its own origin.
+        wrap: { preferDirectWmode: true, ruffleEligible: false },
+        flashTrust: true
     });
 
     windows.register(host, windowTitle);
@@ -39,6 +69,9 @@ function activate(host) {
     // Bot files are user documents: this window opens one from the user's own directory, shows
     // it and writes the edit back through the same dialog.
     botFile.createBotFileFeature(host).attach();
+    // The Dev Test window's own IPC: the call modes and the bridge call, both main-process work
+    // because the window is sandboxed.
+    require('./features/devtest/devtest-main.js').register(host);
 
     host.registerLocales({
         'en-US': require('./locales/en-US.js')
@@ -89,7 +122,7 @@ function activate(host) {
     });
     host.registerPacketSteering(require('./packets.js').steeringDeclarations()[0]);
 
-    host.log('Grimlite Parity plugin activated (scaffold: placeholder surface only)');
+    host.log('Grimlite Parity activated; bridge at ' + (bridgeUrl(baseUrl) || '(no origin)'));
 }
 
 module.exports = {

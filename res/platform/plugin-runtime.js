@@ -58,8 +58,11 @@ function startGameOrigin(declaration) {
     const create = createOriginProxyApi || require('./origin-proxy.js').createOriginProxy;
     const constant = constantApi || require('../const.js');
     // The page that embeds the game must come from the origin too (same-origin page + SWF),
-    // while every other wrapped game window keeps the platform's own file:// page.
+    // while every other wrapped game window keeps the platform's own file:// page. A plugin may
+    // add files of its own - its own page and a bridge SWF have to be same-origin with the game
+    // as well - and a plugin that serves a path itself wins over the platform's default.
     const files = constant.swfWrapperPath ? { '/wrapper.html': constant.swfWrapperPath } : {};
+    Object.assign(files, declared.files || {});
     const proxy = create({
         routes: declared.routes,
         files: files,
@@ -471,8 +474,30 @@ function createHostWindowDeps() {
         openFeatureWindow: openFeatureWindow,
         openExternal: openExternal,
         fetchText: fetchText,
-        spawnHelperProcess: spawnHelperProcess
+        spawnHelperProcess: spawnHelperProcess,
+        // The bridge channel's two ends: the window this plugin's game is in, and the platform's
+        // own safe page-script runner. Both resolve live, so a window reopened after the game
+        // crashed is still reachable.
+        getGameWindow: getGameWindow,
+        executeJavaScript: function (webContents, source, label) {
+            const instances = instancesApi || require('../instances.js');
+            return instances.executeJavaScriptSafely(webContents, source, label);
+        }
     };
+}
+
+/**
+ * The window holding the active plugin's game, or null. The plugin's own primary game decides:
+ * a window counts when its URL is one the plugin says is its game, so nothing here knows a game.
+ */
+function getGameWindow() {
+    const BW = BrowserWindowApi || require('electron').BrowserWindow;
+    const windows = BW.getAllWindows().filter(function (win) {
+        if (!win || win.isDestroyed()) return false;
+        return isGameUrl(win.aquaStarSwfUrl || win.webContents.getURL());
+    });
+    // The most recently created game window is the one a feature window was opened from.
+    return windows.length ? windows[windows.length - 1] : null;
 }
 
 function applyFlashTrust(flashApi) {
@@ -512,5 +537,6 @@ module.exports = {
     openExternal: openExternal,
     openFeatureWindow: openFeatureWindow,
     createHostWindowDeps: createHostWindowDeps,
+    getGameWindow: getGameWindow,
     applyFlashTrust: applyFlashTrust
 };

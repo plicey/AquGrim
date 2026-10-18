@@ -10,6 +10,8 @@ const BOT_FILE_WINDOW_ID = 'grimlite-parity-bot-file';
 const NOTEPAD_WINDOW_ID = 'grimlite-parity-notepad';
 const EYEDROPPER_WINDOW_ID = 'grimlite-parity-eyedropper';
 const ABOUT_WINDOW_ID = 'grimlite-parity-about';
+const DEVTEST_PAGE = path.join(featureRoot, 'devtest', 'devtest.html');
+const DEVTEST_WINDOW_ID = 'grimlite-parity-devtest';
 
 // Every one of these is a page inside this plugin: no Flash, no Node in the page, and IPC
 // through its own sandbox-safe preload (docs/PLUGINS.md §4.7/§4.8).
@@ -67,6 +69,14 @@ function register(host, windowTitle) {
             }
         },
         {
+            id: DEVTEST_WINDOW_ID,
+            title: function () {
+                return windowTitle('devtest', 'Dev Test');
+            },
+            url: url.pathToFileURL(DEVTEST_PAGE).href,
+            config: windowConfig(host, 'devtest', 'preload_devtest.js', { width: 400, height: 560 })
+        },
+        {
             id: EYEDROPPER_WINDOW_ID,
             title: function () {
                 return windowTitle('eyedropper', 'Grimlite Parity - Eye Dropper');
@@ -100,6 +110,8 @@ module.exports = {
     BOT_FILE_PAGE: BOT_FILE_PAGE,
     BOT_FILE_PRELOAD: BOT_FILE_PRELOAD,
     BOT_FILE_WINDOW_ID: BOT_FILE_WINDOW_ID,
+    DEVTEST_PAGE: DEVTEST_PAGE,
+    DEVTEST_WINDOW_ID: DEVTEST_WINDOW_ID,
     NOTEPAD_WINDOW_ID: NOTEPAD_WINDOW_ID,
     EYEDROPPER_WINDOW_ID: EYEDROPPER_WINDOW_ID,
     ABOUT_WINDOW_ID: ABOUT_WINDOW_ID
