@@ -23,6 +23,7 @@ const resRoot = path.join(__dirname, '..', '..', 'res');
 const createNotepad = require('./features/notepad/notepad.js').createNotepad;
 const createEyedropper = require('./features/eyedropper/eyedropper.js').createEyedropper;
 const createAbout = require('./features/about/about.js').createAbout;
+const createCosmetics = require('./features/cosmetics/cosmetics-window.js').createFromHost;
 
 const BRIDGE_TITLE = 'AquaStar - Grimlite Parity';
 
@@ -80,10 +81,13 @@ async function activate(host) {
     require('./features/devtest/devtest-main.js').register(host);
 
     // Bank and Sets (#29). Both draw their own window and reach the game only through the
-    // injected game access in bridge.js, which is unwired until ticket #28 lands - until then
-    // each transfer reports why rather than pretending to have moved anything.
+    // injected game access in bridge.js, which sits on this plugin's bridge channel (ticket #28).
     bankWindow.createFromHost(host).attach();
     setsWindow.createFromHost(host).attach();
+    // The Cosmetics window (#30): a page beside the game that reads the room's players and their
+    // wear through the bridge and writes one slot at a time. It holds game-bridge, which the
+    // manifest already declares; nothing here needs a new permission.
+    createCosmetics(host);
 
     host.registerLocales({
         'en-US': require('./locales/en-US.js')

@@ -14,6 +14,7 @@ const EYEDROPPER_WINDOW_ID = 'grimlite-parity-eyedropper';
 const ABOUT_WINDOW_ID = 'grimlite-parity-about';
 const DEVTEST_PAGE = path.join(featureRoot, 'devtest', 'devtest.html');
 const DEVTEST_WINDOW_ID = 'grimlite-parity-devtest';
+const COSMETICS_WINDOW_ID = 'grimlite-parity-cosmetics';
 const LOGGER_WINDOW_ID = 'grimlite-parity-packet-logger';
 
 // Every one of these is a page inside this plugin: no Flash, no Node in the page, and IPC
@@ -98,6 +99,16 @@ function register(host, windowTitle) {
             config: windowConfig(host, 'devtest', 'preload_devtest.js', { width: 400, height: 560 })
         },
         {
+            id: COSMETICS_WINDOW_ID,
+            title: function () {
+                return windowTitle('cosmetics', 'Grimlite Parity - SWF Cosmetics');
+            },
+            url: pageUrl('cosmetics', 'cosmetics.html'),
+            // The reference's form is a 533x473 client area; the grid the port draws needs a
+            // little more width for the full item names its boxes carry.
+            config: windowConfig(host, 'cosmetics', 'preload_cosmetics.js', { width: 620, height: 620 })
+        },
+        {
             id: EYEDROPPER_WINDOW_ID,
             title: function () {
                 return windowTitle('eyedropper', 'Grimlite Parity - Eye Dropper');
@@ -143,6 +154,7 @@ module.exports = {
     SETS_WINDOW_ID: SETS_WINDOW_ID,
     DEVTEST_PAGE: DEVTEST_PAGE,
     DEVTEST_WINDOW_ID: DEVTEST_WINDOW_ID,
+    COSMETICS_WINDOW_ID: COSMETICS_WINDOW_ID,
     NOTEPAD_WINDOW_ID: NOTEPAD_WINDOW_ID,
     EYEDROPPER_WINDOW_ID: EYEDROPPER_WINDOW_ID,
     ABOUT_WINDOW_ID: ABOUT_WINDOW_ID,
