@@ -8,6 +8,7 @@ custom-game*.swf
 releases/
 work/
 dist/
+test/tmp-plugin-data/
 squashfs-root/
 web-dist/
 *.webm
