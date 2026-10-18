@@ -15,6 +15,25 @@ const MAX_REDIRECTS = 5;
 // never completes: the version payload upstream is known to answer late or not at all.
 const DEFAULT_UPSTREAM_TIMEOUT_MS = 20000;
 
+// What the origin answers its own files with. A SWF served as text/html is not a movie: Flash is
+// handed the bytes by type, so the type has to follow the file.
+const CONTENT_TYPES = {
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.swf': 'application/x-shockwave-flash',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.xml': 'application/xml; charset=utf-8'
+};
+
+function contentTypeFor(filePath) {
+    const match = /\.([A-Za-z0-9]+)$/.exec(String(filePath));
+    return (match && CONTENT_TYPES['.' + match[1].toLowerCase()]) || 'application/octet-stream';
+}
+
 function upstreamFor(routes, pathname) {
     let best = null;
     (routes || []).forEach(function (route) {
@@ -113,7 +132,7 @@ function createOriginProxy(opts) {
             try {
                 const body = fs.readFileSync(filePath);
                 res.writeHead(200, {
-                    'Content-Type': 'text/html; charset=utf-8',
+                    'Content-Type': contentTypeFor(filePath),
                     'Content-Length': body.length,
                     'Cache-Control': 'no-store'
                 });

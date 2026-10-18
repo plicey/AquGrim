@@ -49,6 +49,9 @@ test('the parity plugin is discovered as a bundled plugin and activates', async 
     clearRequireCache: true,
     log: function () {},
     deps: {
+      startGameOrigin: function () {
+        return Promise.resolve('http://127.0.0.1:41234');
+      },
       openFeatureWindow: function (id) {
         opened.push(id);
         return {};
@@ -58,14 +61,15 @@ test('the parity plugin is discovered as a bundled plugin and activates', async 
 
   const state = activated.host._getState();
 
-  // The app quits without a primary URL, so the scaffold boots a local page of its own.
+  // The primary surface is the bridge SWF on the plugin's own loopback origin: the game and the
+  // bridge must share an origin for the bridge to reach the game's classes at all.
   const primaryUrl = state.primaryGame.getUrl();
-  assert.ok(primaryUrl.indexOf('file://') === 0, 'primary surface must be a local page');
+  assert.strictEqual(primaryUrl, 'http://127.0.0.1:41234/game/aqua-bridge.swf');
   assert.strictEqual(state.primaryGame.isGameUrl(primaryUrl), true);
   assert.strictEqual(state.primaryGame.isGameUrl('https://example.com/other'), false);
-  assert.ok(primaryUrl.indexOf(pluginRoot.replace(/\\/g, '/')) !== -1);
+  assert.strictEqual(state.primaryGame.isGameUrl('http://127.0.0.1:41234/game/other.swf'), false);
 
-  // One feature window, in the app's window conventions (sandboxed, no Flash, dark page).
+  // Feature windows, in the app's window conventions (sandboxed, no Flash, dark page).
   const windows = state.featureWindows.filter(function (w) {
     return w.id === PLACEHOLDER_ID;
   });
@@ -77,25 +81,21 @@ test('the parity plugin is discovered as a bundled plugin and activates', async 
   assert.strictEqual(winConfig.webPreferences.nodeIntegration, false);
   assert.strictEqual(winConfig.useContentSize, true);
 
-  // Its own menu, whose entries open this plugin's windows and nothing else.
+  // Its own menu entries, opening those windows and nothing else.
   assert.strictEqual(state.menus.length, 1);
   const items = state.menus[0]({ labels: {}, keybinds: {} });
   assert.strictEqual(items.length, 1);
   assert.ok(Array.isArray(items[0].submenu) && items[0].submenu.length >= 1);
-  const placeholders = items[0].submenu.filter(function (item) {
-    return item.label === 'Parity placeholder window';
-  });
-  assert.strictEqual(placeholders.length, 1);
-  placeholders[0].click();
-  assert.deepStrictEqual(opened, [PLACEHOLDER_ID]);
-
-  // and every entry in it belongs to a window this plugin registered
-  const registered = state.featureWindows.map(function (w) { return w.id; });
-  const windowIds = {};
-  windowIds[PLACEHOLDER_ID] = true;
-  windowIds['grimlite-parity-bot-file'] = true;
-  assert.deepStrictEqual(registered.sort(), Object.keys(windowIds).sort());
   assert.ok(items[0].submenu.every(function (item) { return typeof item.click === 'function'; }));
+
+  items[0].submenu.forEach(function (entry) { entry.click(); });
+  assert.ok(opened.indexOf(PLACEHOLDER_ID) !== -1, 'the placeholder window must stay reachable');
+
+  // Every entry opens a window this plugin registered, and nothing else.
+  const registeredIds = state.featureWindows.map(function (w) { return w.id; });
+  opened.forEach(function (id) {
+    assert.ok(registeredIds.indexOf(id) !== -1, 'menu opened an unregistered window: ' + id);
+  });
 });
 
 test('an app older than the plugin refuses it at discovery, and still loads the others', () => {

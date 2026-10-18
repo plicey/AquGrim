@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Grimlite Parity - About</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
+  }
+  body { display: flex; flex-direction: column; box-sizing: border-box; padding: 16px; gap: 12px; }
+  h1 { margin: 0; font-size: 17px; }
+  #version { color: #9a9a9a; }
+  .card { border: 1px solid #2c2c2c; border-radius: 8px; padding: 12px; background: #1b1b1b; }
+  h2 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #6f6f6f; }
+  ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  li { display: flex; align-items: baseline; gap: 8px; }
+  a, button.link { color: #7ec8f2; background: none; border: none; padding: 0; font: inherit; cursor: pointer; text-align: left; }
+  a:hover, button.link:hover { color: #b3e0ff; text-decoration: underline; }
+  li span.plain { color: #9a9a9a; }
+  #reloadRow { display: flex; align-items: center; gap: 10px; }
+  button.pick { background: #232323; color: #e6e6e6; border: 1px solid #383838; border-radius: 4px; padding: 6px 12px; font-size: 12px; }
+  button.pick:hover { background: #2c2c2c; }
+  #status { color: #9a9a9a; }
+</style>
+</head>
+<body>
+  <h1>Grimlite Parity</h1>
+  <div id="version">…</div>
+
+  <div class="card">
+    <h2>Credits</h2>
+    <ul id="links"></ul>
+  </div>
+
+  <div class="card">
+    <h2>Game</h2>
+    <div id="reloadRow">
+      <button id="reload" class="pick" type="button">Reload Game Movie</button>
+      <span id="status"></span>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var bridge = window.aquastarAbout || null;
+      var version = document.getElementById('version');
+      var list = document.getElementById('links');
+      var status = document.getElementById('status');
+
+      if (!bridge) return;
+
+      bridge.getInfo().then(function (info) {
+        var messages = (info && info.messages) || {};
+        version.textContent = (info.version || '') + (info.reference ? ' — ' + info.reference : '');
+        (info.links || []).forEach(function (link) {
+          var item = document.createElement('li');
+          if (!link.url) {
+            // A name with no reachable handler upstream: shown, not clickable.
+            var plain = document.createElement('span');
+            plain.className = 'plain';
+            plain.textContent = link.label;
+            item.appendChild(plain);
+          } else {
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'link';
+            button.textContent = link.label;
+            button.addEventListener('click', function () { bridge.openLink(link.url); });
+            item.appendChild(button);
+          }
+          list.appendChild(item);
+        });
+        if (messages.reloadHint) status.textContent = messages.reloadHint;
+      });
+
+      document.getElementById('reload').addEventListener('click', function () {
+        bridge.reloadGame().then(function (result) {
+          status.textContent = result && result.reloaded
+            ? (result.reloaded === 1 ? 'Game movie reloaded.' : result.reloaded + ' game windows reloaded.')
+            : 'No game window is open.';
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
