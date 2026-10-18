@@ -90,3 +90,41 @@ The header of that script carries the fetch recipe and the two environment varia
 not derive for itself.
 
 One active plugin per process still holds: select this plugin and restart to run it.
+
+## Game access
+
+`bridge.js` is the one place this plugin asks the game for anything. Every feature consumes an
+object of its shape (`createGameAccess(host)`) and never reaches Flash, the Host or the SWF
+itself; `npm test` drives a fake of the same shape.
+
+It sits on the bridge channel #28 landed (`host.bridge.attach()` / `call(name, args)`), which is
+the generic layer (`getGameObject`, `callGameFunction`, `setGameObject`, ...), so this module is
+where a feature's want ("read the inventory", "equip this item") becomes the game's own call
+name. Which of those names can answer is evidence, not guesswork: the reference calls a *loader*
+it ships, and 100 of its 146 names exist only there. Which of *these* names are in that hundred was
+then checked against the decompressed stock game itself, with a stricter test than the research
+count used: a name counts only when it is an exact ABC string-pool entry **and** a multiname
+references it. By that test the game answers none of `GetInventoryItems`, `TransferToBank`,
+`TransferToInventory`, `UsedBankSlots`, `BankSlots` or `Equip` - `BankSlots` occurs only inside
+longer literals (`txtBankSlots`, `iMaxBankSlots`), and `Equip` is a pool entry with zero
+multiname references. The bridge loads the stock game, so each is answered `no member ... at
+world`; this adapter passes that answer through and adds why, rather than inventing a result or
+blocking the call outright - the day the bridge implements that surface, these calls start working
+with no change here.
+
+The game's own bank machinery is differently named and was verified the same way: `initBank`,
+`bankFromInv`, `bankToInv`, `bankSwapInv`, `addToBank`, `removeFromBank`, `isItemInBank`,
+`getBankItem`, `bankItems`, `bankArr`, `iBankCount`, the `sendBank*Request` senders and
+`world.bank.items` are all in the pool with live references. None of them answers to the
+reference's vocabulary, so reaching them is a design decision for the bridge ticket, not a rename
+this module may make on its own.
+
+**The bridge still owes the loader's surface** before Bank can transfer anything: see the ticket
+#29 section of `docs/FLASH_CHECKLIST.md`.
+
+## Windows
+
+- **Bot file** (Alt+Shift+B) — open, edit and save a `.gbot` (#24).
+- **Bank** (Alt+Shift+K) — transfer by category and AC-ness, plus Bank All (#29).
+- **Sets** — save, list, load, clear and equip `.gset` sets (#29).
+- **Parity placeholder** (Alt+Shift+G).

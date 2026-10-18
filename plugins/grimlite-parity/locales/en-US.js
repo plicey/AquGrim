@@ -6,6 +6,7 @@ exports.dialogMessages = {
         }
         return 'Grimlite Parity\n' +
             expand(k.grimliteBotFile) + ' - Bot file: open and save a .gbot\n' +
+            expand(k.grimliteBank) + ' - Bank window\n' +
             expand(k.grimliteBotManager) + ' - Bot Manager: the eleven-tab bot editor\n' +
             expand(k.grimliteEyedropper) + ' - Eye Dropper: read a colour off the screen\n' +
             expand(k.grimliteNotepad) + ' - Notepad\n' +
@@ -23,6 +24,8 @@ exports.menuMessages = {
     grimliteEyedropper: 'Eye Dropper',
     grimliteNotepad: 'Notepad',
     grimliteAbout: 'About',
+    grimliteBank: 'Bank',
+    grimliteSets: 'Sets',
     grimliteCosmetics: 'Cosmetics',
     grimlitePlaceholder: 'Parity placeholder window',
     grimliteDevTest: 'Dev Test',
@@ -49,6 +52,8 @@ exports.botFileMessages = {
 exports.windowTitles = {
     primary: 'AquaStar - Grimlite Parity',
     botFile: 'Grimlite Parity - Bot File',
+    bank: 'Grimlite Parity - Bank',
+    sets: 'Grimlite Parity - Set',
     botManager: 'Bot Manager',
     placeholder: 'Grimlite Parity - Placeholder',
     eyedropper: 'Grimlite Parity - Eye Dropper',
@@ -57,6 +62,45 @@ exports.windowTitles = {
     cosmetics: 'Grimlite Parity - SWF Cosmetics',
     devtest: 'Dev Test',
     packetLogger: 'Packet logger'
+};
+
+// The Bank window (ticket #29). The reference's own labels, verbatim from
+// Grimoire/UI/BankForm.Designer.cs: "What to bank (optional)", "AC or Non-AC", "Bank all
+// except selected", "Bank", "Bank All". The two refusals are the logic's.
+exports.bankMessages = {
+    title: 'Bank',
+    categoryLabel: 'What to bank (optional)',
+    acLabel: 'AC or Non-AC',
+    allExcept: 'Bank all except selected',
+    bank: 'Bank',
+    bankAll: 'Bank All',
+    working: 'Banking...',
+    done: 'Transferred {n} of {t} item(s).',
+    failed: 'That transfer did not run.'
+};
+
+// The Sets window (ticket #29). The reference's own control words from
+// Grimoire/UI/Set.Designer.cs: "Add", "Clear", "Save", "Load", and its "R" refresh glyph.
+exports.setsMessages = {
+    window: {
+        title: 'Set',
+        refresh: 'R',
+        add: 'Add',
+        clear: 'Clear',
+        save: 'Save',
+        load: 'Load',
+        equip: 'Equip',
+        setHeading: 'Set',
+        savedHeading: 'Saved sets'
+    },
+    added: 'Added to the set.',
+    cleared: 'Cleared.',
+    saved: 'Saved.',
+    loaded: 'Loaded.',
+    equipped: 'Equipped {n} item(s).',
+    openTitle: 'Load Set',
+    saveTitle: 'Save Set',
+    filterName: 'Grimoire sets'
 };
 
 // Read by the Settings window (see res/features/settings/settings.html): the smoke keys the

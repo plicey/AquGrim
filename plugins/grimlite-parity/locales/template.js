@@ -11,6 +11,7 @@ exports.dialogMessages = {
         }
         return '' +
             expand(k.grimliteBotFile) + '' +
+            expand(k.grimliteBank) + '' +
             expand(k.grimliteBotManager) + '' +
             expand(k.grimliteEyedropper) + '' +
             expand(k.grimliteNotepad) + '' +
@@ -28,6 +29,8 @@ exports.menuMessages = {
     grimliteEyedropper: "",
     grimliteNotepad: "",
     grimliteAbout: "",
+    grimliteBank: "",
+    grimliteSets: "",
     grimliteCosmetics: "",
     grimlitePlaceholder: "",
     grimliteDevTest: "",
@@ -52,6 +55,8 @@ exports.botFileMessages = {
 exports.windowTitles = {
     primary: "",
     botFile: "",
+    bank: "",
+    sets: "",
     botManager: "",
     placeholder: "",
     eyedropper: "",
@@ -60,6 +65,40 @@ exports.windowTitles = {
     cosmetics: "",
     devtest: "",
     packetLogger: ""
+};
+
+exports.bankMessages = {
+    title: "",
+    categoryLabel: "",
+    acLabel: "",
+    allExcept: "",
+    bank: "",
+    bankAll: "",
+    working: "",
+    done: "",
+    failed: ""
+};
+
+exports.setsMessages = {
+    window: {
+        title: "",
+        refresh: "",
+        add: "",
+        clear: "",
+        save: "",
+        load: "",
+        equip: "",
+        setHeading: "",
+        savedHeading: ""
+    },
+    added: "",
+    cleared: "",
+    saved: "",
+    loaded: "",
+    equipped: "",
+    openTitle: "",
+    saveTitle: "",
+    filterName: ""
 };
 
 exports.settingsMessages = {

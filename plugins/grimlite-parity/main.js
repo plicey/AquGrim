@@ -14,6 +14,8 @@ const menus = require('./menus.js');
 const keybinds = require('./keybinds.js');
 const windows = require('./windows.js');
 const botFile = require('./features/bot-file/bot-file.js');
+const bankWindow = require('./features/bank/bank-window.js');
+const setsWindow = require('./features/sets/sets-window.js');
 const logger = require('./features/packets/logger.js');
 
 const resRoot = path.join(__dirname, '..', '..', 'res');
@@ -78,6 +80,10 @@ async function activate(host) {
     // because the window is sandboxed.
     require('./features/devtest/devtest-main.js').register(host);
 
+    // Bank and Sets (#29). Both draw their own window and reach the game only through the
+    // injected game access in bridge.js, which sits on this plugin's bridge channel (ticket #28).
+    bankWindow.createFromHost(host).attach();
+    setsWindow.createFromHost(host).attach();
     // The Bot Manager's main-process half: the sheet, the parsed document, the two dialogs and the
     // folder tree, all of which a sandboxed page cannot reach for itself.
     require('./features/bot-manager/bot-manager.js').createBotManager({

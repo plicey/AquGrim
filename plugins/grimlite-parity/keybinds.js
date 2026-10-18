@@ -8,6 +8,7 @@ const DEFAULTS = {
     grimliteNotepad: 'Alt+Shift+N',
     grimliteAbout: 'Alt+Shift+A',
     grimliteParityDevTest: 'Alt+Shift+D',
+    grimliteBank: 'Alt+Shift+K',
     // The reference's own action list carries "Show Cosmetics form" (Hotkeys.cs:409). Its
     // bindings ship empty and its picker takes one key; this port gives the window a default on
     // a key no binding of the app's or the game plugin's own uses.
@@ -57,6 +58,14 @@ function register(host) {
             id: 'grimliteParityDevTest',
             action: function () {
                 host.windows.openFeatureWindow(windows.DEVTEST_WINDOW_ID);
+            }
+        },
+        {
+            // The reference's own hotkey action list has "Show Bank" (Hotkeys.cs:408) and no
+            // Sets action at all, so Bank is bindable and Sets is a menu entry only.
+            id: 'grimliteBank',
+            action: function () {
+                host.windows.openFeatureWindow(windows.BANK_WINDOW_ID);
             }
         },
         {
