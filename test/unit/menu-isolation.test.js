@@ -23,10 +23,10 @@ test('menu registry clears previous plugin pages on adopt', () => {
     ],
     menuProviders: {
       appUsefulPages: function () {
-        return [{ label: 'GitHub', url: 'https://github.com/aquaspy/AquaStar', openMode: 'in-place' }];
+        return [{ label: 'GitHub', url: 'https://github.com/plicey/AquGrim', openMode: 'in-place' }];
       },
       gameMenuPages: function () {
-        return [{ label: 'Releases', url: 'https://github.com/aquaspy/AquaStar/releases', openMode: 'new-window' }];
+        return [{ label: 'Releases', url: 'https://github.com/plicey/AquGrim/releases', openMode: 'new-window' }];
       }
     }
   });

@@ -47,7 +47,7 @@ const sshotPath   = path.join(app.getPath("pictures"),"AquaStar Screenshots");
 const iconPath    = path.join(appRoot, 'Icon', (isDebugBuild)? 'Icondeb_1024.png' : 'Icon_1024.png');
 const iconRedPath = path.join(appRoot, 'Icon', 'Iconred_1024.png');
 
-const githubPage   = "https://github.com/aquaspy/AquaStar/releases";
+const githubPage   = "https://github.com/plicey/AquGrim/releases";
 
 // Export farm
 

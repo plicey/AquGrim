@@ -1,9 +1,9 @@
 const URLS = {
-    githubRepo: 'https://github.com/aquaspy/AquaStar',
-    githubReleases: 'https://github.com/aquaspy/AquaStar/releases',
-    // Rendered from the repo on GitHub (branch plugins / main as available).
-    pluginsDocs: 'https://github.com/aquaspy/AquaStar/blob/plugins/docs/PLUGINS.md',
-    designDocs: 'https://github.com/aquaspy/AquaStar/blob/plugins/docs/design/plugin-architecture.md'
+    githubRepo: 'https://github.com/plicey/AquGrim',
+    githubReleases: 'https://github.com/plicey/AquGrim/releases',
+    // Rendered from this repo on GitHub (docs live on main).
+    pluginsDocs: 'https://github.com/plicey/AquGrim/blob/main/docs/PLUGINS.md',
+    designDocs: 'https://github.com/plicey/AquGrim/blob/main/docs/design/plugin-architecture.md'
 };
 
 module.exports = { URLS: URLS };

@@ -23,7 +23,7 @@ exports.dashboardMessages = {
     labelNote: 'Nota (aquastar.example-companion.demo.json)',
     saveNote: 'Salvar nota',
     refresh: 'Atualizar',
-    fetchRepo: 'Buscar aquaspy/AquaStar via net.fetchText',
+    fetchRepo: 'Buscar plicey/AquGrim via net.fetchText',
     saved: 'Nota salva.',
     fetchOk: 'Busca ok.',
     fetching: 'Buscando…',
