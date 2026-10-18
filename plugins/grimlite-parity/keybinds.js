@@ -3,6 +3,7 @@ const windows = require('./windows.js');
 const DEFAULTS = {
     grimliteParityPlaceholder: 'Alt+Shift+G',
     grimliteBotFile: 'Alt+Shift+B',
+    grimliteBotManager: 'Alt+Shift+M',
     grimliteEyedropper: 'Alt+Shift+E',
     grimliteNotepad: 'Alt+Shift+N',
     grimliteAbout: 'Alt+Shift+A',
@@ -44,6 +45,12 @@ function register(host) {
             id: 'grimliteBotFile',
             action: function () {
                 host.windows.openFeatureWindow(windows.BOT_FILE_WINDOW_ID);
+            }
+        },
+        {
+            id: 'grimliteBotManager',
+            action: function () {
+                host.windows.openFeatureWindow(windows.BOT_MANAGER_WINDOW_ID);
             }
         },
         {

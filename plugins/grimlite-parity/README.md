@@ -20,6 +20,36 @@ typed helpers), **Eye Dropper** (a pixel printed as ARGB hex, decimal channels a
 and **About** (version, the reference's credit links, and a control that reloads the game
 movie). `Grimlite` in the window menu opens all three.
 
+The **Bot Manager** (Grimlite → Bot Manager, Alt+Shift+M) is the reference's editor window: its
+eleven tabs and the controls it puts in each of them, the left list that switches between
+commands, skills, quests, drops, boosts and items, the live counters under it, a search that
+wraps, and the reference's editing keymap (move, duplicate, delete, copy as text, cut and paste,
+insert above, flip a variant, double-click to edit). A command opens a form generated from its own
+members, with the raw JSON behind it, and both write back to the list. The right-click menu
+carries the per-command colour customiser, the font size, the multiline toggle, tabpage toggle and
+the command customiser; colours, centring and size are stored per class in the plugin's own store.
+The **Bots** tab is a one-level tree over the chosen bots folder that opens a `.gbot` on select
+and accepts one dropped on the window.
+
+The window edits the parsed document in place (`bot/bots.js`): a key that was absent because it
+equalled the reference's default stays absent through a save, so a bot opened here and saved
+unchanged is still the file the reference wrote. It builds and displays the command vocabulary -
+the reference's own display text, form labels and construction - but does not execute it: running
+a bot is the engine, ticket #37.
+
+The controls that act on the running game are honest about a split that decides what this app can
+read at all. The reference client does not read the stock game for most of its own data: it ships
+its own loader (`Loader/grimoire.swf`), implements a helper surface there, and calls that. Our
+bridge loads the stock game, so a name that lives only in the reference's loader answers "no
+member ... at world". `bot/game-reads.js` records which controls those are, name by name. The
+reachable ones - `Get current cell`, and `Get` on the Hunt tab - read `world.strFrame`,
+`world.strPad` and `world.strMapName` through the generic bridge surface, which is the same
+source the reference's own loader reads for its cell and pad. The rest report the helper they wait
+for (`Position`, `RoomNumber`, `SetSpawnPoint`, `ReloadMap`, `HideConnMC`, `SetFPS`), or the
+reason they are not wired (frame injection is the unverified `sendClientPacket` path, ticket #28;
+the name and guild substitutions belong to the engine, ticket #37). No control silently does
+nothing, because an empty cell box is indistinguishable from a real reading.
+
 The Notepad's `debugskill` and `mapitems` helpers read the equipped class and the map-item
 history. Those reads land with the bridge (ticket #28); until then the source reports nothing
 rather than a stand-in value, so a dump never claims state the app has not read.
@@ -29,9 +59,9 @@ The plugin boots the game from its own loopback origin and loads **the bridge** 
 and game share one origin, which is what makes that domain access legal under PPAPI Flash at all
 (`docs/research/grimlite-bridge-spike.md`).
 
-Features so far: the **Dev Test** window (type a function and arguments, call it, see the
-result, with the reference's own modes), the **packet logger** opened from Packets → Sniffer,
-and the placeholder window the scaffold shipped.
+Features so far: the **Bot Manager**, the **Dev Test** window (type a function and arguments, call
+it, see the result, with the reference's own modes), the **packet logger** opened from Packets →
+Sniffer, the three display windows above, and the placeholder window the scaffold shipped.
 
 The **Cosmetics** window (Grimlite → Cosmetics, Alt+Shift+C) is the reference's own grid: eight
 rows (Helm, Armor, Class, Weapon, Off.H, Pet, Cape, Misc), each with a file box, a link box and a
