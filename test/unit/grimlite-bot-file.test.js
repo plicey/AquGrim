@@ -117,7 +117,7 @@ test('every command the reference forces a default on is listed, so a new one is
   // nothing else - an eighth would change the format and must fail here.
   assert.deepStrictEqual(bots.WRITE_ALWAYS, {
     'Grimoire.Botting.Commands.Item.CmdSell, Grimoire': { Qty: '1' },
-    'Grimoire.Botting.Commands.Map.CmdMoveToCell, Grimoire': { stop: false, maxcell: 5 },
+    'Grimoire.Botting.Commands.Map.CmdMoveToCell2, Grimoire': { stop: false, maxcell: 5 },
     'Grimoire.Botting.Commands.Misc.CmdLoadBot, Grimoire': { PassDropList: true, PassSkillPreset: false },
     'Grimoire.Botting.Commands.Quest.CmdAcceptQuest, Grimoire': { ghostAccept: false },
     'Grimoire.Botting.Commands.Quest.CmdCompleteQuest, Grimoire': { ReAccept: false }

@@ -149,6 +149,170 @@ opt-in is on (and the window says so if you press Start without it).
 
 ---
 
+## Grimlite Parity — Bank and Sets (ticket #29) — needs the real game and dialogs
+
+**Blocked on the bridge growing the reference loader's call surface.** The bridge (#28, merged)
+loads the *stock* game, and every call these two windows make is a name only the reference's own
+loader carries. Checked against the decompressed game SWF `/var/tmp/aq-origin/game.swf` (and the
+reference loader `Loader/grimoire.swf` to confirm each name is really its own), by exact ABC
+string-pool membership plus at least one multiname reference - a pool entry nothing references is
+a literal, not a callable member:
+
+| Call this feature makes | What the window uses it for | In the stock game | In the reference loader |
+|---|---|---|---|
+| `GetInventoryItems` | the list Bank and Sets both work from | no | yes |
+| `BankSlots` | the total half of Bank All's free-space gate | no (only inside `txtBankSlots`, `iMaxBankSlots` literals) | yes |
+| `UsedBankSlots` | the used half of that gate | no | yes |
+| `TransferToBank` | every transfer both Bank buttons make | no | yes |
+| `Equip` | one equip per item of a set | no (a pool entry, but zero multiname references) | yes |
+
+The reference carries more loader-only names than these - `GetBankItems` (read the bank),
+`TransferToInventory` (withdraw), `BankSwap`, `GetBankItemByName`, `GetBankItemByName2`,
+`ShowBank`, `GetBank`, `LoadBankItems`, `IsActionAvailable` (the equip lock),
+`InventorySlots` and `UsedInventorySlots` - but none of them is reachable from BankForm.cs or
+Set.cs, so a surface built for these two windows does not need them. BankForm.cs makes exactly five
+calls: `Player.Inventory.Items` twice, `Player.Bank.TransferToBank` on each match, and
+`Player.Bank.AvailableSlots` (`BankSlots` minus `UsedBankSlots`) once per non-AC item. Set.cs and
+CmdEquipSet.cs add only `Player.Inventory.Items` and `Player.Equip`.
+
+So today a transfer reports `no member TransferToBank at world - "TransferToBank" belongs to the
+reference client's own loader...` instead of pretending to have moved something, and the adapter
+starts working the day the bridge implements that surface, with no change to these windows.
+
+**What the game does carry, for whoever implements that surface.** The stock game's own bank
+machinery is differently named and real: `initBank`, `bankFromInv`, `bankToInv`,
+`bankSwapInv`, `addToBank`, `removeFromBank`, `isItemInBank`, `isItemInInventory`,
+`getBankItem`, `bankItems`, `bankArr`, `iBankCount`, `sendBankFromInvRequest`,
+`sendBankToInvRequest`, `sendBankSwapInvRequest`, `toggleBank`, `bankHasRequested` and the
+`world.bank.items` path - all verified in the pool with live references. The bank's *capacity*
+is a UI-slot literal (`iMaxBankSlots`) and a server-driven count (`iBankCount`), not a call, so
+the free-space gate "Bank All" needs has no direct equivalent and is the part that stays unverified
+until the surface exists.
+
+The window shells, the list model, the persistence and the set file format are covered by
+`npm test`; these boxes are the live half.
+
+- [ ] **Bank** transfers the chosen category, honouring the AC/non-AC choice, and does not touch
+      equipped items or Treasure Potion
+- [ ] **Bank all except selected** moves everything outside the selection, and nothing in it
+- [ ] **Bank All** with ACs moves AC items even when the bank is full; with non-ACs it stops
+      when the bank fills, without an error
+- [ ] A long transfer paces itself: the game accepts every move, and no "transaction already in
+      progress" style rejection appears
+- [ ] The window reports completion (how many of how many) when a transfer ends
+- [ ] **Sets → Add** fills the combo with the five groups (Weapons, Classes, Armors, Helmets,
+      Capes) and the separators cannot be picked
+- [ ] **Save** writes a set where the dialog points, and a `.gset` written by **Grimlite-Li**
+      (`Sets/` beside its exe) opens here and lists its items
+- [ ] A set saved **here** opens in Grimlite-Li's own Sets form (Tools → Sets)
+- [ ] **Equip** equips the set's items in order; an item not in the bag is skipped and
+      reported, not fatal
+- [ ] If the game refuses an equip, the sequence stops and the window says so rather than
+      continuing as if it worked
+- [ ] Closing either window and reopening it (**Grimlite → Bank** / **Sets**) restores its
+      state, and the sets folder is the one last used
+## Bot Manager (ticket #36) - needs a display, the reference client and a bot file
+
+The sheet, the catalog, the document mechanics, the customiser and the tree are covered offline
+by `npm test` (against the reference's own designer strings and its shipped corpus). What is left
+for a human is everything WinForms drew: the tab layout, the generated form, the menus behind
+right-click, and whether the file the window writes opens in the reference.
+
+Active plugin **Grimlite Parity**, restart, then **Grimlite → Bot Manager** (or **Alt+Shift+M**).
+
+- [ ] The window opens titled **Bot Manager**, about 1004x640, with the eleven tabs in the
+      reference's own order: Combat, Map, Item, Quest, Misc, Misc 2, Options, Options 2, Hunt,
+      Bots, Info
+- [ ] Every tab holds the reference's controls with its own labels (Combat: the skill boxes and
+      *Attack without animations*; Map: cell/pad and *Join Map SWF*; Quest: *Quest ID* with its
+      *Add to whitelist*; Bots: the folder tree; Info: the author and description boxes)
+- [ ] **Load bot** opens a native dialog; pick a `.gbot` and the left list fills with the file's
+      commands, each row carrying the reference's own text (*Move to cell: x, y*, *Kill monster*,
+      *Delay 500ms*, *Quest: 1234*, ...)
+- [ ] The left selector switches Commands → Skills → Quests → Drops → Boosts → Items: the list and
+      the six counters under it follow the switch, and the counters read the same numbers the
+      reference shows (Commands is two lines: *Number of* / *Commands: n*)
+- [ ] **Search** finds a command by its text, walks to the next hit on each press, and wraps from
+      the last hit back to the first; a text that is not there leaves the selection alone
+- [ ] Rows render in the reference's per-class colour; a command whose class has never been
+      customised is #FFDCDCDC
+- [ ] **Ctrl+Up / Ctrl+Down** move the selection (and a multi-selection as one block) and the list
+      keeps the moved rows selected; at either end nothing moves
+- [ ] **Ctrl+D**-style duplicate copies the selection directly below itself and selects the copies;
+      **Delete** removes every selected row; **Clear** empties the current list, and with **all**
+      ticked it empties all six
+- [ ] **Ctrl+C** copies the selected commands as their display text, one per line, in list order
+- [ ] **Remove** (and Ctrl+X) cuts the rows to the clipboard; the reference's whole-configuration
+      copy and paste move a complete set of lists through the clipboard, and pasting something
+      that is not a bot is refused rather than half-applied
+- [ ] **Insert above:** a modifier-click on an add button puts the new command at the selection
+      instead of at the end, and the list scrolls the new row into view
+- [ ] **Variant toggle:** the same modifier on the add button flips the command's variant the
+      reference flips (for example the quest command's reaccept flag)
+- [ ] **Double-click** a row opens the generated property form for that command, titled with the
+      command's own name and offering one row per member the reference's form offers (its skip
+      list - Tag, Description1/2, $type, Text - is not shown)
+- [ ] Editing a field and pressing OK writes back to the same row in the list; Cancel changes
+      nothing; a value the member's type cannot take is reported instead of thrown
+- [ ] **Raw Command Editor** from the form shows the command's own JSON; a valid edit replaces the
+      command, and text that does not parse is reported and leaves the command untouched
+- [ ] Every add button on every tab builds the command the reference builds from the fields beside
+      it (Combat *Add skill* → a skill row; Map *Move to cell* → *Move to cell: 1, Left*; Item
+      *Equip* → the item's name; Misc *Delay* → *Delay 500ms*)
+- [ ] A list button fills the *other* lists the reference fills: *Add all skills* → every skill of
+      the equipped class, *Whitelist* → the item whitelist, *Unbank list* → the unbanked items,
+      *Boost* → the boosted items; adding the same entry twice does not duplicate the ones the
+      reference dedupes
+- [ ] A button whose field is empty contributes nothing (it does not append a half-built command)
+- [ ] The Options and Options 2 tickboxes and number boxes write the `Configuration` keys the
+      reference binds them to, immediately, and they survive **Save bot** → reopen
+- [ ] Right-click the list: **Change Fonts** (colour customiser and size), **Multiline Toggle**,
+      **Toggle Tabpages** and **Command Customizer** are all offered
+- [ ] The command customiser lists the three extras (Index, Variable, ExtendedVariable) before the
+      classes; a colour picked for one class paints that class's rows and no others; size is
+      clamped to 20-100 and changes the row height and font together
+- [ ] Colours, centring and size survive closing the window, and survive a restart
+- [ ] The **Bots** tab shows the chosen folder's subfolders and its `.gbot` files, one level at a
+      time (a folder expands to its own contents, not the whole tree); the root shows a count
+- [ ] Selecting a folder in the tree shows the count for that folder; selecting a bot opens it
+      (ctrl-click contributes it as a `CmdLoadBot` instead)
+- [ ] **Add folder** makes a directory under the bots root; a name that would escape the root is
+      refused; the chosen bots directory is remembered across restarts
+- [ ] Drop a `.gbot` file onto the window: it opens the same way Load bot does; dropping two at
+      once is ignored rather than picking one arbitrarily
+- [ ] Save the edited bot, then open the same file in the reference client's Bot Manager: the
+      commands, skills, quests and settings read the same, and a bot that came from Windows keeps
+      its own line endings
+- [ ] Save an untouched bot loaded from disk: the file has exactly the keys it came with (a key
+      absent because it equalled the reference's default must not reappear)
+- [ ] **Enable Bot / Disable Bot** writes the flag the reference writes; nothing here starts the
+      engine - running a bot is ticket #37
+
+### The controls that read the running game
+
+The reference serves most of these from its own loader (Loader/grimoire.swf) rather than from the
+stock game, and our bridge loads the stock game. Each name below was measured against both SWFs;
+the reachable ones read the same dot-paths the reference's own loader reads, and the rest say
+which helper they are waiting for instead of quietly returning nothing. Sign in before these.
+
+- [ ] **Get current cell** (Map tab) puts the real cell in *Cell* and the pad in *Pad*; with Alt
+      held it appends ",cell" / ",pad" to what is already there, like the reference
+- [ ] **Get** (Hunt tab) fills *Map*, *Cell* and *Pad* from where the player is
+- [ ] With Ctrl or Alt held, **Get** reports that the room number is not available instead of
+      half-filling the box: that value comes from the reference's loader and the stock game has
+      no equivalent
+- [ ] **Current position**, the **<** / **>** join buttons, **Set Spawnpoint**, **Reload Map**,
+      **Hide Loading** and **Set FPS** each say which helper they wait for, without throwing and
+      without filling anything in
+- [ ] **Set** (level) explains that it would inject a frame, which this window does not send yet
+- [ ] The name and guild **Set** buttons explain that the substitution belongs to the bot engine
+- [ ] **Test** (Options → the drop-sound list) makes the system alert sound
+- [ ] With no game window open, any of the above reports that there is no game window
+- [ ] With a game window open but **no character signed in**, a reachable read says the game
+      reports nothing yet, rather than showing an empty cell
+
+---
+
 ## Adventure Quest Worlds
 
 - [ ] Switch active plugin to **Adventure Quest Worlds**, restart

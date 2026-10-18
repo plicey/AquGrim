@@ -6,6 +6,8 @@ exports.dialogMessages = {
         }
         return 'Grimlite Parity\n' +
             expand(k.grimliteBotFile) + ' - Bot file: open and save a .gbot\n' +
+            expand(k.grimliteBank) + ' - Bank window\n' +
+            expand(k.grimliteBotManager) + ' - Bot Manager: the eleven-tab bot editor\n' +
             expand(k.grimliteEyedropper) + ' - Eye Dropper: read a colour off the screen\n' +
             expand(k.grimliteNotepad) + ' - Notepad\n' +
             expand(k.grimliteAbout) + ' - About this port and the reference it follows\n' +
@@ -18,9 +20,12 @@ exports.dialogMessages = {
 exports.menuMessages = {
     grimliteMenu: 'Grimlite',
     grimliteBotFile: 'Bot file',
+    grimliteBotManager: 'Bot Manager',
     grimliteEyedropper: 'Eye Dropper',
     grimliteNotepad: 'Notepad',
     grimliteAbout: 'About',
+    grimliteBank: 'Bank',
+    grimliteSets: 'Sets',
     grimliteCosmetics: 'Cosmetics',
     grimlitePlaceholder: 'Parity placeholder window',
     grimliteDevTest: 'Dev Test',
@@ -47,6 +52,9 @@ exports.botFileMessages = {
 exports.windowTitles = {
     primary: 'AquaStar - Grimlite Parity',
     botFile: 'Grimlite Parity - Bot File',
+    bank: 'Grimlite Parity - Bank',
+    sets: 'Grimlite Parity - Set',
+    botManager: 'Bot Manager',
     placeholder: 'Grimlite Parity - Placeholder',
     eyedropper: 'Grimlite Parity - Eye Dropper',
     notepad: 'Grimlite Parity - Notepad',
@@ -54,6 +62,45 @@ exports.windowTitles = {
     cosmetics: 'Grimlite Parity - SWF Cosmetics',
     devtest: 'Dev Test',
     packetLogger: 'Packet logger'
+};
+
+// The Bank window (ticket #29). The reference's own labels, verbatim from
+// Grimoire/UI/BankForm.Designer.cs: "What to bank (optional)", "AC or Non-AC", "Bank all
+// except selected", "Bank", "Bank All". The two refusals are the logic's.
+exports.bankMessages = {
+    title: 'Bank',
+    categoryLabel: 'What to bank (optional)',
+    acLabel: 'AC or Non-AC',
+    allExcept: 'Bank all except selected',
+    bank: 'Bank',
+    bankAll: 'Bank All',
+    working: 'Banking...',
+    done: 'Transferred {n} of {t} item(s).',
+    failed: 'That transfer did not run.'
+};
+
+// The Sets window (ticket #29). The reference's own control words from
+// Grimoire/UI/Set.Designer.cs: "Add", "Clear", "Save", "Load", and its "R" refresh glyph.
+exports.setsMessages = {
+    window: {
+        title: 'Set',
+        refresh: 'R',
+        add: 'Add',
+        clear: 'Clear',
+        save: 'Save',
+        load: 'Load',
+        equip: 'Equip',
+        setHeading: 'Set',
+        savedHeading: 'Saved sets'
+    },
+    added: 'Added to the set.',
+    cleared: 'Cleared.',
+    saved: 'Saved.',
+    loaded: 'Loaded.',
+    equipped: 'Equipped {n} item(s).',
+    openTitle: 'Load Set',
+    saveTitle: 'Save Set',
+    filterName: 'Grimoire sets'
 };
 
 // Read by the Settings window (see res/features/settings/settings.html): the smoke keys the
@@ -90,6 +137,39 @@ exports.eyedropperMessages = {
 
 exports.aboutMessages = {
     reloadHint: 'Reloads the game movie, like the reference\'s Load Game SWF.'
+};
+
+// The Bot Manager window: the reference's own control captions are the sheet's (bot/tabs.js);
+// these are the strings that window draws itself - its chrome, its four right-click entries and
+// the labels of the generated dialogs.
+exports.botManagerMessages = {
+    title: 'Bot Manager',
+    load: 'Load bot',
+    save: 'Save bot',
+    ok: 'OK',
+    cancel: 'Cancel',
+    raw: 'Raw Command Editor',
+    copy: 'Copy commands as text',
+    copyHint: 'Copied. Use Ctrl+V in this window to put it back.',
+    paste: 'Paste',
+    pasteHint: 'Paste a copied bot or command, then OK.',
+    opened: 'Opened.',
+    saved: 'Saved.',
+    customizer: 'Command Customizer',
+    fonts: 'Change Fonts',
+    multiline: 'Multiline Toggle',
+    tabpages: 'Toggle Tabpages',
+    addFolder: 'Folder name',
+    numberOfBots: 'Number of Bots: ',
+    empty: 'No bot is open. Load one, or drop a .gbot on the list.',
+    rowHint: 'Double-click a command to edit it. Ctrl+click inserts above; Alt+click takes the variant.',
+    colour: 'Colour',
+    centered: 'Centered',
+    size: 'Commands size',
+    saveSize: 'Save Size',
+    chooseDirectoryTitle: 'Choose your bots directory',
+    addFolderFailed: 'That folder could not be added.',
+    read: 'Read from the game.'
 };
 
 // The Cosmetics window (ticket #30). The slot labels, the list's own row words and the button

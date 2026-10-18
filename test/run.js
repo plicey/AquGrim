@@ -35,6 +35,11 @@ global.test = function (name, fn) {
   './unit/grimlite-bot-corpus.test.js',
   './unit/grimlite-bot-dialogs.test.js',
   './unit/grimlite-bot-window.test.js',
+  './unit/grimlite-bot-editor.test.js',
+  './unit/grimlite-bot-tabs.test.js',
+  './unit/grimlite-bot-manager.test.js',
+  './unit/grimlite-bot-manager-window.test.js',
+  './unit/grimlite-bot-manager-game-reads.test.js',
   './unit/plugin-game-access.test.js',
   './unit/grimlite-parity.test.js',
   './unit/bridge-channel.test.js',
@@ -69,7 +74,12 @@ global.test = function (name, fn) {
   './unit/pack-plugins.test.js',
   './unit/grimlite-cosmetics.test.js',
   './integration/json-store.test.js',
-  './integration/local-origin.test.js'
+  './integration/local-origin.test.js',
+  './unit/grimlite-bank.test.js',
+  './unit/grimlite-sets.test.js',
+  './unit/grimlite-bank-sets-windows.test.js',
+  './unit/grimlite-bank-sets-pages.test.js',
+  './unit/grimlite-bridge.test.js'
 ].forEach((file) => require(path.join(__dirname, file)));
 
 (async () => {

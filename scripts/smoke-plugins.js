@@ -47,6 +47,20 @@ ok(
   'parity bot file page'
 );
 ok(fs.existsSync(path.join(parity, 'bot', 'bots.js')), 'parity bot file reader/writer');
+ok(
+  fs.existsSync(path.join(parity, 'features', 'bank', 'bank.html')),
+  'parity bank page'
+);
+ok(fs.existsSync(path.join(parity, 'features', 'sets', 'sets.html')), 'parity sets page');
+ok(fs.existsSync(path.join(parity, 'bridge.js')), 'parity game access interface');
+
+// A set this app writes must stay readable by the reference client: round-trip a fixture.
+const sets = require(path.join(parity, 'features', 'sets', 'sets.js'));
+const setPath = path.join(root, 'test', 'fixtures', 'grimlite-sets', 'reference-set.gset');
+const setText = fs.readFileSync(setPath, 'utf8');
+const parsedSet = sets.parseSet(setText);
+ok(parsedSet.ok, 'a bundled .gset fixture parses: ' + parsedSet.error);
+ok(sets.serializeSet(parsedSet.entries) === setText, '.gset fixture re-serialises byte-exact');
 
 // The bot file window's preload is sandboxed, so it may only require('electron').
 const botPreload = fs.readFileSync(
@@ -55,6 +69,25 @@ const botPreload = fs.readFileSync(
 );
 ok(botPreload.indexOf("require('electron')") !== -1, 'bot file preload requires electron');
 ok(botPreload.indexOf("require('../../") === -1, 'bot file preload requires nothing project-local');
+
+// The Bot Manager (ticket #36) is the same shape: a plugin page and a sandboxed preload.
+ok(
+  fs.existsSync(path.join(parity, 'features', 'bot-manager', 'bot-manager.html')),
+  'parity bot manager page'
+);
+ok(
+  fs.existsSync(path.join(parity, 'bot', 'command-catalog.js')),
+  'parity command catalog present'
+);
+const managerPreload = fs.readFileSync(
+  path.join(parity, 'features', 'bot-manager', 'preload_bot_manager.js'),
+  'utf8'
+);
+ok(managerPreload.indexOf("require('electron')") !== -1, 'bot manager preload requires electron');
+ok(
+  managerPreload.indexOf("require('../..") === -1,
+  'bot manager preload requires nothing project-local'
+);
 
 // A bot file the app writes must stay readable by the reference client: round-trip a fixture.
 const bots = require(path.join(parity, 'bot', 'bots.js'));

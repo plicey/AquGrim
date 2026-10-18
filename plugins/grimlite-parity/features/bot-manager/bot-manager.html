@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bot Manager</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<link rel="stylesheet" href="bot-manager.css">
+</head>
+<body>
+  <header id="bar">
+    <button id="open">Load bot</button>
+    <button id="save">Save bot</button>
+    <div class="grow"></div>
+    <span id="path"></span>
+    <button id="menu" title="Change Fonts, Multiline Toggle, Toggle Tabpages, Command Customizer">&#8942;</button>
+  </header>
+
+  <main>
+    <section id="left">
+      <div class="selector">
+        <select id="cbLists"></select>
+        <label class="tick"><input type="checkbox" id="chkAll"> all</label>
+        <button id="btnUp" title="Move up (Ctrl+Up)">&#9650;</button>
+        <button id="btnDown" title="Move down (Ctrl+Down)">&#9660;</button>
+        <button id="btnClear">Clear</button>
+      </div>
+      <ul id="list" tabindex="0"></ul>
+      <div class="selector">
+        <input type="text" id="txtSearchCmd" placeholder="Command Text">
+        <button id="btnSearchCmd">Find</button>
+      </div>
+      <div class="selector">
+        <label class="tick"><input type="checkbox" id="chkEnable"> Enable Bot</label>
+        <div class="grow"></div>
+        <button id="btnRemove">Remove</button>
+      </div>
+    </section>
+
+    <section id="right">
+      <div id="tabs"></div>
+      <div id="tabHost"></div>
+    </section>
+  </main>
+
+  <footer id="counters"></footer>
+
+  <div id="menuPopup" class="popup" hidden></div>
+
+  <div id="modal" class="modal" hidden>
+    <div class="sheet">
+      <h2 id="modalTitle"></h2>
+      <div id="modalBody"></div>
+      <div class="buttons">
+        <button id="modalRaw" class="secondary">Raw Command Editor</button>
+        <div class="grow"></div>
+        <button id="modalOk">OK</button>
+        <button id="modalCancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="transfer" class="modal" hidden>
+    <div class="sheet">
+      <h2 id="transferTitle">Copy and paste</h2>
+      <textarea id="transferText" spellcheck="false"></textarea>
+      <div class="buttons">
+        <div class="grow"></div>
+        <button id="transferOk">OK</button>
+        <button id="transferCancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+<script src="bot-manager-renderer.js"></script>
+</body>
+</html>

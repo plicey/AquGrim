@@ -11,6 +11,8 @@ exports.dialogMessages = {
         }
         return '' +
             expand(k.grimliteBotFile) + '' +
+            expand(k.grimliteBank) + '' +
+            expand(k.grimliteBotManager) + '' +
             expand(k.grimliteEyedropper) + '' +
             expand(k.grimliteNotepad) + '' +
             expand(k.grimliteAbout) + '' +
@@ -23,9 +25,12 @@ exports.dialogMessages = {
 exports.menuMessages = {
     grimliteMenu: "",
     grimliteBotFile: "",
+    grimliteBotManager: "",
     grimliteEyedropper: "",
     grimliteNotepad: "",
     grimliteAbout: "",
+    grimliteBank: "",
+    grimliteSets: "",
     grimliteCosmetics: "",
     grimlitePlaceholder: "",
     grimliteDevTest: "",
@@ -50,6 +55,9 @@ exports.botFileMessages = {
 exports.windowTitles = {
     primary: "",
     botFile: "",
+    bank: "",
+    sets: "",
+    botManager: "",
     placeholder: "",
     eyedropper: "",
     notepad: "",
@@ -57,6 +65,40 @@ exports.windowTitles = {
     cosmetics: "",
     devtest: "",
     packetLogger: ""
+};
+
+exports.bankMessages = {
+    title: "",
+    categoryLabel: "",
+    acLabel: "",
+    allExcept: "",
+    bank: "",
+    bankAll: "",
+    working: "",
+    done: "",
+    failed: ""
+};
+
+exports.setsMessages = {
+    window: {
+        title: "",
+        refresh: "",
+        add: "",
+        clear: "",
+        save: "",
+        load: "",
+        equip: "",
+        setHeading: "",
+        savedHeading: ""
+    },
+    added: "",
+    cleared: "",
+    saved: "",
+    loaded: "",
+    equipped: "",
+    openTitle: "",
+    saveTitle: "",
+    filterName: ""
 };
 
 exports.settingsMessages = {
@@ -90,6 +132,36 @@ exports.eyedropperMessages = {
 
 exports.aboutMessages = {
     reloadHint: ""
+};
+
+exports.botManagerMessages = {
+    title: "",
+    load: "",
+    save: "",
+    ok: "",
+    cancel: "",
+    raw: "",
+    copy: "",
+    copyHint: "",
+    paste: "",
+    pasteHint: "",
+    opened: "",
+    saved: "",
+    customizer: "",
+    fonts: "",
+    multiline: "",
+    tabpages: "",
+    addFolder: "",
+    numberOfBots: "",
+    empty: "",
+    rowHint: "",
+    colour: "",
+    centered: "",
+    size: "",
+    saveSize: "",
+    chooseDirectoryTitle: "",
+    addFolderFailed: "",
+    read: ""
 };
 
 exports.cosmeticsMessages = {

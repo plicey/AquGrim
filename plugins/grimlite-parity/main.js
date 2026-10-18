@@ -14,6 +14,8 @@ const menus = require('./menus.js');
 const keybinds = require('./keybinds.js');
 const windows = require('./windows.js');
 const botFile = require('./features/bot-file/bot-file.js');
+const bankWindow = require('./features/bank/bank-window.js');
+const setsWindow = require('./features/sets/sets-window.js');
 const logger = require('./features/packets/logger.js');
 
 const resRoot = path.join(__dirname, '..', '..', 'res');
@@ -77,6 +79,27 @@ async function activate(host) {
     // The Dev Test window's own IPC: the call modes and the bridge call, both main-process work
     // because the window is sandboxed.
     require('./features/devtest/devtest-main.js').register(host);
+
+    // Bank and Sets (#29). Both draw their own window and reach the game only through the
+    // injected game access in bridge.js, which sits on this plugin's bridge channel (ticket #28).
+    bankWindow.createFromHost(host).attach();
+    setsWindow.createFromHost(host).attach();
+    // The Bot Manager's main-process half: the sheet, the parsed document, the two dialogs and the
+    // folder tree, all of which a sandboxed page cannot reach for itself.
+    require('./features/bot-manager/bot-manager.js').createBotManager({
+        host: host,
+        store: host.getStore(require('./bot/display-settings.js').STORE_NAMESPACE),
+        // The reference puts its Bots/ folder beside the executable (Application.StartupPath); here
+        // that is the app's own data directory, beside the store the plugin already keeps there.
+        defaultBotsDirectory: path.join(host.appDataDirectory, 'Bots'),
+        message: function () { return host.getLocaleStrings('botManagerMessages') || {}; },
+        showOpenDialog: function (owner, options) {
+            return require('electron').dialog.showOpenDialog(owner, options);
+        },
+        // The controls that act on the running game read through the generic bridge surface. A
+        // name the stock game does not have reports the helper it waits for instead of a value.
+        bridge: host.bridge
+    }).register(host);
 
     // The Cosmetics window (#30): a page beside the game that reads the room's players and their
     // wear through the bridge and writes one slot at a time. It holds game-bridge, which the
