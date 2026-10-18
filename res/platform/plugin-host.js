@@ -596,6 +596,40 @@ function createPluginHost(options) {
             }
         },
 
+        /**
+         * Game traffic (apiVersion 2). Reading it is a permission of its own, separate from
+         * writing, because a read-only tool must not need write access: a plugin that only wants
+         * the logger holds packet-tap and never touches packet-send.
+         *
+         * The listener is the platform's (res/platform/packet-tap.js): the relay hands its frames
+         * to one tap and this subscribes to it, so subscribing twice, from two windows or from
+         * two plugins, cannot produce a second listener or a doubled frame.
+         */
+        packets: {
+            /**
+             * Subscribe to every relayed frame in both directions. Only 'frame' is an event, and
+             * it carries {id, direction, data} with the frame's NUL terminator already stripped.
+             * Returns the release, so a window that closes - or a plugin that stops watching -
+             * gives its subscription back.
+             */
+            on: function (event, listener) {
+                requirePermission('packets.on', 'packet-tap');
+                if (event !== 'frame') {
+                    throw new Error('[AquaStar:plugins] packets.on knows one event, "frame" (got "' +
+                        event + '")');
+                }
+                if (typeof listener !== 'function') {
+                    throw new Error('[AquaStar:plugins] packets.on expects a listener function');
+                }
+                const tap = typeof deps.getPacketTap === 'function' ? deps.getPacketTap() : null;
+                if (!tap || typeof tap.subscribe !== 'function') {
+                    throw new Error('[AquaStar:plugins] the packet tap is not available in this app ' +
+                        'session: game traffic is not being steered');
+                }
+                return tap.subscribe(listener);
+            }
+        },
+
         windows: {
             openPrimaryGame: function (opts) {
                 if (typeof deps.openPrimaryGame === 'function') {

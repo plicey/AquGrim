@@ -47,6 +47,8 @@ global.test = function (name, fn) {
   './unit/socket-relay.test.js',
   './unit/body-service.test.js',
   './unit/packet-steering.test.js',
+  './unit/packet-tap.test.js',
+  './unit/packet-logger.test.js',
   './unit/aqw-charpage-print.test.js',
   './unit/platform-isolation.test.js',
   './unit/locale-templates.test.js',

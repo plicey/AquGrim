@@ -420,15 +420,34 @@ See `plugins/adventure-quest-worlds/web/contribute.js` for the full contribution
 | `unsafe-renderer` | Feature windows with Flash plugins / `webSecurity: false` |
 | `game-origin` | `host.declareGameOrigin` |
 | `game-bridge` | Reserved: the SWF bridge channel (`bridge.attach()` / `bridge.call()`) *(apiVersion 2)* |
-| `packet-tap` | Reserved: reading relayed game frames *(apiVersion 2)* |
+| `packet-tap` | `packets.on('frame', fn)` - reading relayed game frames *(apiVersion 2)* |
 | `packet-send` | Reserved: writing a frame back through the relay *(apiVersion 2)* |
 
-Missing permission → throw during `activate` → activation fails.
+Missing permission → throw, and during `activate` that fails the activation.
 
-The three **reserved** permissions are the names the game access API will use. The methods they
-gate arrive with the parity work; the names and the refusal do not change. Until they do,
-`host.requirePermission(method, permission)` is the single gate every guarded method goes
-through, and it reports a missing one as
+`packets.on('frame', listener)` subscribes to the game traffic the relay carries, in both
+directions, and returns the release:
+
+```js
+const off = host.packets.on('frame', function (frame) {
+    // frame.direction: 'toServer' (the client sent it) | 'toClient' (the server sent it)
+    // frame.text:      the frame, NUL terminator stripped, decoded as UTF-8
+    // frame.id:        the relay connection it belongs to
+});
+off();   // give the subscription back
+```
+
+The listener is the platform's, not yours: the relay feeds one tap and every subscriber reads
+from it, so subscribing twice, or from two windows, cannot add a second listener or double a
+frame. Frames arrive only while the client's traffic is steered through the relay, which is
+the plugin's own opt-in, so a tool that shows nothing should say so rather than look broken.
+Reading game traffic needs `packet-tap`; writing it needs `packet-send`, which the packet
+logger does not hold.
+
+The two **reserved** permissions (`game-bridge` and `packet-send`) are the names the rest of the
+game access API will use; their methods arrive with the tickets that need them, and the names and
+the refusal do not change. `host.requirePermission(method, permission)` is the single gate every
+guarded method goes through - `packets.on` included - and it reports a missing one as
 `Plugin "<id>" called <method> without permission "<permission>"`. It is platform wiring, not a
 plugin API: a plugin never calls it.
 
@@ -465,6 +484,9 @@ Available on `host` inside `activate(host)`:
 **Chrome:** `registerBrowserPreload(relativePath)`, `registerKeybindDefaults(obj)`, `registerKeybinds([...])`, `registerMenus(fn)`, `registerMenuPages({ appUsefulPages, gameMenuPages })`, `registerFeatureWindows([...])`, `registerSettingsSection(section)`, `registerLocales(catalog)`
 
 **Network / pages:** `registerSessionRules([...])`, `registerNavigationHooks(hooks)`, `net.fetchText(url)`
+
+**Game access (apiVersion 2):** `packets.on('frame', listener)` (needs `packet-tap`); the bridge and
+frame writing arrive with their own tickets
 
 **IPC / storage:** `ipc.handle` / `ipc.on` / `ipc.removeHandler`, `getStore(ns)`
 

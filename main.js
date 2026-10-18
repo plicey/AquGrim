@@ -45,6 +45,11 @@ const bootFlags = bootPluginDisk.flags;
 
 let activePluginRuntime = null;
 let packetLayerState = null;
+// One tap per app session: the relay hands it every frame it carries, and plugins holding
+// packet-tap subscribe to it (res/platform/packet-tap.js). The listener is the platform's.
+const packetTap = platform.createPacketTap({
+    onError: function (line) { console.log('[AquaStar:packets] ' + line); }
+});
 
 // pluginSystem:false / AQUASTAR_DISABLE_PLUGINS=1 is the emergency "safe mode": only the
 // bundled default plugin (the one whose manifest says bundledDefault) is activated, with no
@@ -55,7 +60,8 @@ function activatePlugins() {
     platform.pluginRuntime.setDependencies({
         instances: inst,
         constant: constant,
-        BrowserWindow: BrowserWindow
+        BrowserWindow: BrowserWindow,
+        packetTap: packetTap
     });
 
     const safeMode = !bootFlags.pluginSystem;
@@ -233,6 +239,9 @@ async function applySessionRules() {
         try {
             packetLayerState = await packetLayer.createPacketLayer({
                 declarations: packetDeclarations,
+                // The relay's frames reach plugins only through the tap below, which is what
+                // keeps one listener in the app and every subscriber read-only.
+                onFrame: function (frame) { packetTap.emit(frame); },
                 ctx: {
                     defaultUserAgent: session.defaultSession.getUserAgent(),
                     settings: { swfLog: constant.isSwfLogEnabled, packetSteering: keyb.keybinds.packetSteering },

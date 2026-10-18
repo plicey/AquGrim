@@ -11,6 +11,7 @@ let instancesApi = null;
 let constantApi = null;
 let BrowserWindowApi = null;
 let createOriginProxyApi = null;
+let packetTapApi = null;
 let settingsApi = null;
 let gameOriginProxy = null;
 let gameOriginBaseUrl = '';
@@ -30,6 +31,7 @@ function setDependencies(deps) {
     if (deps.constant) constantApi = deps.constant;
     if (deps.BrowserWindow) BrowserWindowApi = deps.BrowserWindow;
     if (deps.createOriginProxy) createOriginProxyApi = deps.createOriginProxy;
+    if (deps.packetTap) packetTapApi = deps.packetTap;
     if (deps.settings) settingsApi = deps.settings;
 }
 
@@ -465,6 +467,8 @@ function spawnHelperProcess(opts) {
 function createHostWindowDeps() {
     return {
         startGameOrigin: startGameOrigin,
+        // A plugin subscribing to game traffic gets the app's one tap, never a listener of its own.
+        getPacketTap: function () { return packetTapApi; },
         openPrimaryGame: openPrimaryGame,
         openLaunch: openLaunch,
         openUrl: openUrl,
