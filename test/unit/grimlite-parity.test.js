@@ -69,11 +69,13 @@ test('the parity plugin is discovered as a bundled plugin and activates', async 
   assert.strictEqual(state.primaryGame.isGameUrl('https://example.com/other'), false);
   assert.strictEqual(state.primaryGame.isGameUrl('http://127.0.0.1:41234/game/other.swf'), false);
 
-  // Feature windows, in the app's window conventions (sandboxed, no Flash, dark page).
+  // Feature windows, in the app's window conventions (sandboxed, no Flash, dark page). The
+  // placeholder is the scaffold's; the packet logger (ticket #26) joins it.
   const windows = state.featureWindows.filter(function (w) {
     return w.id === PLACEHOLDER_ID;
   });
   assert.strictEqual(windows.length, 1);
+  assert.ok(state.featureWindows.length >= 1);
   const winConfig = windows[0].config;
   assert.strictEqual(winConfig.webPreferences.sandbox, true);
   assert.strictEqual(winConfig.webPreferences.plugins, false);
@@ -84,15 +86,21 @@ test('the parity plugin is discovered as a bundled plugin and activates', async 
   // Its own menu entries, opening those windows and nothing else.
   assert.strictEqual(state.menus.length, 1);
   const items = state.menus[0]({ labels: {}, keybinds: {} });
-  assert.strictEqual(items.length, 1);
-  assert.ok(Array.isArray(items[0].submenu) && items[0].submenu.length >= 1);
-  assert.ok(items[0].submenu.every(function (item) { return typeof item.click === 'function'; }));
+  assert.ok(items.length >= 1);
 
-  items[0].submenu.forEach(function (entry) { entry.click(); });
-  assert.ok(opened.indexOf(PLACEHOLDER_ID) !== -1, 'the placeholder window must stay reachable');
-
-  // Every entry opens a window this plugin registered, and nothing else.
+  // Every entry of every submenu opens a window this plugin registered, and nothing else; the
+  // placeholder the scaffold shipped stays reachable. No window id is listed here on purpose, so
+  // adding a feature window means adding it to windows.js, never to this test.
   const registeredIds = state.featureWindows.map(function (w) { return w.id; });
+  const entries = [];
+  items.forEach(function (menu) {
+    assert.ok(Array.isArray(menu.submenu) && menu.submenu.length >= 1);
+    assert.ok(menu.submenu.every(function (item) { return typeof item.click === 'function'; }));
+    entries.push.apply(entries, menu.submenu);
+  });
+  entries.forEach(function (entry) { entry.click(); });
+
+  assert.ok(opened.indexOf(PLACEHOLDER_ID) !== -1, 'the placeholder window must stay reachable');
   opened.forEach(function (id) {
     assert.ok(registeredIds.indexOf(id) !== -1, 'menu opened an unregistered window: ' + id);
   });
