@@ -292,3 +292,40 @@ test('selectArrayObjects projects one field off each entry, as the loader does',
     });
 });
 
+test('a compute row can write, not only read and call', () => {
+    // SetInfiniteRange is a compute row because its body is a loop over six writes. It used to
+    // reach for a set the context did not expose and fail with "ctx.set is not a function" - a
+    // compute row that cannot write is a hole in the surface, so this pins it.
+    const written = [];
+    const game = surface.createLoaderSurface(function (callback, args) {
+        if (callback === 'setGameObject') {
+            written.push(args);
+            return Promise.resolve(args[1]);
+        }
+        return Promise.resolve('ok');
+    });
+    return game.call('SetInfiniteRange', []).then(() => {
+        assert.strictEqual(written.length, 6, 'the loader writes slots 0 through 5');
+        assert.deepStrictEqual(written.map((w) => w[0]), [
+            'world.actions.active.0.range', 'world.actions.active.1.range',
+            'world.actions.active.2.range', 'world.actions.active.3.range',
+            'world.actions.active.4.range', 'world.actions.active.5.range'
+        ]);
+        written.forEach((w) => assert.strictEqual(w[1], 20000));
+    });
+});
+
+test('the surface and the options adapter agree on the names they both route', () => {
+    // Two tables describe the same loader bodies for the nine names the Options window uses.
+    // They are allowed to exist, but they must not disagree: a name one routes and the other
+    // refuses would give the app two answers for the same click.
+    const calls = require('../../plugins/grimlite-parity/game-calls.js');
+    const routed = Object.keys(calls.LOADER_ROUTE);
+    const done = surface.implemented();
+    const disagree = routed.filter((name) => done.indexOf(name) === -1);
+    assert.deepStrictEqual(disagree, [],
+        'these are routed by the options adapter and refused by the surface');
+    const refused = Object.keys(calls.NO_ROUTE).filter((name) => done.indexOf(name) !== -1);
+    assert.deepStrictEqual(refused, [],
+        'these are refused by the options adapter and implemented by the surface');
+});

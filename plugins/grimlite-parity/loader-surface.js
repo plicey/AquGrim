@@ -115,7 +115,14 @@ const SURFACE = {
 
     // ---- calls: the game's own method, with the loader's argument shaping -----------------
     CancelAutoAttack: { call: 'world.cancelAutoAttack' },
-    CancelTarget: { call: 'world.cancelTarget' },
+    // Player.as calls it twice, in that order. Not a typo in the loader, so not one here either.
+    CancelTarget: {
+        compute: function (ctx) {
+            return ctx.call('world.cancelTarget', []).then(function () {
+                return ctx.call('world.cancelTarget', []);
+            });
+        }
+    },
     Rest: { call: 'world.rest' },
     GoTo: { call: 'world.goto' },
     Jump: { call: 'world.moveToCell', args: function (p) { return [p[0], p[1] === undefined ? 'Spawn' : p[1]]; } },
@@ -135,7 +142,8 @@ const SURFACE = {
     GetQuests: { call: 'world.getQuests', args: function (p) { return [String(p[0]).split(',')]; } },
     LoadShop: { call: 'world.sendLoadShopRequest', args: function (p) { return [parseInt(p[0], 10)]; } },
     LoadHairShop: { call: 'world.sendLoadHairShopRequest', args: function (p) { return [parseInt(p[0], 10)]; } },
-    LoadArmorCustomizer: { call: 'world.openArmorCustomize', args: function () { return []; } },
+    // Shops.as calls Root.Game.openArmorCustomize(): a member of the game root, not of world.
+    LoadArmorCustomizer: { call: 'openArmorCustomize', args: function () { return []; } },
     GetBank: { call: 'getBank', args: function () { return []; } },
     ShowBank: { call: 'world.toggleBank', args: function () { return []; } },
     SetProvokeMonsters: { call: 'world.aggroAllMon', args: function () { return []; } },
@@ -150,6 +158,62 @@ const SURFACE = {
             'to move, and a live clip cannot travel through the bridge as JSON'
     },
     SetWalkSpeed: { set: 'world.WALKSPEED', value: function (p) { return parseInt(p[0], 10); } },
+    // Settings.as: while i <= 5, world.actions.active[i].range = 20000.
+    SetInfiniteRange: {
+        compute: function (ctx) {
+            const jobs = [];
+            for (let i = 0; i <= 5; i++) jobs.push(ctx.set('world.actions.active.' + i + '.range', 20000));
+            return Promise.all(jobs);
+        }
+    },
+    // Settings.as: the target's own clip is put where the player's is, but only where there IS a
+    // target - the loader's body is guarded by a null test, so this is too.
+    SetEnemyMagnet: {
+        compute: function (ctx) {
+            return ctx.get('world.myAvatar.target').then(function (target) {
+                if (target === null || target === undefined) return null;
+                return Promise.all([
+                    ctx.get('world.myAvatar.pMC.x'),
+                    ctx.get('world.myAvatar.pMC.y')
+                ]).then(function (xy) {
+                    return Promise.all([
+                        ctx.set('world.myAvatar.target.pMC.x', xy[0]),
+                        ctx.set('world.myAvatar.target.pMC.y', xy[1])
+                    ]);
+                });
+            });
+        }
+    },
+    // Settings.as: world.visible = (arg == "False"). The comparison is the loader's own: "True"
+    // means hidden, because hiding the game movie is what lag killing is.
+    SetLagKiller: {
+        set: 'world.visible',
+        value: function (p) { return String(p[0]) === 'False'; }
+    },
+    // Settings.as: drain mcExtSWF, show the game, show its interface. The loader's own while loop
+    // is unbounded; this bounds it and reports rather than spinning the app.
+    SetSkipCutscenes: {
+        compute: function (ctx) {
+            const LIMIT = 100;
+            let tries = 0;
+            function next() {
+                return ctx.get('mcExtSWF.numChildren').then(function (children) {
+                    if (!children) return null;
+                    if (tries >= LIMIT) {
+                        throw new Error('mcExtSWF still had children after ' + LIMIT +
+                            ' tries, so this cutscene could not be cleared');
+                    }
+                    tries++;
+                    return ctx.call('mcExtSWF.removeChildAt', [0]).then(next);
+                });
+            }
+            return next().then(function () {
+                return ctx.set('world.visible', true);
+            }).then(function () {
+                return ctx.call('showInterface', []);
+            });
+        }
+    },
     SetTargetPlayer: { call: 'world.getAvatarByUserName' },
     AttackMonster: { call: 'world.setTarget' },
     AttackMonsterByMonMapId: { call: 'world.setTarget' },
@@ -375,10 +439,6 @@ const SURFACE = {
     HideConnMC: { why: 'the reference hides its own connection dialog, not the game\'s' },
     IsConnMCBackButtonVisible: { why: 'the reference reads its own connection dialog control' },
     Buff: { why: 'the reference writes god-mode values onto itself; not a game call' },
-    SetInfiniteRange: { why: 'the reference writes range onto each skill; do it with setGameObject on world.actions.active' },
-    SetEnemyMagnet: { why: 'the reference moves a live MovieClip; a clip cannot travel as JSON' },
-    SetLagKiller: { why: 'the reference sets its own root visibility and background' },
-    SetSkipCutscenes: { why: 'the reference clears its own movie containers and calls showInterface' },
     DestroyPlayers: { why: 'the reference calls destroyAvatar per live avatar object' },
     SetEquip: { why: 'the reference swaps live equipment clips (loadMovieAtES); ticket #39 owns items' },
     ChangeName: { why: 'the reference paints its own name plates; not a game read' },
@@ -501,6 +561,11 @@ function createLoaderSurface(call, log) {
         return call(callback, args && args.length ? [path].concat(args) : [path]);
     }
 
+    /** Write a value at a dot-path, which is what setGameObject is for. */
+    function write(path, value) {
+        return call('setGameObject', [path, value]);
+    }
+
     function unsupported(name, row) {
         return Promise.reject(new Error('"' + name + '" is part of the reference client\'s own ' +
             'loader rather than the game, and this bridge does not implement it: ' + row.why));
@@ -528,7 +593,7 @@ function createLoaderSurface(call, log) {
             // `why` *and* an implementation is one with a caveat, which is a note, not a refusal.
             if (!row.compute && !row.get && !row.call && !row.set) return unsupported(name, row);
             if (row.compute) {
-                return Promise.resolve(row.compute({ get: get, call: invoke }, p));
+                return Promise.resolve(row.compute({ get: get, call: invoke, set: write }, p));
             }
             if (row.get) {
                 const path = typeof row.get === 'function' ? row.get(p) : row.get;
@@ -539,7 +604,7 @@ function createLoaderSurface(call, log) {
             if (row.set) {
                 const path = typeof row.set === 'function' ? row.set(p) : row.set;
                 const value = typeof row.value === 'function' ? row.value(p) : value_default(p);
-                return call('setGameObject', [path, value]);
+                return write(path, value);
             }
             const args2 = typeof row.args === 'function' ? row.args(p) : p;
             return invoke(row.call, args2);
