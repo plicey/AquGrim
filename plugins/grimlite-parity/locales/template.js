@@ -26,7 +26,8 @@ exports.dialogMessages = {
             expand(k.grimliteOptions) + '' +
             expand(k.grimliteHotkeys) + '' +
             expand(k.grimliteDrop) + '' +
-            expand(k.grimliteFastTravels) + '';
+            expand(k.grimliteFastTravels) + '' +
+            expand(k.grimliteMaid) + '';
     }
 };
 
@@ -85,6 +86,7 @@ exports.windowTitles = {
     hotkeys: "",
     drop: "",
     travels: "",
+    maid: "",
     devtest: "",
     packetLogger: "",
     packetSpammer: "",
@@ -316,4 +318,42 @@ exports.loginMessages = {
     imported: "",
     connected: "",
     disconnected: ""
+};
+
+exports.maidMessages = {
+    title: "",
+    enable: "",
+    target: "",
+    me: "",
+    combat: "",
+    keys: "",
+    options: "",
+    maps: "",
+    config: "",
+    unfollow: "",
+    stopAttack: "",
+    globalHotkey: "",
+    keyHint: "",
+    optionAntiCounter: "",
+    optionCopyWalk: "",
+    optionStopFailedGoto: "",
+    optionWaitSkill: "",
+    optionSafeSkill: "",
+    optionBuffStopAttack: "",
+    save: "",
+    load: "",
+    autoload: "",
+    loadTitle: "",
+    saveTitle: "",
+    filterName: "",
+    working: "",
+    canceled: "",
+    saved: "",
+    loaded: "",
+    autoloaded: "",
+    noAutoload: "",
+    presetApplied: "",
+    missing: "",
+    notSignedIn: "",
+    partyCommands: ""
 };

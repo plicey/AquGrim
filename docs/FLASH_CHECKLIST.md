@@ -900,3 +900,70 @@ the engine does not have yet, and none of them silently ignored:
   cannot start is not a kill that can finish the loop.
 - **CmdFollow** cannot follow a player's cell as they walk: that reads the `uotls` packet off the
   reference's own tap. It walks with `GoTo` and fights what is there, and says so once.
+
+## Grimlite Parity - the Maid (ticket #43) - needs the real game, a display and an account
+
+`features/maid/` is the reference's own party assistant. Its configuration file is checked by `npm test`
+against the reference's own `Resources/Plugins/Maid/Default.json` (the 23 keys of `MaidConfig.cs`, in
+its own order, and its overlay rule: a non-empty string wins, a present number wins, a boolean is
+`?? current`), its scheduler against fakes (the loop's own order, the goto frame's exact text, the
+safe-skill threshold, the priority list, `WaitSkill`'s gating, the death respawn, the five failed
+gotos, and the engine-collision rule), its party vocabulary against `PartyChatHandler`'s seven
+commands and `PartyInvitationHandler`'s one frame, and its window, menu entry, keybinding and two
+keys against the app's own conventions. What no test can reach is whether the game acts on each
+call, so that is what this section is for.
+
+### The window and the file
+
+- [ ] **Maid Remake** opens from the Grimlite menu, with Alt+Shift+R, and from **Show Maid** in the Hotkeys window
+- [ ] The window opens on the reference's own shipped default: target `username`, skill list `1,2,3,4`, the two map lines, the attack-priority pair, and the six boxes the template omits left at their own defaults
+- [ ] **Save** writes a 23-key JSON file with a `Maid config` filter, and **Load** reads one back; an **empty** string in the file ("SkillList": "") leaves the box as it was, a `false` really unticks it, and a missing key changes nothing
+- [ ] The file lands in the app's data directory under `Config/`, beside the plugin's own store
+- [ ] `Config/autoload.json` is applied when the plugin activates, and **Autoload** applies it again on demand; a file that is not JSON reports the parse error and changes nothing
+
+### The keys and the state
+
+- [ ] **Unfollow** toggles with Alt+Shift+U while the app has focus, and **StopAttack** with Alt+Shift+X; both boxes in the window move with them
+- [ ] Untick **Global Hotkey** and neither key fires from another window; tick it and both do, whichever window has focus
+- [ ] A key that is already taken by the app or another plugin is reported as unbound rather than silently swallowed
+- [ ] The line above the form says `unfollowed` when Unfollow is ticked, `stop attack is on` when StopAttack is, `paused: the map is reloading` while a map loads, `following` and `fighting` while the loop moves, and `off` when Enable is unticked
+- [ ] The line follows a key pressed in **another** window while the Maid's own window is open
+- [ ] **Enable** starts the loop, unticking it stops it, and `.stop` / `.start` in party chat do the same from the game
+
+### Following and fighting
+
+- [ ] With the target in another map the character joins it and the log shows the reference's own frame `%xt%zm%cmd%1%goto%<name>%`; with the target in the map but another cell the character walks to that cell and pad without re-joining
+- [ ] A target who is in the same map but whose cell and pad are unreadable is walked to with the loader's own `GoTo` rather than a frame
+- [ ] **Stop goto after 5 failures** ticked stops the Maid after five failed gotos and says so; unticked it keeps trying
+- [ ] **Use** with `if health<` fires the heal list below that percentage and the skill list otherwise; an empty heal list never heals whatever the box says
+- [ ] **Buff If StopAttack** fires the buff list once per pass while StopAttack is on, and cancelling the attack and target happens the moment StopAttack is ticked
+- [ ] **AttackPriority** walks its list in order (`id.N` goes to the by-id helper, and a target already held is not re-attacked), then the wildcard `*`
+- [ ] **Wait** holds each skill until `SkillAvailable` says it is ready
+- [ ] Dying sends the character to its spawn point and the loop picks up again
+- [ ] **Skill Preset** fills the skill list, the heal list, its percentage, the buff list and the two boxes; **AI** and **AM** leave the heal list and its percentage alone, and the SafeSkill box follows the preset's own carried flag
+
+### Beside the bot engine
+
+- [ ] With a bot running in the Bot Manager, the Maid does not cast while the engine has a command in flight; the log says so once per command and the window's state line reads `the bot engine has the current command`
+- [ ] Between the engine's commands the Maid works again, and starting a second bot does not stop it doing so
+
+### Party chat
+
+- [ ] `/p .join <map>` and `%xt%zm%cmd%1%goto%`-style party commands reach a Maid whose window has never been opened, while it is running
+- [ ] `/p .tp tercessuinotlim-6666` first steps to `m22` / `Left`, and `.tp <map>` joins with `Enter` / `Spawn`
+- [ ] `/p .acc 1,2` loads both quests and accepts them a second apart; `.turnin 1,2` completes them the same way
+- [ ] `/p .target <name>` changes the master, `.stop` and `.start` switch the Maid
+- [ ] A party invitation is accepted with `%xt%zm%gp%1%pa%<pid>%`, and with no live connection the log says the invitation went unanswered rather than pretending
+- [ ] Ordinary party chat (no leading `.`) is ignored, and so is room chat
+
+### What could not be checked here, and why
+
+- **Casting**: `UseSkill` is a name the loader surface (#48) carries and cannot drive yet. Its
+  reference body checks readiness, walks the avatar and calls `world.testAction` on a live action
+  object, which cannot cross the bridge as JSON; ticket #38 owns combat. The Maid calls the name
+  anyway and the window lists it under "the game cannot answer" with the surface's own reason, so
+  what is unverified is the cast, not the decision to cast. `AttackMonster` and
+  `AttackMonsterByMonMapId` are implemented and do run.
+- **Boss behaviour and the auto-zone handlers** (`UltraBossExtra`, `SpecialMsg`, `SpecialAct`,
+  `AntiCounter`, `CopyWalk`): the reference's per-boss handlers are ticket #44's; the four config
+  keys are carried through the file and shown, and no handler reads them yet.
