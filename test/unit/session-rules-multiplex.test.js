@@ -18,6 +18,17 @@ function fakeSession() {
   };
 }
 
+// The transport a response-body rule engages: the platform's body service, which serves the
+// matched URL from loopback and replaces the response body. One method is the whole contract.
+function fakeBodyService(served) {
+  return {
+    urlFor: function (details) {
+      served.push(details.url);
+      return 'http://127.0.0.1:9/__aquastar-body?u=' + encodeURIComponent(details.url);
+    }
+  };
+}
+
 test('matchesPattern follows Chrome match-pattern rules for the subset rules use', () => {
   assert.strictEqual(matchesPattern('*://*.aq.com/*', 'https://game.aq.com/game/x.swf'), true);
   assert.strictEqual(matchesPattern('*://*.aq.com/*', 'http://aq.com/'), true);
@@ -172,4 +183,76 @@ test('a redirect or cancel from any rule is final', () => {
   });
   assert.deepStrictEqual(out, { redirectURL: 'https://y.example/' });
   assert.deepStrictEqual(seen, ['redir']);
+});
+
+test('a response-body rule sends its matched request to the platform body service', () => {
+  const session = fakeSession();
+  const served = [];
+  const rules = [
+    {
+      id: 'steer-login',
+      urls: ['*://game.aq.com/game/api/login/now*'],
+      onResponseBody: function () {}
+    },
+    {
+      id: 'swf-log',
+      urls: ['*://game.aq.com/game/*'],
+      onBeforeRequest: function (details, ctx, callback) {
+        callback({ cancel: false });
+      }
+    }
+  ];
+  const report = applySessionRules(session, rules, {
+    responseBody: fakeBodyService(served)
+  });
+
+  // Still one listener per event: the body channel rides the existing request listener.
+  assert.strictEqual(session.registered.request.length, 1);
+
+  let result = null;
+  session.registered.request[0].listener(
+    { url: 'https://game.aq.com/game/api/login/now?ran=0.5', method: 'POST' },
+    function (r) {
+      result = r;
+    }
+  );
+  assert.deepStrictEqual(served, ['https://game.aq.com/game/api/login/now?ran=0.5']);
+  assert.strictEqual(
+    result.redirectURL,
+    'http://127.0.0.1:9/__aquastar-body?u=' +
+      encodeURIComponent('https://game.aq.com/game/api/login/now?ran=0.5'),
+    'the matched request is served by the body service'
+  );
+  assert.deepStrictEqual(report.responseBody, { engaged: ['steer-login'], unengaged: [] });
+
+  // A URL no body rule matches is never routed to the service.
+  let other = null;
+  session.registered.request[0].listener({ url: 'https://game.aq.com/game/other' }, function (r) {
+    other = r;
+  });
+  assert.deepStrictEqual(other, { cancel: false });
+  assert.deepStrictEqual(served, ['https://game.aq.com/game/api/login/now?ran=0.5']);
+});
+
+test('a response-body rule without a body service is reported unengaged and never redirects', () => {
+  const session = fakeSession();
+  const logged = [];
+  const report = applySessionRules(
+    session,
+    [{ id: 'steer-login', urls: ['*://game.aq.com/game/api/login/now*'], onResponseBody: function () {} }],
+    {
+      logLine: function (line) {
+        logged.push(line);
+      }
+    }
+  );
+
+  assert.deepStrictEqual(report.responseBody, { engaged: [], unengaged: ['steer-login'] });
+  let result = null;
+  session.registered.request[0].listener({ url: 'https://game.aq.com/game/api/login/now' }, function (r) {
+    result = r;
+  });
+  assert.deepStrictEqual(result, { cancel: false }, 'nothing claims to steer when it cannot');
+  assert.strictEqual(logged.length, 1);
+  assert.ok(/steer-login/.test(logged[0]), 'the unengaged rule is named: ' + logged[0]);
 });

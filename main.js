@@ -35,6 +35,7 @@ const ruffleUpdate  = require('./res/ruffleUpdate.js');
 const constant = require('./res/const.js');
 const locale  = require('./res/locale.js');
 const platform = require('./res/platform');
+const packetLayer = require('./res/platform/packet-layer.js');
 
 const bootPluginDisk = platform.readPluginFlagsFromDisk(
     constant.appDataDirectory,
@@ -43,6 +44,7 @@ const bootPluginDisk = platform.readPluginFlagsFromDisk(
 const bootFlags = bootPluginDisk.flags;
 
 let activePluginRuntime = null;
+let packetLayerState = null;
 
 // pluginSystem:false / AQUASTAR_DISABLE_PLUGINS=1 is the emergency "safe mode": only the
 // bundled default plugin (the one whose manifest says bundledDefault) is activated, with no
@@ -127,7 +129,7 @@ function activatePlugins() {
 // No game URL is trusted yet: the plugin's trust list is applied right after activation.
 flash.flashManager(app, __dirname, null, constant.appName);
 
-function createWindow () {
+async function createWindow () {
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
         // Screen capture is needed only by AquaStar's own game windows.  Normal
         // browser windows load remote account/wiki pages and must not inherit it.
@@ -181,8 +183,9 @@ function createWindow () {
         return;
     }
 
-    // webRequest rules go in before the first window loads anything.
-    applySessionRules();
+    // webRequest rules go in before the first window loads anything. Steering may bind a loopback
+    // listener, so it finishes before the window opens.
+    await applySessionRules();
 
     let win = inst.newBrowserWindow(bootGameUrl, true);
     // Re-apply after setApplicationMenu so the first window keeps plugin menu entries.
@@ -201,7 +204,7 @@ function createWindow () {
 // Platform rules (ad blocking) and the active plugin's rules share one applicator: Electron
 // keeps a single listener per webRequest event, so separate registrations would replace
 // each other. The platform only supplies the browser's own UA; any UA policy is the plugin's.
-function applySessionRules() {
+async function applySessionRules() {
     let swfLogStream = null;
     if (constant.isSwfLogEnabled) {
         var t = new Date();
@@ -218,12 +221,42 @@ function applySessionRules() {
         ? (activePluginRuntime.host._getState().sessionRules || [])
         : [];
 
+    // Packet steering (res/platform/packet-layer.js): a plugin declares where its client takes its
+    // server list, and the layer returns rules plus the loopback body service those rules route to.
+    // Its rules join this single registration; a relay that cannot steer never comes up.
+    const packetDeclarations = activePluginRuntime && activePluginRuntime.host
+        ? (activePluginRuntime.host._getState().packetSteering || [])
+        : [];
+    let packetRules = [];
+    let responseBody = null;
+    if (packetDeclarations.length) {
+        try {
+            packetLayerState = await packetLayer.createPacketLayer({
+                declarations: packetDeclarations,
+                ctx: {
+                    defaultUserAgent: session.defaultSession.getUserAgent(),
+                    settings: { swfLog: constant.isSwfLogEnabled, packetSteering: keyb.keybinds.packetSteering },
+                    logLine: function (line) { console.log('[AquaStar:packets] ' + line); }
+                }
+            }).start();
+            packetRules = packetLayerState.rules;
+            responseBody = packetLayerState.responseBody;
+        } catch (error) {
+            // The client's HTTP-polling fallback is not steered, so a half-working layer must not
+            // pretend: report it and carry on with the platform's own rules only.
+            console.log('[AquaStar:packets] packet steering unavailable: ' +
+                (error && error.message ? error.message : error));
+            packetLayerState = null;
+        }
+    }
+
     platform.applySessionRules(
         session.defaultSession,
-        platform.createPlatformSessionRules().concat(pluginRules),
+        platform.createPlatformSessionRules().concat(pluginRules).concat(packetRules),
         {
             defaultUserAgent: session.defaultSession.getUserAgent(),
             settings: { swfLog: constant.isSwfLogEnabled },
+            responseBody: responseBody,
             logLine: function (line) {
                 if (swfLogStream) swfLogStream.write(line + '\n');
             }

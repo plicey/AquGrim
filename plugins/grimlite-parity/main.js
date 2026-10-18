@@ -31,6 +31,19 @@ function activate(host) {
         'en-US': require('./locales/en-US.js')
     });
 
+    // Steering carries the session through a local process, so it is the player's opt-in rather
+    // than something the client does to itself. The declaration is this game's facts: the platform
+    // owns the mechanism and knows none of them (res/platform/packet-layer.js).
+    host.registerOptionDefaults({ packetSteering: false });
+    host.registerSettingsSection({
+        id: 'grimlite-packets',
+        titleKey: 'packets',
+        title: 'Packets',
+        order: 30,
+        fields: [{ key: 'packetSteering', type: 'boolean' }]
+    });
+    host.registerPacketSteering(require('./packets.js').steeringDeclarations()[0]);
+
     host.log('Grimlite Parity plugin activated (scaffold: placeholder surface only)');
 }
 
