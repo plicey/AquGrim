@@ -85,7 +85,8 @@ test('the result is formatted as the reference\'s Format JSON button formats it'
   assert.strictEqual(callModes.format('{"b":1,"a":[1,2]}'), '{\n  "b": 1,\n  "a": [\n    1,\n    2\n  ]\n}');
   // Not JSON: the reference shows what it had, unchanged.
   assert.strictEqual(callModes.format('not json'), 'not json');
-  assert.strictEqual(callModes.pretty('{}'), '{}');
+  // A bare scalar has nothing to indent, so it is left as it came.
+  assert.strictEqual(callModes.format('42'), '42');
 });
 
 test('the window page offers the reference\'s controls, wired to the plugin API', () => {

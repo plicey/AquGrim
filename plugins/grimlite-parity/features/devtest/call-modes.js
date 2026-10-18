@@ -71,17 +71,10 @@ function format(text) {
     }
 }
 
-/** True when the text is JSON, which is when the Format button has anything to do. */
-function pretty(text) {
-    const formatted = format(text);
-    return formatted;
-}
-
 module.exports = {
     MODES: MODES,
     parseArgs: parseArgs,
     coerce: coerce,
     run: run,
-    format: format,
-    pretty: pretty
+    format: format
 };
