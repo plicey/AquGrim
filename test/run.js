@@ -31,6 +31,8 @@ global.test = function (name, fn) {
   './unit/local-plugin-require-gate.test.js',
   './unit/plugin-host-permissions.test.js',
   './unit/plugin-api-version.test.js',
+  './unit/grimlite-bot-file.test.js',
+  './unit/grimlite-bot-corpus.test.js',
   './unit/plugin-game-access.test.js',
   './unit/grimlite-parity.test.js',
   './unit/plugin-runtime.test.js',
