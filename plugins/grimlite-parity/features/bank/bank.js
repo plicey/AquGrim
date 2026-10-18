@@ -148,7 +148,10 @@ async function bankAll(game, selection) {
         if (item.isEquipped || item.isAcItem !== isAc) continue;
         if (!isAc) {
             const slots = await game.readBankSlots();
-            if (!slots || slots.total - slots.used <= 0) continue;
+            // A known-full bank skips the item; an unknown count (`used: null`, which is what a
+            // game that cannot report its usage gives) attempts it and lets the game decide,
+            // rather than reporting a full bank it never measured.
+            if (slots && slots.used !== null && slots.total - slots.used <= 0) continue;
         }
         names.push(item.name);
     }

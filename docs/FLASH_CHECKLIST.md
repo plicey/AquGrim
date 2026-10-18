@@ -151,14 +151,20 @@ opt-in is on (and the window says so if you press Start without it).
 
 ## Grimlite Parity — Bank and Sets (ticket #29) — needs the real game and dialogs
 
-**Blocked on ticket #28.** Everything below that touches the game is unreachable today: the
-plugin's game access (`plugins/grimlite-parity/bridge.js`) reports "the game bridge is not
-wired in this build (ticket #28) yet" for every call, and never pretends to have transferred or
-equipped anything. The window shells, the list model, the persistence and the set file format
-are covered by `npm test`; these boxes are the live half.
+**Blocked on the bridge growing the reference loader's call surface.** The bridge (#28, merged)
+loads the *stock* game, and the Bank's calls are among the 100 names the reference reaches
+through the loader it ships rather than through the game: `GetInventoryItems`, `TransferToBank`
+and `UsedBankSlots` are loader-only, while only 33 names are in both
+(`docs/research/grimlite-capabilities.md` section 3). So today a transfer reports
+`no member TransferToBank at world - "TransferToBank" belongs to the reference client's own
+loader...` instead of pretending to have moved something, and the adapter starts working the day
+the bridge implements that surface, with no change to these windows.
 
-- [ ] With ticket #28 merged: **Bank** transfers the chosen category, honouring the AC/non-AC
-      choice, and does not touch equipped items or Treasure Potion
+The window shells, the list model, the persistence and the set file format are covered by
+`npm test`; these boxes are the live half.
+
+- [ ] **Bank** transfers the chosen category, honouring the AC/non-AC choice, and does not touch
+      equipped items or Treasure Potion
 - [ ] **Bank all except selected** moves everything outside the selection, and nothing in it
 - [ ] **Bank All** with ACs moves AC items even when the bank is full; with non-ACs it stops
       when the bank fills, without an error

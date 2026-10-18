@@ -53,10 +53,21 @@ One active plugin per process still holds: select this plugin and restart to run
 
 `bridge.js` is the one place this plugin asks the game for anything. Every feature consumes an
 object of its shape (`createGameAccess(host)`) and never reaches Flash, the Host or the SWF
-itself; `npm test` drives a fake of the same shape. The file's header lists every method, the
-game-side call each one needs, and the `InventoryItem` / world shapes it hands over. Until
-ticket #28 wires the bridge channel, every method reports that it is unwired instead of
-pretending to reach a game.
+itself; `npm test` drives a fake of the same shape.
+
+It sits on the bridge channel #28 landed (`host.bridge.attach()` / `call(name, args)`), which is
+the generic layer (`getGameObject`, `callGameFunction`, `setGameObject`, ...), so this module is
+where a feature's want ("read the inventory", "equip this item") becomes the game's own call
+name. Which of those names can answer is evidence, not guesswork: the reference calls a *loader*
+it ships, and 100 of its 146 names exist only there - `GetInventoryItems`, `TransferToBank` and
+`UsedBankSlots` among them - while only 33 are in the game itself (`Equip`, `BankSlots`, `Jump`,
+`State`, `Cell`, `Pad`, `Map` and friends). The bridge loads the stock game, so a loader-only
+name is answered `no member ... at world`; this adapter passes that answer through and adds why,
+rather than inventing a result or blocking the call outright - the day the bridge implements that
+surface, these calls start working with no change here.
+
+**The bridge still owes the loader's surface** before Bank can transfer anything: see the ticket
+#29 section of `docs/FLASH_CHECKLIST.md`.
 
 ## Windows
 

@@ -69,8 +69,16 @@ test('the Grimlite menu gains Bank and Sets, each opening its own window', async
   });
 
   const state = activated.host._getState();
-  const items = state.menus[0]({ labels: { grimliteMenu: 'Grimlite' }, keybinds: {} });
-  const submenu = items[0].submenu;
+  // This plugin contributes more than one top-level menu (Packets joined in #26), so the
+  // Grimlite one is found by its label rather than by position.
+  const menus = state.menus
+    .map(function (contributor) {
+      return contributor({ labels: { grimliteMenu: 'Grimlite' }, keybinds: {} });
+    })
+    .reduce(function (all, group) { return all.concat(group); }, []);
+  const submenu = menus.filter(function (menu) {
+    return menu.label === 'Grimlite';
+  })[0].submenu;
   const labels = submenu.map(function (item) { return item.label; });
   // The reference's own Tools menu words: Bank, and the Sets form it keeps hidden.
   assert.ok(labels.indexOf('Bank') !== -1, 'no Bank entry: ' + labels.join(', '));
@@ -134,7 +142,8 @@ test('the Bank window reaches its logic through the window\'s own channels', asy
 });
 
 test('a Bank window with no game access reports that, instead of pretending to transfer', async () => {
-  // The scaffold's own game access: every call is unwired until ticket #28 lands.
+  // An app with no bridge channel (an older build, or the platform's channel not
+  // wired): the window must report that, not report a transfer it never made.
   const game = bridge.createGameAccess({ log: function () {} });
   const window = createBankWindow({ game: game });
 
@@ -142,7 +151,7 @@ test('a Bank window with no game access reports that, instead of pretending to t
     { category: 'Sword', ac: false, allExcept: false }
   ]);
   assert.strictEqual(result.transferred, 0);
-  assert.strictEqual(result.error, bridge.NOT_WIRED);
+  assert.strictEqual(result.error, bridge.ERRORS.unchannelled);
 });
 
 test('the Sets window lists, adds, saves, opens, clears and equips through its channels', async () => {
