@@ -15,6 +15,55 @@
 //   setSpawnPoint() -> void     stand at the respawn point, after a death
 //   rest()          -> void     sit to restore HP/MP
 //   exitCombat()    -> void     leave combat when the bot stops
+//   state()         -> number   the game's own State: 0 dead, 1 idle, 2 in combat
+//
+// And the combat and map reads the commands of ticket #38 are built on. Each is one row of the
+// loader surface, asked for by the reference's own name, for the same reason as the rest: the
+// surface owns what that name means.
+//
+//   hasTarget() / targetHealth()          Is that monster still alive? (HasTarget, GetTargetHealth)
+//   cancelTargets()                       Player.CancelTarget + CancelTargetSelf + CancelAutoAttack
+//   cell() / pad() / map()                world.strFrame / strPad / strMapName
+//   jump(cell, pad) / join(map,c,p)       the game's moveToCell / gotoTown
+//   position()                            myAvatar.pMC.x, .y
+//   skillAvailable(i) / allSkillsAvailable()   the loader's own cooldown arithmetic (ms left)
+//   monsterAvailable(m) / monsterHealth(m)     the live monster reads (ticket #38)
+//   monstersInCell(cell)                  the loader's own eight-field projection
+
+// Four of the reference's combat names cannot be answered, and each for the same measured
+// reason rather than for want of a ticket: `AttackMonster`, `AttackMonsterByMonMapId`, `UseSkill`,
+// `ForceUseSkill` and `CancelTargetSelf` all end in `world.setTarget(liveAvatar)` or
+// `world.testAction(liveAction)`. Both take a live AS3 object; the game's own accessors
+// (`getMonster(id)`, `getActionByRef(ref)`, `getAutoAttack()`) return those same live objects; and
+// the bridge carries JSON, which a display object cannot be. So those five refusals are reported
+// by name - see `attackMonster` and `useSkill` below - and the reads they would have been built on
+// all answer. Nothing here invents a target.
+//
+// Ticket #41 widened it with the reads its statements need, each one a loader helper by its own
+// name, so a statement never spells a path out:
+//
+//   cell() / map()                              -> string   where the character stands
+//   gold() / level()                            -> number
+//   isMember()                                  -> boolean  the upgrade days the loader tests
+//   playerHealthPercentage(name)                -> number   another player, as the loader rounds it
+//   inventory() / bank() / tempInventory()       -> list     the item lists the loader reshapes
+//   house()                                     -> list
+//   factions()                                  -> list     the reputation entries
+//   playersInMap()                              -> list     the names the game lists
+//   playerInCell(name, cell)                    -> boolean  CheckCellPlayer
+//   playerInMyCell(name)                        -> boolean  GetCellPlayers
+//   questAvailable(id) / questInProgress(id)     -> boolean
+//   questCanComplete(id)                        -> boolean, refused until #39 lands
+//   monsterInRoom(name) / monsterByMonMapId(id)  -> boolean, refused until #38 lands
+//   monsterHealth(name)                         -> number,  refused until #38 lands
+//   visibleMonsters()                           -> list,    refused until #38 lands
+//   dropStack()                                 -> list, and it refuses: the reference's own list
+//                                                   is filled from the game's dropItem frames
+//                                                   (#33), not read out of the game
+//
+// Those three refusals are deliberate and are the surface's own: a name it does not implement
+// rejects naming the ticket that owns it, and this module passes that reason through rather than
+// answering a default. A statement that cannot be told reports it.
 //
 // The state-reading statements (tickets #41, #42) widened it; these are #42's own, and every one
 // of them is a loader name the surface answers except the target id, which is named where it is
@@ -61,6 +110,19 @@
 //   GetTargetHealth  world.myAvatar.target.dataLeaf.intHP
 //   State            world.myAvatar.dataLeaf.intState
 //   UserID           world.myAvatar.uid  - the id an aura frame's `p:` prefix is compared with
+//   Cell/Map         world.strFrame / world.strMapName
+//   Gold/Level       world.myAvatar.objData.intGold / dataLeaf.intLevel
+//   IsMember         world.myAvatar.objData.iUpgDays >= 0
+//   GetInventoryItems / GetBankItems / GetTempItems / GetHouseItems
+//                    world.myAvatar.items / world.bankinfo.items / world.myAvatar.tempitems /
+//                    world.myAvatar.houseitems
+//   GetFactions      world.myAvatar.factions
+//   PlayersInMap     world.areaUsers
+//   CheckCellPlayer  the player's own strFrame against the cell asked for
+//   GetCellPlayers   the same against world.strFrame
+//   GetPlayerHealthPercentage  the player's intHP / intHPMax, as the loader's own percentage
+//   IsAvailable / IsInProgress / CanComplete  world.questTree[id] / world.isQuestInProgress /
+//                    world.canTurnInQuest (the last two refused: #38 and #39 own the rest)
 //
 // TWO WANTS THE SURFACE DOES NOT ANSWER, and both for a real reason rather than an oversight, so
 // neither is worked around by inventing a path here:
@@ -100,21 +162,130 @@ const LOADER_BODIES = {
     Logout: { helper: 'Logout', body: 'Root.Game.logout()' },
     CancelTarget: { helper: 'CancelTarget', body: 'world.cancelTarget() twice' },
     CancelAutoAttack: { helper: 'CancelAutoAttack', body: 'world.cancelAutoAttack()' },
-    HasTarget: { helper: 'HasTarget', body: 'world.myAvatar.target.dataLeaf.intHP > 0' },
+    Cell: { helper: 'Cell', body: 'world.strFrame' },
+    Map: { helper: 'Map', body: 'world.strMapName' },
+    Gold: { helper: 'Gold', body: 'world.myAvatar.objData.intGold' },
+    Level: { helper: 'Level', body: 'world.myAvatar.dataLeaf.intLevel' },
+    IsMember: { helper: 'IsMember', body: 'world.myAvatar.objData.iUpgDays >= 0' },
+    GetInventoryItems: { helper: 'GetInventoryItems', body: 'JSON.stringify(world.myAvatar.items)' },
+    GetBankItems: { helper: 'GetBankItems', body: 'JSON.stringify(world.bankinfo.items)' },
+    GetTempItems: { helper: 'GetTempItems', body: 'JSON.stringify(world.myAvatar.tempitems)' },
+    GetHouseItems: { helper: 'GetHouseItems', body: 'JSON.stringify(world.myAvatar.houseitems)' },
+    GetFactions: { helper: 'GetFactions', body: 'JSON.stringify(world.myAvatar.factions)' },
+    PlayersInMap: { helper: 'PlayersInMap', body: 'JSON.stringify(world.areaUsers)' },
+    CheckCellPlayer: {
+        helper: 'CheckCellPlayer',
+        body: 'world.uoTree[name].strFrame against the cell asked for; the loader sortAnswers True/False'
+    },
+    GetCellPlayers: {
+        helper: 'GetCellPlayers',
+        body: 'the same player own strFrame against world.strFrame'
+    },
+    GetPlayerHealthPercentage: {
+        helper: 'GetPlayerHealthPercentage',
+        body: 'the player own intHP / intHPMax * 100, and 100 for a name it does not hold'
+    },
+    IsAvailable: { helper: 'IsAvailable', body: 'world.questTree[id] != null, all the loader can know' },
+    IsInProgress: { helper: 'IsInProgress', body: 'world.isQuestInProgress(parseInt(id))' },
+    CanComplete: { helper: 'CanComplete', body: 'world.canTurnInQuest(id) (refused: ticket #39 owns quests)' },
+    IsMonsterAvailable: {
+        helper: 'IsMonsterAvailable',
+        body: 'GetMonsterByName(name) != null (pMC present, name contains, intState > 0, same cell)'
+    },
+    IsMonsterAvailableByMonMapID: {
+        helper: 'IsMonsterAvailableByMonMapID',
+        body: 'GetMonsterByMonMapId(id) != null, the same walk matched on dataLeaf.MonMapID'
+    },
+    GetMonsterHealth: { helper: 'GetMonsterHealth', body: 'GetMonsterByName(name).dataLeaf.intHP' },
+    // The five the surface refuses, recorded so the module states them rather than implying them.
+    GetVisibleMonstersInCell: { helper: 'GetVisibleMonstersInCell', body: 'a reshape of live monster objects (refused: #38)' },
+    State: { helper: 'State', body: 'world.myAvatar.dataLeaf.intState' },
+    Pad: { helper: 'Pad', body: 'world.strPad' },
+    Position: { helper: 'Position', body: 'JSON of [myAvatar.pMC.x, myAvatar.pMC.y]' },
+    HasTarget: {
+        helper: 'HasTarget',
+        body: 'world.myAvatar.target != null && world.myAvatar.target.dataLeaf.intHP > 0'
+    },
     GetTargetHealth: { helper: 'GetTargetHealth', body: 'world.myAvatar.target.dataLeaf.intHP' },
-    State: { helper: 'State', body: 'world.myAvatar.dataLeaf.intState, cast to Player.State' },
+    SkillAvailable: {
+        helper: 'SkillAvailable',
+        body: 'IsSkillReady(world.actions.active[i]): max(GCD - (now - GCDTS), round(cd * haste) - (now - ts))'
+    },
+    AllSkillsAvailable: {
+        helper: 'AllSkillsAvailable',
+        body: 'max of IsSkillReady over world.actions.active[1..4]'
+    },
+    GetCells: { helper: 'GetCells', body: 'world.map.currentScene.labels[].name' },
+    IsActionAvailable: {
+        helper: 'IsActionAvailable',
+        body: 'world.lock[action].cd elapsed since .ts (Rest is "rest", Transfer is "tfer")'
+    },
+    Class: { helper: 'Class', body: 'world.myAvatar.objData.strClassName, upper-cased' },
+    ReloadMap: { helper: 'ReloadMap', body: 'world.reloadCurrentMap()' },
+    LoadMap: { helper: 'LoadMap', body: 'world.loadMap(mapSwf)' },
+    Jump: { helper: 'Jump', body: 'world.moveToCell(cell, pad)' },
+    Join: { helper: 'Join', body: 'world.gotoTown(map, cell, pad)' },
+    WalkToPoint: {
+        helper: 'WalkToPoint',
+        body: 'myAvatar.pMC.walkTo(x, y, WALKSPEED) then world.moveRequest({mc: pMC, tx, ty, sp})',
+        why: 'the loader drives the avatar\'s own MovieClip first, and a live clip cannot cross '
+    },
+    GetMonstersInCell: {
+        helper: 'GetMonstersInCell',
+        body: 'world.getMonstersByCell(cell), each projected to sRace/strMonName/MonID/MonMapID/iLvl/intState/intHP/intHPMax'
+    },
+    AttackMonster: {
+        helper: 'AttackMonster',
+        body: 'world.setTarget(GetMonsterByName(name)) + world.approachTarget()',
+        why: 'the argument world.setTarget takes is a live Avatar, which cannot cross the bridge'
+    },
+    AttackMonsterByMonMapId: {
+        helper: 'AttackMonsterByMonMapId',
+        body: 'world.setTarget(GetMonsterByMonMapId(id)) + world.approachTarget()',
+        why: 'the argument world.setTarget takes is a live Avatar, which cannot cross the bridge'
+    },
+    UseSkill: {
+        helper: 'UseSkill',
+        body: 'world.approachTarget() then ForceUseSkill(index)',
+        why: 'the argument world.testAction takes is the live action object, which cannot cross'
+    },
+    ForceUseSkill: {
+        helper: 'ForceUseSkill',
+        body: 'IsSkillReady(action) == 0 && action.isOK && !action.skillLock -> world.testAction(action)',
+        why: 'the argument world.testAction takes is the live action object, which cannot cross'
+    },
+    CancelTargetSelf: {
+        helper: 'CancelTargetSelf',
+        body: 'if(myAvatar.target == myAvatar) world.cancelTarget()',
+        why: 'the comparison is between two live avatar objects, which cannot cross the bridge'
+    },
+    // #42's own two: the id an aura frame's `p:` prefix is compared with, and the aura state
+    // itself, which is not a loader call at all - the reference's cache is filled by its packet
+    // handlers (Flash.cs ProcessPacketFromServer, ProcessPext, ProcessPacketFromClient), so this
+    // build derives it from the packet tap. Recorded so a reader can check that derivation against
+    // the reference rather than trusting it.
     UserID: { helper: 'UserID', body: 'world.myAvatar.uid - the id an aura frame is keyed by' },
-    // The whole aura state, and the one read that is not a loader name. Both recorded so a reader
-    // can check this module against the reference rather than trusting it.
     AuraCache: {
         helper: 'GetAurasValue / AuraDuration',
         body: 'AuraManager.SelfAura and AuraManager.EnemyAura(MonMapID), filled from the frames ' +
             'Flash.cs ProcessPacketFromServer and ProcessPext read; the target id itself is ' +
-            'Player.CurrentTargetId -> world.myAvatar.target.objData.MonMapID'
+            'Player.CurrentTargetId -> world.myAvatar.target.objData.MonMapID',
+        reason: 'this cache is not a loader call at all: the reference fills it from its packet ' +
+            'handlers, so this build derives it from the packet tap (bot/auras.js). The two lookup ' +
+            'names beside it, GetAurasValue and AuraDuration, are refused by the surface for the ' +
+            'same reason (#42)'
     },
     // Not on the surface: see the two named above.
     GetUsername: { path: PATHS.name, body: 'the game own objData.strUsername; the loader holds its own copy (ticket #35)' },
-    MapLoadComplete: { path: PATHS.mapLoading, body: 'world.mapLoadInProgress == false; the display-list half is ticket #41' }
+    MapLoadComplete: { path: PATHS.mapLoading, body: 'world.mapLoadInProgress == false; the display-list half is ticket #41' },
+    DropStack: {
+        body: 'the reference loader keeps this list itself, fed by the game own dropItem frames ' +
+            '(Flash.cs HandlerDropItem); no game path answers it',
+        reason: 'the reference keeps this list itself, filled from the game own dropItem frames ' +
+            '(HandlerDropItem / Flash.cs), so no game path answers it, and this client own list is ' +
+            'the drop window own (ticket #33): it is fed by the packet tap only while that window ' +
+            'is watching, which a bot session cannot reach'
+    }
 };
 
 const ERRORS = {
@@ -245,6 +416,70 @@ function createSession(deps) {
         });
     }
 
+    /**
+     * A yes or a no a helper answered. Anything else - a value the game left unset, a string it
+     * did not mean as a boolean, a shape this bridge cannot read - is a refusal rather than a no:
+     * a condition that cannot be evaluated must report that, not silently fail a bot's branch.
+     */
+    function booleanFrom(name, promise) {
+        return promise.then(function (value) {
+            if (value === true || value === 1 || value === '1' || value === 'true' || value === 'True') return true;
+            if (value === false || value === 0 || value === '0' || value === 'false' || value === 'False') return false;
+            throw refusal(name + ' is not a yes or a no (' + JSON.stringify(value) + ')');
+        });
+    }
+
+    /**
+     * The loader quotes the strings it answers ("yulgar") because its C# side parses them; this
+     * bridge's surface returns the value, so a string that arrived quoted is unquoted here. A
+     * value the game left unset is a refusal, for the same reason a number is: an empty cell is
+     * indistinguishable from standing nowhere.
+     */
+    function textFrom(name, promise) {
+        return promise.then(function (value) {
+            if (value === null || value === undefined || value === '') {
+                throw refusal(name + ' answered nothing, so the game has no value there yet');
+            }
+            if (typeof value === 'string') return value.replace(/^"|"$/g, '');
+            if (value && typeof value === 'object') {
+                throw refusal(name + ' is not a value this bridge can read (' +
+                    JSON.stringify(value).slice(0, 120) + ')');
+            }
+            return String(value);
+        });
+    }
+
+    /**
+     * A list a helper answered. The game keys these several ways - the bank and the quest tree by
+     * id, the avatar's own items by index - and the surface hands each over as it stands, so a
+     * caller gets the entries and not the keying. An answer that is not a list at all is a
+     * refusal: an unreadable list must not look like an empty one, or every item statement built
+     * on it would answer a confident no.
+     */
+    function listFrom(name, promise) {
+        return promise.then(function (value) {
+            if (Array.isArray(value)) return value;
+            if (value === null || value === undefined || value === '') {
+                throw refusal(name + ' answered nothing, so the game has no list there yet');
+            }
+            if (typeof value === 'object') {
+                return Object.keys(value).map(function (key) { return value[key]; })
+                    .filter(function (entry) { return entry !== null && entry !== undefined; });
+            }
+            throw refusal(name + ' is not a list the game answered (' +
+                JSON.stringify(value).slice(0, 120) + ')');
+        });
+    }
+
+    /** The reference's own helper name for a quest id: its C# side passes the id as text. */
+    function questId(id) {
+        const text = String(id === null || id === undefined ? '' : id).trim();
+        if (!/^-?\d+$/.test(text)) {
+            throw refusal('"' + id + '" is not a quest id: the reference parses the field as an int');
+        }
+        return text;
+    }
+
     const session = {
         /** Player.IsLoggedIn's own body: a live socket. A missing socket is a no, not an error. */
         signedIn: function () {
@@ -295,6 +530,218 @@ function createSession(deps) {
         healthMax: function () { return numberFrom('HealthMax', loaderCall('HealthMax')); },
         mana: function () { return numberFrom('Mana', loaderCall('Mana')); },
         manaMax: function () { return numberFrom('ManaMax', loaderCall('ManaMax')); },
+
+        // ---------------------------------------------------------------- the state the
+        // statements read (#41). One row of the loader surface each, asked for by the name the
+        // reference calls, and answered as the value it means rather than as the loader's own
+        // hand-quoted string.
+
+        /** Player.Cell / Player.Map: where the character stands. */
+        cell: function () { return textFrom('Cell', loaderCall('Cell')); },
+        map: function () { return textFrom('Map', loaderCall('Map')); },
+
+        gold: function () { return numberFrom('Gold', loaderCall('Gold')); },
+        level: function () { return numberFrom('Level', loaderCall('Level')); },
+
+        /** Player.IsMember is the loader's own upgrade-days test, so it is the surface's answer. */
+        isMember: function () { return booleanFrom('IsMember', loaderCall('IsMember')); },
+
+        /**
+         * World.GetPlayerHealthPercentage(name) for another player. The loader answers 100 for a
+         * name it does not hold, which is the reference's own answer and not a stand-in: CmdPlayers
+         * HPGreaterThan compares it directly.
+         */
+        playerHealthPercentage: function (name) {
+            return numberFrom('GetPlayerHealthPercentage',
+                loaderCall('GetPlayerHealthPercentage', [String(name)]));
+        },
+
+        // The item lists the loader reshapes. Each is asked for by its own helper name, and the
+        // surface reaches the path that helper's body reads.
+        inventory: function () { return listFrom('GetInventoryItems', loaderCall('GetInventoryItems')); },
+        bank: function () { return listFrom('GetBankItems', loaderCall('GetBankItems')); },
+        tempInventory: function () { return listFrom('GetTempItems', loaderCall('GetTempItems')); },
+        house: function () { return listFrom('GetHouseItems', loaderCall('GetHouseItems')); },
+        factions: function () { return listFrom('GetFactions', loaderCall('GetFactions')); },
+
+        /** The names the game lists for the map (World.PlayersInMap is world.areaUsers). */
+        playersInMap: function () { return listFrom('PlayersInMap', loaderCall('PlayersInMap')); },
+
+        /** World.CheckCellPlayer(name, cell): is that player standing in that cell. */
+        playerInCell: function (name, cell) {
+            return booleanFrom('CheckCellPlayer',
+                loaderCall('CheckCellPlayer', [String(name), String(cell)]));
+        },
+
+        /** World.GetCellPlayers(name): is that player standing in the cell I am in. */
+        playerInMyCell: function (name) {
+            return booleanFrom('GetCellPlayers', loaderCall('GetCellPlayers', [String(name)]));
+        },
+
+        questAvailable: function (id) {
+            return booleanFrom('IsAvailable', loaderCall('IsAvailable', [questId(id)]));
+        },
+        questInProgress: function (id) {
+            return booleanFrom('IsInProgress', loaderCall('IsInProgress', [questId(id)]));
+        },
+        // Refused until #39 lands: the surface's row names the ticket. Asked for by name anyway, so
+        // the day it lands the statement works with no change here.
+        questCanComplete: function (id) {
+            return booleanFrom('CanComplete', loaderCall('CanComplete', [questId(id)]));
+        },
+
+        // Refused until #38 lands, for the same reason and with the same effect.
+        monsterInRoom: function (name) {
+            return booleanFrom('IsMonsterAvailable', loaderCall('IsMonsterAvailable', [String(name)]));
+        },
+        monsterByMonMapId: function (id) {
+            return booleanFrom('IsMonsterAvailableByMonMapID',
+                loaderCall('IsMonsterAvailableByMonMapID', [String(id)]));
+        },
+        monsterHealth: function (name) {
+            return numberFrom('GetMonsterHealth', loaderCall('GetMonsterHealth', [String(name)]));
+        },
+        visibleMonsters: function () {
+            return listFrom('GetVisibleMonstersInCell', loaderCall('GetVisibleMonstersInCell'));
+        },
+
+        /**
+         * The dropped items. The reference's own DropStack, filled from the game's dropItem frames
+         * (HandlerDropItem / Flash.cs), so there is no game path to read it from and the surface
+         * has no row for it. This client's own list is the drop window's (#33), fed by the packet
+         * tap only while that window watches, so it is not a read this session can make: the
+         * refusal says where the list lives rather than letting a "has dropped" statement answer a
+         * confident no.
+         */
+        dropStack: function () {
+            return Promise.reject(refusal(LOADER_BODIES.DropStack.reason));
+        },
+
+        // ---- combat and map (ticket #38) ----------------------------------------------------
+
+        /** Player.CurrentState: the game's own intState, so 0 dead, 1 idle, 2 in combat. */
+        state: function () { return numberFrom('State', loaderCall('State')); },
+
+        /**
+         * Whether there is a living target. Health above zero is the second half of the loader's
+         * own HasTarget, so a target that has died is a no - which is what a kill loop waits on.
+         * An unreadable target is that same no rather than a refusal: HasTarget is a question with
+         * a false answer, where Health's silence is a death (see numberFrom above).
+         */
+        hasTarget: function () {
+            return loaderCall('HasTarget').then(function (value) {
+                return value === true || value === 1 || value === 'true';
+            }, function (error) {
+                if (error && error.windowGone === true) throw error;
+                return false;
+            });
+        },
+
+        targetHealth: function () { return numberFrom('GetTargetHealth', loaderCall('GetTargetHealth')); },
+
+        /**
+         * CmdCancelTarget's own three calls, in its own order: CancelTarget (which the loader's
+         * body runs twice), then CancelTargetSelf, then CancelAutoAttack. CancelTargetSelf is one
+         * of the five names that cannot cross the bridge, and the reference's own body makes it a
+         * no-op unless the avatar is targeting itself - so it is reported and the two that matter
+         * still run, rather than the command failing whole over a self-target check.
+         */
+        cancelTargets: async function () {
+            await loaderCall('CancelTarget');
+            try {
+                await loaderCall('CancelTargetSelf');
+            } catch (error) {
+                log('cmd cancel target: the self-target check is not available (' + message(error) + ')');
+            }
+            return loaderCall('CancelAutoAttack');
+        },
+
+        /** Milliseconds until this skill can be used, the loader's own arithmetic. */
+        skillAvailable: function (index) {
+            return loaderCall('SkillAvailable', [String(index)]).then(function (value) {
+                const number = Number(value);
+                return isFinite(number) ? number : 0;
+            }, function (error) {
+                if (error && error.windowGone === true) throw error;
+                // A skill row that cannot be read is nothing to wait for, which is how the
+                // reference treats an action it cannot measure (its IsSkillReady walks an object
+                // that may be absent). The wait is on the server's own answer either way.
+                log('skill ' + index + ' could not be measured (' + message(error) + ')');
+                return 0;
+            });
+        },
+
+        allSkillsAvailable: function () {
+            return numberFrom('AllSkillsAvailable', loaderCall('AllSkillsAvailable'));
+        },
+
+        monsterAvailable: function (name) {
+            return loaderCall('IsMonsterAvailable', [String(name)]);
+        },
+
+        monsterAvailableByMonMapId: function (id) {
+            return loaderCall('IsMonsterAvailableByMonMapID', [String(id)]);
+        },
+
+        monstersInCell: function (cell) {
+            return loaderCall('GetMonstersInCell', [String(cell === undefined ? '' : cell)]);
+        },
+
+        /**
+         * Point the avatar at a monster - the one thing this build cannot do, and it says so
+         * rather than sending a string where the game wants a live Avatar.
+         */
+        attackMonster: function (name) { return loaderCall('AttackMonster', [String(name)]); },
+        attackMonsterByMonMapId: function (id) { return loaderCall('AttackMonsterByMonMapId', [String(id)]); },
+        useSkill: function (index) { return loaderCall('UseSkill', [String(index)]); },
+        forceUseSkill: function (index) { return loaderCall('ForceUseSkill', [String(index)]); },
+
+        /** Where the avatar stands, as the loader's own Position (a two-number array). */
+        position: function () { return loaderCall('Position'); },
+
+        // Cell and Map are the state reads above (#41), which strip the loader's own quotes and
+        // refuse an empty answer; only Pad belongs to this block.
+        pad: function () { return loaderCall('Pad'); },
+
+        /** Player.MoveToCell, and the Join / GoTo pair the map commands are built on. */
+        jump: function (cell, pad) {
+            return loaderCall('Jump', pad === undefined ? [String(cell)] : [String(cell), String(pad)]);
+        },
+        /**
+         * Player.WalkToPoint. The loader's body drives the avatar's own MovieClip before it asks
+         * the world to move, and a live clip cannot cross the bridge, so this is a call that may
+         * well be refused - the caller reports what it did rather than assuming it moved.
+         */
+        walkToPoint: function (x, y) { return loaderCall('WalkToPoint', [String(x), String(y)]); },
+        join: function (map, cell, pad) {
+            return loaderCall('Join', [String(map), String(cell === undefined ? 'Enter' : cell),
+                String(pad === undefined ? 'Spawn' : pad)]);
+        },
+        setSpawnPointHere: function () { return loaderCall('SetSpawnPoint'); },
+        reloadMap: function () { return loaderCall('ReloadMap'); },
+        loadMap: function (swf) { return loaderCall('LoadMap', [String(swf)]); },
+
+        /** World.IsActionAvailable: whether a locked action ("rest", "tfer") has come back. */
+        actionAvailable: function (name) { return loaderCall('IsActionAvailable', [String(name)]); },
+
+        /** The map's own cell names, which the jump commands walk. */
+        cells: function () { return loaderCall('GetCells'); },
+
+        /** The two containers the hunt commands count their items out of. */
+        items: function () { return loaderCall('GetInventoryItems'); },
+        tempItems: function () { return loaderCall('GetTempItems'); },
+
+        /** Player.GoToPlayer: the loader's own world.goto(name), which walks in this map. */
+        goTo: function (name) { return loaderCall('GoTo', [String(name)]); },
+
+        /** The equipped class name, which decides how a skill is cast (Chrono Shadow). */
+        className: function () {
+            return loaderCall('Class').then(function (value) {
+                return value === null || value === undefined ? '' : String(value);
+            });
+        },
+
+        cancelAutoAttack: function () { return loaderCall('CancelAutoAttack'); },
 
         // Each of these is one row of the loader surface, asked for by the reference's own name.
         setSpawnPoint: function () { return loaderCall('SetSpawnPoint'); },

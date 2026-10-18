@@ -794,7 +794,6 @@ whether the game acts on each call.
 - [ ] The four **Fast travels 2** buttons (Treetitanbattle, Ultradrakath, Tower of Doom 10, Necrodungeon) fake their quest's progress, wait, and then enter their room
 - [ ] **Unlock** with a quest id the client does not hold loads it and waits for it; with one the game never sends it reports the id and injects nothing
 - [ ] The generated packet is shown read-only, **Copy** puts the same text on the clipboard, and **Send** hands it to the client as a JSON frame
-
 ## Grimlite Parity - the aura, target and combat statements (ticket #42) - needs a display, a real game and an account
 
 The aura statements read a cache the **packet tap** fills (`bot/auras.js`), not a game lookup: the
@@ -817,3 +816,177 @@ needs a live client is whether the game's real frames have the shape these tests
 - [ ] **Name equals** matches your character's name whatever the casing
 - [ ] **Special Anims** (no skill box) holds on a comma-separated term of the last animation message the server sent, and **Special Anims** with a skill box reports the cast it cannot make rather than casting
 - [ ] Walking through a map change drops the monster aura state (their ids belong to the map you left) and **clearAuras** takes your auras except the Fate/Sage/Body/Might/Elixir family, while a respawn takes all of them
+
+## Combat and map commands (ticket #38) - needs a display, a real game and an account
+
+Everything below is about a bot **fighting and moving**. The command bodies, the loader reads they
+need, the waits and their timeouts are covered by `npm test` against injected fakes, with each
+expectation named to the reference file it came from (`Grimoire/Botting/Commands/Combat/*.cs`,
+`Map/*.cs`, and the reference loader's own `grimoire/game/Player.as` and `World.as`). None of the
+boxes can be ticked without a live client, and two of them are the whole point of the section.
+
+### Targeting by name and by monster id
+
+- [ ] **Kill Gravelyn** targets her and the character fights: the target's health bar appears
+- [ ] **Kill id:17** (or `id-17`, `id.17`, `id'17`) targets the monster whose `MonMapID` is 17,
+      which is the branch `Player.cs AttackMonster` sends to `AttackMonsterByMonMapId`
+- [ ] **Kill \*** fights whatever is in the cell, and does **not** re-target while a target is up
+- [ ] A name no monster in the cell carries is reported in the log and the bot carries on with the
+      next command rather than standing there
+
+### Skills
+
+- [ ] **Use Skill \*** with an index casts that skill at the current target, and leaves the
+      character walking into range first unless the class is a Chrono Shadow
+- [ ] **Use Skill [Wait]** waits out the cooldown the game reports and then casts
+- [ ] **Use Skill [Force]** casts with nothing targeted
+- [ ] A **Skill Set** command changes which skill the attack rotation starts from, which is the
+      label row `[NAME]` in the Skills list (Bot.cs's `SkillSet`)
+- [ ] A skill row the game refuses (a locked or unavailable skill) does not stop the fight
+
+### The fight and its exits
+
+- [ ] **Attack \*** with **Use Skill** ticked attacks and then runs the skill set, not one or the other
+- [ ] **Stop Attack** drops the target, and **Leave Combat** also jumps on the spot to break combat
+- [ ] **Rest** sits the character down, and **Rest fully** waits until both bars are full
+- [ ] **Rest** with **Exit Combat Before Rest** on jumps on the spot while the character is in combat
+- [ ] **AntiCounter** reports that it is not applied (see below) rather than appearing to pause
+
+### Map and movement
+
+- [ ] **Join: necrodungeon-a, r22, Down** reaches that map and cell, and a non-numeric room
+      (`-a`) is rolled into a number the way the reference rolls one
+- [ ] A join whose map never matches ends with `could not reach <map> in N try(ies)` in the log
+- [ ] **Join** with a `.swf` in the SWF box loads that map file (`World.LoadMap`) and waits for it
+- [ ] **Move to cell** keeps jumping until the cell reads back, and sends nothing when already there
+- [ ] **Start Jump between** moves the character on while the list carries on, and **Stop Cell Jump**
+      cancels it
+- [ ] **Set Spawnpoint** makes the character respawn where it stands (die and watch where you return)
+- [ ] **Join: ...** (CmdTravel) joins when the map differs and only steps to the cell when it does not
+- [ ] **Walk to: 250, 400** walks there; **Walk Randomly** picks its own point
+- [ ] **Join yulgar** ends with the bot stopped, as the reference's own command does
+- [ ] **Hunt** and **Quest Hunt** join their map and fight in it; **Follow kills: <name>** walks to
+      the player with `GoTo` and fights what is there
+
+### A saved bot runs unedited
+
+- [ ] Open the reference's own `Resources/Bots/kill_with_monster_id.gbot` in the Bot Manager and
+      run it: it joins `necrodungeon`, rolls a room, steps to `r22`, and fights by `KillPriority`
+      `id-49,id-50`
+
+### What could not be checked here, and why
+
+**The two calls that point the avatar cannot be made from this side of the bridge**, and that is a
+measured limit rather than an unfinished one. The reference loader's own bodies are
+`world.setTarget(World.GetMonsterByName(name))` plus `world.approachTarget()`, and
+`world.testAction(world.actions.active[i])`. Both game functions are typed on **live AS3 objects**
+(`World.as` 8372 `setTarget(param1:*)`, 8705 `testAction(param1:Object,...)`), and every way into
+them returns one: `getMonster(id)` (8075), `getMonstersByCell(cell)` (8128) and `getActionByRef(ref)`
+(9659) are all typed on live `Avatar`s and action objects, and the only member that reaches a
+monster by anything a bridge could carry is the **click handler**, which is handed a `MouseEvent`.
+The bridge serialises with `JSON.stringify` and falls back to `String(value)` for a value it cannot
+express, so a `MovieClip` cannot cross it. That leaves `AttackMonster`, `AttackMonsterByMonMapId`,
+`UseSkill`, `ForceUseSkill`, `CancelTargetSelf` and `SetTargetPvP` refused **by name**, with the
+reason and this ticket in the message, and a bot that uses them logs that line and moves on.
+
+**What does work** is everything the fight is *decided* on. The monster reads are answered by
+walking the game's own `Vector.<Avatar>` by index and reading primitive leaves off each entry - the
+same eight-field projection `World.as GetMonstersInCell` performs, done a step earlier because here
+the reshape has to happen on the far side of the wire - and `pMC` is probed with the bridge's own
+`isNull` rather than carried: `IsMonsterAvailable`, `IsMonsterAvailableByMonMapID`,
+`GetMonsterHealth`, `GetMonstersInCell` and `GetVisibleMonstersInCell` all answer, as do
+`HasTarget`, `GetTargetHealth`, `SkillAvailable`, `AllSkillsAvailable`, `State`, `Cell`, `Pad`,
+`Map`, `Position`, `Jump`, `Join`, `Rest`, `SetSpawnPoint`, `CancelTarget` and `CancelAutoAttack`.
+So a bot's targeting **decisions** are live and correct; only the two calls that act on them are not,
+and **a kill in this build therefore needs the character to be attacking already** (auto-attack on,
+or the player's own click) - a fake success here would have been worse than the refusal.
+
+- [ ] Confirm the refusal text reached the log rather than a silent no-op, and confirm the
+      character was **not** moved by it
+- [ ] With auto-attack on, run a `CmdKill` bot and confirm the rotation casts on cooldown and the
+      `SkillDelay`/`WaitForSkill` settings pace it as they do in the reference
+
+**Three more places this build reports rather than acts**, each because the option reaches something
+the engine does not have yet, and none of them silently ignored:
+
+- **AntiCounter** watches the reference's own packet tap for `prepares a counter attack` and the
+  Counter Attack aura fading. This engine has no tap, so the log says so once and the fight runs
+  without the pause.
+- **A skill aura condition** (`Skill.hasaura`) reads the avatar's own aura counts - the loader's
+  `GetAurasValue`, which is ticket #42's surface. The row is treated as ready, which is exactly what
+  the reference's own `Compare` does with a condition it cannot parse, and the log says so once.
+- **CmdKillFor / CmdShortHunt / CmdQuestHunt** are wired for their map, join and kill halves, but
+  their "until the item or quest is done" loops read the inventory (`GetInventoryItems`,
+  `GetTempItems` - both answered) and, for a quest, the quest's own required items
+  (`GetQuestTree` is refused: ticket #39). The loop is bounded and reports what it stopped short of
+  rather than running all night, which matters more here than upstream because a kill this build
+  cannot start is not a kill that can finish the loop.
+- **CmdFollow** cannot follow a player's cell as they walk: that reads the `uotls` packet off the
+  reference's own tap. It walks with `GoTo` and fights what is there, and says so once.
+
+## Grimlite Parity - the Maid (ticket #43) - needs the real game, a display and an account
+
+`features/maid/` is the reference's own party assistant. Its configuration file is checked by `npm test`
+against the reference's own `Resources/Plugins/Maid/Default.json` (the 23 keys of `MaidConfig.cs`, in
+its own order, and its overlay rule: a non-empty string wins, a present number wins, a boolean is
+`?? current`), its scheduler against fakes (the loop's own order, the goto frame's exact text, the
+safe-skill threshold, the priority list, `WaitSkill`'s gating, the death respawn, the five failed
+gotos, and the engine-collision rule), its party vocabulary against `PartyChatHandler`'s seven
+commands and `PartyInvitationHandler`'s one frame, and its window, menu entry, keybinding and two
+keys against the app's own conventions. What no test can reach is whether the game acts on each
+call, so that is what this section is for.
+
+### The window and the file
+
+- [ ] **Maid Remake** opens from the Grimlite menu, with Alt+Shift+R, and from **Show Maid** in the Hotkeys window
+- [ ] The window opens on the reference's own shipped default: target `username`, skill list `1,2,3,4`, the two map lines, the attack-priority pair, and the six boxes the template omits left at their own defaults
+- [ ] **Save** writes a 23-key JSON file with a `Maid config` filter, and **Load** reads one back; an **empty** string in the file ("SkillList": "") leaves the box as it was, a `false` really unticks it, and a missing key changes nothing
+- [ ] The file lands in the app's data directory under `Config/`, beside the plugin's own store
+- [ ] `Config/autoload.json` is applied when the plugin activates, and **Autoload** applies it again on demand; a file that is not JSON reports the parse error and changes nothing
+
+### The keys and the state
+
+- [ ] **Unfollow** toggles with Alt+Shift+U while the app has focus, and **StopAttack** with Alt+Shift+X; both boxes in the window move with them
+- [ ] Untick **Global Hotkey** and neither key fires from another window; tick it and both do, whichever window has focus
+- [ ] A key that is already taken by the app or another plugin is reported as unbound rather than silently swallowed
+- [ ] The line above the form says `unfollowed` when Unfollow is ticked, `stop attack is on` when StopAttack is, `paused: the map is reloading` while a map loads, `following` and `fighting` while the loop moves, and `off` when Enable is unticked
+- [ ] The line follows a key pressed in **another** window while the Maid's own window is open
+- [ ] **Enable** starts the loop, unticking it stops it, and `.stop` / `.start` in party chat do the same from the game
+
+### Following and fighting
+
+- [ ] With the target in another map the character joins it and the log shows the reference's own frame `%xt%zm%cmd%1%goto%<name>%`; with the target in the map but another cell the character walks to that cell and pad without re-joining
+- [ ] A target who is in the same map but whose cell and pad are unreadable is walked to with the loader's own `GoTo` rather than a frame
+- [ ] **Stop goto after 5 failures** ticked stops the Maid after five failed gotos and says so; unticked it keeps trying
+- [ ] **Use** with `if health<` fires the heal list below that percentage and the skill list otherwise; an empty heal list never heals whatever the box says
+- [ ] **Buff If StopAttack** fires the buff list once per pass while StopAttack is on, and cancelling the attack and target happens the moment StopAttack is ticked
+- [ ] **AttackPriority** walks its list in order (`id.N` goes to the by-id helper, and a target already held is not re-attacked), then the wildcard `*`
+- [ ] **Wait** holds each skill until `SkillAvailable` says it is ready
+- [ ] Dying sends the character to its spawn point and the loop picks up again
+- [ ] **Skill Preset** fills the skill list, the heal list, its percentage, the buff list and the two boxes; **AI** and **AM** leave the heal list and its percentage alone, and the SafeSkill box follows the preset's own carried flag
+
+### Beside the bot engine
+
+- [ ] With a bot running in the Bot Manager, the Maid does not cast while the engine has a command in flight; the log says so once per command and the window's state line reads `the bot engine has the current command`
+- [ ] Between the engine's commands the Maid works again, and starting a second bot does not stop it doing so
+
+### Party chat
+
+- [ ] `/p .join <map>` and `%xt%zm%cmd%1%goto%`-style party commands reach a Maid whose window has never been opened, while it is running
+- [ ] `/p .tp tercessuinotlim-6666` first steps to `m22` / `Left`, and `.tp <map>` joins with `Enter` / `Spawn`
+- [ ] `/p .acc 1,2` loads both quests and accepts them a second apart; `.turnin 1,2` completes them the same way
+- [ ] `/p .target <name>` changes the master, `.stop` and `.start` switch the Maid
+- [ ] A party invitation is accepted with `%xt%zm%gp%1%pa%<pid>%`, and with no live connection the log says the invitation went unanswered rather than pretending
+- [ ] Ordinary party chat (no leading `.`) is ignored, and so is room chat
+
+### What could not be checked here, and why
+
+- **Casting**: `UseSkill` is a name the loader surface (#48) carries and cannot drive yet. Its
+  reference body checks readiness, walks the avatar and calls `world.testAction` on a live action
+  object, which cannot cross the bridge as JSON; ticket #38 owns combat. The Maid calls the name
+  anyway and the window lists it under "the game cannot answer" with the surface's own reason, so
+  what is unverified is the cast, not the decision to cast. `AttackMonster` and
+  `AttackMonsterByMonMapId` are implemented and do run.
+- **Boss behaviour and the auto-zone handlers** (`UltraBossExtra`, `SpecialMsg`, `SpecialAct`,
+  `AntiCounter`, `CopyWalk`): the reference's per-boss handlers are ticket #44's; the four config
+  keys are carried through the file and shown, and no handler reads them yet.

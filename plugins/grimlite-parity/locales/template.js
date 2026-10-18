@@ -25,7 +25,9 @@ exports.dialogMessages = {
             expand(k.grimliteParityDevTest) + '' +
             expand(k.grimliteOptions) + '' +
             expand(k.grimliteHotkeys) + '' +
-            expand(k.grimliteFastTravels) + '';
+            expand(k.grimliteDrop) + '' +
+            expand(k.grimliteFastTravels) + '' +
+            expand(k.grimliteMaid) + '';
     }
 };
 
@@ -43,6 +45,7 @@ exports.menuMessages = {
     grimliteCosmetics: "",
     grimliteOptions: "",
     grimliteHotkeys: "",
+    grimliteDrop: "",
     grimliteTravels: "",
     grimlitePlaceholder: "",
     grimliteDevTest: "",
@@ -81,7 +84,9 @@ exports.windowTitles = {
     cosmetics: "",
     options: "",
     hotkeys: "",
+    drop: "",
     travels: "",
+    maid: "",
     devtest: "",
     packetLogger: "",
     packetSpammer: "",
@@ -221,6 +226,28 @@ exports.hotkeysMessages = {
     selectFirst: ""
 };
 
+exports.dropsMessages = {
+    title: "",
+    name: "",
+    qty: "",
+    category: "",
+    flags: "",
+    take: "",
+    blacklist: "",
+    clear: "",
+    rejectInGame: "",
+    count: "",
+    pickFirst: "",
+    working: "",
+    taken: "",
+    rejectedN: "",
+    cleared: "",
+    confirmTitle: "",
+    confirmMessage: "",
+    confirmYes: "",
+    confirmNo: ""
+};
+
 exports.travelMessages = {
     title: "",
     private: "",
@@ -291,4 +318,42 @@ exports.loginMessages = {
     imported: "",
     connected: "",
     disconnected: ""
+};
+
+exports.maidMessages = {
+    title: "",
+    enable: "",
+    target: "",
+    me: "",
+    combat: "",
+    keys: "",
+    options: "",
+    maps: "",
+    config: "",
+    unfollow: "",
+    stopAttack: "",
+    globalHotkey: "",
+    keyHint: "",
+    optionAntiCounter: "",
+    optionCopyWalk: "",
+    optionStopFailedGoto: "",
+    optionWaitSkill: "",
+    optionSafeSkill: "",
+    optionBuffStopAttack: "",
+    save: "",
+    load: "",
+    autoload: "",
+    loadTitle: "",
+    saveTitle: "",
+    filterName: "",
+    working: "",
+    canceled: "",
+    saved: "",
+    loaded: "",
+    autoloaded: "",
+    noAutoload: "",
+    presetApplied: "",
+    missing: "",
+    notSignedIn: "",
+    partyCommands: ""
 };

@@ -20,7 +20,9 @@ exports.dialogMessages = {
             expand(k.grimliteParityDevTest) + ' - Dev Test (call a game function)\n' +
             expand(k.grimliteOptions) + ' - Options: the reference\'s own option toggles\n' +
             expand(k.grimliteHotkeys) + ' - Hotkeys: bind one key to one action\n' +
-            expand(k.grimliteFastTravels) + ' - Fast travels: the destination buttons and the map bypasser';
+            expand(k.grimliteDrop) + ' - Drop Ui: what has dropped, and taking it\n' +
+            expand(k.grimliteFastTravels) + ' - Fast travels: the destination buttons and the map bypasser\n' +
+            expand(k.grimliteMaid) + ' - Maid Remake: the party assistant (Alt+Shift+U unfollow, Alt+Shift+X stop attack)';
     }
 };
 
@@ -38,6 +40,7 @@ exports.menuMessages = {
     grimliteCosmetics: 'Cosmetics',
     grimliteOptions: 'Options',
     grimliteHotkeys: 'Hotkeys',
+    grimliteDrop: 'Drop Ui',
     grimliteTravels: 'Fast travels',
     grimlitePlaceholder: 'Parity placeholder window',
     grimliteDevTest: 'Dev Test',
@@ -78,7 +81,9 @@ exports.windowTitles = {
     cosmetics: 'Grimlite Parity - SWF Cosmetics',
     options: 'Options',
     hotkeys: 'Hotkeys',
+    drop: 'DropList',
     travels: 'Fast travels',
+    maid: 'Maid Remake',
     devtest: 'Dev Test',
     packetLogger: 'Packet logger',
     packetSpammer: 'Packet spammer',
@@ -235,6 +240,32 @@ exports.hotkeysMessages = {
     selectFirst: 'Select a binding first.'
 };
 
+// The drop list window (ticket #33). Every word is the reference's own control text from
+// DropUi.Designer.cs - the four column headers, its three buttons, its tickbox and its count
+// label - plus the one dialog DropUi.btnClear_Click puts in front of Clear.
+exports.dropsMessages = {
+    title: 'DropList',
+    name: 'Name',
+    qty: 'Qty',
+    category: 'Category',
+    flags: 'AC | Member',
+    take: 'Take Drop',
+    blacklist: 'Reject & Blacklist',
+    clear: 'Clear',
+    rejectInGame: 'Reject ingame drop',
+    count: 'Drop count :',
+    pickFirst: 'Select a drop first.',
+    working: 'Taking...',
+    taken: 'Took {n} drop(s).',
+    rejectedN: 'Held {n} name(s) for this session.',
+    cleared: 'Cleared.',
+    confirmTitle: 'Caution',
+    confirmMessage: 'This action will clear all Blacklist and Current drops within the UI.\n' +
+        'Do you wish to proceed?',
+    confirmYes: 'Yes',
+    confirmNo: 'No'
+};
+
 // The Fast travels window (ticket #32). Its control words are the reference's own
 // (Grimoire/UI/Travel.cs: "Private", "Awe Enchantment Shop", "Map Bypasser", "Story Quest ID that
 // required to unlock the map", "Unlock", "Generated packet", "Copy"); the sentences a page needs
@@ -316,4 +347,48 @@ exports.loginMessages = {
     imported: 'Imported {count} character(s).',
     connected: 'Connected.',
     disconnected: 'Connection lost.'
+};
+
+// The Maid window (#43). Its control words are the reference's own, verbatim from
+// MaidRemake.designer.cs's Text assignments; the two dialog titles and the filter are its own
+// Save/Load pair, and the party line is its own PartyCmd tooltip. `option<Key>` names the option
+// boxes the page builds, so a translation can carry each one's own words.
+exports.maidMessages = {
+    title: 'Maid Remake',
+    enable: 'Enable',
+    target: 'Goto Username',
+    me: 'Me',
+    combat: 'Combat',
+    keys: 'Keys',
+    options: 'Options',
+    maps: 'Maps',
+    config: 'Config',
+    unfollow: 'Unfollow (R)',
+    stopAttack: 'StopAttack (T)',
+    globalHotkey: 'Global Hotkey',
+    keyHint: 'With Global Hotkey ticked, Unfollow and StopAttack work whichever window has focus.',
+    // MaidRemake.designer.cs's own box words, in its own spelling (including its capitalisation).
+    optionAntiCounter: 'Anti Counter',
+    optionCopyWalk: 'Copy Walk',
+    optionStopFailedGoto: 'Stop goto after 5 failures',
+    optionWaitSkill: 'Wait',
+    optionSafeSkill: 'Use',
+    optionBuffStopAttack: 'Buff If StopAttack',
+    save: 'Save',
+    load: 'Load',
+    autoload: 'Autoload',
+    loadTitle: 'Load config',
+    saveTitle: 'Save config',
+    filterName: 'Maid config',
+    working: 'Working...',
+    canceled: 'Canceled.',
+    saved: 'Saved.',
+    loaded: 'Loaded.',
+    autoloaded: 'Autoload applied.',
+    noAutoload: 'There is no autoload config yet.',
+    presetApplied: 'Preset {name} applied.',
+    missing: 'The game cannot answer',
+    notSignedIn: 'No character is signed in.',
+    // The reference's own PartyCmd tooltip, in its own words.
+    partyCommands: 'Party chat commands: '
 };

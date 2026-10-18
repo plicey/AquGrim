@@ -649,6 +649,13 @@ test('Name equals compares the character name case-insensitively', async () => {
   await no.start(botOf([statement('CmdNameEquals', 'Someone', ''), { $type: 'x' }]));
   await no.tick();
   assert.strictEqual(no.index(), 2);
+
+  // The reference compares the operands as they are: OrdinalIgnoreCase folds case and nothing
+  // else, so a space the bot's own file carries is a mismatch, not something to trim away.
+  const spaced = engineWith(auraAnswers({ username: 'Tester' }));
+  await spaced.start(botOf([statement('CmdNameEquals', ' Tester ', ''), { $type: 'x' }]));
+  await spaced.tick();
+  assert.strictEqual(spaced.index(), 2, 'no trimming: String.Equals takes the strings it is given');
 });
 
 test('Special Anims holds on any of its comma-separated terms, and consumes the message', async () => {
@@ -818,7 +825,12 @@ test('a monster aura duration is read from the tapped cache by monster id', asyn
   const made = sessionOver({ UserID: SELF });
   made.tap.emit(fromServer(auraFrame('m:2', auraOf('Focus', 1, 4))));
   await settle();
-  assert.strictEqual(await made.session.monsterAuraDuration(2, 'Focus'), 4000);
+  // 4 seconds on the wire, so 4000 ms when it arrived. A session's cache runs on the real clock
+  // (the store's own clock is injected by the tests above), so the few milliseconds between the
+  // frame and this read are already spent - the unit is what is asserted here, not an instant.
+  const left = await made.session.monsterAuraDuration(2, 'Focus');
+  assert.ok(left <= 4000 && left > 3900,
+    'the wire own seconds became milliseconds, minus the time since the frame: ' + left);
   assert.strictEqual(await made.session.monsterAuraDuration(2, 'Nothing'), 0);
 });
 
