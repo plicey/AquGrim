@@ -150,10 +150,10 @@ test('an inventory grab builds the reference\'s rows, fields and enhancement nam
     'ID: 123',
     'Char item id: 55',
     'Quantity: 2/10',
-    'AC tagged: yes',
+    'AC tagged: True',
     'Category: Sword',
     'Level: 5',
-    'Description: A blade long enough to be shor...',
+    'Description: A blade long enough to be shorte...',
     'sFile: sword.swf',
     'sLink: link',
     // 70752 is forgeID.Valiance; the reference prefers its own name table, then the enum.
@@ -163,7 +163,7 @@ test('an inventory grab builds the reference\'s rows, fields and enhancement nam
 
   // 'Item' is neither a weapon nor an equippable non-weapon: no sFile block, no enhancement.
   assert.deepStrictEqual(texts(rows[1].children), [
-    'ID: 7', 'Char item id: 0', 'Quantity: 1/99', 'AC tagged: no', 'Category: Item',
+    'ID: 7', 'Char item id: 0', 'Quantity: 1/99', 'AC tagged: False', 'Category: Item',
     'Level: 1', 'Description: Small'
   ]);
 
@@ -188,7 +188,7 @@ test('temp and bank grabs read their own payloads in their own shapes', () => {
       iLvl: 1, sDesc: '', iEnh: 0 }]
   });
   assert.deepStrictEqual(texts(bank), ['Banked Blade (4)']);
-  assert.ok(texts(bank[0].children).indexOf('AC tagged: yes') !== -1);
+  assert.ok(texts(bank[0].children).indexOf('AC tagged: True') !== -1);
 });
 
 test('a shop grab builds the shop, its location and its item rows', () => {
@@ -255,7 +255,7 @@ test('quest grabs list ids in the chosen order and skip a zero id', () => {
       iQty: 1, iRate: '12.5' }], oRewards: { '1': { '6': { sName: 'Prize',
       sType: 'Misc', sDesc: '' } } } }
   });
-  assert.ok(texts(partial[0].children[2].children[0].children)
+  assert.ok(texts(partial[0].children[1].children[0].children)
     .indexOf('Drop chance: 12.5%') !== -1);
 });
 
@@ -276,7 +276,7 @@ test('monster grabs order by name or mon map id, dedupe by map id and name the c
   ]);
   // GrabAllMonsters names the cell and orders by MonMapID on 'Id'.
   assert.deepStrictEqual(texts(rowsOf('allMonsters', payload, { orderBy: 'Id' })), [
-    'Zombie (r1)', 'Ant (r1)', 'Zombie (sibling) (r1)'
+    'Zombie (r1)', 'Zombie (sibling) (r1)', 'Ant (r1)'
   ]);
 });
 
@@ -372,7 +372,7 @@ test('a file that is not a TreeView export is refused rather than half-read', ()
 test('the reads go to the game\'s own objects and calls, which exist in the stock game SWF', async () => {
   const inventory = { items: [{ ItemID: 3, sName: 'Rock', iQty: 1, iStk: 5, sType: 'Item', iLvl: 1 }] };
   const bridge = bridgeStub({
-    'callGameFunction:world.getInventory': inventory,
+    'callGameFunction0:world.getInventory': inventory,
     'getGameObject:world.questTree': { '10': { QuestID: 10, sName: 'Q' } },
     'getGameObject:world.shopinfo': { ShopID: 1, sName: 'S', items: [] },
     'getGameObject:world.strFrame': 'r1',
@@ -391,7 +391,7 @@ test('the reads go to the game\'s own objects and calls, which exist in the stoc
   ]);
 
   assert.deepStrictEqual(bridge.calls.map(function (c) { return c.name + ':' + c.args[0]; }), [
-    'callGameFunction:world.getInventory',
+    'callGameFunction0:world.getInventory',
     'getGameObject:world.questTree',
     'getGameObject:world.shopinfo',
     'getGameObject:world.strFrame',
@@ -402,18 +402,22 @@ test('the reads go to the game\'s own objects and calls, which exist in the stoc
   ]);
   // The cell comes from the world, and goes into the call as the game's own argument.
   assert.deepStrictEqual(bridge.calls[4].args, ['world.getMonstersByCell', 'r1']);
+  // World.GetAllMonsters walks Cells in the order the world lists them.
+  assert.deepStrictEqual(bridge.calls[6].args, ['world.getMonstersByCell', 'r1']);
   assert.deepStrictEqual(bridge.calls[7].args, ['world.getMonstersByCell', 'r2']);
 });
 
 test('a read falls back to the game\'s other object when the first one refuses', async () => {
   const bridge = bridgeStub({
     // world.getInventory answers {error}, which is how the bridge reports a failing movie call.
-    'callGameFunction:world.getInventory': { error: 'no member getInventory at world.' },
-    'getGameObject:world.myAvatar.objData.items': { '0': { ItemID: 3, sName: 'Rock' } }
+    'callGameFunction0:world.getInventory': { error: 'no member getInventory at world.' },
+    // The fallback is a member name the game SWF itself carries (its inventory tree), where
+    // world.myAvatar.objData.items is a path only the reference's loader would have made.
+    'getGameObject:world.invTree': { '0': { ItemID: 3, sName: 'Rock' } }
   });
   const access = game.createGameAccess(bridge);
   assert.deepStrictEqual(await access.readInventory(), [{ ItemID: 3, sName: 'Rock' }]);
-  assert.strictEqual(access.lastRead.answeredBy, 'world.myAvatar.objData.items');
+  assert.strictEqual(access.lastRead.answeredBy, 'world.invTree');
 });
 
 test('a read that nobody answers reports every attempt\'s own words, never an empty list', async () => {
@@ -435,7 +439,7 @@ test('a loaded target asks the reference\'s own name first, then the game\'s own
   assert.strictEqual(result.via, 'world.sendLoadShopRequest');
   assert.deepStrictEqual(bridge.calls.map(function (c) { return c.name + ':' + c.args[0]; }), [
     // Shop.Load resets the shop info first, then loads.
-    'callGameFunction:ResetShopInfo',
+    'callGameFunction0:ResetShopInfo',
     'callGameFunction:LoadShop',
     'callGameFunction:world.sendLoadShopRequest'
   ]);
@@ -481,13 +485,15 @@ test('accepting a quest uses the game\'s own call, and the ghost variant its raw
   });
   const access = game.createGameAccess(bridge);
 
+  // The loader's Accept is asked first and the game's own acceptQuest answers, so the
+  // successful call is the second one.
   assert.strictEqual((await access.acceptQuest(77)).ok, true);
-  assert.deepStrictEqual(bridge.calls[0].args, ['world.acceptQuest', 77]);
+  assert.deepStrictEqual(bridge.calls[1].args, ['world.acceptQuest', 77]);
 
   // Quest.GhostAccept sends the same packet the reference sends, through the game's own socket.
   const ghost = await access.acceptQuest(77, { ghost: true });
   assert.strictEqual(ghost.ok, true);
-  assert.deepStrictEqual(bridge.calls[1].args, ['sfc.sendString', '%xt%zm%acceptQuest%1%77%']);
+  assert.deepStrictEqual(bridge.calls[2].args, ['sfc.sendString', '%xt%zm%acceptQuest%1%77%']);
 });
 
 test('completing a quest tries the reference\'s call and reports what the game answers', async () => {
@@ -520,7 +526,7 @@ test('each row carries the reference\'s context menu, in its own order and words
   assert.deepStrictEqual(labels('shop'), ['Go to Wikipage', 'Search on Wiki', 'Load Shop']);
   // Grabber.Wiki(InventoryItem, shop): the two buy rows exist only inside a shop grab.
   assert.deepStrictEqual(labels('shopItem', { shopId: 42 }), [
-    'Go to Wikipage', 'Search on Wiki', 'Add buy command'
+    'Go to Wikipage', 'Search on Wiki', 'Buy This Item', 'Add buy command'
   ]);
   assert.deepStrictEqual(labels('shopItem', {}), ['Go to Wikipage', 'Search on Wiki']);
   // Grabber.MenuItem(InventoryItem).
@@ -665,6 +671,67 @@ test('a bot list action says plainly when no list is wired yet', async () => {
   assert.strictEqual(typeof loaders.createBotLists().addDrops, 'function');
 });
 
+// Grabber.Wiki(InventoryItem, shop)'s "Equip SWF" and "Buy This Item": the two rows whose
+// reference call is a name only the reference's own loader carries.
+test('equipping a row goes through the game\'s own slot call when the loader refuses', async () => {
+  const calls = [];
+  const bridge = {
+    call: function (name, args) {
+      calls.push({ name: name, args: args });
+      // SetEquip is the reference's own name and the loader's alone. The game's own
+      // loadMovieAtES answers instead: it is in the game's pool with four live references.
+      if (args[0] === 'SetEquip') {
+        return Promise.resolve({ ok: false, error: 'no member SetEquip at world' });
+      }
+      return Promise.resolve({ ok: true, value: 'null' });
+    }
+  };
+  const access = game.createGameAccess(bridge);
+
+  // Grabber.cs's own slot map, from the item's category.
+  assert.strictEqual((await access.equipSwf('Armor', 'a.swf', 'link')).ok, true);
+  assert.deepStrictEqual(calls[1].args,
+    ['world.myAvatar.loadMovieAtES', 'co', 'a.swf', 'link']);
+  await access.equipSwf('Cape', 'b.swf', 'l');
+  assert.strictEqual(calls[3].args[1], 'ba');
+  await access.equipSwf('Helm', 'c.swf', 'l');
+  assert.strictEqual(calls[5].args[1], 'he');
+  await access.equipSwf('Pet', 'd.swf', 'l');
+  assert.strictEqual(calls[7].args[1], 'pe');
+  await access.equipSwf('Misc', 'e.swf', 'l');
+  assert.strictEqual(calls[9].args[1], 'mi');
+  await access.equipSwf('Sword', 'f.swf', 'l');
+  assert.strictEqual(calls[11].args[1], 'Weapon');
+});
+
+// The window's own action for those two rows.
+test('a row\'s Equip SWF is acted on, and Buy This Item names what it is waiting for', async () => {
+  // The real game access, over a bridge that answers only the game's own call: so both of these
+  // assertions are about the shipped module, not about a stub standing in for it.
+  const calls = [];
+  const instance = feature({
+    game: game.createGameAccess({
+      call: function (name, args) {
+        calls.push(args[0]);
+        if (args[0] === 'world.myAvatar.loadMovieAtES') {
+          return Promise.resolve({ ok: true, value: 'null' });
+        }
+        return Promise.resolve({ ok: false, error: 'no member ' + args[0] + ' at world' });
+      }
+    })
+  });
+
+  const result = await instance.act('equipSwf', { category: 'Armor', file: 'a.swf', link: 'l' });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.via, 'world.myAvatar.loadMovieAtES');
+  assert.ok(calls.indexOf('SetEquip') !== -1, 'the reference\'s own name is tried first');
+
+  // Shop.BuyItemQty -> Flash.Call("BuyItemQtyById"), which the stock game does not carry.
+  const buy = await instance.act('buyNow', { itemId: 11, shopItemId: 900, qty: 1 });
+  assert.strictEqual(buy.ok, false);
+  assert.ok(/BuyItemQtyById/.test(buy.error), buy.error);
+});
+
 // ---------------------------------------------------------------- the window's channels
 
 test('the parity plugin registers the loaders window in the app\'s window conventions', async () => {
@@ -707,7 +774,7 @@ test('the parity plugin registers the loaders window in the app\'s window conven
 test('the grab channel hands back the rows the page draws, and refusals say why', async () => {
   const instance = feature({
     game: game.createGameAccess(bridgeStub({
-      'callGameFunction:world.getInventory': { items: [
+      'callGameFunction0:world.getInventory': { items: [
         { ItemID: 3, sName: 'Rock', iQty: 1, iStk: 5, sType: 'Item', iLvl: 1, sDesc: '' }
       ] }
     }))

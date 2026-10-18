@@ -7,6 +7,8 @@ exports.dialogMessages = {
         return 'Grimlite Parity\n' +
             expand(k.grimliteBotFile) + ' - Bot file: open and save a .gbot\n' +
             expand(k.grimliteBank) + ' - Bank window\n' +
+            expand(k.grimliteLoaders) + ' - Loaders and grabbers: load a shop, a quest or\n' +
+            '                the armour customizer, and grab live game data into a tree\n' +
             expand(k.grimliteBotManager) + ' - Bot Manager: the eleven-tab bot editor\n' +
             expand(k.grimliteEyedropper) + ' - Eye Dropper: read a colour off the screen\n' +
             expand(k.grimliteNotepad) + ' - Notepad\n' +
@@ -25,6 +27,7 @@ exports.menuMessages = {
     grimliteNotepad: 'Notepad',
     grimliteAbout: 'About',
     grimliteBank: 'Bank',
+    grimliteLoaders: 'Loaders/grabbers',
     grimliteSets: 'Sets',
     grimliteCosmetics: 'Cosmetics',
     grimlitePlaceholder: 'Parity placeholder window',
@@ -53,6 +56,7 @@ exports.windowTitles = {
     primary: 'AquaStar - Grimlite Parity',
     botFile: 'Grimlite Parity - Bot File',
     bank: 'Grimlite Parity - Bank',
+    loaders: 'Grimlite Parity - Loaders and grabbers',
     sets: 'Grimlite Parity - Set',
     botManager: 'Bot Manager',
     placeholder: 'Grimlite Parity - Placeholder',
@@ -188,4 +192,11 @@ exports.cosmeticsMessages = {
         cape: 'Grab Cape',
         misc: 'Grab Ground'
     }
+};
+
+// The Loaders and grabbers window (ticket #31). The dialog title and the filter are the
+// reference's own (Loaders.cs:141-147); the control words are in the page, which draws them.
+exports.loadersMessages = {
+    openTitle: 'Load grabber data',
+    nothingToSave: 'Nothing has been grabbed yet, so there is nothing to save.'
 };

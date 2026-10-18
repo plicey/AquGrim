@@ -17,6 +17,7 @@ const botFile = require('./features/bot-file/bot-file.js');
 const bankWindow = require('./features/bank/bank-window.js');
 const setsWindow = require('./features/sets/sets-window.js');
 const logger = require('./features/packets/logger.js');
+const loaders = require('./features/loaders/loaders.js');
 
 const resRoot = path.join(__dirname, '..', '..', 'res');
 
@@ -72,6 +73,9 @@ async function activate(host) {
     // The packet logger is this plugin's reading half of the platform tap: it subscribes, and
     // never writes a frame (that needs packet-send, which only the spammer and tamperer hold).
     logger.createLoggerFeature(host).register();
+    // Loaders and grabbers (#31): the reference's Tools -> Loaders/grabbers window. Its rows, its
+    // menus and its four loaders are all main-process work, because the page is sandboxed.
+    loaders.createFromHost(host).attachTo(host);
 
     // Bot files are user documents: this window opens one from the user's own directory, shows
     // it and writes the edit back through the same dialog.

@@ -142,8 +142,10 @@ function asList(payload) {
 }
 
 function nameOf(item) {
-    // InventoryItem, TempItem and Monster all trim their name on read.
-    return String(item.sName === undefined || item.sName === null ? '' : item.sName).trim();
+    // InventoryItem and TempItem carry sName; a Monster carries strMonName. All three trim it on
+    // read (InventoryItem.Name and Monster.Name both trim in their setters).
+    const raw = item.sName === undefined || item.sName === null ? item.strMonName : item.sName;
+    return String(raw === undefined || raw === null ? '' : raw).trim();
 }
 
 function node(text, extra) {

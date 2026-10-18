@@ -9,6 +9,9 @@ const DEFAULTS = {
     grimliteAbout: 'Alt+Shift+A',
     grimliteParityDevTest: 'Alt+Shift+D',
     grimliteBank: 'Alt+Shift+K',
+    // The reference's own action list carries "Show Loaders" (Hotkeys.cs:398); this port gives
+    // it a default on a key no other binding of the app's or the plugin's own uses.
+    grimliteLoaders: 'Alt+Shift+L',
     // The reference's own action list carries "Show Cosmetics form" (Hotkeys.cs:409). Its
     // bindings ship empty and its picker takes one key; this port gives the window a default on
     // a key no binding of the app's or the game plugin's own uses.
@@ -66,6 +69,13 @@ function register(host) {
             id: 'grimliteBank',
             action: function () {
                 host.windows.openFeatureWindow(windows.BANK_WINDOW_ID);
+            }
+        },
+        {
+            // The reference's own action list, index 3: "Show Loaders".
+            id: 'grimliteLoaders',
+            action: function () {
+                host.windows.openFeatureWindow(windows.LOADERS_WINDOW_ID);
             }
         },
         {
