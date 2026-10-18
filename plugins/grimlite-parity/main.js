@@ -21,6 +21,7 @@ const resRoot = path.join(__dirname, '..', '..', 'res');
 const createNotepad = require('./features/notepad/notepad.js').createNotepad;
 const createEyedropper = require('./features/eyedropper/eyedropper.js').createEyedropper;
 const createAbout = require('./features/about/about.js').createAbout;
+const createCosmetics = require('./features/cosmetics/cosmetics-window.js').createFromHost;
 
 const BRIDGE_TITLE = 'AquaStar - Grimlite Parity';
 
@@ -76,6 +77,11 @@ async function activate(host) {
     // The Dev Test window's own IPC: the call modes and the bridge call, both main-process work
     // because the window is sandboxed.
     require('./features/devtest/devtest-main.js').register(host);
+
+    // The Cosmetics window (#30): a page beside the game that reads the room's players and their
+    // wear through the bridge and writes one slot at a time. It holds game-bridge, which the
+    // manifest already declares; nothing here needs a new permission.
+    createCosmetics(host);
 
     host.registerLocales({
         'en-US': require('./locales/en-US.js')
