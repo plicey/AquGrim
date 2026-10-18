@@ -10,6 +10,7 @@ exports.dialogMessages = {
             expand(k.grimliteEyedropper) + ' - Eye Dropper: read a colour off the screen\n' +
             expand(k.grimliteNotepad) + ' - Notepad\n' +
             expand(k.grimliteAbout) + ' - About this port and the reference it follows\n' +
+            'Packets -> Sniffer - Packet logger (client and server traffic)\n' +
             expand(k.grimliteParityPlaceholder) + ' - Parity placeholder window\n' +
             expand(k.grimliteParityDevTest) + ' - Dev Test (call a game function)';
     }
@@ -24,7 +25,9 @@ exports.menuMessages = {
     grimliteBank: 'Bank',
     grimliteSets: 'Sets',
     grimlitePlaceholder: 'Parity placeholder window',
-    grimliteDevTest: 'Dev Test'
+    grimliteDevTest: 'Dev Test',
+    packetsMenu: 'Packets',
+    packetsSniffer: 'Sniffer'
 };
 
 // The bot file window and the dialogs it opens. Titles match the reference's own dialogs
@@ -52,7 +55,8 @@ exports.windowTitles = {
     eyedropper: 'Grimlite Parity - Eye Dropper',
     notepad: 'Grimlite Parity - Notepad',
     about: 'Grimlite Parity - About',
-    devtest: 'Dev Test'
+    devtest: 'Dev Test',
+    packetLogger: 'Packet logger'
 };
 
 // The Bank window (ticket #29). The reference's own labels, verbatim from

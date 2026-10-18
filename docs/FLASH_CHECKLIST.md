@@ -86,6 +86,7 @@ About (Grimlite → About, Alt+Shift+A)
 - [ ] Each of the seven credit links opens in the system browser; Kuzyph is listed without being clickable (it has no handler upstream)
 - [ ] **Reload Game Movie** reloads the game window and reports that it did (with no game window open it says so instead)
 - [ ] Reloading with the local origin on returns to the same loopback URL
+
 ## Grimlite Parity - the game bridge (#28)
 
 Everything here needs live PPAPI Flash and a real login; none of it can be checked by the test
@@ -117,6 +118,34 @@ permission gate) is covered by `npm test`.
       could not be checked offline. The bridge tries the one-argument shape and falls back to the
       two-argument one; confirm against a live client which is right, then drop the other
       (`plugins/grimlite-parity/bridge/AquaBridge.as`, `aqSendClientPacket`)
+
+## Packet logger (ticket #26) - needs a display, the network and an account
+
+Active plugin **Grimlite Parity**, then Settings → Packets → tick **Steer game traffic through a
+local relay** → Save → **Restart**. The logger reads the relay, so nothing appears until that
+opt-in is on (and the window says so if you press Start without it).
+
+- [ ] Window menu shows **Packets → Sniffer**; it opens one window titled **Packet logger**
+- [ ] The window opens **stopped**; press Start and it says it is watching
+- [ ] Sign in: the handshake frames appear, client and server rows interleaved in the order they
+      happened, each labelled with its direction (the policy request, the verChk/apiOK pair, the
+      account login frame)
+- [ ] Move, fight or open a shop: those frames appear too, in both directions
+- [ ] Type in **Filter**: only matching frames are listed; clear it and everything that arrived
+      while it was narrowed is still there (nothing was dropped)
+- [ ] **Copy**: the clipboard holds the lines as shown; **Clear** empties the list and the window
+      keeps watching
+- [ ] **Stop**: the list stops growing; **Start** resumes and frames continue, with no duplicate
+      of anything already listed
+- [ ] Open a second **Packets → Sniffer** window and Start it: each window shows each frame once,
+      in order (no doubled rows, no lost rows)
+- [ ] Close one of the two windows: the other keeps receiving. Close both, reopen one and Start:
+      traffic resumes with no stale subscription
+- [ ] Restart with the steering opt-in **off**: the window still says it is watching and simply
+      stays empty, because the relay it reads is not running; turning the opt-in back on and
+      restarting makes frames appear again
+- [ ] Switch the active plugin back to **Adventure Quest Worlds**, restart: no Packets menu, and
+      the game behaves exactly as before
 
 ---
 

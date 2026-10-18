@@ -14,6 +14,7 @@ const EYEDROPPER_WINDOW_ID = 'grimlite-parity-eyedropper';
 const ABOUT_WINDOW_ID = 'grimlite-parity-about';
 const DEVTEST_PAGE = path.join(featureRoot, 'devtest', 'devtest.html');
 const DEVTEST_WINDOW_ID = 'grimlite-parity-devtest';
+const LOGGER_WINDOW_ID = 'grimlite-parity-packet-logger';
 
 // Every one of these is a page inside this plugin: no Flash, no Node in the page, and IPC
 // through its own sandbox-safe preload (docs/PLUGINS.md §4.7/§4.8).
@@ -119,6 +120,14 @@ function register(host, windowTitle) {
             },
             url: pageUrl('about', 'about.html'),
             config: windowConfig(host, 'about', 'preload_about.js', { width: 520, height: 560 })
+        },
+        {
+            id: LOGGER_WINDOW_ID,
+            title: function () {
+                return windowTitle('packetLogger', 'Packet logger');
+            },
+            url: pageUrl('packets', 'logger.html'),
+            config: windowConfig(host, 'packets', 'preload_logger.js', { width: 620, height: 520 })
         }
     ]);
 }
@@ -136,5 +145,6 @@ module.exports = {
     DEVTEST_WINDOW_ID: DEVTEST_WINDOW_ID,
     NOTEPAD_WINDOW_ID: NOTEPAD_WINDOW_ID,
     EYEDROPPER_WINDOW_ID: EYEDROPPER_WINDOW_ID,
-    ABOUT_WINDOW_ID: ABOUT_WINDOW_ID
+    ABOUT_WINDOW_ID: ABOUT_WINDOW_ID,
+    LOGGER_WINDOW_ID: LOGGER_WINDOW_ID
 };

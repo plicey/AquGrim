@@ -8,6 +8,12 @@ The plugin loads, is selectable in Settings → General → Active plugin, and c
 menu, keybinds and feature windows. The primary surface is a local page because no
 game-specific wiring exists yet.
 
+The **packet logger** (Packets → Sniffer) subscribes to the platform's packet tap and shows
+the game's traffic in both directions, with Copy, Clear, a filter and Start/Stop. It reads and
+never writes: it holds `packet-tap`, not `packet-send`. Nothing arrives until the client's
+traffic is steered through the relay (Settings → Packets), because the tap carries what the
+relay carries.
+
 Windows that need no game state come first (ticket #25): **Notepad** (rich text, font and
 colour, drag-and-drop of text files, save through a native dialog, and the reference's two
 typed helpers), **Eye Dropper** (a pixel printed as ARGB hex, decimal channels and RRGGBB)
@@ -23,8 +29,9 @@ The plugin boots the game from its own loopback origin and loads **the bridge** 
 and game share one origin, which is what makes that domain access legal under PPAPI Flash at all
 (`docs/research/grimlite-bridge-spike.md`).
 
-Features so far: the **Dev Test** window (type a function and arguments, call it, see the result,
-with the reference's own modes) and the placeholder window the scaffold shipped.
+Features so far: the **Dev Test** window (type a function and arguments, call it, see the
+result, with the reference's own modes), the **packet logger** opened from Packets → Sniffer,
+and the placeholder window the scaffold shipped.
 
 It declares `apiVersion: 2`, the `game-origin` / `flash-trust` permissions the boot needs, and the
 game access permissions its later features use (`game-bridge`, `packet-tap`, `packet-send`; see
