@@ -30,6 +30,12 @@
     "callGameFunction0",
     "isNull",
     "sendClientPacket",
-    "pollEvents"
+    "pollEvents",
+    "AttackMonster",
+    "AttackMonsterByMonMapId",
+    "UseSkill",
+    "ForceUseSkill",
+    "CancelTargetSelf",
+    "SetTargetPvP"
   ]
 }

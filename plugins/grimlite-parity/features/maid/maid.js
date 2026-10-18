@@ -53,19 +53,11 @@ const HELPERS = {
     UseSkill: true
 };
 
-// The names that are on the surface but cannot be driven yet, with the reason to show. ACTION and
-// not a refusal: the call is still made, because the day the bridge can drive it this starts
-// working with no change here.
-const BLOCKED = {
-    UseSkill: 'the reference loader resolves the skill to its own live action object and calls ' +
-        'world.testAction on it; a live clip cannot cross the bridge as JSON (ticket #38 owns combat)',
-    // #38 replaced this row's earlier hollow call (it passed a monster NAME to world.setTarget,
-    // which is typed to take a live Avatar) with an honest refusal, so it is declared here too.
-    AttackMonster: 'the reference resolves a live monster object and hands it to world.setTarget, ' +
-        'then walks the avatar to it; a live Avatar cannot cross the bridge as JSON (ticket #38)',
-    AttackMonsterByMonMapId: 'the same setTarget with a live Avatar, resolved by MonMapID; a live ' +
-        'Avatar cannot cross the bridge as JSON (ticket #38)'
-};
+// The names this module calls that the surface cannot drive, with the reason to show. It is empty
+// and stays here because it is what a reader (and the scheduler test) checks a claim against:
+// tickets #38 and #49 between them made every helper above answer - the last three by resolving
+// their live ActionScript object inside the bridge movie's own domain rather than over the wire.
+const BLOCKED = {};
 
 // The one path read this module makes. It is not a duplicate of a loader row: the surface has no
 // name that answers "what is my target called" (its GetMonstersInCell reshapes live monster objects

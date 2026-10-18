@@ -349,7 +349,9 @@ const SURFACE = {
             }];
         },
         why: 'the loader drives the avatar\'s own MovieClip (pMC.walkTo) before asking the world ' +
-            'to move, and a live clip cannot travel through the bridge as JSON'
+            'to move, and the movie has no callback for this one: reach it by moving the avatar ' +
+            'to the cell and pad instead (Jump), or ask for the callback the way ticket #49 added ' +
+            'the six that needed one'
     },
     SetWalkSpeed: { set: 'world.WALKSPEED', value: function (p) { return parseInt(p[0], 10); } },
     // Settings.as: while i <= 5, world.actions.active[i].range = 20000.
@@ -409,19 +411,22 @@ const SURFACE = {
         }
     },
     SetTargetPlayer: { call: 'world.getAvatarByUserName' },
-    // Grimoire's Attacks ARE a setTarget on a live monster object, and the stock game's own ways in
-    // (getMonster(id), getMonstersByCell(cell)) return that live object. A string handed to
-    // world.setTarget is what `myAvatar.target` is typed as an Avatar for (World.as 8372 reads
-    // `npcType`, `dataLeaf` and `pMC` off it), so this is not a call that can be substituted.
-    // The ticket's own rule applies: report it by name rather than fake a kill.
+    // ---- the six live-object calls (ticket #49) ------------------------------------------
+    //
+    // These used to refuse here, and the refusal was correct about the constraint and wrong about
+    // its reach: the objects they take (an Avatar for world.setTarget, an action object for
+    // world.testAction) cannot cross ExternalInterface, but they never have to. The JSON boundary
+    // is the page <-> bridge-movie hop, and the game's classes live in the bridge movie's own
+    // ApplicationDomain (see AquaBridge.as loadGame), so an object resolved inside the movie IS
+    // the game's object and can be handed to a game method there. Each row below therefore sends
+    // the primitive the reference's own signature takes - the name, the MonMapID, the skill index
+    // - and the bridge's callback of the same name does the object plumbing in-domain, which is
+    // exactly what the reference's own loader does from inside that same domain.
     AttackMonster: {
-        why: 'the reference resolves a live monster object and hands it to world.setTarget, then ' +
-            'walks the avatar to it; a live Avatar cannot travel through a JSON bridge, so there ' +
-            'is no path to call here (ticket #38 - the monster READS are implemented)'
+        compute: function (ctx, p) { return ctx.raw('AttackMonster', [String(p[0])]); }
     },
     AttackMonsterByMonMapId: {
-        why: 'the same setTarget with a live Avatar, resolved by MonMapID; a live Avatar cannot ' +
-            'travel through a JSON bridge, so there is no path to call here (ticket #38)'
+        compute: function (ctx, p) { return ctx.raw('AttackMonsterByMonMapId', [String(p[0])]); }
     },
     SetSkillCooldown: { set: function (p) { return 'world.actions.active.' + index(p[0]) + '.cd'; } },
     SetSkillRange: { set: function (p) { return 'world.actions.active.' + index(p[0]) + '.range'; } },
@@ -672,24 +677,23 @@ const SURFACE = {
             'state and its remaining time come from the packet tap instead (bot/auras.js, #42)'
     },
     UseSkill: {
-        why: 'the reference hands the live action object to world.testAction (and world.setTarget ' +
-            'for a friendly one); both take a live object the JSON bridge cannot carry, so the ' +
-            'two calls that fire a skill cannot be made from here (ticket #38 - the readiness ' +
-            'reads SkillAvailable and AllSkillsAvailable ARE implemented)'
+        compute: function (ctx, p) { return ctx.raw('UseSkill', [index(p[0])]); }
     },
     ForceUseSkill: {
-        why: 'world.testAction(action) takes the live action object out of world.actions.active; ' +
-            'browsing that array gives JSON, and the game has no by-ref entry point that takes ' +
-            'anything else (ticket #38)'
+        compute: function (ctx, p) { return ctx.raw('ForceUseSkill', [index(p[0])]); }
     },
     SetTargetPvP: {
-        why: 'the reference scans live avatar objects for a same-cell PvP target and hands one to ' +
-            'world.setTarget; a live Avatar cannot travel through a JSON bridge (ticket #38)'
+        // The reference's C# passes null when its auto-target box is cleared
+        // (`chkEnableAutoTarget.Checked ? dropPlayers.SelectedItem.ToString() : null`), so an
+        // absent argument is sent as null rather than left undefined - "scan for anyone" and
+        // "the player named this" are different scans, and the bridge branches on that.
+        compute: function (ctx, p) {
+            const name = p[0] === null || p[0] === undefined ? null : String(p[0]);
+            return ctx.raw('SetTargetPvP', [name]);
+        }
     },
     CancelTargetSelf: {
-        why: 'the reference compares two live avatar objects (myAvatar.target == myAvatar) before ' +
-            'cancelling; a live Avatar cannot travel through a JSON bridge (ticket #38). The game ' +
-            'own CancelTarget is implemented and is what CmdCancelTarget uses'
+        compute: function (ctx) { return ctx.raw('CancelTargetSelf', []); }
     },
     MapLoadComplete: { why: 'the reference inspects its own display list; ticket #41 owns state' },
     RejectDrop: { why: 'the reference walks its own drop stack UI; ticket #33 owns drops' },
@@ -804,6 +808,16 @@ function createLoaderSurface(call, log) {
         });
     }
 
+    /**
+     * One of the bridge's own callbacks by name, for the helpers whose work the movie has to do
+     * itself because the argument or the return value is a live ActionScript object (ticket #49).
+     * `raw` rather than `call` because these are not game paths: the name is the callback, and
+     * the plugin layer needs to see no difference between the two.
+     */
+    function raw(name, args) {
+        return call(name, args);
+    }
+
     function unsupported(name, row) {
         return Promise.reject(new Error('"' + name + '" is part of the reference client\'s own ' +
             'loader rather than the game, and this bridge does not implement it: ' + row.why));
@@ -831,7 +845,9 @@ function createLoaderSurface(call, log) {
             // `why` *and* an implementation is one with a caveat, which is a note, not a refusal.
             if (!row.compute && !row.get && !row.call && !row.set) return unsupported(name, row);
             if (row.compute) {
-                return Promise.resolve(row.compute({ get: get, call: invoke, set: write, present: present }, p));
+                return Promise.resolve(row.compute({
+                    get: get, call: invoke, set: write, present: present, raw: raw
+                }, p));
             }
             if (row.get) {
                 const path = typeof row.get === 'function' ? row.get(p) : row.get;

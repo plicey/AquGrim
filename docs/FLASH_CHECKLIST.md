@@ -876,18 +876,21 @@ boxes can be ticked without a live client, and two of them are the whole point o
 
 ### What could not be checked here, and why
 
-**The two calls that point the avatar cannot be made from this side of the bridge**, and that is a
-measured limit rather than an unfinished one. The reference loader's own bodies are
-`world.setTarget(World.GetMonsterByName(name))` plus `world.approachTarget()`, and
-`world.testAction(world.actions.active[i])`. Both game functions are typed on **live AS3 objects**
-(`World.as` 8372 `setTarget(param1:*)`, 8705 `testAction(param1:Object,...)`), and every way into
-them returns one: `getMonster(id)` (8075), `getMonstersByCell(cell)` (8128) and `getActionByRef(ref)`
-(9659) are all typed on live `Avatar`s and action objects, and the only member that reaches a
-monster by anything a bridge could carry is the **click handler**, which is handed a `MouseEvent`.
-The bridge serialises with `JSON.stringify` and falls back to `String(value)` for a value it cannot
-express, so a `MovieClip` cannot cross it. That leaves `AttackMonster`, `AttackMonsterByMonMapId`,
-`UseSkill`, `ForceUseSkill`, `CancelTargetSelf` and `SetTargetPvP` refused **by name**, with the
-reason and this ticket in the message, and a bot that uses them logs that line and moves on.
+**The two calls that point the avatar are made by the bridge movie, not from the page** (ticket
+#49). The reference loader's own bodies are `world.setTarget(World.GetMonsterByName(name))` plus
+`world.approachTarget()`, and `world.testAction(world.actions.active[i])`. Both game functions are
+typed on **live AS3 objects** (`World.as` 8372 `setTarget(param1:*)`, 8705
+`testAction(param1:Object,...)`), and every way into them returns one: `getMonster(id)` (8075),
+`getMonstersByCell(cell)` (8128) and `getActionByRef(ref)` (9659) are all typed on live `Avatar`s
+and action objects. **That is a limit on what can cross ExternalInterface, not on what the bridge can
+do**: the game is loaded into the bridge movie's *own* `ApplicationDomain`
+(`bridge/AquaBridge.as`), so a monster or action object resolved inside the movie is the game's own
+object and can be handed to a game method there - the same in-domain arrangement the reference's
+loader uses, and the mechanism the bridge's `sendClientPacket` already relies on.
+So the movie registers `AttackMonster`, `AttackMonsterByMonMapId`, `UseSkill`, `ForceUseSkill`,
+`CancelTargetSelf` and `SetTargetPvP`, each taking the primitive the reference's own signature takes
+and doing the object plumbing itself; the loader surface rows call them by name, so no feature
+changed. **The live cast itself is still unverified** - see the row below.
 
 **What does work** is everything the fight is *decided* on. The monster reads are answered by
 walking the game's own `Vector.<Avatar>` by index and reading primitive leaves off each entry - the
@@ -981,12 +984,13 @@ call, so that is what this section is for.
 
 ### What could not be checked here, and why
 
-- **Casting**: `UseSkill` is a name the loader surface (#48) carries and cannot drive yet. Its
-  reference body checks readiness, walks the avatar and calls `world.testAction` on a live action
-  object, which cannot cross the bridge as JSON; ticket #38 owns combat. The Maid calls the name
-  anyway and the window lists it under "the game cannot answer" with the surface's own reason, so
-  what is unverified is the cast, not the decision to cast. `AttackMonster` and
-  `AttackMonsterByMonMapId` are implemented and do run.
+- **A cast actually landing**: the call is made now (ticket #49 - the bridge movie resolves the
+  live action object in its own domain and hands it to `world.testAction`), so `UseSkill`,
+  `ForceUseSkill`, `AttackMonster` and `AttackMonsterByMonMapId` all reach the game. What no
+  offline test can show is that the game **accepts** the target and fires the skill - that needs a
+  logged-in character, so it is the box above rather than a claim here. What *is* verifiable
+  offline, and is tested, is that each callback takes the primitive the reference's own signature
+  takes and that the surface asks for it by the reference's own name.
 - **Boss behaviour and the auto-zone handlers** (`UltraBossExtra`, `SpecialMsg`, `SpecialAct`,
   `AntiCounter`, `CopyWalk`): the reference's per-boss handlers are ticket #44's; the four config
   keys are carried through the file and shown, and no handler reads them yet.

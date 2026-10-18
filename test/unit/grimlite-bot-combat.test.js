@@ -9,10 +9,13 @@
 // `world.setTarget(monster)` and `world.testAction(action)`, and both of those take a *live AS3
 // object*. The game's only ways in - `world.getMonster(id)`, `world.getMonstersByCell(cell)`,
 // `world.getActionByRef(ref)`, `world.getAutoAttack()` - all return live objects too, and the
-// bridge carries JSON. So the monster LIST can be read (one leaf per field per index, which is the
-// reshape the loader itself performs) while the two calls that point the avatar cannot be made
-// from the page at all. This file pins both halves: the reads answer, and the calls refuse by name
-// with the reason rather than pretending - which is what the ticket asks for instead of a fake kill.
+// bridge carries JSON.
+//
+// That constrains where each call can be made, not whether it can: the monster LIST is read from
+// here (one leaf per field per index, which is the reshape the loader itself performs), while the
+// calls that hand the game an object are made by the bridge movie, in the domain the game's classes
+// were loaded into (ticket #49). This file pins both halves: the reads answer from this side, and
+// the calls reach the movie by the reference's own name with the primitive its signature takes.
 const assert = require('assert');
 
 const surface = require('../../plugins/grimlite-parity/loader-surface.js');
@@ -270,17 +273,16 @@ test('SkipAttack turns CmdAttack into a cancel, which is the option own branch',
 
 test('CmdAttack with a monster that is not there is reported, not waited on', async () => {
     // The ticket's own last acceptance criterion: a command whose target is missing fails in a way
-    // the log explains. attackMonster is the call the bridge refuses (its argument is a live
-    // Avatar), so the refusal has to become a logged line and let the list move on.
-    const refused = new Error('"AttackMonster" is part of the reference loader and the bridge ' +
-        'does not implement it: a live Avatar cannot travel through a JSON bridge (ticket #38)');
+    // the log explains. AttackMonster answers nothing when no monster carries the name, and a
+    // failure of any other kind has to reach the log the same way and let the list move on.
+    const refused = new Error('no monster named Gravelyn is in this cell');
     const session = fakeSession({});
     session.attackMonster = function () { return Promise.reject(refused); };
     const made = engine({ session: session });
     await made.start({ Commands: [command('CmdAttack', { Monster: 'Gravelyn' }), command('CmdStop', {})] });
     await made.tick();
-    assert.ok(made.records.some(function (line) { return /AttackMonster/.test(line) && /#38/.test(line); }),
-        'the log says what refused and where it belongs: ' + made.records.join(' | '));
+    assert.ok(made.records.some(function (line) { return /no monster named Gravelyn/.test(line); }),
+        'the log says what failed: ' + made.records.join(' | '));
     assert.strictEqual(made.running(), true, 'a refused attack does not stop the bot');
     assert.strictEqual(made.index(), 1, 'and the list still advances');
 });
@@ -602,31 +604,32 @@ test('a monsters collection the bridge cannot index is refused, never answered a
     });
 });
 
-test('the calls that point the avatar refuse by name, because their argument is a live object', () => {
-    // The game's own signatures (World.as 8075/8372/8705, 9659): getMonster(int) -> live Avatar,
-    // setTarget(*) -> the live Avatar, getActionByRef(String) -> the live action Object,
-    // testAction(Object) -> that same object. The loader builds those by walking objects it holds;
-    // the page cannot, because the bridge carries JSON and a live clip or avatar has cycles the
-    // serializer drops. So each of these refuses with that reason instead of calling the game with
-    // a string where it expects an object - which would leave the client holding a target that is
-    // not an avatar.
+test('the calls that point the avatar are made, with the primitive their own signature takes', () => {
+    // These six used to refuse here: the game's own sinks are typed on live AS3 objects
+    // (World.as 8075 getMonster(int) -> live Avatar, 8372 setTarget(*), 8705 testAction(Object),
+    // 9659 getActionByRef(String) -> the live action Object) and the bridge carries JSON. Ticket
+    // #49 measured where that boundary actually is: ExternalInterface, not the game. The game's
+    // classes live in the bridge movie's own ApplicationDomain, so the movie resolves the object
+    // on its side and passes it in-domain, and these rows send the primitive instead.
     const names = ['AttackMonster', 'AttackMonsterByMonMapId', 'UseSkill', 'ForceUseSkill',
         'CancelTargetSelf', 'SetTargetPvP'];
     const done = surface.implemented();
-    const refused = names.filter((name) => done.indexOf(name) === -1);
-    assert.deepStrictEqual(refused, names, 'none of these may claim to be implemented');
+    const missing = names.filter((name) => done.indexOf(name) === -1);
+    assert.deepStrictEqual(missing, [], 'these must be implemented now');
 
-    const bridge = fakeBridge(monsters(), liveClips());
-    const game = access(bridge);
-    return Promise.all(names.map((name) => game.call(name, ['1']).then(() => {
-        throw new Error(name + ' should have refused');
-    }, (error) => {
-        assert.ok(/live|object|JSON/i.test(error.message),
-            name + ' must say what it cannot cross: ' + error.message);
-        assert.ok(error.message.indexOf('#38') !== -1,
-            name + ' must say which ticket owns it: ' + error.message);
-    }))).then(() => {
-        assert.deepStrictEqual(bridge.made, [], 'nothing may be sent to the game for these');
+    // This stand-in records the callback and its arguments directly: these six are not game paths,
+    // which is exactly what ticket #49 changed about them.
+    const made = [];
+    const game = surface.createLoaderSurface(function (callback, args) {
+        made.push({ callback: callback, args: args });
+        return Promise.resolve('ok');
+    });
+    return Promise.all(names.map((name) => game.call(name, ['1']))).then(() => {
+        assert.deepStrictEqual(made.map((one) => one.callback), names,
+            'each is asked for by the reference own name, which is the bridge callback');
+        assert.deepStrictEqual(made.map((one) => one.args), [
+            ['1'], ['1'], ['1'], ['1'], [], ['1']
+        ], 'and hands the movie the primitive rather than a path');
     });
 });
 
@@ -703,14 +706,20 @@ test('CmdCancelTarget asks for the three cancels the reference body performs, in
         ['CancelTarget', 'CancelTargetSelf', 'CancelAutoAttack']);
 });
 
-test('a combat call the surface refuses reaches the caller with the surface own reason', async () => {
-    // attackMonster has no working path today: the refusal must arrive as a rejection naming why,
-    // so the engine can log it and move on instead of waiting for a target that never appears.
-    const bridge = sessionBridge({});
+test('a combat call the game cannot make reaches the caller with the movie own reason', async () => {
+    // The attack and the cast are made now (ticket #49 - the movie resolves the live object in its
+    // own domain), so what reaches the caller when something goes wrong is the movie's own answer
+    // rather than a refusal this build invented. The engine logs it and moves on either way.
+    // The movie answers an error as JSON ({"error": ...}), which the session raises with the game's
+    // own words; that has to arrive as a rejection, not as a silent success.
+    const bridge = sessionBridge({
+        AttackMonster: new Error('the game has no world yet'),
+        UseSkill: new Error('the game has no skill at index 2')
+    });
     const session = sessionModel.createSession({ bridge: bridge });
     await assert.rejects(function () { return session.attackMonster('Gravelyn'); },
-        /live|object|JSON/i);
-    await assert.rejects(function () { return session.useSkill('2'); }, /live|object|JSON/i);
+        /no world yet/);
+    await assert.rejects(function () { return session.useSkill('2'); }, /no skill at index 2/);
 });
 
 test('the surface names the session relies on are recorded with their loader bodies', () => {
@@ -727,11 +736,12 @@ test('the surface names the session relies on are recorded with their loader bod
             name + ' is one of the loader surface rows, so it is asked for by that name');
         assert.ok(surface.SURFACE[name], name + ' must be a name the reference registers');
     });
-    // The object-taking names are the ones the surface refuses, and the session says so rather
-    // than listing them as available.
+    // The object-taking names are implemented (ticket #49), so the session lists them as available
+    // and the recorded body is what it hands the bridge.
     ['AttackMonster', 'AttackMonsterByMonMapId', 'UseSkill', 'ForceUseSkill', 'CancelTargetSelf']
         .forEach(function (name) {
-            assert.ok(surface.SURFACE[name].why, name + ' is refused and names why');
+            assert.ok(!surface.SURFACE[name].why, name + ' is not refused any more');
+            assert.ok(surface.implemented().indexOf(name) !== -1, name + ' must be implemented');
         });
 });
 
@@ -1101,21 +1111,21 @@ test('CmdKillFor kills until it holds the item, and reads the container its Item
 });
 
 test('a kill-for that cannot finish says so rather than looping all night', async () => {
-    // The reference's own loop is bounded only by the item appearing. This build cannot guarantee a
-    // kill lands (the attack is the call the bridge refuses), so the loop is bounded and reports -
-    // which is the ticket's own rule about a target that is missing.
+    // The reference's own loop is bounded only by the item appearing. Whether a kill lands is the
+    // game's to decide (the attack is made, but nothing here can promise the monster dies), so the
+    // loop is bounded and reports - the ticket's own rule about a target that is missing.
     const session = fakeSession({ monsterAvailable: false });
     session.items = function () { return Promise.resolve([]); };
     session.attackMonster = function () {
-        return Promise.reject(new Error('"AttackMonster" needs a live Avatar (ticket #38)'));
+        return Promise.reject(new Error('no monster named Dragon is in this cell'));
     };
     const made = engine({ session: session });
     await made.start({
         Commands: [command('CmdKillFor', { Monster: 'Dragon', ItemName: 'Dragon Scale', Quantity: '1', ItemType: 0 })]
     });
     await made.tick();
-    assert.ok(made.records.some(function (line) { return /AttackMonster/.test(line); }),
-        'the reason reaches the log: ' + made.records.join(' | '));
+    assert.ok(made.records.some(function (line) { return /no monster named Dragon/.test(line); }),
+        'the game own reason reaches the log: ' + made.records.join(' | '));
     assert.strictEqual(made.running(), true, 'and the bot is still running');
 });
 
