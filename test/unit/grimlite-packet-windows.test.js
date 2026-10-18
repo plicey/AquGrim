@@ -387,6 +387,36 @@ test('the tamperer window captures per switch and sends each side through the sa
   assert.strictEqual(window_.sent.length, 1, 'a destroyed window is not written to');
 });
 
+// A closed tamperer window must not leave the tap subscribed: the reference unhooks its callbacks
+// when a window goes away, and a subscription nobody reads is exactly what this port avoids.
+test('closing the tamperer window releases the tap and clears its switches', async () => {
+  const harness = tapHarness();
+  const state = (await activateParity({
+    getPacketTap: function () { return harness.tap; }
+  })).host._getState();
+  const watch = handlerFor(state, 'tampererWatch');
+  const window_ = fakeWindow();
+
+  await watch({ sender: window_ }, { fromClient: true, fromServer: true });
+  assert.strictEqual(harness.tap.subscriberCount(), 1);
+  assert.strictEqual(typeof window_.handlers.destroyed, 'function',
+    'the window is watched for its own close');
+
+  window_.destroyed = true;
+  window_.handlers.destroyed();
+  assert.strictEqual(harness.tap.subscriberCount(), 0, 'closing the window releases the tap');
+
+  // Reopening starts from the reference's own state: both switches clear, nothing hooked.
+  const fresh = fakeWindow();
+  const again = await watch({ sender: fresh }, { fromClient: false, fromServer: false });
+  assert.strictEqual(again.fromClient, false);
+  assert.strictEqual(again.fromServer, false);
+  assert.strictEqual(again.reading, false);
+  assert.strictEqual(harness.tap.subscriberCount(), 0, 'unticked switches subscribe nothing');
+  harness.emit('toServer', '%xt%zm%nothing%');
+  assert.strictEqual(fresh.sent.length, 0);
+});
+
 // The two permissions are separate on purpose, and each tool gets exactly the surface it holds.
 test('a plugin holding send but not tap, or tap but not send, gets its own surface', async () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(pluginRoot, 'plugin.json'), 'utf8'));

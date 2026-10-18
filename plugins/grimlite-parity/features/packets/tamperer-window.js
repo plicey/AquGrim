@@ -48,10 +48,7 @@ function createTampererWindow(deps) {
             const wanted = (args && args[0]) || {};
             if (event && event.sender && watchers.indexOf(event.sender) === -1) {
                 watchers.push(event.sender);
-                event.sender.once('destroyed', function () {
-                    const index = watchers.indexOf(event.sender);
-                    if (index !== -1) watchers.splice(index, 1);
-                });
+                event.sender.once('destroyed', function () { drop(event.sender); });
             }
             capture.setCaptureFromClient(wanted.fromClient === true);
             capture.setCaptureFromServer(wanted.fromServer === true);
@@ -83,6 +80,18 @@ function createTampererWindow(deps) {
             return Promise.resolve({ sent: capture.sendToClient((args && args[0]) || '') });
         }
         throw new Error('[AquaStar:grimlite-parity] unknown tamperer channel "' + channel + '"');
+    }
+
+    // A closed window is not a reason to keep reading traffic: with no window left, the tap is
+    // released and the switches go back to clear, so reopening starts from the reference's own
+    // state (both unticked, nothing hooked).
+    function drop(watcher) {
+        const index = watchers.indexOf(watcher);
+        if (index !== -1) watchers.splice(index, 1);
+        if (watchers.length) return;
+        capture.setCaptureFromClient(false);
+        capture.setCaptureFromServer(false);
+        follow();
     }
 
     function attach() {
