@@ -21,6 +21,9 @@
  *
  * @param {object} deps
  * @param {(key: string) => object} deps.createSession  the injected game session for that window
+ * @param {(key: string) => object} [deps.createGame]   the item and quest access for that window
+ *                                                      (bot/items.js); without one those commands
+ *                                                      report that this window has no game access
  * @param {(ms: number) => Promise<void>} [deps.sleep]  pacing, shared by every entry
  * @param {(line: string) => void} [deps.log]
  *
@@ -30,6 +33,8 @@
  * inventing its own: an engine given no seam reports the command it cannot carry out instead of
  * looking wired while doing nothing.
  */
+const items = require('./items.js');
+
 function createRuntimeManager(deps) {
     deps = deps || {};
     const entries = new Map();
@@ -58,6 +63,9 @@ function createRuntimeManager(deps) {
 
         const engine = require('./engine.js').createEngine(Object.assign({
             session: deps.createSession(id),
+            // The item and quest vocabulary (#39), built on this window's own game access so a
+            // command acts on the game the bot is driving rather than on whichever one is nearest.
+            handlers: deps.createGame ? items.handlers(deps.createGame(id)) : {},
             sleep: deps.sleep,
             log: deps.log
         }, seams()));

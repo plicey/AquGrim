@@ -19,6 +19,7 @@ const setsWindow = require('./features/sets/sets-window.js');
 const logger = require('./features/packets/logger.js');
 const botRuntime = require('./bot/runtime.js');
 const botSession = require('./bot/session.js');
+const itemsModel = require('./bot/items.js');
 const loaders = require('./features/loaders/loaders.js');
 const spammerWindow = require('./features/packets/spammer-window.js');
 const tampererWindow = require('./features/packets/tamperer-window.js');
@@ -198,7 +199,23 @@ async function activate(host) {
                 return optionsFeature.setToggle(id, on);
             },
             state: function () { return optionsFeature ? optionsFeature.state() : {}; }
-        }
+        },
+        // The item and quest commands' own access (#39), built per window from the same game
+        // access the session uses. The frames the drop and ghost-accept paths need are a raw send
+        // through the relay, which is the same packet-send permission the packet tools hold.
+        createGame: function () {
+            return itemsModel.createAccess({
+                loaderCall: gameAccess.loaderCall,
+                call: gameAccess.call,
+                sendFrame: function (direction, text) {
+                    return host.packets.send({ direction: direction, text: text });
+                },
+                log: function (line) { host.log('bot: ' + line); }
+            });
+        },
+        // The item and quest handlers (#39) are a second dispatch table: the engine's own table
+        // wins where the two overlap, which the engine states and tests.
+        handlers: itemsModel.handlers
     });
 
     // What a bot is filed under: the game window the bridge channel is bound to, and `game` while
