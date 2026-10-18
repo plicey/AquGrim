@@ -77,13 +77,25 @@ test('the parity plugin is discovered as a bundled plugin and activates', async 
   assert.strictEqual(winConfig.webPreferences.nodeIntegration, false);
   assert.strictEqual(winConfig.useContentSize, true);
 
-  // Its own menu entry, opening that window and nothing else.
+  // Its own menu, whose entries open this plugin's windows and nothing else.
   assert.strictEqual(state.menus.length, 1);
   const items = state.menus[0]({ labels: {}, keybinds: {} });
   assert.strictEqual(items.length, 1);
   assert.ok(Array.isArray(items[0].submenu) && items[0].submenu.length >= 1);
-  items[0].submenu[0].click();
+  const placeholders = items[0].submenu.filter(function (item) {
+    return item.label === 'Parity placeholder window';
+  });
+  assert.strictEqual(placeholders.length, 1);
+  placeholders[0].click();
   assert.deepStrictEqual(opened, [PLACEHOLDER_ID]);
+
+  // and every entry in it belongs to a window this plugin registered
+  const registered = state.featureWindows.map(function (w) { return w.id; });
+  const windowIds = {};
+  windowIds[PLACEHOLDER_ID] = true;
+  windowIds['grimlite-parity-bot-file'] = true;
+  assert.deepStrictEqual(registered.sort(), Object.keys(windowIds).sort());
+  assert.ok(items[0].submenu.every(function (item) { return typeof item.click === 'function'; }));
 });
 
 test('an app older than the plugin refuses it at discovery, and still loads the others', () => {

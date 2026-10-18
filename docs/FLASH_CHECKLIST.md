@@ -39,6 +39,30 @@ Mark items with `[x]` when verified. Leave `[ ]` if not run yet.
 
 ---
 
+## Grimlite Parity — bot files (ticket #24) — needs real dialogs and the reference client
+
+File pickers and the reference client cannot run under `npm test`; the round trip itself is
+covered there against the reference corpus (parse → save → byte-identical, 60/60).
+
+- [ ] **Grimlite → Bot file** (Alt+Shift+B) opens the window with a dark, styled page
+- [ ] **Open bot** shows a real native file dialog, titled *Load bot*, filtered to `*.gbot`
+- [ ] Pick a bot from a folder several levels deep: it opens and is shown as the file's own text
+- [ ] Close the plugin and reopen the window; **Open bot** starts in the folder last used
+- [ ] Restart the app and reopen: the last-used folder is still remembered
+- [ ] **Save bot** shows a real save dialog titled *Save bot*, starting in the same folder
+- [ ] Save over the file you opened: the dialog warns about overwriting, and afterwards the
+      file has only the lines you changed (a bot that came from Windows keeps its CRLF)
+- [ ] Save with no extension typed: the file is written as `.gbot`
+- [ ] Open the folder in the reference client (Grimlite-Li → Bot Manager → **Load bot**): the
+      bot opens, its commands, skills, quests and settings read the same as before the edit
+- [ ] Save a bot **from the reference client** and open it here: it opens, and *Save bot* over
+      it leaves a byte-identical file
+- [ ] Point the file dialog at a file that is not a bot (a `.txt` or `.json`): the window
+      reports "not a readable bot" instead of showing an empty bot
+- [ ] A bot with an RTF description saved by the reference shows readable text, not base64
+
+---
+
 ## Adventure Quest Worlds
 
 - [ ] Switch active plugin to **Adventure Quest Worlds**, restart

@@ -5,17 +5,36 @@ exports.dialogMessages = {
             return keyb || '';
         }
         return 'Grimlite Parity\n' +
+            expand(k.grimliteBotFile) + ' - Bot file window\n' +
             expand(k.grimliteParityPlaceholder) + ' - Parity placeholder window';
     }
 };
 
 exports.menuMessages = {
     grimliteMenu: 'Grimlite',
+    grimliteBotFile: 'Bot file',
     grimlitePlaceholder: 'Parity placeholder window'
+};
+
+// The bot file window and the dialogs it opens. Titles match the reference's own dialogs
+// ("Load bot" / "Save bot", filter "Grimoire bots|*.gbot").
+exports.botFileMessages = {
+    title: 'Bot file',
+    open: 'Open bot',
+    save: 'Save bot',
+    revert: 'Revert',
+    opened: 'Opened. Edits are saved back through Save bot.',
+    saved: 'Saved.',
+    unchanged: 'Nothing to revert to.',
+    notABot: 'That file is not a readable bot.',
+    openTitle: 'Load bot',
+    saveTitle: 'Save bot',
+    filterName: 'Grimlite bots'
 };
 
 exports.windowTitles = {
     primary: 'AquaStar - Grimlite Parity',
+    botFile: 'Grimlite Parity - Bot File',
     placeholder: 'Grimlite Parity - Placeholder'
 };
 

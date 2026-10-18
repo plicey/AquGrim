@@ -7,6 +7,13 @@ function register(host, windowTitle) {
         return [{
             label: labels.grimliteMenu || 'Grimlite',
             submenu: [{
+                label: labels.grimliteBotFile || 'Bot file',
+                accelerator: keybinds.grimliteBotFile,
+                registerAccelerator: false,
+                click: function () {
+                    host.windows.openFeatureWindow(windows.BOT_FILE_WINDOW_ID);
+                }
+            }, {
                 label: labels.grimlitePlaceholder || 'Parity placeholder window',
                 accelerator: keybinds.grimliteParityPlaceholder,
                 registerAccelerator: false,

@@ -1,0 +1,33 @@
+{
+  "$type": "Grimoire.Botting.Configuration, Grimoire",
+  "Commands": {
+    "$type": "System.Collections.Generic.List`1[[Grimoire.Botting.IBotCommand, Grimoire]], mscorlib",
+    "$values": [
+      {
+        "$type": "Grimoire.Botting.Commands.Combat.CmdKill, Grimoire",
+        "Monster": "Darkon the Conductor",
+        "KillPriority": ""
+      }
+    ]
+  },
+  "Skills": {
+    "$type": "System.Collections.Generic.List`1[[Grimoire.Game.Data.Skill, Grimoire]], mscorlib",
+    "$values": []
+  },
+  "Quests": {
+    "$type": "System.Collections.Generic.List`1[[Grimoire.Game.Data.Quest, Grimoire]], mscorlib",
+    "$values": []
+  },
+  "Author": "someone",
+  "Description": "H4sIAAAAAAACAyWLO27DMBAFr/IOkAiSghRq8ytspErLhqJW9sL0LrFaBjEM390w07xi3sw1mK9DiLJxm1QOw/g6hoXWtQ+ilZOeS/Qw4yvaGabVKcx9KNEwdNgpC2p2i0u0k8rz1E/TExLljE9xsq6ZY4c954yPJsGPhHeVpSZXQxXn3NiW1AiLadn+u5cOb1FOoF+yix9ZDqC/RMWb/n3ZnBN+kvH8uPbsLbvdAX48EtLWAAAA",
+  "Boosts": {
+    "$type": "System.Collections.Generic.List`1[[Grimoire.Game.Data.InventoryItem, Grimoire]], mscorlib",
+    "$values": []
+  },
+  "Drops": {
+    "$type": "System.Collections.Generic.List`1[[System.String, mscorlib]], mscorlib",
+    "$values": [
+      "Darkon the Conductor"
+    ]
+  }
+}

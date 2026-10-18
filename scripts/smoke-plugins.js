@@ -42,6 +42,27 @@ ok(
   fs.existsSync(path.join(parity, 'features', 'placeholder', 'placeholder.html')),
   'parity placeholder page'
 );
+ok(
+  fs.existsSync(path.join(parity, 'features', 'bot-file', 'bot-file.html')),
+  'parity bot file page'
+);
+ok(fs.existsSync(path.join(parity, 'bot', 'bots.js')), 'parity bot file reader/writer');
+
+// The bot file window's preload is sandboxed, so it may only require('electron').
+const botPreload = fs.readFileSync(
+  path.join(parity, 'features', 'bot-file', 'preload_bot_file.js'),
+  'utf8'
+);
+ok(botPreload.indexOf("require('electron')") !== -1, 'bot file preload requires electron');
+ok(botPreload.indexOf("require('../../") === -1, 'bot file preload requires nothing project-local');
+
+// A bot file the app writes must stay readable by the reference client: round-trip a fixture.
+const bots = require(path.join(parity, 'bot', 'bots.js'));
+const samplePath = path.join(root, 'test', 'fixtures', 'grimlite-bots', 'plain.gbot');
+const sampleText = fs.readFileSync(samplePath, 'utf8');
+const sampleBot = bots.parseBot(sampleText);
+ok(sampleBot.ok, 'a bundled .gbot fixture parses: ' + sampleBot.error);
+ok(bots.serializeBot(sampleBot.bot) === sampleText, '.gbot fixture re-serialises byte-exact');
 
 const discovered = platform.discoverPlugins({
   bundledDir: path.join(root, 'plugins'),

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Grimlite Parity - Bot file</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
+    display: flex; flex-direction: column;
+  }
+  header { padding: 10px 12px 8px; }
+  h1 { margin: 0 0 2px; font-size: 15px; }
+  #path { color: #9a9a9a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 17px; }
+  .bar { padding: 0 12px 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button {
+    background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 4px;
+    padding: 6px 10px; cursor: pointer;
+  }
+  button.primary { background: #3a7fe0; border-color: #3a7fe0; }
+  main { flex: 1; padding: 0 12px 12px; min-height: 0; }
+  textarea {
+    width: 100%; height: 100%; box-sizing: border-box; resize: none;
+    background: #151515; color: #d6d6d6; border: 1px solid #333; border-radius: 6px;
+    padding: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px; line-height: 1.5; white-space: pre; overflow: auto;
+  }
+  #status { padding: 0 12px 10px; min-height: 17px; color: #7fd08a; }
+  #status.err { color: #ff8e8e; }
+</style>
+</head>
+<body>
+  <header>
+    <h1 id="title">Bot file</h1>
+    <div id="path"></div>
+  </header>
+  <div class="bar">
+    <button class="primary" id="open">Open bot</button>
+    <button id="save">Save bot</button>
+    <button id="revert">Revert</button>
+  </div>
+  <main><textarea id="editor" spellcheck="false" disabled></textarea></main>
+  <div id="status"></div>
+<script>
+(function () {
+  var api = window.aquastarBotFile;
+  var editor = document.getElementById('editor');
+  var pathEl = document.getElementById('path');
+  var status = document.getElementById('status');
+  var messages = {
+    title: 'Bot file',
+    open: 'Open bot',
+    save: 'Save bot',
+    revert: 'Revert',
+    opened: 'Opened.',
+    saved: 'Saved.',
+    unchanged: 'Nothing to revert to.',
+    notABot: 'That file is not a readable bot.'
+  };
+  var current = null;
+  var original = '';
+
+  function setStatus(text, isError) {
+    status.textContent = text || '';
+    status.className = isError ? 'err' : '';
+  }
+
+  function apply(result) {
+    if (!result || result.canceled) return;
+    if (result.error) { setStatus(result.error, true); return; }
+    current = result.path;
+    original = result.text;
+    editor.value = result.text;
+    editor.disabled = false;
+    pathEl.textContent = result.path || '';
+    setStatus(messages.opened, false);
+  }
+
+  document.getElementById('open').addEventListener('click', function () {
+    api.openBot().then(apply).catch(function (e) { setStatus(String(e.message || e), true); });
+  });
+
+  document.getElementById('save').addEventListener('click', function () {
+    if (!editor.value) { setStatus(messages.notABot, true); return; }
+    api.saveBot(editor.value, current).then(function (result) {
+      if (!result || result.canceled) return;
+      if (result.error) { setStatus(result.error, true); return; }
+      current = result.path;
+      original = editor.value;
+      pathEl.textContent = current;
+      setStatus(messages.saved, false);
+    }).catch(function (e) { setStatus(String(e.message || e), true); });
+  });
+
+  document.getElementById('revert').addEventListener('click', function () {
+    if (!current) { setStatus(messages.unchanged, true); return; }
+    editor.value = original;
+    setStatus('');
+  });
+
+  api.getMessages().then(function (msg) {
+    msg = Object.assign({}, messages, msg || {});
+    messages = msg;
+    document.getElementById('title').textContent = msg.title;
+    document.getElementById('open').textContent = msg.open;
+    document.getElementById('save').textContent = msg.save;
+    document.getElementById('revert').textContent = msg.revert;
+  }).catch(function () {});
+})();
+</script>
+</body>
+</html>
