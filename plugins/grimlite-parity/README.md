@@ -211,4 +211,35 @@ the reference loader's surface.
  - **Bank** (Alt+Shift+K) — transfer by category and AC-ness, plus Bank All (#29).
  - **Sets** — save, list, load, clear and equip `.gset` sets (#29).
 - **Loaders/grabbers** (Alt+Shift+L) — the four loaders, the eight grabbers and their menus (#31).
+- **Fast travels** (Alt+Shift+T) — the destination buttons and the map bypasser (#32).
  - **Parity placeholder** (Alt+Shift+G).
+
+## Fast travels and the map bypasser (#32)
+
+`features/travel/` is the reference's Tools -> **Fast travels** form, word for word from
+`Grimoire/UI/Travel.cs` and its designer. `travel-data.js` holds the destination groups as
+data - the reference's own labels, the map/cell/pad triple each handler passes, the six
+enchantment shop ids and the sixteen quest ids of **Ultraboss & Daily** - so a test can assert
+every group and every button is present rather than trusting a screenshot. `travel.js` holds the
+decisions: every button runs through the same join-or-walk the reference's `CmdTravel` does (a
+destination in the map the character is standing in is a walk to the cell, not a re-join), the
+private box suffixes `-<number>` onto the map, and the buttons that fake quest progress send the
+reference's own JSON frame, waits and order.
+
+Two frames leave by two different doors, as they do upstream: a quest-progress frame is handed to
+the **client** (`sendClientPacket`), which is how the reference fakes progress; the DoomvaultB
+achievement frame is written to the **server** through the relay (`host.packets.send`), which is
+where `Travel.cs` writes it.
+
+Every game call is a loader name the reference's own loader provides and the stock game does not,
+resolved by the bridge's loader surface (#48) to the path that name's body reads: `Join` ->
+`world.gotoTown`, `Jump` -> `world.moveToCell`, `LoadShop` ->
+`world.sendLoadShopRequest`, `LoadQuest`/`LoadQuests` -> `world.showQuests`,
+`IsLoggedIn` -> `sfc.isConnected`. No name this window uses is unimplemented, which the test
+asserts against that table rather than against a list of its own.
+
+The **Map Bypasser** reads `world.questTree.<id>`, loads the quest when the client does not hold
+it and waits for it the way `btnUnlockMap` does, then shows the packet it built (read-only, and
+copyable) with its own **Send**. **Bypass All** overwrites the seven storyline fields the game has
+actually sent with a same-length run of `Z`; a field the game has not sent is skipped rather than
+invented, and a refused write stops the run and is reported.
