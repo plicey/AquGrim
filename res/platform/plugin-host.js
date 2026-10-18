@@ -3,6 +3,7 @@
 // later by PR 2+; PR 1 keeps this module testable under plain Node.
 
 const path = require('path');
+const { fileURLToPath } = require('url');
 const schema = require('./manifest-schema.js');
 
 const PLATFORM_RESERVED_KEYBIND_IDS = {
@@ -160,6 +161,35 @@ function createPluginHost(options) {
         return resolved;
     }
 
+    // docs/PLUGINS.md §4.3: navigation hooks run only for hosts the manifest names
+    // (exact hostname match). Pages inside the plugin root are the plugin's own files.
+    function injectionAllowed(url) {
+        let parsed;
+        try {
+            parsed = new URL(url);
+        } catch (error) {
+            return false;
+        }
+        if (parsed.protocol === 'file:') {
+            const root = path.resolve(options.pluginRoot);
+            let filePath;
+            try {
+                filePath = path.resolve(fileURLToPath(parsed));
+            } catch (error) {
+                return false;
+            }
+            return filePath === root || filePath.indexOf(root + path.sep) === 0;
+        }
+        const host = parsed.hostname.toLowerCase();
+        if (!host) return false;
+        const patterns = manifest.injectHostPatterns || [];
+        for (let i = 0; i < patterns.length; i++) {
+            if (String(patterns[i]).toLowerCase() === host) return true;
+        }
+        log('injection skipped for host "' + host + '" (not in injectHostPatterns)');
+        return false;
+    }
+
     const host = {
         appVersion: options.appVersion || '0.0.0',
         appRootPath: options.appRootPath || '',
@@ -314,6 +344,13 @@ function createPluginHost(options) {
             hooks = hooks || {};
             if (typeof hooks.onDidFinishLoad === 'function') {
                 requirePermission('registerNavigationHooks', 'inject-scripts');
+                const hook = hooks.onDidFinishLoad;
+                hooks = Object.assign({}, hooks, {
+                    onDidFinishLoad: function (ctx) {
+                        if (!ctx || !injectionAllowed(ctx.url)) return undefined;
+                        return hook(ctx);
+                    }
+                });
             }
             state.navigationHooks = hooks;
         },

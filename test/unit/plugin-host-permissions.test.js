@@ -76,6 +76,43 @@ test('PluginHost requires inject-scripts for navigation injection hooks', () => 
   assert.ok(allowed._getState().navigationHooks.onDidFinishLoad);
 });
 
+test('PluginHost runs navigation hooks only for hosts in injectHostPatterns', async () => {
+  const host = makeHost(
+    baseManifest({ permissions: ['inject-scripts'], injectHostPatterns: ['example.com'] })
+  );
+  const seen = [];
+  host.registerNavigationHooks({
+    onDidFinishLoad: function (ctx) {
+      seen.push(ctx.url);
+      return 'ran';
+    }
+  });
+  const hooks = host._getState().navigationHooks;
+
+  assert.strictEqual(await hooks.onDidFinishLoad({ url: 'https://example.com/wiki' }), 'ran');
+  assert.strictEqual(await hooks.onDidFinishLoad({ url: 'https://example.com.evil.test/wiki' }), undefined);
+  assert.strictEqual(await hooks.onDidFinishLoad({ url: 'https://other.test/wiki' }), undefined);
+  assert.strictEqual(await hooks.onDidFinishLoad({ url: 'not a url' }), undefined);
+  assert.deepStrictEqual(seen, ['https://example.com/wiki']);
+});
+
+test('PluginHost runs navigation hooks on the plugin\'s own pages, but not other local files', async () => {
+  const host = makeHost(
+    baseManifest({ permissions: ['inject-scripts'], injectHostPatterns: ['example.com'] })
+  );
+  let calls = 0;
+  host.registerNavigationHooks({ onDidFinishLoad: function () { calls++; } });
+  const hooks = host._getState().navigationHooks;
+  const pluginRoot = path.join(__dirname, '../fixtures/sample-plugin');
+  const { pathToFileURL } = require('url');
+
+  await hooks.onDidFinishLoad({ url: pathToFileURL(path.join(pluginRoot, 'demo.html')).href });
+  assert.strictEqual(calls, 1);
+
+  await hooks.onDidFinishLoad({ url: pathToFileURL(path.join(__dirname, 'demo.html')).href });
+  assert.strictEqual(calls, 1);
+});
+
 test('PluginHost requires flash-trust for trustFlashUrls', () => {
   const host = makeHost(baseManifest());
   assert.throws(function () {
