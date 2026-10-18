@@ -177,6 +177,17 @@ function register(host, windowTitle) {
                     click: function () {
                         host.windows.openFeatureWindow(windows.TRAVEL_WINDOW_ID);
                     }
+                },
+                {
+                    // The reference has no menu entry for the Maid at all: its window is opened from
+                    // its own strip on the main form (Root.cs) and its own hotkey action "Show Maid"
+                    // (Hotkeys.cs). This port's one Grimlite menu carries it, under its own title.
+                    label: labels.grimliteMaid || 'Maid',
+                    accelerator: keybinds.grimliteMaid,
+                    registerAccelerator: false,
+                    click: function () {
+                        host.windows.openFeatureWindow(windows.MAID_WINDOW_ID);
+                    }
                 }
             ]
         }];
@@ -189,5 +200,6 @@ module.exports = {
     LOGGER_WINDOW_ID: windows.LOGGER_WINDOW_ID,
     SPAMMER_WINDOW_ID: windows.SPAMMER_WINDOW_ID,
     TAMPERER_WINDOW_ID: windows.TAMPERER_WINDOW_ID,
-    TRAVEL_WINDOW_ID: windows.TRAVEL_WINDOW_ID
+    TRAVEL_WINDOW_ID: windows.TRAVEL_WINDOW_ID,
+    MAID_WINDOW_ID: windows.MAID_WINDOW_ID
 };

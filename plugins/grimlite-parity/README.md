@@ -212,7 +212,70 @@ the reference loader's surface.
  - **Sets** — save, list, load, clear and equip `.gset` sets (#29).
 - **Loaders/grabbers** (Alt+Shift+L) — the four loaders, the eight grabbers and their menus (#31).
 - **Fast travels** (Alt+Shift+T) — the destination buttons and the map bypasser (#32).
- - **Parity placeholder** (Alt+Shift+G).
+- **Maid Remake** (Alt+Shift+R) — the reference's party assistant: follow, attack, party commands (#43).
+- **Parity placeholder** (Alt+Shift+G).
+
+## The Maid (#43)
+
+`features/maid/` is the reference's own party assistant, `MaidRemake`. Three modules carry its
+behaviour and the window is only the hand on them:
+
+- `config.js` is the reference's file format. The 23 keys of `Grimoire/Tools/Maid/MaidConfig.cs`,
+  in its own order, with its own overlay rule from `ApplyConfig` (`MaidRemake.cs:1476-1550`): a
+  non-empty string wins, a present number wins, a boolean is `?? current`. That rule is why the
+  reference's own shipped `Resources/Plugins/Maid/Default.json` - which omits six keys - is a
+  patch rather than a reset, and it is the default this port starts from.
+- `maid.js` is the scheduler, in the reference's own order (`MaidRemake.cs:197-360`): wait for a
+  sign-in, wait `RelogDelay` for the first join, chase the target's cell or write the reference's
+  own `%xt%zm%cmd%1%goto%<name>%` when they are in another map, respawn on death, fire the safe
+  skill under its own HP threshold, cancel the attack and optionally buff while `StopAttack` is
+  ticked, walk the attack-priority list, then step the skill rotation with `WaitSkill` gating each
+  step on `SkillAvailable`.
+- `party.js` is the party vocabulary: `PartyChatHandler`'s seven commands (`.tp`, `.join`, `.acc`,
+  `.turnin`, `.target`, `.stop`, `.start`) read off a `chatm` frame, and `PartyInvitationHandler`'s
+  answer to a JSON `pi` frame.
+
+**It runs beside the bot engine and the engine wins.** The reference is single-scheduler and
+cannot answer this, so spec #19's ruling governs (grilling 11.10): the engine's current command
+takes the tick, the Maid yields it, and the collision is written to the log naming the command.
+The scheduler observes the engine through two injected functions - `engineRunning()` and
+`engineActivity()` - which the plugin wires to the bot runtime's own per-window state. No engine
+hook was needed and none was added.
+
+### The three hard parts
+
+**The keys.** Unfollow and StopAttack are the reference's own two (`cbUnfollow "Unfollow (R)"`,
+`cbStopAttack "StopAttack (T)"`), and its `Global Hotkey` box decides whether they work while the
+form has focus or app-wide (`MaidRemake.cs:1026-1045`). Here they are the plugin's own keybind ids
+`grimliteMaidUnfollow` (Alt+Shift+U) and `grimliteMaidStopAttack` (Alt+Shift+X), registered by the
+window on whichever of the app's two shortcut layers the box asks for - the same injected layers
+the Hotkeys window (#34) uses - so they are rebindable from the app's Settings like any other
+binding. They are the only ids in `keybinds.js` with no `registerKeybinds` entry, because the
+platform puts a registered binding on the local layer unconditionally and these two have to move.
+
+**The state is visible.** The window's line above the form is the scheduler's own `status`,
+pushed to every open window on each pass and on every key, so it says `unfollowed`, `stop attack
+is on`, `paused: the map is reloading`, `following`, `fighting`, `the bot engine has the current
+command` or `off`, together with the names the loader surface refused and the number of collisions
+with the engine.
+
+**The party half reads the tap; the relay writes.** Party chat comes off `host.packets.on('frame')`
+(#26) and the one answer the Maid writes - `%xt%zm%gp%1%pa%<pid>%` - goes through
+`host.packets.send` (#27), which is the plugin's single packet path. False means no live
+connection, and that is reported rather than queued. The subscription is taken the way this app
+requires one to be: nothing at activation, and released again when neither the window is open nor
+the Maid is running.
+
+### What is still waiting for the bridge
+
+`UseSkill` is the one loader name the Maid uses that the surface carries and cannot drive yet: the
+reference's own body checks readiness, walks the avatar and calls `world.testAction` on a live
+action object, which cannot cross the bridge as JSON. That is ticket #38's half. The Maid calls the
+name anyway, reports the surface's own refusal with the reason and the owning ticket, and lists it
+in the state the window shows - it never reports a cast that did not happen. `AttackMonster` and
+`AttackMonsterByMonMapId` are implemented (`world.setTarget`), which is why the attack half runs.
+Boss behaviour and the auto-zone handlers are ticket #44's and are deliberately absent here.
+
 
 ## Fast travels and the map bypasser (#32)
 

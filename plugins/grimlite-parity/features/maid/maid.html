@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Maid Remake</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 12px;
+  }
+  body { padding: 8px; box-sizing: border-box; }
+  fieldset { border: 1px solid #383838; border-radius: 4px; padding: 6px 8px; margin: 0 0 8px; }
+  legend { color: #cfcfcf; padding: 0 4px; }
+  .row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+  .row > label { color: #dcdcdc; flex: 0 0 auto; }
+  input[type="text"], input[type="number"], select, textarea {
+    font: inherit; color: #eee; background: #2a2a2a; border: 1px solid #444;
+    border-radius: 4px; padding: 3px 5px; box-sizing: border-box; min-width: 0;
+  }
+  input[type="text"], select { flex: 1 1 auto; }
+  input[type="number"] { width: 64px; }
+  textarea { width: 100%; resize: vertical; }
+  .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 8px; }
+  .checks label { display: flex; align-items: center; gap: 5px; color: #dcdcdc; }
+  button {
+    font: inherit; color: #eee; background: #2a2a2a; border: 1px solid #444;
+    border-radius: 4px; padding: 4px 8px; cursor: pointer;
+  }
+  button:hover { background: #333; }
+  /* The reference paints the StopAttack label DeepPink and the box Magenta while it is on, and
+     puts its own team strip in a red tint; the state line here is that same signal. */
+  #state { margin: 0 0 8px; min-height: 16px; color: #cfcfcf; }
+  #state.stopped { color: #ff69b4; }
+  #state.unfollowed { color: #7fb2ff; }
+  #state.collision { color: #e0b34a; }
+  #state.fighting { color: #7fd08a; }
+  #note { color: #9a9a9a; min-height: 15px; }
+  #note.err { color: #ff8e8e; }
+  #note.ok { color: #7fd08a; }
+  .hint { color: #8f8f8f; }
+  #party { color: #9a9a9a; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <label for="enabled" id="enableLabel">Enable</label>
+    <input type="checkbox" id="enabled">
+  </div>
+  <div id="state" role="status"></div>
+  <div id="note" role="status"></div>
+
+  <fieldset>
+    <legend id="targetLegend">Goto Username</legend>
+    <div class="row">
+      <input type="text" id="Target" autocomplete="off">
+      <button id="me">Me</button>
+    </div>
+    <div class="row">
+      <label for="RelogDelay" id="relogLabel">Relog Delay</label>
+      <input type="number" id="RelogDelay" min="0">
+      <label for="SkillDelay" id="skillDelayLabel">Skill Delay</label>
+      <input type="number" id="SkillDelay" min="0">
+    </div>
+    <div class="row">
+      <label for="preset" id="presetLabel">Skill Preset</label>
+      <select id="preset"></select>
+    </div>
+    <div class="row">
+      <label for="SkillList" id="skillListLabel">Skill List</label>
+      <input type="text" id="SkillList" autocomplete="off">
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend id="combatLegend">Combat</legend>
+    <div class="row">
+      <input type="checkbox" id="SafeSkill">
+      <label for="SafeSkill" id="safeSkillLabel">Use</label>
+      <input type="text" id="SafeSkillList" autocomplete="off">
+      <label for="SafeSkillHP" id="safeSkillHpLabel">if health&lt;</label>
+      <input type="number" id="SafeSkillHP" min="0" max="100">
+    </div>
+    <div class="row">
+      <input type="checkbox" id="BuffStopAttack">
+      <label for="BuffStopAttack" id="buffLabel">Buff If StopAttack</label>
+      <input type="text" id="BuffStopAttackList" autocomplete="off">
+    </div>
+    <div class="row">
+      <input type="checkbox" id="AttackPriority">
+      <label for="AttackPriority" id="priorityLabel">AttackPriority</label>
+      <input type="text" id="AttackPriorityMonster" autocomplete="off">
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend id="keysLegend">Keys</legend>
+    <div class="row">
+      <input type="checkbox" id="unfollow">
+      <label for="unfollow" id="unfollowLabel">Unfollow (R)</label>
+      <input type="checkbox" id="stopAttack">
+      <label for="stopAttack" id="stopAttackLabel">StopAttack (T)</label>
+      <input type="checkbox" id="GlobalHotkey">
+      <label for="GlobalHotkey" id="globalLabel">Global Hotkey</label>
+    </div>
+    <div class="hint" id="keyHint"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend id="optionsLegend">Options</legend>
+    <div class="checks" id="options"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend id="mapsLegend">Maps</legend>
+    <div class="row">
+      <input type="checkbox" id="LockedZoneHandler">
+      <label for="LockedZoneHandler" id="lockedLabel">Locked Zone Handler</label>
+      <input type="checkbox" id="WhitelistMap">
+      <label for="WhitelistMap" id="whitelistLabel">Whitelist Map</label>
+    </div>
+    <div class="row">
+      <label for="LockedZoneHandlerMaps" id="lockedMapsLabel">Locked maps</label>
+    </div>
+    <textarea id="LockedZoneHandlerMaps" rows="2" spellcheck="false"></textarea>
+    <div class="row">
+      <label for="WhitelistMapMaps" id="whitelistMapsLabel">Whitelist maps</label>
+    </div>
+    <textarea id="WhitelistMapMaps" rows="2" spellcheck="false"></textarea>
+  </fieldset>
+
+  <fieldset>
+    <legend id="configLegend">Config</legend>
+    <div class="row">
+      <button id="save">Save</button>
+      <button id="load">Load</button>
+      <button id="autoload">Autoload</button>
+      <span class="hint" id="loadedFrom"></span>
+    </div>
+    <div class="row" id="party"></div>
+  </fieldset>
+
+<script>
+(function () {
+  var api = window.aquastarMaid;
+  var strings = {};
+  var fields = { all: [], numbers: [], booleans: [] };
+  var built = false;
+
+  // The option boxes the reference's own designer draws outside the named groups. The keys are
+  // config keys, for the page's bookkeeping; the ids are the reference's own control names
+  // (MaidRemake.designer.cs), so the page does not invent a second vocabulary for them.
+  var GENERIC = [
+    { config: 'AntiCounter', id: 'cbAntiCounter', word: 'optionAntiCounter' },
+    { config: 'CopyWalk', id: 'cbCopyWalk', word: 'optionCopyWalk' },
+    { config: 'StopFailedGoto', id: 'cbStopIf', word: 'optionStopFailedGoto' },
+    { config: 'WaitSkill', id: 'cbWaitSkill', word: 'optionWaitSkill' }
+  ];
+
+  // The reference's own text boxes and number boxes: every one of them is a config key, so one
+  // list drives both the drawing and the reading.
+  var TEXT_FIELDS = ['Target', 'SkillList', 'SafeSkillList', 'BuffStopAttackList',
+    'AttackPriorityMonster', 'LockedZoneHandlerMaps', 'WhitelistMapMaps'];
+  var NUMBER_FIELDS = ['RelogDelay', 'SkillDelay', 'SafeSkillHP'];
+  var BOX_FIELDS = ['SafeSkill', 'BuffStopAttack', 'AttackPriority', 'LockedZoneHandler',
+    'WhitelistMap', 'GlobalHotkey'];
+  var CONTROLS = TEXT_FIELDS.concat(NUMBER_FIELDS, BOX_FIELDS);
+
+  function el(id) {
+    return document.getElementById(id);
+  }
+
+  function label(key, fallback) {
+    return strings[key] || fallback;
+  }
+
+  function say(text, kind) {
+    el('note').textContent = text || '';
+    el('note').className = kind || '';
+  }
+
+  /** The box behind one config key: the named control, or the generic one the options group drew. */
+  function controlFor(key) {
+    var named = el(key);
+    if (named) return named;
+    for (var i = 0; i < GENERIC.length; i++) {
+      if (GENERIC[i].config === key) return el(GENERIC[i].id);
+    }
+    return null;
+  }
+
+  function valueOf(key) {
+    var box = controlFor(key);
+    if (!box) return undefined;
+    return fields.booleans.indexOf(key) !== -1 ? box.checked : box.value;
+  }
+
+  // The reference paints its own state into the form: the StopAttack box goes Magenta, the Unfollow
+  // strip italic, and its window title carries the running time. Here the same state is one line
+  // that says what the scheduler is doing, which is what the acceptance criteria ask for.
+  function drawState(view) {
+    var state = (view && view.state) || {};
+    el('state').textContent = state.status || '';
+    el('state').className = state.status || '';
+    el('enabled').checked = state.enabled === true;
+    el('unfollow').checked = state.unfollow === true;
+    el('stopAttack').checked = state.stopAttack === true;
+    if (state.target && document.activeElement !== el('Target')) el('Target').value = state.target;
+    if (view && view.fields) {
+      fields = view.fields;
+      if (!built) { build(view); built = true; }
+    }
+    writeConfig(state.config, state.target);
+    el('loadedFrom').textContent = state.loadedFrom || '';
+    if (state.missing && state.missing.length) {
+      say(label('missing', 'The game cannot answer') + ': ' + state.missing.join(', '), 'err');
+    }
+  }
+
+  function writeConfig(settings, master) {
+    if (!settings) return;
+    CONTROLS.forEach(function (key) {
+      var box = controlFor(key);
+      if (!box || document.activeElement === box) return;
+      // The target box is one box in the reference (`cmbGotoUsername`), holding the config's own
+      // Target and driving the scheduler at once, so the scheduler's master wins while it has one.
+      if (key === 'Target' && master) { box.value = master; return; }
+      if (fields.booleans.indexOf(key) !== -1) box.checked = settings[key] === true;
+      else box.value = settings[key] === null || settings[key] === undefined ? '' : settings[key];
+    });
+  }
+
+  /** One change from the page, as the window's own patch. */
+  function send(patch) {
+    return api.set(patch).then(function (view) {
+      drawState(view);
+      return view;
+    }, function (error) {
+      say(String(error.message || error), 'err');
+    });
+  }
+
+  function patchOf(key) {
+    var patch = {};
+    patch[key] = valueOf(key);
+    return patch;
+  }
+
+  function build(view) {
+    var options = el('options');
+    GENERIC.forEach(function (one) {
+      var wrap = document.createElement('label');
+      var box = document.createElement('input');
+      box.type = 'checkbox';
+      box.id = one.id;
+      box.addEventListener('change', function () { send({ config: patchOf(one.config) }); });
+      var text = document.createElement('span');
+      // The reference's own control text, verbatim from its designer file.
+      text.textContent = label(one.word, one.config);
+      wrap.appendChild(box);
+      wrap.appendChild(text);
+      options.appendChild(wrap);
+    });
+    (view.presets || []).forEach(function (name) {
+      var one = document.createElement('option');
+      one.value = name;
+      one.textContent = name;
+      el('preset').appendChild(one);
+    });
+  }
+
+  function wire() {
+    el('enabled').addEventListener('change', function () {
+      send({ enabled: el('enabled').checked });
+    });
+    el('unfollow').addEventListener('change', function () {
+      send({ unfollow: el('unfollow').checked });
+    });
+    el('stopAttack').addEventListener('change', function () {
+      send({ stopAttack: el('stopAttack').checked });
+    });
+    // The Target box is both the config's own key and the scheduler's master, so it writes both:
+    // the reference keeps them as one box (`cmbGotoUsername`) and its saveConfig reads that box.
+    TEXT_FIELDS.forEach(function (key) {
+      el(key).addEventListener('change', function () {
+        if (key === 'Target') send({ target: el(key).value, config: patchOf(key) });
+        else send({ config: patchOf(key) });
+      });
+    });
+    NUMBER_FIELDS.forEach(function (key) {
+      el(key).addEventListener('change', function () { send({ config: patchOf(key) }); });
+    });
+    BOX_FIELDS.forEach(function (key) {
+      el(key).addEventListener('change', function () { send({ config: patchOf(key) }); });
+    });
+    el('preset').addEventListener('change', function () {
+      if (!el('preset').value) return;
+      api.preset(el('preset').value).then(function (answer) {
+        if (answer && answer.view) drawState(answer.view);
+        say(label('presetApplied', 'Preset {name} applied').replace('{name}', el('preset').value), 'ok');
+      }, function (error) { say(String(error.message || error), 'err'); });
+    });
+    el('me').addEventListener('click', function () {
+      api.me().then(function (answer) {
+        if (answer && answer.view) drawState(answer.view);
+        else say(label('notSignedIn', 'No character is signed in.'), 'err');
+      }, function (error) { say(String(error.message || error), 'err'); });
+    });
+    var BUTTONS = [
+      { id: 'save', run: function () { return api.save(); } },
+      { id: 'load', run: function () { return api.load(); } },
+      { id: 'autoload', run: function () { return api.autoload(); } }
+    ];
+    BUTTONS.forEach(function (one) {
+      el(one.id).addEventListener('click', function () {
+        say(label('working', 'Working...'), '');
+        one.run().then(function (answer) {
+          if (answer && answer.view) drawState(answer.view);
+          if (answer && answer.canceled) { say(label('canceled', 'Canceled.'), ''); return; }
+          if (answer && answer.applied !== undefined && !answer.applied) {
+            say(answer.error || label('noAutoload', 'There is no autoload config yet.'), answer.error ? 'err' : '');
+            return;
+          }
+          say(answer && answer.ok ? label(one.id + 'd', label(one.id, one.id)) : (answer && answer.error) || '',
+            answer && answer.ok ? 'ok' : 'err');
+        }, function (error) { say(String(error.message || error), 'err'); });
+      });
+    });
+  }
+
+  function words() {
+    document.title = label('title', 'Maid Remake');
+    el('enableLabel').textContent = label('enable', 'Enable');
+    el('targetLegend').textContent = label('target', 'Goto Username');
+    el('relogLabel').textContent = label('relogDelay', 'Relog Delay');
+    el('skillDelayLabel').textContent = label('skillDelay', 'Skill Delay');
+    el('presetLabel').textContent = label('preset', 'Skill Preset');
+    el('skillListLabel').textContent = label('skillList', 'Skill List');
+    el('combatLegend').textContent = label('combat', 'Combat');
+    el('safeSkillLabel').textContent = label('optionSafeSkill', 'Use');
+    el('safeSkillHpLabel').textContent = label('safeSkillHp', 'if health<');
+    el('buffLabel').textContent = label('optionBuffStopAttack', 'Buff If StopAttack');
+    el('priorityLabel').textContent = label('attackPriority', 'AttackPriority');
+    el('keysLegend').textContent = label('keys', 'Keys');
+    el('unfollowLabel').textContent = label('unfollow', 'Unfollow (R)');
+    el('stopAttackLabel').textContent = label('stopAttack', 'StopAttack (T)');
+    el('globalLabel').textContent = label('globalHotkey', 'Global Hotkey');
+    el('keyHint').textContent = label('keyHint',
+      'Unfollow and StopAttack work whichever window has focus while Global Hotkey is ticked.');
+    el('optionsLegend').textContent = label('options', 'Options');
+    el('mapsLegend').textContent = label('maps', 'Maps');
+    el('lockedLabel').textContent = label('lockedZoneHandler', 'Locked Zone Handler');
+    el('whitelistLabel').textContent = label('whitelistMap', 'Whitelist Map');
+    el('lockedMapsLabel').textContent = label('lockedMaps', 'Locked maps');
+    el('whitelistMapsLabel').textContent = label('whitelistMaps', 'Whitelist maps');
+    el('configLegend').textContent = label('config', 'Config');
+    el('me').textContent = label('me', 'Me');
+    el('save').textContent = label('save', 'Save');
+    el('load').textContent = label('load', 'Load');
+    el('autoload').textContent = label('autoload', 'Autoload');
+  }
+
+  function drawParty(parties) {
+    if (!parties || !parties.enabled) return;
+    var box = el('party');
+    box.innerHTML = '';
+    var line = document.createElement('span');
+    // The reference's own PartyCmd tooltip lists the commands; this is the same list, drawn.
+    line.textContent = label('partyCommands', 'Party chat commands: ') + parties.commands.join(', ');
+    box.appendChild(line);
+  }
+
+  function main() {
+    // The window pushes its own state on every scheduler pass, so the line above changes on its
+    // own when the loop moves or a key is pressed in another window.
+    api.onState(function (view) {
+      if (view && view.state) drawState(view);
+      if (view && view.parties) drawParty(view.parties);
+    });
+    api.getView().then(function (view) {
+      strings = Object.assign({}, view.messages || strings);
+      words();
+      drawState(view);
+      drawParty(view.parties);
+      wire();
+    }).catch(function (error) {
+      say(String(error.message || error), 'err');
+    });
+  }
+
+  main();
+})();
+</script>
+</body>
+</html>

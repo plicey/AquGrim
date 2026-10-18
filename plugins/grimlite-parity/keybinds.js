@@ -31,7 +31,21 @@ const DEFAULTS = {
     // The reference's own action list carries "Show Fast Travels" (Hotkeys.cs:402). Alt+Shift+T
     // takes nothing: the app holds no plain Alt+T and the game plugin's own reminders entry is
     // Alt+T, which this family leaves alone.
-    grimliteFastTravels: 'Alt+Shift+T'
+    grimliteFastTravels: 'Alt+Shift+T',
+    // The Maid's own two keys. The reference's form has them as plain R and T while it has focus,
+    // with a Global Hotkey box that moves the same two onto a low-level hook; that box is the
+    // Maid's own option, and these are the keys it moves. Not R or T on their own: the app's
+    // bindings are the Alt+Shift family and a bare letter would take the game's own chat keys.
+    //
+    // These two are the only ids here with no `registerKeybinds` entry beside this table. That is
+    // not an omission: a binding registered here is put on the app's local layer unconditionally,
+    // while the Maid's Global Hotkey box has to move its two keys between the local layer and the
+    // app-wide one. The Maid window registers them itself (features/maid/maid-window.js).
+    grimliteMaidUnfollow: 'Alt+Shift+U',
+    grimliteMaidStopAttack: 'Alt+Shift+X',
+    // The reference's own action list carries "Show Maid" (Hotkeys.cs:411), between "Show DropUi"
+    // and "Show Logs"; its keys ship empty upstream. R takes nothing this family or the app holds.
+    grimliteMaid: 'Alt+Shift+R'
 };
 
 function register(host) {
@@ -132,6 +146,13 @@ function register(host) {
             id: 'grimliteFastTravels',
             action: function () {
                 host.windows.openFeatureWindow(windows.TRAVEL_WINDOW_ID);
+            }
+        },
+        {
+            // The reference's own action list, in its own words: "Show Maid" (Hotkeys.cs:411).
+            id: 'grimliteMaid',
+            action: function () {
+                host.windows.openFeatureWindow(windows.MAID_WINDOW_ID);
             }
         }
     ]);

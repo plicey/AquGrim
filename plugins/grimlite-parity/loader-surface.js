@@ -66,11 +66,205 @@ function playerIn(tree, username) {
     return null;
 }
 
+// ---------------------------------------------------------------- monsters (ticket #38)
+
+/**
+ * The monsters the game holds, read one *leaf* at a time.
+ *
+ * The loader walks `Root.Game.world.getMonstersByCell(cell)` in AS3 and never sends a monster
+ * over its own bridge: `GetMonstersInCell` reshapes each one into eight fields and stringifies
+ * *that*. The reason it has to is measured, not assumed. A monster is a live `Avatar` whose `pMC`
+ * is a `MonsterMC` MovieClip - a display object, with a parent chain and children, which the
+ * bridge's `JSON.stringify` cannot express (AquaBridge.as falls back to `String(value)` when it
+ * throws). The game's own accessors take and return those live objects too: `getMonster(id)`,
+ * `getMonstersByCell(cell)`, `getActionByRef(ref)` and `testAction(action)` are all typed on them
+ * (World.as 8075, 8128, 9659, 8705), and the only member that reaches a monster by anything a
+ * bridge could carry is the click handler, which is handed a MouseEvent.
+ *
+ * So this walks the collection by index and reads primitive leaves off each entry - the same
+ * reshape the loader's own body performs, done a step earlier because here the reshape has to
+ * happen on the far side of the wire. `visible` is read where the loader reads it (`pMC.visible`)
+ * and `pMC` is probed with `isNull`, the bridge's own existence test, which is what the loader's
+ * `if(_loc2_.pMC)` guard is about.
+ */
+const MONSTER_FIELDS = ['sRace', 'strMonName', 'MonID', 'MonMapID', 'iLvl', 'intState', 'intHP', 'intHPMax'];
+
+/** A read that answers null for a member the game does not carry, rather than throwing. */
+function soft(ctx, path) {
+    return ctx.get(path).then(function (value) {
+        return value === undefined ? null : value;
+    }, function () { return null; });
+}
+
+/** One monster's eight fields, read from the leaves the loader's own projection copies. */
+function readMonster(ctx, at) {
+    const fields = MONSTER_FIELDS.map(function (field) {
+        // world.monsters[i].objData.* and world.monsters[i].dataLeaf.*, the two objects the
+        // loader's body reads its eight fields out of.
+        const branch = field === 'sRace' || field === 'strMonName' ? 'objData' : 'dataLeaf';
+        return soft(ctx, at + '.' + branch + '.' + field);
+    });
+    return Promise.all(fields).then(function (values) {
+        const monster = {};
+        MONSTER_FIELDS.forEach(function (field, i) { monster[field] = values[i]; });
+        return monster;
+    });
+}
+
+/** Whether a monster read back as anything at all, or is a slot this bridge cannot describe. */
+function described(monster) {
+    return MONSTER_FIELDS.some(function (field) {
+        return monster[field] !== null && monster[field] !== undefined;
+    });
+}
+
+/**
+ * Every monster the game holds, one entry per slot: its cell, its eight fields, whether the client
+ * has drawn it, and whether the fields read back at all.
+ *
+ * A collection that reports monsters while every one of them reads back blank is the one case this
+ * refuses on. That is not an empty map - an empty map has no monsters to fail to read - it is this
+ * bridge being unable to see into a `Vector.<Avatar>` whose members it cannot serialize, and the
+ * difference matters more here than anywhere else in the surface: a respawn wait and a cell jump
+ * both read an empty answer as "nothing to fight" and move on.
+ */
+function readAllMonsters(ctx) {
+    return ctx.get('world.monsters.length').then(function (length) {
+        const count = Number(length);
+        if (!isFinite(count) || count <= 0) return [];
+        const jobs = [];
+        for (let i = 0; i < count; i++) {
+            const at = 'world.monsters.' + i;
+            jobs.push(Promise.all([
+                soft(ctx, at + '.dataLeaf.strFrame'),
+                readMonster(ctx, at),
+                ctx.present(at + '.pMC'),
+                soft(ctx, at + '.pMC.visible')
+            ]).then(function (row) {
+                return {
+                    at: at,
+                    frame: row[0] === null || row[0] === undefined ? null : String(row[0]),
+                    monster: row[1],
+                    hasClip: row[2],
+                    visible: row[3] === true,
+                    described: described(row[1])
+                };
+            }));
+        }
+        return Promise.all(jobs).then(function (rows) {
+            if (rows.length && !rows.some(function (row) { return row.described; })) {
+                throw new Error('the game reports ' + count + ' monster(s) but not one of them read ' +
+                    'back over the bridge, so this is a bridge limit rather than an empty map');
+            }
+            return rows;
+        });
+    });
+}
+
+/** The same cell comparison the game's own getMonstersByCell makes (case-insensitive). */
+function sameCell(a, b) {
+    return String(a === null || a === undefined ? '' : a).toLowerCase() ===
+        String(b === null || b === undefined ? '' : b).toLowerCase();
+}
+
+/**
+ * The monsters in one cell: the game's own `getMonstersByCell` selection, done from here.
+ *
+ * The game filters `world.monsters` on `dataLeaf != null && dataLeaf.strFrame == cell`, so that is
+ * the selection reproduced - and a monster the game holds but cannot describe (no dataLeaf, so
+ * nothing this can read) is a refusal rather than a silent omission: an empty answer has to mean
+ * "the cell is empty", which is exactly what a respawn wait reads it as.
+ */
+function monstersInCell(ctx, cell) {
+    return readAllMonsters(ctx).then(function (rows) {
+        return rows.filter(function (row) { return sameCell(row.frame, cell); })
+            .map(function (row) { return row.monster; });
+    });
+}
+
+/** The loader's GetMonsterByName: the first live, living monster whose name contains the want. */
+function monsterByName(ctx, name) {
+    const want = String(name === null || name === undefined ? '' : name).toLowerCase();
+    return Promise.all([ctx.get('world.strFrame'), readAllMonsters(ctx)]).then(function (both) {
+        const rows = both[1];
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const named = row.monster.strMonName === null || row.monster.strMonName === undefined
+                ? '' : String(row.monster.strMonName).toLowerCase();
+            // World.as GetMonsterByName: `if(_loc2_.pMC)` then name contains (or "*"), then
+            // `dataLeaf.intState > 0` - and the walk is over the player's own cell only.
+            if (sameCell(row.frame, both[0]) && row.hasClip && Number(row.monster.intState) > 0 &&
+                (want === '*' || named.indexOf(want) > -1)) {
+                return row;
+            }
+        }
+        return null;
+    });
+}
+
+/** The loader's GetMonsterByMonMapId: the same walk, matched on dataLeaf.MonMapID instead. */
+function monsterByMonMapId(ctx, id) {
+    const want = String(id === null || id === undefined ? '' : id);
+    return Promise.all([ctx.get('world.strFrame'), readAllMonsters(ctx)]).then(function (both) {
+        const rows = both[1];
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const monMapID = row.monster.MonMapID === null || row.monster.MonMapID === undefined
+                ? '' : String(row.monster.MonMapID);
+            if (sameCell(row.frame, both[0]) && row.hasClip && Number(row.monster.intState) > 0 &&
+                (want === '*' || monMapID.indexOf(want) > -1)) {
+                return row;
+            }
+        }
+        return null;
+    });
+}
+
+/** The loader's GetVisibleMonstersInCell: the player's own cell, drawn and living only. */
+function visibleMonstersInCell(ctx) {
+    return Promise.all([ctx.get('world.strFrame'), readAllMonsters(ctx)]).then(function (both) {
+        return both[1].filter(function (row) {
+            return sameCell(row.frame, both[0]) && row.hasClip && row.visible &&
+                Number(row.monster.intState) > 0;
+        }).map(function (row) { return row.monster; });
+    });
+}
+
 /**
  * The game paths a read-only helper needs, and the writes and calls the rest make. Keyed by the
  * reference's own name, each row carrying the loader file it came from.
  */
 const SURFACE = {
+    // The monsters this bridge CAN answer (ticket #38). See monstersInCell below the table for
+    // why this is a per-field walk rather than the one read the loader's body is.
+    GetMonstersInCell: {
+        compute: function (ctx, p) { return monstersInCell(ctx, p[0]); }
+    },
+    GetVisibleMonstersInCell: {
+        // World.as: getMonstersByCell(world.strFrame), keeping only pMC != null && pMC.visible &&
+        // intState > 0. The selection is the player's own cell, read here rather than passed in.
+        compute: function (ctx) { return visibleMonstersInCell(ctx); }
+    },
+    IsMonsterAvailable: {
+        compute: function (ctx, p) {
+            return monsterByName(ctx, p[0]).then(function (row) { return row !== null; });
+        }
+    },
+    IsMonsterAvailableByMonMapID: {
+        compute: function (ctx, p) {
+            return monsterByMonMapId(ctx, p[0]).then(function (row) { return row !== null; });
+        }
+    },
+    GetMonsterHealth: {
+        compute: function (ctx, p) {
+            return monsterByName(ctx, p[0]).then(function (row) {
+                // World.as dereferences the find without a null check; here a missing monster is a
+                // refusal that names it, so a caller can tell it from a monster on 0 HP.
+                if (row === null) throw new Error('no monster named "' + p[0] + '" is in this cell');
+                return row.monster.intHP;
+            });
+        }
+    },
     // ---- reads: one path each (loader game/Data/*.as) ------------------------------------
     IsLoggedIn: { get: 'sfc.isConnected' },
     Cell: { get: 'world.strFrame' },
@@ -215,8 +409,20 @@ const SURFACE = {
         }
     },
     SetTargetPlayer: { call: 'world.getAvatarByUserName' },
-    AttackMonster: { call: 'world.setTarget' },
-    AttackMonsterByMonMapId: { call: 'world.setTarget' },
+    // Grimoire's Attacks ARE a setTarget on a live monster object, and the stock game's own ways in
+    // (getMonster(id), getMonstersByCell(cell)) return that live object. A string handed to
+    // world.setTarget is what `myAvatar.target` is typed as an Avatar for (World.as 8372 reads
+    // `npcType`, `dataLeaf` and `pMC` off it), so this is not a call that can be substituted.
+    // The ticket's own rule applies: report it by name rather than fake a kill.
+    AttackMonster: {
+        why: 'the reference resolves a live monster object and hands it to world.setTarget, then ' +
+            'walks the avatar to it; a live Avatar cannot travel through a JSON bridge, so there ' +
+            'is no path to call here (ticket #38 - the monster READS are implemented)'
+    },
+    AttackMonsterByMonMapId: {
+        why: 'the same setTarget with a live Avatar, resolved by MonMapID; a live Avatar cannot ' +
+            'travel through a JSON bridge, so there is no path to call here (ticket #38)'
+    },
     SetSkillCooldown: { set: function (p) { return 'world.actions.active.' + index(p[0]) + '.cd'; } },
     SetSkillRange: { set: function (p) { return 'world.actions.active.' + index(p[0]) + '.range'; } },
     SetSkillMana: { set: function (p) { return 'world.actions.active.' + index(p[0]) + '.mp'; } },
@@ -479,17 +685,28 @@ const SURFACE = {
     BuyItemQtyById: { why: 'the reference resolves a shop item by id pair; ticket #39 owns shops' },
     LoadBankItems: { why: 'the loader sends its own loadBank frame; ticket #29\'s window uses the game path' },
     MuteToggle: { why: 'the reference mutes its own chat box; not a game call' },
-    UseSkill: { why: 'the reference checks readiness, walks the avatar and calls testAction; ticket #38 owns combat' },
-    ForceUseSkill: { why: 'the reference calls world.testAction for one skill; ticket #38 owns combat' },
-    SetTargetPvP: { why: 'the reference scans live avatars for a same-cell PvP target; ticket #38 owns combat' },
-    CancelTargetSelf: { why: 'the reference compares two live avatar objects; ticket #38 owns combat' },
+    UseSkill: {
+        why: 'the reference hands the live action object to world.testAction (and world.setTarget ' +
+            'for a friendly one); both take a live object the JSON bridge cannot carry, so the ' +
+            'two calls that fire a skill cannot be made from here (ticket #38 - the readiness ' +
+            'reads SkillAvailable and AllSkillsAvailable ARE implemented)'
+    },
+    ForceUseSkill: {
+        why: 'world.testAction(action) takes the live action object out of world.actions.active; ' +
+            'browsing that array gives JSON, and the game has no by-ref entry point that takes ' +
+            'anything else (ticket #38)'
+    },
+    SetTargetPvP: {
+        why: 'the reference scans live avatar objects for a same-cell PvP target and hands one to ' +
+            'world.setTarget; a live Avatar cannot travel through a JSON bridge (ticket #38)'
+    },
+    CancelTargetSelf: {
+        why: 'the reference compares two live avatar objects (myAvatar.target == myAvatar) before ' +
+            'cancelling; a live Avatar cannot travel through a JSON bridge (ticket #38). The game ' +
+            'own CancelTarget is implemented and is what CmdCancelTarget uses'
+    },
     GetAurasValue: { why: 'the reference reads live aura arrays off the avatar; ticket #42 owns auras' },
     AuraDuration: { why: 'the reference reads live aura arrays off the avatar; ticket #42 owns auras' },
-    GetMonstersInCell: { why: 'the reference reshapes live monster objects; ticket #38 owns combat' },
-    GetVisibleMonstersInCell: { why: 'the reference reshapes live monster objects; ticket #38 owns combat' },
-    GetMonsterHealth: { why: 'the reference reshapes a live monster object; ticket #38 owns combat' },
-    IsMonsterAvailable: { why: 'the reference scans live monsters by name; ticket #38 owns combat' },
-    IsMonsterAvailableByMonMapID: { why: 'the reference scans live monsters by MonMapID; ticket #38 owns combat' },
     MapLoadComplete: { why: 'the reference inspects its own display list; ticket #41 owns state' },
     RejectDrop: { why: 'the reference walks its own drop stack UI; ticket #33 owns drops' },
 
@@ -592,6 +809,17 @@ function createLoaderSurface(call, log) {
         return call('setGameObject', [path, value]);
     }
 
+    /**
+     * The bridge's own existence probe (isNull), which is how a guard like the loader's
+     * `if(_loc2_.pMC)` survives when the value itself cannot be read: the path answers whether a
+     * member is there without trying to carry it.
+     */
+    function present(path) {
+        return Promise.resolve(call('isNull', [path])).then(function (answer) {
+            return answer !== true && answer !== 'true';
+        });
+    }
+
     function unsupported(name, row) {
         return Promise.reject(new Error('"' + name + '" is part of the reference client\'s own ' +
             'loader rather than the game, and this bridge does not implement it: ' + row.why));
@@ -619,7 +847,7 @@ function createLoaderSurface(call, log) {
             // `why` *and* an implementation is one with a caveat, which is a note, not a refusal.
             if (!row.compute && !row.get && !row.call && !row.set) return unsupported(name, row);
             if (row.compute) {
-                return Promise.resolve(row.compute({ get: get, call: invoke, set: write }, p));
+                return Promise.resolve(row.compute({ get: get, call: invoke, set: write, present: present }, p));
             }
             if (row.get) {
                 const path = typeof row.get === 'function' ? row.get(p) : row.get;

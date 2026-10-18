@@ -700,12 +700,12 @@ test('a command whose own call this build cannot make says so and names the owne
     'CmdSetFPS carries the surface own reason: ' + fps.records.join('|'));
 
   const special = await run(engine(), 'CmdSpecialHandler', { Zone: 'Auto Zone', Mode: 0 });
-  assert.ok(special.records.some(function (l) { return /Auto Zone/.test(l) && /#43|#44/.test(l); }),
-    'CmdSpecialHandler names the Maid tickets: ' + special.records.join('|'));
+  assert.ok(special.records.some(function (l) { return /Auto Zone/.test(l) && /#44/.test(l); }),
+    'CmdSpecialHandler names the auto-zone ticket: ' + special.records.join('|'));
 
   const taunt = await run(engine(), 'CmdTauntcycle', { type: 0 });
-  assert.ok(taunt.records.some(function (l) { return /taunt/i.test(l) && /#38/.test(l); }),
-    'CmdTauntcycle names combat: ' + taunt.records.join('|'));
+  assert.ok(taunt.records.some(function (l) { return /taunt/i.test(l) && /AttackMonster/.test(l); }),
+    'CmdTauntcycle names the call the rotation needs: ' + taunt.records.join('|'));
 });
 
 test('a special handler with no zone is the reference own silent return', async () => {

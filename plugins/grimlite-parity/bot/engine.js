@@ -431,8 +431,328 @@ function createEngine(deps) {
         return isNaN(parsed) ? null : parsed;
     }
 
-    // The flow vocabulary this ticket owns. A class that is not here is reported by name and
-    // skipped, so a bot never hangs on a command this build cannot run yet.
+    // ---------------------------------------------------------------- combat and map (#38)
+
+    // CmdSkillSet.cs writes BotData.BotSkill, and CmdAttack/CmdKill read it back to find the label
+    // their rotation starts from. Upstream that is a static field, which is fine for a client that
+    // is single-client by construction; spec #19's rule is one bot per window, so it is per engine.
+    let botSkill = '';
+    // The reference's skill cursors: CmdKill's is static and deliberately survives a restart,
+    // CmdAttack's is per-instance.
+    const skill = { kill: 0, lastBotSkill: '', attack: 0 };
+    // CmdMoveToCell2 starts a background jump and its stop flag cancels it. Upstream that is a
+    // static CancellationTokenSource; here it belongs to this engine and stop() cancels it too.
+    const jump = { token: null };
+    const reported = {};
+
+    /** One line per thing this build cannot do, so a long run does not repeat itself. */
+    function reportOnce(key, line) {
+        if (reported[key]) return;
+        reported[key] = true;
+        log(line);
+    }
+
+    /** The reference's IsVar/GetVar pair, for a command's own fields. */
+    function varOf(value) {
+        if (!isVar(value)) return value === undefined || value === null ? '' : String(value);
+        const key = getVar(value);
+        return vars[key] === undefined ? value : vars[key];
+    }
+
+    /** A session read that takes an argument, reported the way the no-argument reads are. */
+    function read1(name, arg) {
+        if (!session || typeof session[name] !== 'function') {
+            return Promise.resolve({ ok: false, error: ERRORS.noSession });
+        }
+        return Promise.resolve().then(function () { return session[name](arg); })
+            .then(function (value) { return { ok: true, value: value }; }, function (error) {
+                return {
+                    ok: false,
+                    error: message(error),
+                    windowGone: !!(error && error.windowGone === true)
+                };
+            });
+    }
+
+    /** The same, over a list of arguments. */
+    function readN(name, args) {
+        if (!session || typeof session[name] !== 'function') {
+            return Promise.resolve({ ok: false, error: ERRORS.noSession });
+        }
+        return Promise.resolve().then(function () { return session[name].apply(session, args || []); })
+            .then(function (value) { return { ok: true, value: value }; }, function (error) {
+                return {
+                    ok: false,
+                    error: message(error),
+                    windowGone: !!(error && error.windowGone === true)
+                };
+            });
+    }
+
+    /**
+     * Player.AttackMonster: an "id..." name is a MonMapID, anything else is the monster's name.
+     * The call is the one thing this build cannot make (its argument is a live Avatar), so the
+     * refusal is returned as a reason for the caller to log - never swallowed, never faked.
+     */
+    function attackMonster(name) {
+        const text = String(name === undefined || name === null ? '' : name);
+        const byId = /^id['.:-](.*)$/i.exec(text);
+        return byId
+            ? read1('attackMonsterByMonMapId', byId[1])
+            : read1('attackMonster', text);
+    }
+
+    /** The skill set Bot.cs builds from its own Skills list: the label rows, by upper-cased text. */
+    function skillSet() {
+        const out = {};
+        const list = config && Array.isArray(config.Skills) ? config.Skills : [];
+        list.forEach(function (entry, i) {
+            if (entry && Number(entry.Type) === 2 && entry.Text !== undefined) {
+                out[String(entry.Text).toUpperCase()] = i;
+            }
+        });
+        return out;
+    }
+
+    /** BotData.SkillSet["[" + BotSkill + "]"] + 1, or 0 when the set has no such label. */
+    function labelStart() {
+        const found = skillSet()['[' + String(botSkill || '').toUpperCase() + ']'];
+        return found === undefined ? 0 : found + 1;
+    }
+
+    /**
+     * Skill.ExecuteSkill: a Safe row casts only while its own HP (or MP) threshold holds, and the
+     * equipped class decides how the cast goes - Skill.cs forces for a Chrono Shadow and walks
+     * into range otherwise.
+     */
+    async function executeSkill(entry) {
+        if (entry && Number(entry.Type) === 1) {
+            const want = Number(entry.SafeValue) || 0;
+            const isMp = entry.IsSafeMp === true || entry.IsSafeMp === 'True';
+            const now = await read(isMp ? 'mana' : 'health');
+            const max = await read(isMp ? 'manaMax' : 'healthMax');
+            if (!now.ok || !max.ok || !Number(max.value)) {
+                return { ok: false, error: now.ok ? 'no maximum to compare against' : now.error };
+            }
+            const percent = Number(now.value) / Number(max.value) * 100;
+            const type = Number(entry.SType) || 0;
+            const passes = type === 0 ? percent <= want : (type === 1 ? percent >= want : percent === want);
+            if (!passes) return { ok: true, skipped: true };
+        }
+        const klass = await read('className');
+        const method = klass.ok && String(klass.value).toLowerCase() === 'chrono shadow'
+            ? 'forceUseSkill'
+            : 'useSkill';
+        return read1(method, String(entry && entry.Index));
+    }
+
+    let auraReported = false;
+
+    /**
+     * Skill.hasaura: a row with no aura condition is ready, which is also what the reference's own
+     * Compare does with a condition it cannot parse. A real condition reads the avatar's own aura
+     * counts (the loader's GetAurasValue, ticket #42), so that is reported once rather than faked.
+     */
+    function hasAura(entry) {
+        if (!entry || !entry.aura) return true;
+        if (!auraReported) {
+            auraReported = true;
+            log('a skill aura condition reads the avatar\'s own aura counts (ticket #42); this ' +
+                'loop treats it as ready, which is what the reference does with one it cannot parse');
+        }
+        // "Ready" is what Skill.hasaura returns for a condition it cannot parse, so an aura row is
+        // cast rather than silently dropped - the reference's own choice when it cannot tell.
+        return true;
+    }
+
+    /** Move the rotation's cursor the way the reference does at the end of one cast. */
+    function advance(which, count, start) {
+        if (which === 'kill') skill.kill = skill.kill < count ? skill.kill + 1 : start;
+        else skill.attack = skill.attack < count ? skill.attack + 1 : start;
+    }
+
+    /**
+     * The rotation CmdAttack and CmdKill share, one row per call. Faithful to the reference's own
+     * cursors: kill's survives across runs and only resets when the skill set changes, the label
+     * row sends the cursor back to the set's start, and a row whose aura condition is not met is
+     * skipped when it is not a wait-cd row.
+     */
+    async function rotateSkills(which, options) {
+        const opts = options || {};
+        const list = config && Array.isArray(config.Skills) ? config.Skills : [];
+        if (!list.length) return;
+        const start = labelStart();
+        const count = list.length - 1;
+        if (which === 'kill') {
+            if (skill.kill > count) skill.kill = start;
+            if (skill.lastBotSkill !== botSkill) {
+                if (start !== 0) skill.kill = start;
+                skill.lastBotSkill = botSkill;
+            }
+        } else if (skill.attack > count || skill.attack < start) {
+            skill.attack = start;
+        }
+        const entry = list[which === 'kill' ? skill.kill : skill.attack];
+        if (!entry) return;
+        if (Number(entry.Type) === 2) {
+            if (which === 'kill') skill.kill = start;
+            else skill.attack = start;
+            return;
+        }
+        if (!hasAura(entry) && !entry.waitCd) {
+            advance(which, count, start);
+            return;
+        }
+        if (opts.waitForSkill || entry.waitCd) {
+            const ready = await read1('skillAvailable', String(entry.Index));
+            if (ready.ok) await sleep(Math.max(0, Number(ready.value) || 0));
+        }
+        const cast = await executeSkill(entry);
+        if (!cast.ok) {
+            reportOnce('skill:' + String(entry.Index) + ':' + cast.error,
+                'skill ' + entry.Index + ' could not be cast: ' + cast.error);
+        }
+        if (entry.waitCd && !hasAura(entry)) await sleep(200);
+        advance(which, count, start);
+    }
+
+    /** The four monster-specific re-targets CmdKill performs before each skill. */
+    const KILL_SPECIALS = {
+        escherion: 'Staff of Inversion',
+        'commander gallaeon': 'hydra crew',
+        vath: 'Stalagbite',
+        'ultra avatar tyndarius': 'Ultra Fire Orb'
+    };
+
+    async function killSpecials(monster) {
+        const wanted = KILL_SPECIALS[String(monster || '').toLowerCase()];
+        if (!wanted) return;
+        const there = await read1('monsterAvailable', wanted);
+        if (there.ok && there.value === true) await attackMonster(wanted);
+    }
+
+    /**
+     * Inventory.ContainsItem, in the reference's own shape: a name and a quantity, where "*" is
+     * "any" and a quantity that is not a number is treated as one stack.
+     */
+    function holdsItem(list, name, qty) {
+        const want = String(name === undefined || name === null ? '' : name).trim().toLowerCase();
+        const items = Array.isArray(list) ? list : [];
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (!item) continue;
+            const itemName = String(item.sName === undefined ? item.Name || '' : item.sName).toLowerCase();
+            if (itemName !== want) continue;
+            if (String(qty) === '*') return true;
+            const have = Number(item.iQty === undefined ? item.Quantity : item.iQty) || 0;
+            return have >= (Number(qty) || 1);
+        }
+        return false;
+    }
+
+    /**
+     * CmdKillFor's own test: every name in the list, against its own quantity. The reference reads
+     * the inventory for Items and the temporary inventory for Temps (ItemType 1), which is the
+     * loader's GetInventoryItems / GetTempItems - both of which the surface answers (#48).
+     */
+    async function collected(names, quantities, itemType) {
+        const list = await read(itemType === 1 ? 'tempItems' : 'items');
+        if (!list.ok) return { ok: false, error: list.error };
+        const names2 = String(names === undefined ? '' : names).split(',');
+        const qty = String(quantities === undefined ? '' : quantities).split(',');
+        const every = names2.every(function (entry, i) {
+            return holdsItem(list.value, entry, qty[i] === undefined ? '*' : qty[i]);
+        });
+        return { ok: true, value: every };
+    }
+
+    /** CmdKill's KillPriority: the first name on the list that is in the cell wins. */
+    async function killPriority(list) {
+        const wanted = String(list || '').split(',').map(function (part) { return part.trim(); })
+            .filter(function (part) { return part.length; });
+        for (let i = 0; i < wanted.length; i++) {
+            const there = await read1('monsterAvailable', wanted[i]);
+            if (there.ok && there.value === true) {
+                await attackMonster(wanted[i]);
+                return;
+            }
+        }
+    }
+
+    /**
+     * The body CmdKill, CmdKillFor and both hunt commands share: wait for the monster, attack it,
+     * rotate the set while it lives, then make sure the target is dropped. Returns a reason when
+     * something in it could not be carried through, so the caller can log it; a refusal here is
+     * never a hang, which is the ticket's own last acceptance criterion.
+     */
+    async function killOnce(options) {
+        const opts = options || {};
+        if (config && config.SkipAttack) {
+            if ((await read('hasTarget')).value === true) await read('cancelTargets');
+            return 'SkipAttack is on: the target was dropped instead of attacked';
+        }
+
+        // "waiting monster to respawn for 3s" - the reference's own comment and its own timeout.
+        await waitUntil(async function () {
+            const there = await read1('monsterAvailable', opts.monster);
+            return there.ok && there.value === true;
+        }, { timeout: 3 });
+
+        if (config && config.WaitForAllSkills) {
+            const ready = await read('allSkillsAvailable');
+            if (ready.ok) await sleep(Math.max(0, Number(ready.value) || 0));
+        }
+        if (!running) return 'the bot stopped';
+        const alive = await read('alive');
+        const signed = await read('signedIn');
+        if (!(alive.ok && alive.value === true) || !(signed.ok && signed.value === true)) {
+            return 'there is no living, signed-in character to attack with';
+        }
+
+        if (opts.antiCounter) {
+            // The reference watches its own packet tap for "prepares a counter attack" and for the
+            // Counter Attack aura fading. This engine has no tap, so the option is reported rather
+            // than half-honoured: a pause that never happens would look like a stuck bot.
+            reportOnce('anticounter', 'AntiCounter watches the animation packets, which this ' +
+                'engine has no tap for yet; the fight runs without its pause');
+        }
+
+        const attacked = await attackMonster(opts.monster);
+        if (!attacked.ok) return attacked.error;
+
+        const list = config && Array.isArray(config.Skills) ? config.Skills : [];
+        const rounds = opts.rounds === undefined ? 1 : opts.rounds;
+        if (list.length && rounds > 0) {
+            for (let round = 0; round < rounds; round++) {
+                if (!running) break;
+                const signedNow = await read('signedIn');
+                const target = await read('hasTarget');
+                const hp = await read('targetHealth');
+                if (!(signedNow.ok && signedNow.value === true)) break;
+                if (!(target.ok && target.value === true)) break;
+                if (!hp.ok || !(Number(hp.value) > 0)) break;
+                await killSpecials(opts.monster);
+                if (opts.killPriority) await killPriority(opts.killPriority);
+                await sleep(Number(config.SkillDelay) || 0);
+                await rotateSkills('kill', { waitForSkill: !!(config && config.WaitForSkill) });
+            }
+        }
+
+        // "timeout increased to 40 for Autoattack/empty skills users" - the reference's own note.
+        await waitUntil(async function () {
+            const target = await read('hasTarget');
+            return !(target.ok && target.value === true);
+        }, { timeout: 40 });
+        const still = await read('hasTarget');
+        if (still.ok && still.value === true) {
+            await read('cancelTargets');
+            return 'the target did not die, so it was dropped for the next command';
+        }
+        return undefined;
+    }
+
+    // ---------------------------------------------------------------- combat and map handlers
+
     const handlers = {
         CmdBlank: function () {},
         CmdBlank2: function () {},
@@ -557,6 +877,488 @@ function createEngine(deps) {
         },
         CmdVarNotEqualVar: function (ctx, command) {
             if (resolve(command.Value1) === resolve(command.Value2)) ctx.skipNext();
+        },
+
+        // ---- Combat (CmdAttack, CmdCancelTarget, CmdKill, CmdRest, CmdSkillSet, CmdUseSkill) ----
+
+        CmdAttack: async function (ctx, command) {
+            // CmdAttack.cs. SkipAttack short-circuits into a cancel; otherwise the attack is sent
+            // while running/alive/signed in, and a "*" only fires when nothing is targeted yet.
+            if (config && config.SkipAttack) {
+                if ((await read('hasTarget')).value === true) await read('cancelTargets');
+                return 'SkipAttack is on: the target was dropped instead of attacked';
+            }
+            const alive = await read('alive');
+            const signed = await read('signedIn');
+            const monster = resolve(command.Monster);
+            // The "*" branch skips the attack when something is already targeted; it does NOT skip
+            // the skill rotation below, which upstream sits outside the if/else entirely.
+            let failed = null;
+            if (!running || !(alive.ok && alive.value === true) || !(signed.ok && signed.value === true)) {
+                failed = 'not attacking: the character is not running, alive and signed in';
+            } else if (String(monster) === '*') {
+                const target = await read('hasTarget');
+                if (!(target.ok && target.value === true)) {
+                    const attacked = await attackMonster(monster);
+                    if (!attacked.ok) failed = attacked.error;
+                }
+            } else {
+                const attacked = await attackMonster(monster);
+                if (!attacked.ok) failed = attacked.error;
+            }
+            if (command.UseSkill) await rotateSkills('attack', {});
+            return failed;
+        },
+
+        CmdKill: async function (ctx, command) {
+            // CmdKill.cs. The kill itself is one body; the loop around it is the caller's, because
+            // a bot that kills "for" an item or a quest is a different command (#39/#41).
+            const reason = await killOnce({
+                monster: varOf(command.Monster),
+                killPriority: command.KillPriority,
+                antiCounter: command.AntiCounter === true,
+                rounds: 1
+            });
+            return reason;
+        },
+
+        CmdCancelTarget: async function (ctx, command) {
+            // CmdCancelTarget.cs: the three cancels, then a jump on the spot with LeaveCombat.
+            await read('cancelTargets');
+            if (command && command.LeaveCombat) {
+                const cell = await read('cell');
+                const pad = await read('pad');
+                const moved = await readN('jump', [cell.ok ? cell.value : '', pad.ok ? pad.value : '']);
+                if (!moved.ok) return 'could not leave combat: ' + moved.error;
+                await sleep(500);
+            }
+            return undefined;
+        },
+
+        CmdRest: async function (ctx, command) {
+            // CmdRest.cs: wait for the Rest lock, optionally leave combat first, rest, and wait for
+            // full bars when the row asks for a full rest. LockActions.Rest is "rest".
+            await waitUntil(async function () {
+                const ready = await read1('actionAvailable', 'rest');
+                return ready.ok && ready.value === true;
+            }, {});
+            if (config && config.ExitCombatBeforeRest) {
+                // "while (Player.CurrentState == Player.State.InCombat)": State.InCombat is 2.
+                for (let guard = 0; guard < 10; guard++) {
+                    const state = await read('state');
+                    if (!state.ok || Number(state.value) !== 2) break;
+                    const cell = await read('cell');
+                    const pad = await read('pad');
+                    await readN('jump', [cell.ok ? cell.value : '', pad.ok ? pad.value : '']);
+                    await sleep(1250);
+                }
+            }
+            const rested = await read('rest');
+            if (!rested.ok) return 'could not rest: ' + rested.error;
+            if (command && command.Full) {
+                await waitUntil(async function () {
+                    const mana = await read('mana');
+                    const manaMax = await read('manaMax');
+                    const health = await read('health');
+                    const healthMax = await read('healthMax');
+                    if (!mana.ok || !manaMax.ok || !health.ok || !healthMax.ok) return true;
+                    return Number(mana.value) >= Number(manaMax.value) &&
+                        Number(health.value) >= Number(healthMax.value);
+                }, {});
+            }
+            return undefined;
+        },
+
+        CmdSkillSet: function (ctx, command) {
+            // CmdSkillSet.cs: BotData.BotSkill = Name.ToUpper(). The rotation reads it back through
+            // labelStart, so the whole point is that this is state and not an action.
+            botSkill = String(command.Name || '').toUpperCase();
+        },
+
+        CmdUseSkill: async function (ctx, command) {
+            // CmdUseSkill.cs. FindTarget runs first; then a non-forced command with no target
+            // leaves; then the optional cooldown wait; then the cast, forced for a Chrono Shadow.
+            const monster = varOf(command.Monster === undefined ? '*' : command.Monster);
+            if (config && config.SkipAttack) {
+                if ((await read('hasTarget')).value === true) await read('cancelTargets');
+                return 'SkipAttack is on: the target was dropped instead of the skill being cast';
+            }
+            await findTarget(monster);
+            if (command.Force !== true) {
+                const target = await read('hasTarget');
+                if (!(target.ok && target.value === true)) {
+                    return 'no "' + monster + '" to cast at, so nothing was cast';
+                }
+            }
+            const index = resolve(command.Index);
+            if (command.Wait) {
+                const ready = await read1('skillAvailable', String(index));
+                if (ready.ok) await sleep(Math.max(0, Number(ready.value) || 0));
+                await findTarget(monster);
+            }
+            const klass = await read('className');
+            const forced = klass.ok && String(klass.value).toLowerCase().indexOf('chrono shadow') > -1;
+            const cast = forced
+                ? await read1('forceUseSkill', String(index))
+                : await read1('useSkill', String(index));
+            return cast.ok ? undefined : cast.error;
+        },
+
+        // ---- Map (CmdJoin, CmdMoveToCell, CmdSetSpawn, CmdTravel, CmdWalk, CmdYulgar) ------
+
+        CmdJoin: async function (ctx, command) {
+            // CmdJoin.cs: a map may carry its own room ("yulgar-1234"), a non-numeric room becomes
+            // a random one, the join is retried Try times, and a map that matches afterwards gets
+            // the cell step and the spawn point. A MapSwf loads a local map file instead.
+            const cell = varOf(command.Cell);
+            const pad = varOf(command.Pad);
+            const written = String(varOf(command.Map));
+            const mapName = written.indexOf('-') !== -1 ? written.split('-')[0] : written;
+            let room = written.indexOf('-') !== -1 ? written.split('-')[1] : '';
+            if (room !== '' && !/^\d+$/.test(room)) room = String(randomRoom());
+
+            const here = await read('map');
+            let tries = Number(command.Try) || 1;
+            if (!(here.ok && String(here.value).toLowerCase() === mapName.toLowerCase())) {
+                while (tries > 0) {
+                    const now = await read('map');
+                    if (now.ok && String(now.value).toLowerCase() === mapName.toLowerCase()) break;
+                    const joined = await tryJoin(mapName, room, cell, pad);
+                    if (!joined.ok) return joined.error;
+                    tries--;
+                }
+            }
+
+            const arrived = await read('map');
+            if (!(arrived.ok && String(arrived.value).toLowerCase() === mapName.toLowerCase())) {
+                return 'could not reach ' + mapName + ' in ' + (Number(command.Try) || 1) + ' try(ies)';
+            }
+            const at = await read('cell');
+            if (!(at.ok && String(at.value).toLowerCase() === String(cell).toLowerCase())) {
+                await readN('jump', [String(cell), String(pad)]);
+                await sleep(500);
+            }
+            await read('setSpawnPointHere');
+
+            const swf = String(command.MapSwf === undefined ? '' : command.MapSwf);
+            if (swf.indexOf('.swf') !== -1 && swf.indexOf('(.swf)') === -1) {
+                const loaded = await read1('loadMap', swf);
+                if (!loaded.ok) return 'could not load ' + swf + ': ' + loaded.error;
+                await waitUntil(async function () {
+                    const ready = await read('ready');
+                    return ready.ok && ready.value === true;
+                }, {});
+            }
+            return undefined;
+        },
+
+        CmdTravel: async function (ctx, command) {
+            // CmdTravel.cs: wait for the transfer lock, then join when the map differs, otherwise
+            // just step to the cell it names.
+            await waitUntil(async function () {
+                const ready = await read1('actionAvailable', 'tfer');
+                return ready.ok && ready.value === true;
+            }, {});
+            const wanted = String(varOf(command.Map)).split('-')[0];
+            const here = await read('map');
+            const cell = varOf(command.Cell);
+            const pad = varOf(command.Pad);
+            if (!(here.ok && String(here.value).toLowerCase() === wanted.toLowerCase())) {
+                const state = await read('state');
+                if (Number(state.value) === 2) {
+                    // "if in combat, jump on the spot until it drops" - the same refreshCell idea.
+                    const at = await read('cell');
+                    const on = await read('pad');
+                    await readN('jump', [at.ok ? at.value : '', on.ok ? on.value : '']);
+                    await waitUntil(async function () {
+                        const now = await read('state');
+                        return !(Number(now.value) === 2);
+                    }, {});
+                }
+                const joined = await readN('join', [String(varOf(command.Map)), String(cell), String(pad)]);
+                if (!joined.ok) return 'could not join ' + varOf(command.Map) + ': ' + joined.error;
+                await waitUntil(async function () {
+                    const now = await read('map');
+                    return now.ok && String(now.value).toLowerCase() === wanted.toLowerCase();
+                }, {});
+                await waitUntil(async function () {
+                    const ready = await read('ready');
+                    return ready.ok && ready.value === true;
+                }, { timeout: 40 });
+                return undefined;
+            }
+            const moved = await readN('jump', [String(cell), String(pad)]);
+            if (!moved.ok) return 'could not move to ' + cell + ': ' + moved.error;
+            await sleep(500);
+            return undefined;
+        },
+
+        CmdMoveToCell: async function (ctx, command) {
+            // CmdMoveToCell.cs: `while (!Player.Cell.EqualsIgnoreCase(Cell)) { MoveToCell; Delay 500 }`
+            // - the loop has no other exit, so the engine's own running flag is the bound here.
+            const cell = varOf(command.Cell);
+            const pad = varOf(command.Pad);
+            for (let guard = 0; guard < 20 && running; guard++) {
+                const here = await read('cell');
+                if (here.ok && String(here.value).toLowerCase() === String(cell).toLowerCase()) return undefined;
+                const moved = await readN('jump', [String(cell), String(pad)]);
+                if (!moved.ok) return 'could not move to ' + cell + ': ' + moved.error;
+                await sleep(500);
+            }
+            return undefined;
+        },
+
+        CmdSetSpawn: async function () {
+            // CmdSetSpawn.cs: Player.SetSpawnPoint().
+            const set = await read('setSpawnPointHere');
+            return set.ok ? undefined : 'could not set the spawn point: ' + set.error;
+        },
+
+        CmdWalk: async function (ctx, command) {
+            // CmdWalk.cs: a Random walk picks 150..700 by 320..450 and waits a second; otherwise the
+            // command walks to the point it names and waits for the position to read back as that
+            // point, up to its own Wait (5000ms by default).
+            let x = varOf(command.X);
+            let y = varOf(command.Y);
+            if (String(command.Type) === 'Random') {
+                x = String(150 + Math.floor(Math.random() * 550));
+                y = String(320 + Math.floor(Math.random() * 130));
+                const walked = await readN('walkToPoint', [x, y]);
+                if (!walked.ok) return 'could not walk to ' + x + ',' + y + ': ' + walked.error;
+                await sleep(1000);
+                return undefined;
+            }
+            const walked = await readN('walkToPoint', [String(x), String(y)]);
+            if (!walked.ok) return 'could not walk to ' + x + ',' + y + ': ' + walked.error;
+            await waitUntil(async function () {
+                const at = await read('position');
+                if (!at.ok || !Array.isArray(at.value)) return false;
+                return String(at.value[0]) === String(x) && String(at.value[1]) === String(y);
+            }, { timeout: Number(command.Wait) || 5000 });
+            return undefined;
+        },
+
+        CmdYulgar: async function (ctx, command) {
+            // CmdYulgar.cs: wait for the transfer lock, leave combat, join yulgar's Enter/Spawn if
+            // that is not where the player is, walk somewhere random, and stop the bot.
+            await waitUntil(async function () {
+                const ready = await read1('actionAvailable', 'tfer');
+                return ready.ok && ready.value === true;
+            }, {});
+            const state = await read('state');
+            if (Number(state.value) === 2) {
+                const cell = await read('cell');
+                const pad = await read('pad');
+                await readN('jump', [cell.ok ? cell.value : '', pad.ok ? pad.value : '']);
+                await sleep(1250);
+            }
+            const here = await read('map');
+            if (!(here.ok && String(here.value).toLowerCase() === 'yulgar')) {
+                const joined = await readN('join', ['yulgar', 'Enter', 'Spawn']);
+                if (!joined.ok) return 'could not join yulgar: ' + joined.error;
+                await waitUntil(async function () {
+                    const now = await read('map');
+                    return now.ok && String(now.value).toLowerCase() === 'yulgar';
+                }, {});
+                await waitUntil(async function () {
+                    const ready = await read('ready');
+                    return ready.ok && ready.value === true;
+                }, { timeout: 40 });
+            }
+            const x = String(150 + Math.floor(Math.random() * 550));
+            const y = String(320 + Math.floor(Math.random() * 130));
+            await readN('walkToPoint', [x, y]);
+            stop();
+            return undefined;
+        },
+
+        CmdMoveToCell2: function (ctx, command) {
+            // CmdMoveToCell2.cs jumps cells in a background task while the bot's list carries on,
+            // which is why it is this engine's one deliberate no-op beyond reporting: a bot that
+            // waits for its own background jump is the other command (CmdMoveToCell). The stop flag
+            // cancels the jump the earlier CmdMoveToCell2 started.
+            if (command.stop) {
+                if (jump.token) {
+                    jump.token.cancelled = true;
+                    jump.token = null;
+                    return undefined;
+                }
+                return 'no cell jump is running to stop';
+            }
+            const list = String(varOf(command.Cell)).split(',')
+                .map(function (part) { return part.trim(); })
+                .filter(function (part) { return part.length; });
+            if (!list.length) return 'this cell jump names no cell to jump to';
+            const pads = String(varOf(command.Pad)).split(',');
+            const maxcell = Math.min(Number(command.maxcell) || 5, list.length);
+            const target = String(varOf(command.target === undefined ? '*' : command.target));
+            if (jump.token) jump.token.cancelled = true;
+            const token = { cancelled: false };
+            jump.token = token;
+            runCellJump(ctx, token, list, pads, maxcell, target);
+            return 'cell jump started over ' + maxcell + ' cell(s); the list continues without waiting';
+        },
+
+        CmdKillFor: async function (ctx, command) {
+            // CmdKillFor.cs: kill until the item (or the quest) is done. The loop is bounded here
+            // because this build cannot guarantee a kill lands - see the note in killOnce - and a
+            // bound that is reported reads better than a bot that silently runs all night.
+            const monster = varOf(command.Monster);
+            const questId = parseInt(String(command.QuestId === undefined ? '' : command.QuestId), 10);
+            if (!isNaN(questId)) {
+                return 'killing for a quest (#' + questId + ') needs the quest reads of ticket #39; ' +
+                    'the kill itself is wired, the "until the quest is complete" half is not';
+            }
+            const itemType = Number(command.ItemType) || 0;
+            const names = varOf(command.ItemName).trim();
+            const quantities = varOf(command.Quantity);
+            const start = await collected(names, quantities, itemType);
+            if (!start.ok) return 'could not read the inventory: ' + start.error;
+            if (start.value) return undefined;
+            let last = null;
+            for (let round = 0; round < HUNT_ROUNDS && running; round++) {
+                last = await killOnce({
+                    monster: monster,
+                    killPriority: command.KillPriority,
+                    antiCounter: command.AntiCounter === true,
+                    rounds: 1
+                });
+                if (last) break;
+                const now = await collected(names, quantities, itemType);
+                if (!now.ok) return 'could not read the inventory: ' + now.error;
+                if (now.value) break;
+                await sleep(Number(command.DelayAfterKill === undefined ? 500 : command.DelayAfterKill) || 0);
+            }
+            const done = await collected(names, quantities, itemType);
+            if (done.ok && done.value) return undefined;
+            if (last) return last;
+            return 'stopped after ' + HUNT_ROUNDS + ' kill(s) without ' + names + ' ' + quantities + 'x';
+        },
+
+        CmdShortHunt: async function (ctx, command) {
+            // CmdShortHunt.cs: check the item first and leave if it is already there, join the map
+            // while it does not match, then run the kill-for.
+            const items = varOf(command.ItemName);
+            const qty = varOf(command.Quantity);
+            const itemType = Number(command.ItemType) || 0;
+            const start = await collected(items, qty, itemType);
+            if (!start.ok) return 'could not read the inventory: ' + start.error;
+            if (start.value) return undefined;
+
+            const written = String(varOf(command.Map)).toLowerCase();
+            const mapName = written.split('-')[0];
+            const cells = String(varOf(command.Cell)).split(',');
+            const pads = String(varOf(command.Pad)).split(',');
+            for (let round = 0; round < HUNT_JOIN_ROUNDS && running; round++) {
+                const here = await read('map');
+                if (here.ok && String(here.value).toLowerCase() === mapName) break;
+                if (command.BlankFirst) {
+                    const state = await read('state');
+                    if (Number(state.value) === 2) await read('cancelTargets');
+                }
+                const joined = await readN('join', [written, String(cells[0]), String(pads[0])]);
+                if (!joined.ok) return 'could not reach ' + mapName + ': ' + joined.error;
+                await waitUntil(async function () {
+                    const now = await read('map');
+                    return now.ok && String(now.value).toLowerCase() === mapName;
+                }, {});
+            }
+            const arrived = await read('map');
+            if (!(arrived.ok && String(arrived.value).toLowerCase() === mapName)) {
+                return 'could not reach ' + mapName + ' to hunt in';
+            }
+            // The reference also holds the cells it was given while the kill runs. That is another
+            // background task (CmdMoveToCell2's shape), so the hunt here fights where it landed.
+            const reason = await huntRounds(command, items, qty, itemType, varOf(command.Monster),
+                command.DelayAfterKill === undefined ? 50 : command.DelayAfterKill, command.KillPriority,
+                command.AntiCounter);
+            return reason;
+        },
+
+        CmdQuestHunt: async function (ctx, command) {
+            // CmdQuestHunt.cs is the quest chain version of CmdShortHunt: load the quest, accept it,
+            // read its required items off the quest itself, then hunt each of them. Which items a
+            // quest needs is a quest read, and those belong to #39/#41 (the surface refuses
+            // GetQuestTree for exactly that reason), so the required-item half is reported rather
+            // than guessed at from the row's own columns.
+            const qid = Number(command.QID) || 0;
+            const items = varOf(command.ItemName);
+            const qty = varOf(command.Quantity);
+            const itemType = Number(command.ItemType) || 0;
+            const start = await collected(items, qty, itemType);
+            if (!start.ok) return 'could not read the inventory: ' + start.error;
+            if (start.value) return undefined;
+
+            const written = String(varOf(command.Map)).toLowerCase();
+            const mapName = written.split('-')[0];
+            const cells = String(varOf(command.Cell)).split(',');
+            const pads = String(varOf(command.Pad)).split(',');
+            if (!qid) {
+                // Without a quest this is the non-quest branch of the same file: the item list it
+                // was given, hunted one by one.
+                const names = items.split(',');
+                const quantities = qty.split(',');
+                const monsters = String(varOf(command.Monster)).split(',');
+                for (let i = 0; i < names.length && running; i++) {
+                    const done = await collected(names[i], quantities[i] === undefined ? '1' : quantities[i], itemType);
+                    if (!done.ok || done.value) continue;
+                    const joined = await readN('join', [written, String(cells[0]), String(pads[0])]);
+                    if (!joined.ok) return 'could not reach ' + mapName + ': ' + joined.error;
+                    await waitUntil(async function () {
+                        const now = await read('map');
+                        return now.ok && String(now.value).toLowerCase() === mapName;
+                    }, {});
+                    const reason = await huntRounds(command, names[i],
+                        quantities[i] === undefined ? '1' : quantities[i], itemType,
+                        monsters[i] === undefined ? '*' : monsters[i], 50, command.KillPriority,
+                        command.AntiCounter);
+                    if (reason) return reason;
+                }
+                return undefined;
+            }
+            return 'quest hunt #' + qid + ' reads the quest\'s own required items, which is the ' +
+                'quest surface of ticket #39; its map, cell and kill halves are wired';
+        },
+
+        CmdFollow: async function (ctx, command) {
+            // CmdFollow.cs: while the player follows, if the followed player is not in the map then
+            // step to Blank, GoToPlayer, and count the tries out at MaxGotoTry; otherwise set the
+            // spawn point and kill whatever is targeted. The packet tap that moves the bot to a
+            // followed player's cell as they walk (uotls) is not available in this build, so the
+            // follow is the coarser GoTo + kill loop and says so.
+            const who = String(varOf(command.PlayerName)).toLowerCase();
+            const maxTry = Number(command.MaxGotoTry) || 999;
+            let gotoTry = 0;
+            for (let round = 0; round < HUNT_ROUNDS && running; round++) {
+                const alive = await read('alive');
+                if (!(alive.ok && alive.value === true)) {
+                    await sleep(1000);
+                    continue;
+                }
+                const here = await read('map');
+                void here;
+                if (gotoTry >= maxTry) {
+                    return 'could not find ' + who + ' after ' + maxTry + ' goto(s)';
+                }
+                reportOnce('follow-tap', 'following a player reads their cell off the uotls ' +
+                    'packet, which this engine has no tap for; the bot walks with GoTo and fights ' +
+                    'what it finds there');
+                const went = await read1('goTo', who);
+                if (!went.ok) return 'could not goto ' + who + ': ' + went.error;
+                gotoTry++;
+                await read('setSpawnPointHere');
+                const reason = await killOnce({
+                    monster: '*',
+                    killPriority: command.KillPriority,
+                    antiCounter: command.AntiCounter === true,
+                    rounds: 1
+                });
+                if (reason) return reason;
+                await sleep(500);
+                if (command.WaitForever === true) continue;
+                return undefined;
+            }
+            return undefined;
         }
     };
 
@@ -594,6 +1396,122 @@ function createEngine(deps) {
     // so they resolve their own fields and skip the command under them the same way. Merged rather
     // than inlined so that #42's own table is a second line here and nothing else.
     Object.assign(handlers, statements.HANDLERS);
+    /** How many kills one hunt command attempts before it reports rather than loops forever. */
+    const HUNT_ROUNDS = 10;
+    /** And how many map joins, which is the reference's own Try shape for a hunt. */
+    const HUNT_JOIN_ROUNDS = 3;
+
+    /** The kill half both hunt commands share: kill once, then look at the item again. */
+    async function huntRounds(command, names, quantities, itemType, monster, delay, killPriority, antiCounter) {
+        for (let round = 0; round < HUNT_ROUNDS && running; round++) {
+            const reason = await killOnce({
+                monster: monster === undefined || monster === '' ? '*' : monster,
+                killPriority: killPriority,
+                antiCounter: antiCounter === true,
+                rounds: 1
+            });
+            if (reason) return reason;
+            const done = await collected(names, quantities, itemType);
+            if (!done.ok) return 'could not read the inventory: ' + done.error;
+            if (done.value) return undefined;
+            await sleep(Number(delay) || 0);
+        }
+        return 'stopped after ' + HUNT_ROUNDS + ' kill(s) without ' + names + ' ' + quantities + 'x';
+    }
+
+    /**
+     * CmdMoveToCell2's background jump: step through the cells, and while a monster it was told to
+     * find is in the cell, wait it out instead of moving on. It stops on the engine's own running
+     * flag or on the token the stop flag cancelled.
+     */
+    function runCellJump(ctx, token, list, pads, maxcell, target) {
+        Promise.resolve().then(async function () {
+            let i = 0;
+            while (!token.cancelled && running) {
+                // A real macrotask yield, on an unbounded loop. Awaiting an already-resolved promise
+                // only drains a microtask, and a session whose reads answer immediately (a stubbed
+                // one, or a game path that resolves without touching the wire) would spin here
+                // without ever letting the app's own timers run - which is how this ticket's turn
+                // ran the process out of memory once.
+                await new Promise(function (resolve) { setTimeout(resolve, 0); });
+                if (target !== '' && target !== '*') {
+                    const there = await read1('monsterAvailable', target);
+                    if (there.ok && there.value === true) {
+                        await waitUntil(async function () {
+                            const now = await read1('monsterAvailable', target);
+                            return !(now.ok && now.value === true);
+                        }, {});
+                        continue;
+                    }
+                }
+                const cell = list[i];
+                const pad = pads[i] === undefined ? 'Left' : pads[i];
+                const here = await read('cell');
+                if (!(here.ok && String(here.value) === String(cell))) await readN('jump', [cell, pad]);
+                // "This loop is needed to wait init monster loaded from clientside, otherwise it
+                // will keep jumping nonstop" - the reference's own comment, and its own 50ms poll.
+                await waitUntil(async function () {
+                    const there = await read1('monsterAvailable', '*');
+                    return there.ok && there.value === true;
+                }, { interval: 50 });
+                i++;
+                if (i >= maxcell) i = 0;
+            }
+        }).catch(function (error) {
+            ctx.log('the cell jump stopped: ' + message(error));
+        });
+    }
+
+    /**
+     * CmdUseSkill's own FindTarget: "*" attacks only when nothing is targeted, a name is attacked
+     * outright. The refusal is not swallowed - the command reports it the way the attack does.
+     */
+    async function findTarget(monster) {
+        if (String(monster) === '*') {
+            const target = await read('hasTarget');
+            if (target.ok && target.value === true) return;
+        }
+        await attackMonster(monster);
+    }
+
+    /** CmdJoin's own room roll for a non-numeric room: new Random().Next(1000, 99999). */
+    function randomRoom() {
+        return 1000 + Math.floor(Math.random() * (99999 - 1000));
+    }
+
+    /**
+     * CmdJoin's TryJoin: a safe cell first when the player is in combat, then the join with the
+     * room, then the two waits its own body makes - 5s for the map and 40s for the reload.
+     *
+     * The safe cell is a client setting upstream (ClientConfig C_SAFE_CELL, "safeCell"); this app
+     * has no such setting, so when the player is in combat the join is still attempted, which is
+     * what the reference does when its own safe cell is unset.
+     */
+    async function tryJoin(mapName, room, cell, pad) {
+        const state = await read('state');
+        if (Number(state.value) === 2) {
+            const at = await read('cell');
+            const on = await read('pad');
+            await readN('jump', [at.ok ? at.value : '', on.ok ? on.value : '']);
+            await waitUntil(async function () {
+                const now = await read('state');
+                return !(Number(now.value) === 2);
+            }, { timeout: 10 });
+            await sleep(1500);
+        }
+        const joined = await readN('join', [String(mapName) + (String(room).length ? '-' + room : ''),
+            String(cell), String(pad)]);
+        if (!joined.ok) return joined;
+        await waitUntil(async function () {
+            const now = await read('map');
+            return now.ok && String(now.value).toLowerCase() === String(mapName).toLowerCase();
+        }, { timeout: 5 });
+        await waitUntil(async function () {
+            const ready = await read('ready');
+            return ready.ok && ready.value === true;
+        }, { timeout: 40 });
+        return { ok: true };
+    }
 
     // ---------------------------------------------------------------- the loop
 
@@ -607,6 +1525,12 @@ function createEngine(deps) {
                 deps.timers.clearTimeout(background.timer);
                 background.timer = null;
             }
+        }
+        // CmdMoveToCell2's background jump holds the engine's own cancellation token, and the
+        // reference's Stop is what a stopped bot expects to end it.
+        if (jump.token) {
+            jump.token.cancelled = true;
+            jump.token = null;
         }
         if (deps.options && typeof deps.options.stop === 'function') {
             Promise.resolve(deps.options.stop()).catch(function () {});

@@ -449,20 +449,34 @@ function createHandlers(deps) {
             const zone = String(command.Zone === undefined ? "" : command.Zone);
             if (!zone) return; // the reference own `if (string.IsNullOrEmpty(Zone)) return;`
             const mode = SPECIAL_MODES[number(command.Mode, 0)] || "Special";
-            log("CmdSpecialHandler: " + mode + " for " + zone + " - the Maid handlers are #43/#44 " +
-                "and this build has no Maid to drive");
+            // SetSpecialHandlerFromScript drives the Misc 2 "Auto Zone" panel: a combo of boss
+            // handlers (Auto Zone - Ultradage, Gramiel P1-P4, Ultra Speaker DPS/LR/LOO/AP, ...),
+            // each of which is a packet handler that moves a party through a multi-part run. That
+            // set is the auto-zone half of #44, so this names it rather than pretending to switch
+            // a handler this build does not have.
+            log("CmdSpecialHandler: " + mode + " for " + zone + " - the auto-zone handlers are " +
+                "#44 and this build has none to switch");
         },
 
         CmdTauntcycle: function (ctx, command) {
-            // TauntCycle.StartTaunt(cycle, target, second, order - 1) runs a skill rotation and
-            // pauses the engine while it taunts; that rotation is the combat ticket own (#38).
+            // TauntCycle.StartTaunt(cycle, target, second, order - 1) is a background rotation:
+            // every `second / cycle` seconds it pauses the bot, AttackMonster(target), waits for
+            // skill 5 and uses it, then restores the previous target. The rotation itself is small
+            // enough to run here, but its first move is AttackMonster - which resolves a live
+            // monster object for world.setTarget, and a live Avatar cannot cross the JSON bridge
+            // (loader-surface.js). Reported rather than half-run, because a taunt that never
+            // re-targets is worse than no taunt.
             const start = number(command.type, 0) === 0;
             const order = number(command.order, -1);
             const who = String(command.target === undefined ? "*" : command.target);
             const pace = number(command.second, 14);
-            log("CmdTauntcycle: " + (start ? "start for " + who + " every " + pace + "s, " +
-                (order <= 0 ? "dynamic order" : "order " + order) : "stop") +
-                " - the taunt rotation is #38");
+            const shape = start
+                ? "start for " + who + " every " + pace + "s, " +
+                    (order <= 0 ? "dynamic order" : "order " + order)
+                : "stop";
+            log("CmdTauntcycle: " + shape + " - the rotation needs AttackMonster, which this " +
+                "build cannot call: it hands world.setTarget a live monster object and a live " +
+                "Avatar cannot cross the bridge");
         },
 
         CmdLog: async function (ctx, command) {
