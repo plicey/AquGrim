@@ -253,6 +253,44 @@ test('a condition the reference cannot parse is ready, which is its own return t
     assert.deepStrictEqual(session.asked('selfAura'), [], 'and neither condition is read');
 });
 
+test('a condition whose operator leaves no name is ready, which is the empty-entry split', async () => {
+    // `Split(new[] { op }, StringSplitOptions.RemoveEmptyEntries)` on "=3" yields one part, not
+    // two, so the reference returns true - and a blank condition alongside it does the same.
+    const session = fakeSession({ aura: {} });
+    const made = engine({ session: session });
+    await made.start(botOf([
+        skillRow({ aura: '=3' }),
+        skillRow({ Index: '3', aura: '   ' })
+    ]));
+    await made.tick();
+    await made.tick();
+    assert.deepStrictEqual(session.asked('useSkill').map(function (a) { return a.args[0]; }), ['2', '3'],
+        'both are cast');
+    assert.deepStrictEqual(session.asked('selfAura'), [], 'and there is no name to read');
+});
+
+test('equals and not-equals hold on the stack count, both ways round', async () => {
+    // `case "=": return c == t;` and `case "!=": return c != t;` - and `=` is the operator a
+    // condition with no other operator in it resolves to, which is why the scan order matters.
+    const equal = fakeSession({ aura: { Chi: 2 } });
+    const holds = engine({ session: equal });
+    await holds.start(botOf([skillRow({ aura: 'Chi=2' })]));
+    await holds.tick();
+    assert.deepStrictEqual(equal.asked('useSkill')[0].args, ['2'], 'c == t holds');
+
+    const other = fakeSession({ aura: { Chi: 2 } });
+    const notEqual = engine({ session: other });
+    await notEqual.start(botOf([skillRow({ aura: 'Chi!=3' })]));
+    await notEqual.tick();
+    assert.deepStrictEqual(other.asked('useSkill')[0].args, ['2'], 'c != t holds');
+
+    const same = fakeSession({ aura: { Chi: 2 } });
+    const skipped = engine({ session: same });
+    await skipped.start(botOf([skillRow({ aura: 'Chi=3' })]));
+    await skipped.tick();
+    assert.deepStrictEqual(same.asked('useSkill'), [], 'a row the count does not equal is skipped');
+});
+
 test('a name is not trimmed, so a space in it misses the cache the way it misses the dictionary', async () => {
     // `this.aura.Split(new[] { op }, StringSplitOptions.RemoveEmptyEntries)` keeps the spaces around
     // the name, and AuraManager's own comparer is case-insensitive and space-exact. "Chi >=3"
