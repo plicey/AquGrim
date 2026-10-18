@@ -18,7 +18,8 @@
 //
 // Every game call is a loader name the surface (#48) answers, asked for by that name: the same
 // rule the rest of this plugin follows, so a name this build cannot answer refuses with its reason
-// rather than with a bare "no member".
+// rather than with a bare "no member". The two casts (UseSkill, ForceUseSkill) went from refused
+// to answered in ticket #49, which the strip needs no change for: it asks for the name either way.
 
 const engine = require('../../bot/engine.js');
 const windows = require('../../windows.js');
@@ -273,9 +274,9 @@ function createChrome(deps) {
     }
 
     /**
-     * The reference's own per-skill cast: wait out the skill's cooldown, then use it. A name this
-     * build cannot drive (#38's live-object limit) is reported, and one refused cast does not end
-     * the rotation - the reference's loop keeps going whatever a cast does.
+     * The reference's own per-skill cast: wait out the skill's cooldown, then use it. A cast the
+     * game refuses is reported, and one refused cast does not end the rotation - the reference's
+     * loop keeps going whatever a cast does.
      */
     async function cast(index) {
         const wait = await read('skillAvailable', [index]);

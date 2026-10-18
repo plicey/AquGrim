@@ -359,10 +359,11 @@ Three things this module deliberately does not do:
   the same per-window runtime the Bot Manager's Enable tick drives and shows the engine's own
   sentence back. A second wording here would be a second thing to keep true.
 - **It spells no game path.** Every read and every call is a member of the session the bot runs
-  against (`bot/session.js`), and each of those is a loader name the surface (#48) owns. The
-  reads that cannot be made - `UseSkill` and `ForceUseSkill`, which the bridge refuses by name
-  (#38's live-object limit) - are reported on the strip and the rotation continues, which is what
-  the reference's own loop does with a cast it cannot complete.
+  against (`bot/session.js`), and each of those is a loader name the surface (#48) owns. The two
+  casts (`UseSkill`, `ForceUseSkill`) went from refused to answered in ticket #49 without a line
+  changing here, which is the point of asking for the name rather than for a path; a cast the game
+  refuses is reported on the strip and the rotation continues, which is what the reference's own
+  loop does with a cast it cannot complete.
 - **It never invents a value.** A read that cannot be established is reported beside the boxes it
   could not fill, rather than answered with a zero or an empty list that would look like real game
   state.

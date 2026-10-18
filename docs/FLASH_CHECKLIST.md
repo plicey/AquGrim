@@ -1161,8 +1161,8 @@ What needs a real client: everything below.
 - [ ] Ticking it while not signed in, or while the bot is running, refuses with the engine's own
       wording and leaves the tick off
 - [ ] The rotation casts 1, 2, 3, 4 and wraps, at roughly the reference's 150 ms pace
-- [ ] A cast the bridge refuses (a live-object limit, ticket #38) is shown on the strip and the
-      rotation keeps going rather than stopping
+- [ ] A cast the game refuses (a skill not learned yet, a target that died between the read and
+      the press) is shown on the strip and the rotation keeps going rather than stopping
 - [ ] On a Chrono Shadow, Arcana Invoker or Archmage the class combo fires on its own condition
       and the skill is cast through the forced path where the reference forces it
 
@@ -1199,11 +1199,13 @@ What needs a real client: everything below.
   every box above is unticked on purpose. What is asserted instead is the arithmetic and the data:
   the geometry, the capture rectangle, the controls, and the routing of each press into the engine
   or into the loader's own names.
-- **A screenshot and a recording exclude the strip** by construction: `res/instances.js` captures
-  from below it (`captureRect`). That the capture looks right on screen is a display check.
-- **The recording path captures the window**, not a rectangle of its page, so it follows the
-  window's own size: with the strip up the recording includes it, and in the plain layout it does
-  not. Which of the two is wanted in a shared recording is the user's call, which is what the
-  toggle is for; the plain size stays exactly what the existing checklist expects.
+- **The screenshot path excludes the strip** by construction: `res/instances.js` captures from
+  below it (`captureRect`), and a window that is not the wrapper - a feature window, a Ruffle
+  page - is not cut at all. That the capture looks right on screen is a display check.
+- **A recording is of the window**, not of a rectangle inside its page:
+  `res/features/capture/preload_capture.js` captures a `desktopCapturer` source by window title,
+  so it follows the window's own size and does not go through `captureRect`. With the strip up the
+  recording includes it; in the plain layout it does not. A recording that must show only the game
+  is what the toggle is for, and the plain size stays exactly what the existing checklist expects.
 - **The surface's own aspect** depends on the game's `scale` parameter, which this ticket does not
   touch: the wrapper still passes the plugin's own wrap config through.

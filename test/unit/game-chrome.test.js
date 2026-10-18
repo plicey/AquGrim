@@ -56,6 +56,8 @@ test('a plugin that declares no chrome leaves the game window at the size the sc
   const plain = harness(null);
   assert.strictEqual(plain.chrome.available(), false);
   assert.strictEqual(plain.chrome.height(), 0);
+  // No window, no layout to describe: a caller that has not named one is not told "enabled".
+  assert.strictEqual(plain.chrome.isEnabled(), false);
   assert.strictEqual(plain.chrome.isEnabled(plain.win), false);
   assert.deepStrictEqual(plain.chrome.contentSize(plain.win), PLAIN);
   assert.strictEqual(plain.chrome.stripHeight(plain.win), 0);
@@ -113,10 +115,16 @@ test('the menu entry is a checkbox whose tick is the layout itself', () => {
   assert.strictEqual(entry.type, 'checkbox');
   assert.strictEqual(entry.label, 'Game chrome');
   assert.strictEqual(entry.checked, true);
-  // Electron flips a checkbox item before it calls click; the layout follows the item.
-  entry.click({ checked: false }, on.win);
+  // Electron flips a checkbox item before it calls click; the layout follows the item. The window
+  // it moves is the one the entry was built for, not whichever window Electron says has focus -
+  // a second game window would otherwise take the resize meant for this one.
+  const other = { id: 31, _size: { width: 960, height: 557 }, aquaStarChromeHost: true,
+    isDestroyed: function () { return false; },
+    getContentSize: function () { return [this._size.width, this._size.height]; } };
+  entry.click({ checked: false }, other);
   assert.strictEqual(on.chrome.isEnabled(on.win), false);
   assert.strictEqual(on.chrome.menuItem({ win: on.win }).checked, false);
+  assert.strictEqual(on.chrome.isEnabled(other), true, 'the focused window was not moved');
   entry.click({ checked: true }, on.win);
   assert.strictEqual(on.chrome.menuItem({ win: on.win }).checked, true);
 });
@@ -141,6 +149,19 @@ test('the capture region is the whole window when no strip is up', () => {
     { x: 0, y: 0, width: 960, height: 530 });
 });
 
+test('the game menu places the strip entry the plugin asked for, in the window it was asked for', () => {
+  const src = fs.readFileSync(path.join(REPO, 'res', 'windows', 'menu.js'), 'utf8');
+  // menu.js may not build the entry itself - the label and the checked state are the plugin's -
+  // and it must hand the window down, because the layout is per window (two game windows can
+  // disagree about which one is showing the strip).
+  assert.ok(/gameChrome\(\)\.menuItem\(\{ win: win \}\)/.test(src),
+    'the entry comes from the chrome module, with this window');
+  assert.ok(/\.getGameMenu = \(keybinds, win\)/.test(src), 'and the window is passed in');
+  const instances = fs.readFileSync(path.join(REPO, 'res', 'instances.js'), 'utf8');
+  assert.ok(/getGameMenu\(keybinds\.keybinds \|\| \{\}, win\)/.test(instances),
+    'instances.js hands the window it is building the menu for');
+});
+
 test('a game window whose page cannot draw a strip keeps the plain size, strip or not', () => {
   const on = harness(DECLARATION);
   // res/instances.js marks each window with whether it loaded the wrapper page. A Ruffle page or
@@ -156,6 +177,25 @@ test('a game window whose page cannot draw a strip keeps the plain size, strip o
   assert.deepStrictEqual(on.chrome.setEnabled(bare, true), { enabled: false, height: 0 });
   assert.deepStrictEqual(bare._size, PLAIN, 'and it is not resized by a toggle it cannot honour');
   // The same plugin, the same time: the window that did load the wrapper still carries it.
+  assert.strictEqual(on.chrome.stripHeight(on.win), 27);
+});
+
+test('a window nothing marked as a strip host is not captured 27 px short', () => {
+  const on = harness(DECLARATION);
+  // A plugin's own feature windows (res/windows/feature-window-controller.js) are built straight
+  // from BrowserWindow and never pass through res/instances.js, so they carry no marker at all.
+  // The screenshot path runs on whatever window is focused, so an unmarked window has to read as
+  // "no strip" rather than as "a strip until told otherwise": its capture region must stay the
+  // whole content area, exactly as it was before this ticket.
+  const feature = { id: 21, isDestroyed: function () { return false; },
+    getContentSize: function () { return [480, 700]; } };
+  assert.strictEqual(on.chrome.isEnabled(feature), false);
+  assert.strictEqual(on.chrome.stripHeight(feature), 0);
+  assert.deepStrictEqual(captureRect(feature.getContentSize(), on.chrome.stripHeight(feature)),
+    { x: 0, y: 0, width: 480, height: 700 });
+  assert.strictEqual(on.chrome.menuItem({ win: feature }), null,
+    'and it is not offered a toggle for a layout it cannot have');
+  // The game window that did load the wrapper is unaffected by that default.
   assert.strictEqual(on.chrome.stripHeight(on.win), 27);
 });
 

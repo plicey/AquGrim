@@ -73,13 +73,17 @@ function createGameChrome(deps) {
      * so two game windows cannot move each other's layout and a closed window takes its own state
      * with it; a window nothing has toggled yet shows the strip, which is the plugin's default.
      *
-     * A caller that passes no window (a config builder, say) reads the plugin's own answer: there
-     * is nothing to be plain about yet.
+     * A caller that passes no window gets no: there is no layout to describe yet, and answering
+     * "enabled" for one would have a caller size something for a strip it cannot show.
      */
     function isEnabled(win) {
-        if (!available()) return false;
-        if (!win) return true;
-        if (win.aquaStarChromeHost === false) return false;
+        if (!available() || !win) return false;
+        // Only a window res/instances.js marked as the wrapper's own host may carry a strip. A
+        // plugin's feature windows are built straight from BrowserWindow and never pass through
+        // there, so they carry no marker: reading that as "a strip until told otherwise" would
+        // hand every one of them a 27 px capture cut (the screenshot path runs on the focused
+        // window, whichever it is).
+        if (win.aquaStarChromeHost !== true) return false;
         return win.aquaStarChromeEnabled !== false;
     }
 
@@ -141,7 +145,9 @@ function createGameChrome(deps) {
     function setEnabled(win, enabled) {
         // Nothing to show, or a page that cannot draw one: the answer describes this window's
         // layout, which is a strip of no height rather than the height the plugin asked for.
-        if (!available() || !win || win.aquaStarChromeHost === false) return { enabled: false, height: 0 };
+        if (!available() || !win || win.aquaStarChromeHost !== true) {
+            return { enabled: false, height: 0 };
+        }
         const on = !!enabled;
         const current = win.getContentSize();
         if (on) {
@@ -173,7 +179,7 @@ function createGameChrome(deps) {
         // A window whose page has no strip element in it gets no entry either: a checkbox that
         // toggles nothing is worse than no checkbox, and the label would be about a layout this
         // window cannot have.
-        if (opts.win && opts.win.aquaStarChromeHost === false) return null;
+        if (!opts.win || opts.win.aquaStarChromeHost !== true) return null;
         const declaration = declared();
         const label = typeof declaration.menuLabel === 'function'
             ? declaration.menuLabel()
@@ -184,7 +190,10 @@ function createGameChrome(deps) {
             type: 'checkbox',
             checked: isEnabled(opts.win),
             click: function (item, focusedWin) {
-                setEnabled(focusedWin || opts.win, item ? item.checked !== false : false);
+                // The window the entry was built for, not whichever one has focus: a menu click
+                // carries the focused window, and with two game windows open that is not
+                // necessarily the one whose menu this is.
+                setEnabled(opts.win || focusedWin, item ? item.checked !== false : false);
             }
         };
     }
