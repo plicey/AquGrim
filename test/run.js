@@ -30,6 +30,8 @@ global.test = function (name, fn) {
   './unit/plugin-loader.test.js',
   './unit/local-plugin-require-gate.test.js',
   './unit/plugin-host-permissions.test.js',
+  './unit/plugin-api-version.test.js',
+  './unit/plugin-game-access.test.js',
   './unit/plugin-runtime.test.js',
   './unit/flash-trust.test.js',
   './unit/keybind-dispatcher.test.js',
