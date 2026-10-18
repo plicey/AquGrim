@@ -375,6 +375,53 @@ Pass `userAgent` when the plugin has a session rule that rewrites `User-Agent` f
 hosts. Those rules match URL patterns, so they never see a loopback URL: the origin applies the
 plugin's policy to the upstream request instead, and the upstream keeps seeing what it saw before.
 
+`files` is `{ "/served/path": absoluteFile }`, for local files the origin answers itself. The
+platform already serves its own game wrapper page at `/wrapper.html`; a plugin adds its own when a
+page or a movie of its own has to share the game's origin (see 4.11). The content type follows the
+file extension, and a plugin's entry wins over the platform's for the same path.
+
+### 4.11 Drive the game from the app (the bridge)
+
+Permission: `game-bridge`. Manifest field: `bridgeCallbacks`. Methods: `host.bridge.attach()`,
+`host.bridge.call(name, args)`, `host.bridge.callbacks()`, `host.bridge.attachedWindow()`.
+
+Reading and writing live game state needs a movie of the plugin's own that loads the game SWF into
+**its own `ApplicationDomain`** and registers `ExternalInterface` callbacks. The platform cannot
+put callbacks on a movie it does not control, and the stock game registers none for game state:
+the bridge SWF is what creates the call surface. Full mechanism, measurements and failure modes:
+[`docs/research/grimlite-bridge.md`](research/grimlite-bridge.md).
+
+**Same-origin is a hard requirement.** PPAPI Flash inside Chromium grants no local-trusted
+sandbox, so a bridge SWF that loads the game SWF from another origin is denied every domain access
+(`#2119`/`#2121`), and `Security.allowDomain('*')` on the bridge does not help - the failing check
+belongs to the loaded content's own policy. Serve the page, the bridge and the game from one
+origin (4.9 is how) or there is no bridge.
+
+The plugin declares the callback names its bridge registers; the platform validates them as plain
+identifiers and injects a page side that waits for them:
+
+```json
+"bridgeCallbacks": ["getGameObject", "setGameObject", "callGameFunction", "isNull"]
+```
+
+```js
+const attached = await host.bridge.attach();       // { ok } or { ok: false, error }
+if (attached.ok) {
+  const read = await host.bridge.call('getGameObject', ['world.myAvatar.dataLeaf.intHP']);
+  // { ok: true, value } or { ok: false, error } - never throws for an absent or slow bridge
+}
+```
+
+`attach()` is idempotent per window and waits (20 s) for the movie to register its callbacks, so
+calling it when the game is still loading is safe. `call()` reports why a call could not be made
+("no game window", "the game is not loaded yet") instead of throwing, which is what a feature
+window wants to show. A plugin without `game-bridge` cannot attach and cannot call: the platform
+refuses with `Plugin "<id>" called host.bridge.attach without permission "game-bridge"`.
+
+The bridge SWF itself is built from source with the Flex SDK; the recipe (including the two
+environment variables the SDK does not set for you) is in
+`plugins/grimlite-parity/bridge/build.sh`.
+
 Permission: `spawn-helper-process`. Script path must stay **inside the plugin directory** (no `..`).
 
 Used by AQW Char Page Studio. Most plugins never need this.
@@ -406,6 +453,7 @@ See `plugins/adventure-quest-worlds/web/contribute.js` for the full contribution
 | `unprefixedIpc` | no | Bundled plugins only: keep IPC channel names unprefixed (back-compat). Everyone else is namespaced `plugin:<id>:<channel>` |
 | `customSwfAliases` | no | Older file names for the platform's custom SWF override that this plugin used to read (plain `*.swf` names) |
 | `storeAliases` | no | `{ "<store name>": "<legacy file>.json" }` to keep permanent filenames for `getStore(name)` |
+| `bridgeCallbacks` | no | Plain callback names the plugin's bridge SWF registers (4.11). Required only to use `host.bridge`; names must be plain identifiers |
 
 ### Permissions → Host methods
 
@@ -419,14 +467,14 @@ See `plugins/adventure-quest-worlds/web/contribute.js` for the full contribution
 | `spawn-helper-process` | `windows.spawnHelperProcess` |
 | `unsafe-renderer` | Feature windows with Flash plugins / `webSecurity: false` |
 | `game-origin` | `host.declareGameOrigin` |
-| `game-bridge` | Reserved: the SWF bridge channel (`bridge.attach()` / `bridge.call()`) *(apiVersion 2)* |
+| `game-bridge` | `host.bridge.attach()` / `call()` / `callbacks()` / `attachedWindow()` - the SWF bridge channel (4.11) *(apiVersion 2)* |
 | `packet-tap` | Reserved: reading relayed game frames *(apiVersion 2)* |
 | `packet-send` | Reserved: writing a frame back through the relay *(apiVersion 2)* |
 
 Missing permission → throw during `activate` → activation fails.
 
-The three **reserved** permissions are the names the game access API will use. The methods they
-gate arrive with the parity work; the names and the refusal do not change. Until they do,
+The game access permissions above are `game-bridge` (the bridge channel, 4.11) and `packet-tap` /
+`packet-send` (the packet layer, `res/platform/packet-layer.js`):
 `host.requirePermission(method, permission)` is the single gate every guarded method goes
 through, and it reports a missing one as
 `Plugin "<id>" called <method> without permission "<permission>"`. It is platform wiring, not a
@@ -461,6 +509,8 @@ Available on `host` inside `activate(host)`:
 **Identity / paths:** `pluginId`, `pluginRoot`, `pluginDataDirectory`, `appRootPath`, `appDataDirectory`, `appVersion`
 
 **Game:** `setPrimaryGame(cfg)`, `registerLaunches([...])`, `trustFlashUrls([...])`
+
+**Game access:** `declareGameOrigin({ routes, files, userAgent })` (4.9), `bridge.attach()` / `bridge.call(name, args)` (4.11), `registerPacketSteering(declaration)` (the packet layer)
 
 **Chrome:** `registerBrowserPreload(relativePath)`, `registerKeybindDefaults(obj)`, `registerKeybinds([...])`, `registerMenus(fn)`, `registerMenuPages({ appUsefulPages, gameMenuPages })`, `registerFeatureWindows([...])`, `registerSettingsSection(section)`, `registerLocales(catalog)`
 

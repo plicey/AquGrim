@@ -39,6 +39,40 @@ Mark items with `[x]` when verified. Leave `[ ]` if not run yet.
 
 ---
 
+## Grimlite Parity - the game bridge (#28)
+
+Everything here needs live PPAPI Flash and a real login; none of it can be checked by the test
+suite. The bridge's offline half (the call surface, the same-origin boot, the call modes, the
+permission gate) is covered by `npm test`.
+
+- [ ] Set active plugin to **Grimlite Parity**, restart
+- [ ] The window shows the **game**, not a placeholder: the login screen renders (the bridge SWF
+      loads the game SWF itself from the loopback origin)
+- [ ] **Alt+Shift+D** (or Grimlite → Dev Test) opens the window: modes *Grimoire / Call Func /
+      Get/Set Object*, Function defaulting to `world`, an Args box with its enable box, Call,
+      Copy, Format JSON
+- [ ] **Read:** mode *Grimoire*, Function `world.strFrame`, Call → the current cell comes back as
+      JSON. Try `world.myAvatar.dataLeaf.intHP`, `world.strMapName`
+- [ ] The game's classes are addressable, not merely lookup-able: with mode *Call Func*, Function
+      `world.getQuestValue`, Args `1` → a JSON answer rather than an error about a missing member
+- [ ] **Write:** mode *Get/Set Object*, Function `world.strFrame`, Args `Enter` → Call reports the
+      value back. (A write to a displayed field is visible in the UI; a write to a state field is
+      overwritten by the next server frame)
+- [ ] **Format JSON** pretty-prints the result; **Copy** puts the result box on the clipboard
+- [ ] **A newer game or loader still works:** with no code change, the window boots on whatever
+      file `api/data/gameversion` currently names (that is what the bridge resolves at runtime)
+- [ ] **Permission gate:** temporarily remove `"game-bridge"` from `plugins/grimlite-parity/plugin.json`,
+      restart, open Dev Test, Call → the app reports the missing permission and the game window is
+      unaffected. Restore the manifest afterwards
+- [ ] **No game window:** close the game window, then Call from Dev Test → it reports that there is
+      no game window rather than hanging or throwing
+- [ ] Packet send (`sendClientPacket`) is **unverified**: the reference's `ExtHandler` signature
+      could not be checked offline. The bridge tries the one-argument shape and falls back to the
+      two-argument one; confirm against a live client which is right, then drop the other
+      (`plugins/grimlite-parity/bridge/AquaBridge.as`, `aqSendClientPacket`)
+
+---
+
 ## Adventure Quest Worlds
 
 - [ ] Switch active plugin to **Adventure Quest Worlds**, restart
