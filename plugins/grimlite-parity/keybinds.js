@@ -7,7 +7,10 @@ const DEFAULTS = {
     grimliteEyedropper: 'Alt+Shift+E',
     grimliteNotepad: 'Alt+Shift+N',
     grimliteAbout: 'Alt+Shift+A',
-    grimliteCharSelect: 'Alt+Shift+H',
+    // The reference ships its hotkeys EMPTY (Grimoire/UI/Root.cs only loads them from a user
+    // config), so every default here is this port's own choice; H was already taken by the
+    // Hotkeys window (#34), so Char Select keeps the family's next free letter.
+    grimliteCharSelect: 'Alt+Shift+S',
     grimliteParityDevTest: 'Alt+Shift+D',
     grimliteBank: 'Alt+Shift+K',
     // The reference's own action list carries "Show Loaders" (Hotkeys.cs:398); this port gives
