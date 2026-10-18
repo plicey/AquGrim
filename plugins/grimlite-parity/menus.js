@@ -78,6 +78,16 @@ function register(host, windowTitle) {
                     click: function () {
                         host.windows.openFeatureWindow(windows.DEVTEST_WINDOW_ID);
                     }
+                },
+                {
+                    // The reference's own Tools entry, word for word (Root.cs:805-812), bound to
+                    // its own action "Show Cosmetics form" (Hotkeys.cs:409).
+                    label: labels.grimliteCosmetics || 'Cosmetics',
+                    accelerator: keybinds.grimliteCosmetics,
+                    registerAccelerator: false,
+                    click: function () {
+                        host.windows.openFeatureWindow(windows.COSMETICS_WINDOW_ID);
+                    }
                 }
             ]
         }];

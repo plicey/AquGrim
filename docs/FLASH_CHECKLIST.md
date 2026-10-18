@@ -278,6 +278,66 @@ Set `"localOrigin": true` in `aquastar.json` (Settings → General → "Local ga
 
 ---
 
+## Grimlite Parity - Cosmetics (ticket #30) - needs the real game
+
+Open **Grimlite -> Cosmetics** (Alt+Shift+C). Every box below needs a logged-in character in a room
+with other players: `npm test` covers the slot map, the file formats and every decision this window
+makes, but not the game answering.
+
+- [ ] The window opens with the reference's own grid - Helm, Armor, Class, Weapon, Off.H, Pet,
+      Cape, Misc - each row a file box, a link box and a **Set** button
+- [ ] The seven links read **Grab Helm / Grab Armor / Grab Class / Grab Wep / Grab Pet / Grab
+      Cape / Grab Ground**; there is no Grab Off.H, as in the reference
+- [ ] **Refresh** lists the room's players as `EntID: Name` with the first one selected; a player
+      whose name the game has not sent does not appear as a blank row
+- [ ] Refresh in an empty room reports the game's own answer instead of inventing rows
+- [ ] **Grab** appends the chosen player's wear to the list as `Slot: file;link` lines, and does
+      *not* touch the eight rows' boxes (the reference's handler only fills its list)
+- [ ] Double-clicking a list row fills that row's own boxes; clicking the empty space does nothing
+- [ ] Clicking a per-slot link fills only that link's row, and a box already holding something you
+      typed is **kept**, not overwritten
+- [ ] A row's **Set** puts that look on your character in game: the write is
+      `world.myAvatar.loadMovieAtES`, the call the reference keeps commented out beside its own
+      loader-only `SetEquip`
+- [ ] A **Set** on a slot the game refuses (an item you do not own) reports the reason in the
+      status line instead of looking like it worked
+- [ ] **Equip All** applies every list row in order; **Equip Selected** applies only the selected
+      ones, in list order; both report `n of m equipped`
+- [ ] **Remove** drops the selected rows (the Delete key too); **Clear All** empties the list *and*
+      all sixteen boxes
+- [ ] **Save** opens a native dialog titled *Save Set*, filtered `*.gset`, starting in
+      `%AppData%/AquaStar/Sets`; a name typed with no extension is saved as `.gset`
+- [ ] **Load** opens the same dialog and the eight rows fill from the file
+- [ ] A set file written by a **reference** client loads here, and a set saved here opens in the
+      reference's own Cosmetics form with the same eight values
+- [ ] A `.gset` the Sets window wrote for gear (Types Weapon / Class / Armor / Helm / Cape) loads
+      without error, each name in its own box
+- [ ] A file that is neither shape reports "not a Grimlite set" and leaves the grid alone
+- [ ] With no game window open, Refresh and **Grab** report the bridge's own reason (no game
+      window / the bridge does not register ...) rather than showing an empty room as if it were
+      real
+- [ ] The window is not Flash: it stays open when the game window closes, and after a game reload
+      its Refresh works again without reopening it
+
+### Cosmetics: what could not be checked here, and why
+
+Verified against the shipped SWFs on this machine (decompressed string tables): the stock game
+carries `world.uoTree`, `objData`, `eqp`, `world.myAvatar.loadMovieAtES` and `getItemByEquipSlot`,
+and its own `eqp` entries carry `sFile`/`sLink`. The reference client's `GetEquip` and `SetEquip`
+exist **only** in its own loader (`Loader/grimoire.swf`), which no AquaGrim user loads - that is why
+this window reads the game's own wear store and writes through `loadMovieAtES`.
+
+**No call in this window has been run against a live client.** Two things in particular need a
+human:
+
+- whether the `eqp` entries' own `sFile`/`sLink` are what `loadMovieAtES` wants back verbatim, or
+  whether the reference's `ReplaceLink` strip (`x_skin.swf` -> `x`) is needed on the way in. The
+  port sends what the wear store holds, so a look grabbed from a player goes back in unchanged.
+- whether an `eqp` entry whose movie has not loaded reports `null` or throws, which decides whether
+  a grab shows that slot as empty or as a refusal
+
+---
+
 ## Verification log
 
 | Date | Who | Notes |

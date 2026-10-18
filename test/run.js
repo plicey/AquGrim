@@ -71,6 +71,7 @@ global.test = function (name, fn) {
   './unit/namespaced-store.test.js',
   './unit/settings-resolve.test.js',
   './unit/pack-plugins.test.js',
+  './unit/grimlite-cosmetics.test.js',
   './integration/json-store.test.js',
   './integration/local-origin.test.js'
 ].forEach((file) => require(path.join(__dirname, file)));

@@ -50,6 +50,18 @@ Features so far: the **Bot Manager**, the **Dev Test** window (type a function a
 it, see the result, with the reference's own modes), the **packet logger** opened from Packets →
 Sniffer, the three display windows above, and the placeholder window the scaffold shipped.
 
+The **Cosmetics** window (Grimlite → Cosmetics, Alt+Shift+C) is the reference's own grid: eight
+rows (Helm, Armor, Class, Weapon, Off.H, Pet, Cape, Misc), each with a file box, a link box and a
+**Set** button, the seven per-slot grab links above it, a player picker filled from the room, and
+**Grab / Equip All / Equip Selected / Clear All / Remove / Save / Load**. A set saves in the same
+`.gset` document the Sets window writes, and the reference's own 24-line file loads too.
+
+It reaches the game through the bridge, and every read is a name the **stock game** actually
+carries - `world.uoTree`, `objData.eqp` (the game's own wear store) and
+`world.myAvatar.loadMovieAtES` for the write. That last one is the call the reference keeps
+commented out beside its own `SetEquip`, because `SetEquip`/`GetEquip` exist only in the
+reference's loader SWF, which no AquaGrim user loads. Nothing here invents a loader-only answer.
+
 It declares `apiVersion: 2`, the `game-origin` / `flash-trust` permissions the boot needs, and the
 game access permissions its later features use (`game-bridge`, `packet-tap`, `packet-send`; see
 `docs/PLUGINS.md` sections 4.11 and 5). `bridgeCallbacks` names the call surface its bridge

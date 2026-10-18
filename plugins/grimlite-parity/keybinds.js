@@ -7,7 +7,11 @@ const DEFAULTS = {
     grimliteEyedropper: 'Alt+Shift+E',
     grimliteNotepad: 'Alt+Shift+N',
     grimliteAbout: 'Alt+Shift+A',
-    grimliteParityDevTest: 'Alt+Shift+D'
+    grimliteParityDevTest: 'Alt+Shift+D',
+    // The reference's own action list carries "Show Cosmetics form" (Hotkeys.cs:409). Its
+    // bindings ship empty and its picker takes one key; this port gives the window a default on
+    // a key no binding of the app's or the game plugin's own uses.
+    grimliteCosmetics: 'Alt+Shift+C'
 };
 
 function register(host) {
@@ -53,6 +57,12 @@ function register(host) {
             id: 'grimliteParityDevTest',
             action: function () {
                 host.windows.openFeatureWindow(windows.DEVTEST_WINDOW_ID);
+            }
+        },
+        {
+            id: 'grimliteCosmetics',
+            action: function () {
+                host.windows.openFeatureWindow(windows.COSMETICS_WINDOW_ID);
             }
         }
     ]);
