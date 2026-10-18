@@ -2,28 +2,39 @@
 // the runtime, its engine, the session and the bridge call surface - against a stand-in for the
 // game, so "it runs at all" is asserted rather than assumed.
 //
-// The stand-in answers what the game would answer, through the same two callbacks the bridge
-// exposes (getGameObject for a path, callGameFunction0 for a call), and the session is the real
-// session module. So the paths this exercises are the paths the plugin itself will use.
+// The stand-in answers what the game would answer. The session asks the loader surface for the
+// reference's own helper names (loader-surface.js, ticket #48), so that is what this answers, plus
+// the generic read callback for the two paths the session owns itself. The session itself is the
+// real module, so what runs here is the chain the plugin runs.
 const assert = require('assert');
 
 const runtimeModel = require('../../plugins/grimlite-parity/bot/runtime.js');
 const sessionModel = require('../../plugins/grimlite-parity/bot/session.js');
 const catalog = require('../../plugins/grimlite-parity/bot/command-catalog.js');
 
-// The game as the bridge would see it: dot-paths and calls, answered from one object.
+// The game as the bridge would see it, by the loader helper names the surface asks for.
 function fakeGame(options) {
   const opts = options || {};
   const state = {
-    'sfc.isConnected': 'true',
+    IsLoggedIn: 'true',
+    Health: '100',
+    HealthMax: '100',
+    Mana: '100',
+    ManaMax: '100',
     'world.myAvatar.objData.strUsername': '"Tester"',
-    'world.myAvatar.dataLeaf.intHP': '100',
-    'world.myAvatar.dataLeaf.intHPMax': '100',
     'world.mapLoadInProgress': 'false'
   };
   const called = [];
   const bridge = {
     attach: function () { return Promise.resolve({ ok: true }); },
+    // The loader surface's own door: the reference's helper names, which is what the session asks.
+    loaderCall: function (name, args) {
+      called.push({ name: name, args: args || [] });
+      if (Object.prototype.hasOwnProperty.call(state, name)) {
+        return Promise.resolve(state[name]);
+      }
+      return Promise.reject(new Error('no helper named "' + name + '"'));
+    },
     call: function (name, args) {
       if (name === 'getGameObject') {
         const path = args[0];
@@ -90,27 +101,31 @@ test('a bot built from flow statements ends, on demand and on its own stop', asy
 });
 
 test('the engine reaches the game through the session the plugin injects', async () => {
-  // Bot.Stop's own exit-combat call, which is the one game call a blank run makes.
+  // What a run reaches the game with: the session's own reads, and Bot.Stop's exit-combat call.
   const game = fakeGame();
   const manager = runtimeWith(game);
   // A bot with no stop walks its list forever, which is what the reference does; this one ends.
   await manager.start('game', { Commands: [command('CmdBlank', {}), command('CmdStop', {})] });
   await manager.idle('game');
-  assert.deepStrictEqual(game.called.map(function (c) { return c.args[0]; }), ['world.cancelTarget'],
-    'a blank command calls nothing, and the stop pulls the character out of combat');
+  const helpers = game.called.filter(function (c) { return c.name !== 'getGameObject'; })
+    .map(function (c) { return c.name; });
+  assert.strictEqual(helpers[helpers.length - 1], 'CancelTarget',
+    'stopping pulls the character out of combat, through the loader name for it');
+  assert.ok(helpers.indexOf('IsLoggedIn') !== -1, 'the loop checks the sign-in the loader answers');
 
   // And the same call when the window's own tick stops it rather than the bot reaching CmdStop.
   const second = fakeGame();
   const manager2 = runtimeWith(second);
   await manager2.start('game', { Commands: [command('CmdBlank', {})] });
   await manager2.stop('game');
-  assert.deepStrictEqual(second.called.map(function (c) { return c.args[0]; }),
-    ['world.cancelTarget'], 'stopping pulls the character out of combat, as the reference does');
+  const secondHelpers = second.called.map(function (c) { return c.name; });
+  assert.ok(secondHelpers.indexOf('CancelTarget') !== -1,
+    'stopping pulls the character out of combat, as the reference does');
 });
 
 test('a window with no sign-in refuses the start and names what is missing', async () => {
   const game = fakeGame();
-  game.state['sfc.isConnected'] = 'false';
+  game.state.IsLoggedIn = 'false';
   const manager = runtimeWith(game);
   const refused = await manager.start('game', { Commands: [command('CmdBlank', {})] });
   assert.strictEqual(refused.ok, false);

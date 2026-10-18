@@ -19,6 +19,9 @@ const setsWindow = require('./features/sets/sets-window.js');
 const logger = require('./features/packets/logger.js');
 const botRuntime = require('./bot/runtime.js');
 const botSession = require('./bot/session.js');
+const loaders = require('./features/loaders/loaders.js');
+const spammerWindow = require('./features/packets/spammer-window.js');
+const tampererWindow = require('./features/packets/tamperer-window.js');
 
 const resRoot = path.join(__dirname, '..', '..', 'res');
 
@@ -26,12 +29,103 @@ const createNotepad = require('./features/notepad/notepad.js').createNotepad;
 const createEyedropper = require('./features/eyedropper/eyedropper.js').createEyedropper;
 const createAbout = require('./features/about/about.js').createAbout;
 const createCosmetics = require('./features/cosmetics/cosmetics-window.js').createFromHost;
+const createOptionsWindow = require('./features/options/options-window.js').createFromHost;
+const { createHotkeys } = require('./features/hotkeys/hotkeys.js');
+const { createHotkeysWindow } = require('./features/hotkeys/hotkeys-window.js');
+const { createGameCalls } = require('./game-calls.js');
 
 const BRIDGE_TITLE = 'AquaStar - Grimlite Parity';
 
 /** The bridge SWF as the origin serves it, or '' when the origin is not up. */
 function bridgeUrl(baseUrl) {
     return baseUrl ? baseUrl + gameOrigin.BRIDGE_PATH : '';
+}
+
+/**
+ * The app's own shortcut layers, as the two members hotkeys.js takes. electron-localshortcut
+ * registers on every app window and fires while one has focus; electron's globalShortcut fires
+ * wherever the user is. Both answer whether the registration took, which is what the window reports
+ * when a key cannot be bound.
+ */
+function localShortcuts() {
+    return {
+        register: function (accelerator, handler) {
+            const electronLocalshortcut = require('electron-localshortcut');
+            electronLocalshortcut.register(accelerator, handler);
+            return true;
+        },
+        unregister: function (accelerator) {
+            require('electron-localshortcut').unregister(accelerator);
+        }
+    };
+}
+
+function globalShortcuts() {
+    return {
+        register: function (accelerator, handler) {
+            return require('electron').globalShortcut.register(accelerator, handler);
+        },
+        unregister: function (accelerator) {
+            require('electron').globalShortcut.unregister(accelerator);
+        }
+    };
+}
+
+/**
+ * The keys this app and the game plugin already hold, so a hotkey cannot take one
+ * (Hotkeys.cs:395 refuses a key its own hook already has; the port's equivalent is these).
+ *
+ * The list is read live from what the platform merged for this session, so a user's own keybinding
+ * edits are respected, and it names the owner the user sees rather than an internal id.
+ */
+function takenKeys(host) {
+    const out = [];
+    let settings = {};
+    try {
+        settings = (typeof host.getPlatformSettings === 'function' && host.getPlatformSettings()) || {};
+    } catch (error) {
+        settings = {};
+    }
+    const owners = {
+        about: 'the app (About)',
+        fullscreen: 'the app (Fullscreen)',
+        sshot: 'the app (Screenshot)',
+        reload: 'the app (Reload)',
+        reloadCache: 'the app (Reload and clear cache)',
+        forward: 'the app (Forward)',
+        backward: 'the app (Back)',
+        help: 'the app (Help)',
+        settings: 'the app (Settings)',
+        record: 'the app (Record)'
+    };
+    Object.keys(owners).forEach(function (id) {
+        const value = settings[id];
+        if (typeof value === 'string' && value) out.push({ key: value, owner: owners[id] });
+        else if (Array.isArray(value)) {
+            value.forEach(function (one) {
+                if (typeof one === 'string' && one) out.push({ key: one, owner: owners[id] });
+            });
+        }
+    });
+    return out;
+}
+
+/**
+ * The reference's "Minimize to tray" action (Hotkeys.cs:90-93) shows the app's main window and
+ * brings it forward. Electron has no tray toggle of its own here, so the port's nearest equivalent
+ * is to raise the window that is already open.
+ */
+function showMainWindow() {
+    const electron = require('electron');
+    const windows = electron.BrowserWindow.getAllWindows().filter(function (win) {
+        return win && !win.isDestroyed() && !win.getParentWindow();
+    });
+    const win = windows.length ? windows[0] : null;
+    if (!win) return { ok: false, error: 'the app has no window to show' };
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    return { ok: true };
 }
 
 async function activate(host) {
@@ -105,7 +199,13 @@ async function activate(host) {
     // The packet logger is this plugin's reading half of the platform tap: it subscribes, and
     // never writes a frame (that needs packet-send, which only the spammer and tamperer hold).
     logger.createLoggerFeature(host).register();
-
+    // Loaders and grabbers (#31): the reference's Tools -> Loaders/grabbers window. Its rows, its
+    // menus and its four loaders are all main-process work, because the page is sandboxed.
+    // The write half (#27): both windows send through host.packets.send (packet-send). The
+    // spammer never reads, so it needs packet-tap for nothing; the tamperer reads through the same
+    // tap the logger does, which is why it holds both permissions.
+    spammerWindow.createFromHost(host).attach();
+    tampererWindow.createFromHost(host).attach();
     // Bot files are user documents: this window opens one from the user's own directory, shows
     // it and writes the edit back through the same dialog.
     botFile.createBotFileFeature(host).attach();
@@ -119,7 +219,7 @@ async function activate(host) {
     setsWindow.createFromHost(host).attach();
     // The Bot Manager's main-process half: the sheet, the parsed document, the two dialogs and the
     // folder tree, all of which a sandboxed page cannot reach for itself.
-    require('./features/bot-manager/bot-manager.js').createBotManager({
+    const botManager = require('./features/bot-manager/bot-manager.js').createBotManager({
         host: host,
         // The engine (#37): the window's Enable Bot tick starts and stops this bot, and the window
         // reads its own running flag, pause and index back for its log. The bot's state is keyed by
@@ -137,12 +237,57 @@ async function activate(host) {
         // The controls that act on the running game read through the generic bridge surface. A
         // name the stock game does not have reports the helper it waits for instead of a value.
         bridge: host.bridge
-    }).register(host);
+    });
+    botManager.register(host);
+
+    // Loaders and grabbers (#31): the reference's Tools -> Loaders/grabbers window. Its rows, its
+    // menus and its four loaders are all main-process work, because the page is sandboxed. Its
+    // "Add to both / whitelist / unbank / quest list" entries append to the Bot Manager's own
+    // lists, so they are handed that window's live document rather than a copy of it.
+    loaders.createFromHost(host, {
+        botLists: loaders.createBotLists({ bot: botManager.bot() })
+    }).attachTo(host);
 
     // The Cosmetics window (#30): a page beside the game that reads the room's players and their
     // wear through the bridge and writes one slot at a time. It holds game-bridge, which the
     // manifest already declares; nothing here needs a new permission.
     createCosmetics(host);
+
+    // Options and Hotkeys (#34). The option toggles are the user's own opt-in and the reference
+    // re-sends most of them on a loop, so the feature owns two timers (OptionsManager.cs:188-217);
+    // the hotkeys own the binding list and put each key on one of the app's two shortcut layers.
+    const gameCalls = createGameCalls({
+        bridge: host.bridge,
+        log: function (msg) { host.log(msg); }
+    });
+    const optionsWindow = createOptionsWindow(host, {
+        gameCalls: gameCalls,
+        // The ticks and the walkspeed value are the user's own and outlive the window.
+        store: host.getStore('options'),
+        log: function (msg) { host.log(msg); }
+    });
+    const hotkeys = createHotkeys({
+        store: host.getStore('hotkeys'),
+        // A bound key fires only while this app has focus, except "Minimize to tray"
+        // (Hotkeys.cs:245-263): electron-localshortcut is the focus-scoped hook, globalShortcut the
+        // app-wide one, so each binding goes on the layer the reference's own rule asks for.
+        localShortcuts: localShortcuts(host),
+        globalShortcuts: globalShortcuts(host),
+        openWindow: function (id) { return host.windows.openFeatureWindow(id); },
+        windowIds: windows.WINDOW_IDS,
+        // Keys the app and the game plugin already hold: the reference refuses a key its own hook
+        // already has (Hotkeys.cs:395), and here the equivalent is these.
+        takenKeys: takenKeys(host),
+        platform: { showMainWindow: showMainWindow },
+        gameCalls: gameCalls,
+        options: optionsWindow.feature,
+        log: function (msg) { host.log(msg); }
+    });
+    hotkeys.install();
+    createHotkeysWindow({
+        feature: hotkeys,
+        messages: host.getLocaleStrings('hotkeysMessages') || {}
+    }).attachTo(host);
 
     host.registerLocales({
         'en-US': require('./locales/en-US.js')

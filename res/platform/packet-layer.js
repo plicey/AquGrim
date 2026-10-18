@@ -185,6 +185,15 @@ function createPacketLayer(options) {
                 bodyService: bodyService,
                 close: close
             };
+
+            // The write path a plugin reaches through host.packets.send (packet-send). A plugin
+            // that never reads the tap is never told a connection id, so this writes on the
+            // connection carrying the session, and the frame lands on the tap like any other.
+            // Returning false is the answer when there is nothing to write on, never a throw:
+            // a window asks again the moment a client connects.
+            state.send = function (direction, frame) {
+                return relayRunning ? relay.sendLive(direction, frame) : false;
+            };
             return state;
         },
 

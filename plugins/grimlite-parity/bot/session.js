@@ -21,63 +21,60 @@
 // every other refusal as something to wait out; that is the difference between a closed window
 // and a map that is still loading, and it is not a distinction a message can be parsed for.
 //
-// WHERE THE PATHS COME FROM. The reference reads this state through a loader it ships
+// WHERE THE ANSWERS COME FROM. The reference reads this state through a loader it ships
 // (`Loader/grimoire.swf`), which is a *renaming layer* over the stock game: each helper body is
-// one or two reads on `Root.Game...`. Its decompiled source is the authority for every path below
-// and was read for each one (grimoire/game/Player.as, grimoire/game/World.as):
+// one or two reads and calls on `Root.Game...`, and the stock game does not carry those names.
+// Ticket #48 read every one of those decompiled bodies and put the result in one table,
+// `loader-surface.js` - one row per name, each row reaching the path or call that name's own body
+// performs. So this module asks for the loader's own names through `bridge.loaderCall` rather
+// than spelling the paths out again; a second copy of that table here would be free to drift from
+// the first, and the first is the one with the decompiled source beside it.
 //
-//   IsLoggedIn   Root.Game.sfc.isConnected == true
-//   State        Root.Game.world.myAvatar.dataLeaf.intState
-//   Health       Root.Game.world.myAvatar.dataLeaf.intHP        (IsAlive is Health > 0)
-//   HealthMax    Root.Game.world.myAvatar.dataLeaf.intHPMax
-//   Mana/ManaMax Root.Game.world.myAvatar.dataLeaf.intMP / intMPMax
-//   MapLoadComplete  Root.Game.world.mapLoadInProgress is False, and the top child is not the
-//                    connection movie
-//   SetSpawnPoint    Root.Game.world.setSpawnPoint(world.strFrame, world.strPad)
-//   Rest             Root.Game.world.rest()
-//   Logout           Root.Game.logout()
+// The names, and the row each one resolves to (loader-surface.js):
 //
-// Those are game paths and game calls, so the bridge (#28) reaches every one of them with its
-// generic getGameObject/callGameFunction pair - which is what this module uses. It does not call
-// the loader's own names (`IsLoggedIn`, `State`, `Health`...): those are registered only inside
-// the reference's loader, and #29's table in docs/FLASH_CHECKLIST.md is the check that the stock
-// game does not answer them (exact ABC pool entry plus a multiname reference).
+//   IsLoggedIn       sfc.isConnected          (Root.Game.sfc != null && sfc.isConnected)
+//   Health/HealthMax world.myAvatar.dataLeaf.intHP / intHPMax   (IsAlive is Health > 0)
+//   Mana/ManaMax     world.myAvatar.dataLeaf.intMP / intMPMax
+//   SetSpawnPoint    world.setSpawnPoint(world.strFrame, world.strPad)
+//   Rest             world.rest()
+//   CancelTarget     world.cancelTarget(), twice, in the loader's own order
 //
-// The one thing the loader says that a dot-path cannot express is MapLoadComplete's second half,
-// "the top child is not the connection movie"; `mapLoadInProgress` is the part that covers a
-// reload, and it is the part the engine's pause keys off.
+// TWO WANTS THE SURFACE DOES NOT ANSWER, and both for a real reason rather than an oversight, so
+// neither is worked around by inventing a path here:
+//
+//   MapLoadComplete  the loader's body reads `world.mapLoadInProgress` *and then* inspects its own
+//                    display list ("the top child is not the connection movie"), which is state
+//                    ticket #41 owns. This module's `ready()` therefore reads the game's own
+//                    `world.mapLoadInProgress` - the half a reload trips, and the half the engine's
+//                    pause keys off - and says plainly that the display-list half is not checked.
+//   GetUsername      the reference loader holds the login it captured from its own login form
+//                    (Root.Username), not something it reads out of the game; ticket #35 owns it.
+//                    This module reads the game's own `world.myAvatar.objData.strUsername` instead,
+//                    which is the same name the loader itself assigns to that field (Player.as
+//                    line 455), so `{PLAYERNAME}` still resolves to the character's name.
 
 const PATHS = {
-    // sfc is the socket and isConnected is what the loader's IsLoggedIn tests. It hangs off the
-    // game root (Root.Game.sfc), not off world - the bridge's paths are rooted at that same
-    // object, so this is `sfc.isConnected` and not `world.sfc.isConnected`. Read as one path: the
-    // bridge's walk answers null for a missing parent, so this single read is the loader's whole
-    // condition (`sfc != null && sfc.isConnected == true`) without serialising the socket itself.
-    socket: 'sfc.isConnected',
-    avatar: 'world.myAvatar',
-    hp: 'world.myAvatar.dataLeaf.intHP',
-    hpMax: 'world.myAvatar.dataLeaf.intHPMax',
-    mp: 'world.myAvatar.dataLeaf.intMP',
-    mpMax: 'world.myAvatar.dataLeaf.intMPMax',
+    // The two reads above, and nothing else: everything the surface answers goes through it.
     name: 'world.myAvatar.objData.strUsername',
     mapLoading: 'world.mapLoadInProgress'
 };
 
-// The loader's own translations, for the log and for tests: each name the reference calls, and
-// the game path or call the loader's body actually performs.
+// The loader's own translations, for the log and for tests: each name the reference calls, what
+// this module asks for, and where the answer comes from.
 const LOADER_BODIES = {
-    IsLoggedIn: { path: PATHS.socket, body: 'Root.Game.sfc != null && Root.Game.sfc.isConnected == true' },
-    State: { path: 'world.myAvatar.dataLeaf.intState', body: 'myAvatar.dataLeaf.intState' },
-    Health: { path: PATHS.hp, body: 'myAvatar.dataLeaf.intHP' },
-    HealthMax: { path: PATHS.hpMax, body: 'myAvatar.dataLeaf.intHPMax' },
-    Mana: { path: PATHS.mp, body: 'myAvatar.dataLeaf.intMP' },
-    ManaMax: { path: PATHS.mpMax, body: 'myAvatar.dataLeaf.intMPMax' },
-    SetSpawnPoint: { call: 'world.setSpawnPoint', body: 'world.setSpawnPoint(world.strFrame, world.strPad)' },
-    Rest: { call: 'world.rest', body: 'world.rest()' },
-    Logout: { call: 'world.logout', body: 'Root.Game.logout()' },
-    CancelTarget: { call: 'world.cancelTarget', body: 'world.cancelTarget()' },
-    CancelAutoAttack: { call: 'world.cancelAutoAttack', body: 'world.cancelAutoAttack()' },
-    MapLoadComplete: { path: PATHS.mapLoading, body: 'world.mapLoadInProgress == false' }
+    IsLoggedIn: { helper: 'IsLoggedIn', body: 'Root.Game.sfc != null && Root.Game.sfc.isConnected == true' },
+    Health: { helper: 'Health', body: 'myAvatar.dataLeaf.intHP' },
+    HealthMax: { helper: 'HealthMax', body: 'myAvatar.dataLeaf.intHPMax' },
+    Mana: { helper: 'Mana', body: 'myAvatar.dataLeaf.intMP' },
+    ManaMax: { helper: 'ManaMax', body: 'myAvatar.dataLeaf.intMPMax' },
+    SetSpawnPoint: { helper: 'SetSpawnPoint', body: 'world.setSpawnPoint(world.strFrame, world.strPad)' },
+    Rest: { helper: 'Rest', body: 'world.rest()' },
+    Logout: { helper: 'Logout', body: 'Root.Game.logout()' },
+    CancelTarget: { helper: 'CancelTarget', body: 'world.cancelTarget() twice' },
+    CancelAutoAttack: { helper: 'CancelAutoAttack', body: 'world.cancelAutoAttack()' },
+    // Not on the surface: see the two named above.
+    GetUsername: { path: PATHS.name, body: 'the game own objData.strUsername; the loader holds its own copy (ticket #35)' },
+    MapLoadComplete: { path: PATHS.mapLoading, body: 'world.mapLoadInProgress == false; the display-list half is ticket #41' }
 };
 
 const ERRORS = {
@@ -129,7 +126,7 @@ function createSession(deps) {
         }
     }
 
-    /** Read one dot-path. A refusal rejects; nothing here answers with a default. */
+    /** Read one dot-path of this module's own (the two the surface does not answer). */
     async function readPath(path) {
         await attach();
         const answer = await bridge.call('getGameObject', [path]);
@@ -143,35 +140,40 @@ function createSession(deps) {
         return value;
     }
 
-    /** Call one game function by the path the loader's body calls. */
-    async function callPath(path, args) {
+    /**
+     * Ask the loader surface for one of the reference's own helper names. The surface owns the
+     * loader body for that name (loader-surface.js, ticket #48), so nothing here re-derives a path
+     * from it. A refusal - a name the surface does not implement, or the game refusing the read -
+     * rejects with the reason, marked when it means the window is gone.
+     */
+    async function loaderCall(name, args) {
+        // Attach first, for the same reason the raw reads do: the surface answers over the same
+        // channel, and a channel that is not attached has no game window to ask.
         await attach();
-        const list = args || [];
-        const name = list.length ? 'callGameFunction' : 'callGameFunction0';
-        const answer = await bridge.call(name, [path].concat(list));
-        if (!answer || answer.ok !== true) {
-            throw refusal((answer && answer.error) || ('the bridge could not call ' + path));
+        if (typeof bridge.loaderCall !== 'function') {
+            throw refusal('this bridge does not expose the loader surface (ticket #48): ' + name);
         }
-        const value = decode(answer.value);
-        if (value && typeof value === 'object' && typeof value.error === 'string') {
-            throw refusal(value.error);
+        try {
+            return await bridge.loaderCall(name, args || []);
+        } catch (error) {
+            throw refusal(message(error));
         }
-        return value;
     }
 
     /**
-     * A number at a path. A path that did not resolve answers null - the avatar is not in the
-     * world yet, or the game is between maps - and that is a refusal, not a zero: reading it as 0
-     * HP would look exactly like a death and send the bot down its respawn branch over a reload.
+     * A number a helper answered. A helper that answered nothing - null, undefined or an empty
+     * string, which is what a walk over an avatar that is not in the world yields - is a refusal,
+     * not a zero: reading it as 0 HP would look exactly like a death and send the bot down its
+     * respawn branch over a reload.
      */
-    function numberPath(path) {
-        return readPath(path).then(function (value) {
+    function numberFrom(name, promise) {
+        return promise.then(function (value) {
             if (value === null || value === undefined || value === '') {
-                throw refusal(path + ' did not resolve, so the game has no number there yet');
+                throw refusal(name + ' answered nothing, so the game has no number there yet');
             }
             const number = Number(value);
             if (!isFinite(number)) {
-                throw refusal(path + ' is not a number the game answered (' +
+                throw refusal(name + ' is not a number the game answered (' +
                     JSON.stringify(value) + ')');
             }
             return number;
@@ -179,22 +181,23 @@ function createSession(deps) {
     }
 
     const session = {
-        /** Playable.isLoggedIn's own body: a live socket. A missing socket path is a no. */
+        /** Player.IsLoggedIn's own body: a live socket. A missing socket is a no, not an error. */
         signedIn: function () {
-            return readPath(PATHS.socket).then(function (value) {
+            return loaderCall('IsLoggedIn').then(function (value) {
                 // The loader writes the game's own booleans as true/false; anything the game
                 // answers that is not a live connection is a no, and a path that did not resolve
                 // is a no too (walk answers null for a missing socket).
                 return value === true || value === 1 || value === 'true';
             }, function (error) {
                 if (error && error.windowGone === true) throw error;
-                if (/no member /.test(message(error))) return false;
                 throw error;
             });
         },
 
         /** IsAlive is Health > 0, and Health is myAvatar.dataLeaf.intHP. */
-        alive: function () { return numberPath(PATHS.hp).then(function (hp) { return hp > 0; }); },
+        alive: function () {
+            return numberFrom('Health', loaderCall('Health')).then(function (hp) { return hp > 0; });
+        },
 
         username: function () {
             return readPath(PATHS.name).then(function (value) {
@@ -207,7 +210,11 @@ function createSession(deps) {
             });
         },
 
-        /** MapLoadComplete's first half, which is the half a reload trips. */
+        /**
+         * MapLoadComplete's first half, which is the half a reload trips. Its second half - "the
+         * top child is not the connection movie" - reads the loader's own display list, which is
+         * ticket #41's, so this answers on the part it can honestly answer on.
+         */
         ready: function () {
             return readPath(PATHS.mapLoading).then(function (value) {
                 // A missing flag means the map is not loading; anything else is the flag's value,
@@ -219,15 +226,15 @@ function createSession(deps) {
             });
         },
 
-        health: function () { return numberPath(PATHS.hp); },
-        healthMax: function () { return numberPath(PATHS.hpMax); },
-        mana: function () { return numberPath(PATHS.mp); },
-        manaMax: function () { return numberPath(PATHS.mpMax); },
+        health: function () { return numberFrom('Health', loaderCall('Health')); },
+        healthMax: function () { return numberFrom('HealthMax', loaderCall('HealthMax')); },
+        mana: function () { return numberFrom('Mana', loaderCall('Mana')); },
+        manaMax: function () { return numberFrom('ManaMax', loaderCall('ManaMax')); },
 
-        // Each of these is the loader's own body, translated.
-        setSpawnPoint: function () { return callPath(LOADER_BODIES.SetSpawnPoint.call, []); },
-        rest: function () { return callPath(LOADER_BODIES.Rest.call, []); },
-        exitCombat: function () { return callPath(LOADER_BODIES.CancelTarget.call, []); },
+        // Each of these is one row of the loader surface, asked for by the reference's own name.
+        setSpawnPoint: function () { return loaderCall('SetSpawnPoint'); },
+        rest: function () { return loaderCall('Rest'); },
+        exitCombat: function () { return loaderCall('CancelTarget'); },
 
         /** The loader's bodies, exposed so the window and the tests can name their source. */
         bodies: function () { return LOADER_BODIES; }

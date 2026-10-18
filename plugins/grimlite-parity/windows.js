@@ -16,7 +16,12 @@ const DEVTEST_PAGE = path.join(featureRoot, 'devtest', 'devtest.html');
 const DEVTEST_WINDOW_ID = 'grimlite-parity-devtest';
 const COSMETICS_WINDOW_ID = 'grimlite-parity-cosmetics';
 const LOGGER_WINDOW_ID = 'grimlite-parity-packet-logger';
+const LOADERS_WINDOW_ID = 'grimlite-parity-loaders';
+const SPAMMER_WINDOW_ID = 'grimlite-parity-packet-spammer';
+const TAMPERER_WINDOW_ID = 'grimlite-parity-packet-tamperer';
 const BOT_MANAGER_WINDOW_ID = 'grimlite-parity-bot-manager';
+const OPTIONS_WINDOW_ID = 'grimlite-parity-options';
+const HOTKEYS_WINDOW_ID = 'grimlite-parity-hotkeys';
 
 // Every one of these is a page inside this plugin: no Flash, no Node in the page, and IPC
 // through its own sandbox-safe preload (docs/PLUGINS.md §4.7/§4.8).
@@ -142,6 +147,33 @@ function register(host, windowTitle) {
             config: windowConfig(host, 'packets', 'preload_logger.js', { width: 620, height: 520 })
         },
         {
+            id: LOADERS_WINDOW_ID,
+            title: function () {
+                return windowTitle('loaders', 'Grimlite Parity - Loaders and grabbers');
+            },
+            url: pageUrl('loaders', 'loaders.html'),
+            // The reference's own client size for Loaders.cs, which is a small tool window.
+            config: windowConfig(host, 'loaders', 'preload_loaders.js', { width: 271, height: 367 })
+        },
+        {
+            // PacketSpammer.Designer.cs is 348x242: a short list, a text box and the nine controls.
+            id: SPAMMER_WINDOW_ID,
+            title: function () {
+                return windowTitle('packetSpammer', 'Packet spammer');
+            },
+            url: pageUrl('packets', 'spammer.html'),
+            config: windowConfig(host, 'packets', 'preload_spammer.js', { width: 420, height: 400 })
+        },
+        {
+            // PacketTamperer.Designer.cs is 561x492: two rich boxes, the four buttons and the filter.
+            id: TAMPERER_WINDOW_ID,
+            title: function () {
+                return windowTitle('packetTamperer', 'Packet Tamperer');
+            },
+            url: pageUrl('packets', 'tamperer.html'),
+            config: windowConfig(host, 'packets', 'preload_tamperer.js', { width: 640, height: 520 })
+        },
+        {
             // The editor: the reference's own window is the widest of them, because the eleven tabs
             // and the six lists share the form (BotManager.Designer.cs is 1004x631).
             id: BOT_MANAGER_WINDOW_ID,
@@ -150,12 +182,51 @@ function register(host, windowTitle) {
             },
             url: pageUrl('bot-manager', 'bot-manager.html'),
             config: windowConfig(host, 'bot-manager', 'preload_bot_manager.js', { width: 1004, height: 640 })
+        },
+        {
+            // The reference has no Options form - its seven toggles are a menu (Root.cs:983-996) -
+            // so this is the window the port puts them in, in the menu's own order.
+            id: OPTIONS_WINDOW_ID,
+            title: function () {
+                return windowTitle('options', 'Options');
+            },
+            url: pageUrl('options', 'options.html'),
+            config: windowConfig(host, 'options', 'preload_options.js', { width: 380, height: 380 })
+        },
+        {
+            // Hotkeys.cs's own client area is 303x306 and its form is FixedSingle.
+            id: HOTKEYS_WINDOW_ID,
+            title: function () {
+                return windowTitle('hotkeys', 'Hotkeys');
+            },
+            url: pageUrl('hotkeys', 'hotkeys.html'),
+            config: windowConfig(host, 'hotkeys', 'preload_hotkeys.js', { width: 320, height: 330 })
         }
     ]);
 }
 
 module.exports = {
     register: register,
+    // Every id this file registers, so a caller that has to look one up (the Hotkeys window's
+    // action targets) reads the same list the registration uses instead of a second copy.
+    WINDOW_IDS: [
+        PLACEHOLDER_WINDOW_ID,
+        BOT_FILE_WINDOW_ID,
+        BANK_WINDOW_ID,
+        SETS_WINDOW_ID,
+        DEVTEST_WINDOW_ID,
+        COSMETICS_WINDOW_ID,
+        NOTEPAD_WINDOW_ID,
+        EYEDROPPER_WINDOW_ID,
+        ABOUT_WINDOW_ID,
+        LOGGER_WINDOW_ID,
+        LOADERS_WINDOW_ID,
+        SPAMMER_WINDOW_ID,
+        TAMPERER_WINDOW_ID,
+        BOT_MANAGER_WINDOW_ID,
+        OPTIONS_WINDOW_ID,
+        HOTKEYS_WINDOW_ID
+    ],
     PLACEHOLDER_PAGE: PLACEHOLDER_PAGE,
     PLACEHOLDER_WINDOW_ID: PLACEHOLDER_WINDOW_ID,
     BOT_FILE_PAGE: BOT_FILE_PAGE,
@@ -170,5 +241,10 @@ module.exports = {
     EYEDROPPER_WINDOW_ID: EYEDROPPER_WINDOW_ID,
     ABOUT_WINDOW_ID: ABOUT_WINDOW_ID,
     LOGGER_WINDOW_ID: LOGGER_WINDOW_ID,
-    BOT_MANAGER_WINDOW_ID: BOT_MANAGER_WINDOW_ID
+    LOADERS_WINDOW_ID: LOADERS_WINDOW_ID,
+    SPAMMER_WINDOW_ID: SPAMMER_WINDOW_ID,
+    TAMPERER_WINDOW_ID: TAMPERER_WINDOW_ID,
+    BOT_MANAGER_WINDOW_ID: BOT_MANAGER_WINDOW_ID,
+    OPTIONS_WINDOW_ID: OPTIONS_WINDOW_ID,
+    HOTKEYS_WINDOW_ID: HOTKEYS_WINDOW_ID
 };

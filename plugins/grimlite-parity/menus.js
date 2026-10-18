@@ -1,7 +1,7 @@
 const windows = require('./windows.js');
 
-// The reference's own navigation: Packets -> Sniffer opens the logger. The spammer and tamperer
-// join this submenu with their own tickets.
+// The reference's own navigation: Packets -> Sniffer, Spammer, Tamperer, in the order Root.cs adds
+// them. (Root.cs also adds an Interceptor, which is hidden upstream and stays unshipped here.)
 function register(host, windowTitle) {
     host.registerMenus(function (ctx) {
         const labels = (ctx && ctx.labels) || {};
@@ -12,6 +12,16 @@ function register(host, windowTitle) {
                 label: labels.packetsSniffer || 'Sniffer',
                 click: function () {
                     host.windows.openFeatureWindow(windows.LOGGER_WINDOW_ID);
+                }
+            }, {
+                label: labels.packetsSpammer || 'Spammer',
+                click: function () {
+                    host.windows.openFeatureWindow(windows.SPAMMER_WINDOW_ID);
+                }
+            }, {
+                label: labels.packetsTamperer || 'Tamperer',
+                click: function () {
+                    host.windows.openFeatureWindow(windows.TAMPERER_WINDOW_ID);
                 }
             }]
         }, {
@@ -79,6 +89,16 @@ function register(host, windowTitle) {
                         host.windows.openFeatureWindow(windows.DEVTEST_WINDOW_ID);
                     }
                 },
+                {
+                    // The reference puts this under Tools, word for word (Root.cs:784) and
+                    // reaches it from ShowForm(Loaders.Instance) (Root.cs:339).
+                    label: labels.grimliteLoaders || 'Loaders/grabbers',
+                    accelerator: keybinds.grimliteLoaders,
+                    registerAccelerator: false,
+                    click: function () {
+                        host.windows.openFeatureWindow(windows.LOADERS_WINDOW_ID);
+                    }
+                },
                 // The reference's own Tools-menu words and order: Bank, then the Sets form it
                 // keeps hidden (Root.cs:820-831). Hidden there or not, the form is reachable,
                 // so it ships as a normal entry here.
@@ -105,6 +125,25 @@ function register(host, windowTitle) {
                     click: function () {
                         host.windows.openFeatureWindow(windows.COSMETICS_WINDOW_ID);
                     }
+                },
+                // The reference puts its toggles under an Options menu (Root.cs:983-996) and its
+                // binding list under Tools -> Hotkeys (Root.cs:786-794). This port has one Grimlite
+                // menu, so both live here, under the reference's own words.
+                {
+                    label: labels.grimliteOptions || 'Options',
+                    accelerator: keybinds.grimliteOptions,
+                    registerAccelerator: false,
+                    click: function () {
+                        host.windows.openFeatureWindow(windows.OPTIONS_WINDOW_ID);
+                    }
+                },
+                {
+                    label: labels.grimliteHotkeys || 'Hotkeys',
+                    accelerator: keybinds.grimliteHotkeys,
+                    registerAccelerator: false,
+                    click: function () {
+                        host.windows.openFeatureWindow(windows.HOTKEYS_WINDOW_ID);
+                    }
                 }
             ]
         }];
@@ -114,5 +153,7 @@ function register(host, windowTitle) {
 module.exports = {
     register: register,
     PLACEHOLDER_WINDOW_ID: windows.PLACEHOLDER_WINDOW_ID,
-    LOGGER_WINDOW_ID: windows.LOGGER_WINDOW_ID
+    LOGGER_WINDOW_ID: windows.LOGGER_WINDOW_ID,
+    SPAMMER_WINDOW_ID: windows.SPAMMER_WINDOW_ID,
+    TAMPERER_WINDOW_ID: windows.TAMPERER_WINDOW_ID
 };

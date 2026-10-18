@@ -149,6 +149,78 @@ opt-in is on (and the window says so if you press Start without it).
 
 ---
 
+## Packet spammer and tamperer (ticket #27) - needs a display, the network and an account
+
+Same active plugin and the same **Settings → Packets → Steer game traffic through a local relay**
+opt-in as the logger above: these two windows write through the relay, so with steering off their
+Send actions report that nothing was written instead of pretending.
+
+**Packet spammer** (Packets → Spammer):
+
+- [ ] The window is titled **Packet spammer** and carries the reference's own nine controls: the
+      list, the packet box, **Add**, **Remove**, **Clear**, **Load**, **Save**, the delay spinner,
+      **Send once**, **Stop** and **Start**
+- [ ] The delay spinner starts at 1000 and refuses to go below 100 or above 61000
+- [ ] Type a frame and press Add (or Enter): it joins the list; **Remove** deletes the row that is
+      selected, and does nothing with none selected
+- [ ] **Save** opens a native dialog titled *Save spammer file*, filtered `*.xml`, starting in
+      `%AppData%/AquaStar/Spammer`; a name with no extension is saved as `.xml`
+- [ ] Open the saved file in a text editor: one line, `<autoer>`, one `<packet>` per row, then
+      `<author>Author</author>` and `<spamspeed>` - the reference's own shape
+- [ ] **Load** reads it back with the same packets and the same delay in the spinner
+- [ ] Load a spammer file that came from a **reference** client (or a guide): the packets load and
+      the listed speed arrives in the spinner
+- [ ] **Start**: the selected row walks the list in order, one frame per delay, wrapping at the end
+      (sign in and watch the game react, or watch Packets → Sniffer in a second window)
+- [ ] While it runs, **Add / Remove / Clear / Load** are dead, and **Stop** is live
+- [ ] **Stop** stops it: no further frames arrive, and the counter stops climbing
+- [ ] **Send once** writes the text box exactly once and does not start the loop
+- [ ] With the game window closed (or steering off), **Start** and **Send once** report that the
+      frame was not written - they do not look like they worked
+- [ ] Every frame the spammer sends shows up in Packets → Sniffer, on the **Client** side, once
+
+**Packet Tamperer** (Packets → Tamperer):
+
+- [ ] The window is titled **Packet Tamperer** with two checkboxes (**Capture from client**,
+      **Capture from server**), the send box above the receive box, the **Filter by text** box and
+      **Send to client / Send to server / Clear**
+- [ ] Both switches start **clear of ticks**, and the receive box stays empty until one is ticked
+- [ ] Tick only **Capture from client** and sign in: client frames appear as `From client: ...`
+      lines, one per line with a blank line after each, and no server frames appear
+- [ ] Untick it and tick only **Capture from server**: server frames appear as `From server: ...`
+      and the client frames that already arrived are still there
+- [ ] Tick both: both directions appear in the order they happened
+- [ ] Untick both: capture stops (nothing new arrives) while everything captured stays on screen
+- [ ] Type in **Filter by text**: only the matching lines are shown, case-insensitively; clear it
+      and every captured line is still there (nothing was dropped)
+- [ ] **Clear** empties the receive box and leaves the two switches where you put them
+- [ ] Type an edited frame in the send box and press **Send to server**: the game acts on it, and a
+      Sniffer window shows it on the **Client** side
+- [ ] Press **Send to client**: the client receives it, and Sniffer shows it on the **Server** side
+- [ ] With both buttons and an empty send box: both are dead, as in the reference
+- [ ] Close the tamperer window while capturing: the Sniffer keeps working, and reopening the
+      tamperer starts with both switches clear again
+
+### What could not be checked here, and why
+
+The spammer's and tamperer's sending has never been run against a live client from this machine:
+there is no display, no account session and no relay steering in the test environment. What the
+tests do cover is the whole data path over real sockets - a rewritten login response pointing at
+the relay, a client socket, the relay's forwarding, and the injected frame arriving NUL-framed on
+the right side and showing up on the tap afterwards.
+
+Two behaviours a human has to judge:
+
+- whether a frame injected with **Send to client** is accepted by the game's own client code
+  (the reference does this through `sendClientPacket` in its private loader, which this port does
+  not run; here the frame goes back down the socket the server itself would have spoken on).
+- whether the reference's own file loader round-trips a file *this port* wrote with the same delay
+  - its reader compares the literal string `"spamspeed"` against a digits test, so it resets its
+  spinner to 2000 whatever the file says. The port's reader takes the file's value (see the note
+  in `features/packets/spammer.js`).
+
+---
+
 ## Grimlite Parity — Bank and Sets (ticket #29) — needs the real game and dialogs
 
 **Blocked on the bridge growing the reference loader's call surface.** The bridge (#28, merged)
@@ -478,13 +550,28 @@ below can be, because each box needs a live client to answer.
 
 ### What could not be checked here, and why
 
-The engine consumes an injected session (spec #19, Seam 4) whose every path was read out of the
-reference client's **own decompiled loader** (`grimoire/game/Player.as`, `World.as`) and then
-confirmed to be an exact token in the stock game SWF - `sfc`, `isConnected`,
-`world.myAvatar.dataLeaf.intHP`/`intHPMax`/`intMP`/`intMPMax`, `world.mapLoadInProgress`,
-`world.setSpawnPoint`, `world.rest`, `world.cancelTarget`, `world.myAvatar.objData.strUsername`.
-That is a static check, not a live read: **no path has been exercised against a real client**, so
-the first run is the milestone rather than a formality.
+The engine consumes an injected session (spec #19, Seam 4). Eight of its ten wants are asked for by
+the reference loader's **own helper name** through the surface ticket #48 built
+(`loader-surface.js`), which holds one row per name reaching the path that name's decompiled body
+reads: `IsLoggedIn`, `Health`, `HealthMax`, `Mana`, `ManaMax`, `SetSpawnPoint`, `Rest`,
+`CancelTarget`. Reading `grimoire/game/Player.as` and `World.as` beside that table is the check
+that the session and the table agree.
+
+The two the surface does **not** answer, and what this ticket does instead:
+
+- **`MapLoadComplete`** - the loader's body reads `world.mapLoadInProgress` *and then* inspects its
+  own display list ("the top child is not the connection movie"). The surface refuses it because
+  ticket #41 owns that state, so the session's `ready()` reads the game's own
+  `world.mapLoadInProgress` - the half a reload trips, and the half the loop's pause keys off. The
+  display-list half is **not checked**, so a map that is loaded but still showing the connection
+  movie would read as ready here.
+- **`GetUsername`** - the reference loader holds the login it captured from its own login form
+  (`Root.as`), which ticket #35 owns; it does not read the name out of the game. The session reads
+  `world.myAvatar.objData.strUsername` instead, the field `Player.as` line 455 itself assigns, so
+  `{PLAYERNAME}` still resolves to the character's name.
+
+That is all a static check, not a live read: **no path and no helper has been exercised against a
+real client**, so the first run is the milestone rather than a formality.
 
 Two known limits to look for on that first run:
 
@@ -497,6 +584,118 @@ Two known limits to look for on that first run:
 - **Auto-relogin is not wired** (#35). The bot honours the setting by naming the gap and stopping,
   rather than silently ignoring a tick the user set.
 
+## Options and Hotkeys (ticket #34) - needs the real game and a display
+
+The toggle set, its order, the walkspeed field and the whole hotkey vocabulary are covered offline
+by `npm test` against the reference's own Options menu (Root.cs) and its `Hotkeys.cs` - the
+persisted index is the order, so the order is part of the behaviour. What a human has to check is
+everything only the real game and a real keyboard can show.
+
+Active plugin **Grimlite Parity**, restart, then **Grimlite -> Options** (or **Alt+Shift+O**) and
+**Grimlite -> Hotkeys** (or **Alt+Shift+H**).
+
+**First, and important.** The seven option calls and the three game-reaching hotkey actions are
+names the reference's own loader SWF provides and the **stock game does not carry**. Verified by
+exact token match against the decompressed game SWF at `/var/tmp/aq-origin/game.swf` and the
+reference loader at `/var/tmp/grimlite-src/Loader/grimoire.swf`:
+
+    name                  stock game   reference loader   port routes it to
+    SetInfiniteRange          -            yes            world.actions.active[i].range, i = 0..5
+    SetProvokeMonsters        -            yes            world.aggroAllMon
+    SetEnemyMagnet            -            yes            myAvatar.pMC x/y -> target.pMC x/y
+    SetLagKiller              -            yes            world.visible
+    DestroyPlayers            -            yes            (none - see below)
+    SetSkipCutscenes          -            yes            mcExtSWF children, world.visible, showInterface
+    SetWalkSpeed              -            yes            world.WALKSPEED
+    CancelTarget              -            yes            world.cancelTarget, twice
+    LoadHairShop              -            yes            world.sendLoadHairShopRequest
+    LoadArmorCustomizer       -            yes            openArmorCustomize
+
+The game carries lowercase cousins (`walkSpeed`, `cancelTarget`, `loadHairShop`,
+`openArmorCustomize`), which are different members with different signatures and which the
+reference never calls - nothing here substitutes one for the other.
+
+**A loader-only name is not a dead end, because the loader is a renaming layer.** Read from its own
+decompiled bodies (`/var/tmp/aq48/out-loader/scripts/grimoire/game/Settings.as`, `Player.as`,
+`Shops.as`), each of these names stands for reads, writes and calls on paths the stock game **does**
+carry (`world`, `actions.active[].range`, `aggroAllMon`, `myAvatar.pMC`, `mcExtSWF`,
+`showInterface`, `WALKSPEED`, `cancelTarget`, `sendLoadHairShopRequest`, `openArmorCustomize` -
+all exact runs in the decompressed game). So the port asks the game for the reference's own name
+first and, when the game answers `no member <name>`, does what that loader body does through the
+generic callbacks. The day a bridge implements the loader's surface, the game's own answer wins and
+these routes are simply not reached.
+
+The one exception is **Hide Players**: the loader's `DestroyPlayers` walks every entry of
+`world.avatars` and destroys the ones that are not the player's own. The generic callbacks read and
+write paths named in advance and cannot enumerate that map, so there is nothing honest to send for
+it and the window reports the full reason instead. Whether the four toggles that now route really
+work in a live client is what the boxes below are for.
+
+- [ ] The Options window opens titled **Options**, listing all seven toggles in the reference's
+      order: Infinite Range, Provoke, Enemy Magnet, Lag Killer, Hide Players, Skip Cutscenes,
+      Walkspeed - and **every one of them unticked on a first run**
+- [ ] Ticking **Infinite Range** and attacking a monster far away hits it; unticking sends no undo
+      call (the reference has none) and the loop stops re-sending it
+- [ ] Ticking **Provoke** makes monsters attack the character, and re-sends it on every pass
+- [ ] Ticking **Enemy Magnet** pulls the target onto the character, and does nothing at all (no
+      error) when nothing is targeted
+- [ ] **Lag Killer** hides the game movie itself when ticked (`world.visible` goes false) and
+      shows it again when unticked - the one toggle with a real off call
+- [ ] **Skip Cutscenes** clears a running cutscene and gives the interface back
+- [ ] Ticking **Hide Players** removes other players from the room - **or** shows the stated
+      reason that the loader-only call has no route through the generic callbacks. Both outcomes
+      are correct here; a tick that silently did nothing is not
+- [ ] When the game does refuse a routed call, the window's status line shows that refusal
+      (`no member <name> ... - and the game's own route to it failed: ...`) rather than a tick
+      that quietly did nothing
+- [ ] **Walkspeed**: the field shows **20** before it is ever touched (the reference's own
+      default), the tick disables the field, and turning the tick off restores the game's own 8
+- [ ] Typing a number while the tick is off only remembers it; the number goes out the moment the
+      tick is on and keeps going out every 250 ms while it stays on
+- [ ] The number field clamps to the reference's own 1..99 box
+- [ ] **Stop applying** stops the re-send loop with the ticks left as they were; **Start applying**
+      re-sends everything that is on, straight away
+- [ ] The ticks and the walkspeed number survive an app restart and are still there when the
+      window is closed and reopened
+- [ ] The Hotkeys window opens titled **Hotkeys** with an **empty** list, a key picker and an
+      action picker
+- [ ] The key picker offers exactly Escape, Left, Up, Right, Down, D0-D9, A-Z, F1-F12, Alt, Tab,
+      Shift - single keys only, no combination
+- [ ] The action picker offers the reference's own 23 in order, from *Start/Stop Bot* to
+      *Start/Stop AutoAttack*
+- [ ] Picking a key and an action and pressing **Add** puts a row reading `<Key>: <Action>` (e.g.
+      `D1: Show Notepad`) in the list, and pressing that key opens the target
+- [ ] **Remove** gives the key back: pressing it afterwards does nothing
+- [ ] Rebinding the **same** key to another action replaces the row instead of adding a second
+- [ ] Binding a key the app already holds (F2, Ctrl+J, F11, F9, Alt+9, Alt+H / F1, Ctrl+F5) is
+      refused with the owner named, not taken silently
+- [ ] Binding bare **Alt** or **Shift** is refused with the reason (a bare modifier cannot be
+      registered on its own)
+- [ ] A key bound to an action whose window has not shipped yet (Show Bank, Show Maid, Show Fast
+      Travels, Start/Stop Bot, ...) is **inert**: nothing opens, nothing throws, and the window
+      says that window has not shipped
+- [ ] **Minimize to tray** fires while another app has focus; every other binding fires only while
+      AquaGrim does
+- [ ] The bindings survive an app restart, in the order the list was built
+
+### Options and hotkeys: what could not be checked here, and why
+
+Everything above needs the game running against the real origin, plus a keyboard and a display;
+this session has no display and must not boot Electron, so **not one of these calls has been run
+against a live client**. The routes are transcribed one-for-one from the reference loader's own
+decompiled bodies, and the game paths they read are all present in the decompressed game SWF, but
+whether each does the right thing on a live session - in particular whether `world.visible` is the
+flag Lag Killer wants, whether `actions.active` is the skill bar the range is set on, and whether
+`myAvatar.target.pMC` is writeable from outside the game - is exactly what a human has to confirm.
+
+Two further things a human should note:
+
+- **Hide Players has no route** (`DestroyPlayers` needs to enumerate `world.avatars`, which the
+  generic callbacks cannot do), so it reports the reason. If the bridge implements the loader's
+  helper surface later, that toggle starts working with no change to this window.
+- **Minimize to tray** is implemented as raising the app's main window. Electron has no tray toggle
+  here, so this is the port's nearest equivalent, not the reference's own behaviour.
+
 ---
 
 ## Verification log
@@ -504,3 +703,68 @@ Two known limits to look for on that first run:
 | Date | Who | Notes |
 |------|-----|--------|
 | 2026-03-24 | maintainer | Partial manual run on Example Companion / menus / basic flows — looked OK; not every box above was exercised |
+
+---
+
+## Grimlite Parity - Loaders and grabbers (ticket #31) - needs the real game
+
+**All four loaders work; the grabbers read the game's own objects.** The loaders ask the
+reference's own name first and then the stock game's own request, so every target has a route
+that exists. Each name below was checked against the decompressed game SWF
+`/var/tmp/aq-origin/game.swf` with the two-condition test the merged bridge.js documents: an exact
+ABC string-pool entry *and* at least one multiname referencing it, because a pool entry nothing
+references is a literal rather than a callable member (a plain substring search wrongly "finds"
+`BankSlots` inside `txtBankSlots`).
+
+| Loader | The reference's own call | In the stock game | What answers instead |
+|---|---|---|---|
+| `Load` (shop) | `ResetShopInfo`, `LoadShop` | absent | `world.sendLoadShopRequest` (pool entry, 1 reference) |
+| `Load` (hair shop) | `LoadHairShop` | absent | `world.sendLoadHairShopRequest` (1 reference) |
+| `Load` (armour customizer) | `LoadArmorCustomizer` | absent | `world.openArmorCustomize` (1 reference) |
+| `Load` (quest) | `LoadQuest`, `LoadQuests` | absent | `world.getQuest`, `world.getQuests` (1 reference each) |
+| `F Accept` | `Accept`, `IsInProgress` | `Accept` is a pool entry with **zero** references, `IsInProgress` is absent | `world.acceptQuest`, `world.isQuestInProgress` (1 reference each) |
+| `Ghost` accept | `%xt%zm%acceptQuest%1%<id>%` (Quest.GhostAccept) | n/a - a frame, not a call | `sfc.sendString` (1 reference) |
+
+The grabbers read the game's own objects, all verified the same way: `world.getInventory`,
+`world.invTree`, `world.bankinfo`, `world.tempitems`, `world.questTree`, `world.shopinfo`,
+`world.cells`, `world.strFrame` and `world.getMonstersByCell`.
+
+**Equip SWF** reaches the game too: the reference's `SetEquip` is absent from the game, but the
+line the reference keeps commented out beside it is not - `world.myAvatar.loadMovieAtES` is a pool
+entry with four live references, and it is the same route ticket #30's Cosmetics window verified.
+
+**Blocked on the bridge growing the reference loader's surface:** `GetInventoryItems`,
+`GetBankItems`, `GetTempItems`, `GetQuestTree`, `LoadShop`, `LoadHairShop`, `LoadArmorCustomizer`,
+`ResetShopInfo`, `LoadQuest`, `LoadQuests`, `Complete`, `IsInProgress`, `SetEquip`, `BankSlots`,
+`UsedBankSlots` and `BuyItemQtyById`. All are absent from the game's pool and all are present in
+the reference's own `Loader/grimoire.swf` with live references. Until that surface exists, a call
+only it could serve reports the name it is waiting for rather than a value; because the loaders
+ask the reference's name first, they start working the day it lands, with no change here.
+
+The bot lists are no longer a stub: ticket #36's Bot Manager landed, so the grabbers'
+list actions append to its document with the reference's own Contains guard and reach a
+saved `.gbot`. With no bot open they still report that nothing is holding a list.
+
+Rows, menus, search, the XML export, the list wiring and the window shell are covered by `npm test`;
+these boxes are the live half and none can be ticked without a running client and a display.
+
+- [ ] **Loaders/grabbers** opens from the Grimlite menu and from its own key binding, at the reference's own size, with the combo open on **Quest**
+- [ ] The count box and **F Accept** are enabled only while the target is **Quest**, which is what `cbLoad_SelectedIndexChanged` does
+- [ ] **Load** on Shop / Hair shop / Armour customizer opens that window in the game, and the status line names the path that served it
+- [ ] **Load** on Quest with a count of 3 loads 3 consecutive ids; a comma list loads exactly as written; a non-numeric box is refused out loud (the reference refuses it silently)
+- [ ] **F Accept** loads the batch and accepts only the quests the game does not already have in progress, after the reference's 1000ms wait and with its per-accept pacing
+- [ ] **Ghost** checked sends the raw frame, and the quest arrives without the client's own accept animation
+- [ ] Each of the eight grabbers fills the tree from a live client: shop items, quest ids, quest items with drop rates, inventory, temp inventory, bank, monsters, all monsters
+- [ ] **Temp inventory** and **Bank** fill from a real client (both flatten a slot-keyed object, so a live client is what confirms the shape)
+- [ ] The order combo is enabled only for quest and monster grabs, and it changes the row text: `Name - Id` against `Id - Name`, monsters by name against by `MonMapID`
+- [ ] **Search** selects the first match, then steps through the rest and wraps past the last
+- [ ] **Save** writes a `.xml` through the reference's own dialog ("Save grabber data", "XML files|*.xml"), the file opens in another XML tool, and double-clicking the tree loads it back
+- [ ] Right-click menus appear only on rows that carry one, with the reference's own entries and order, and each entry does what it says
+- [ ] **Equip SWF** puts the item's movie on the slot its category maps to (Cape `ba`, Pet `pe`, Armor/Class `co`, Helm `he`, Misc `mi`, anything else `Weapon`)
+- [ ] **Buy This Item** reports the loader name it is waiting for (`BuyItemQtyById`) rather than appearing to buy anything
+- [ ] **Add buy command** puts a `CmdBuy` with the shop, item and quantity the row carries into the Bot Manager's Commands list
+- [ ] **Accept Quest**, **Complete Quest (Once)** and **Complete Quest (Maxed)** reach the game, and the status line names which path served each
+- [ ] **Copy Bypass Packet** puts the reference's own JSON on the clipboard, and pasting it into the packet tamperer updates the quest's progress
+- [ ] **Go to Wikipage** and **Search on Wiki** open in the app's own browser window rather than the system browser, with the name's spaces turned into `+`
+- [ ] The bot list actions (**Add to both**, **Add to whitelist**, **Add to unbank list** and the three "Add all" aggregates) append to the **Bot Manager**'s own Drops, Items and Quests lists with the reference's Contains guard, and the rows survive a Save to `.gbot`
+- [ ] **Copy all** and **Copy all Reqs** put the reference's own two lines on the clipboard, the second with its extra comma

@@ -326,11 +326,12 @@ function createEngine(deps) {
         },
         CmdRestart: function () { index = -1; },
         CmdStop: function (ctx, command) {
-            // CmdStop's KeepLagkiller and BankOnStop belong to the option toggles (#34) and to the
-            // bank the reference's own loader answers (#48); the log names them rather than
-            // pretending to have honoured them.
+            // CmdStop's KeepLagkiller is the option toggles (#34) and its BankOnStop banks the
+            // AC items in the bot's own Items list (the loader's TransferToBank / GetInventoryItems,
+            // both of which the surface now answers). Neither is wired into this loop yet, so the
+            // log names them rather than pretending to have honoured them.
             if (command && (command.KeepLagkiller || (config && config.BankOnStop))) {
-                log('CmdStop: KeepLagkiller and BankOnStop wait on #34 and the loader surface (#48)');
+                log('CmdStop: KeepLagkiller (#34) and BankOnStop are not applied by this loop yet');
             }
             stop();
         },
@@ -362,11 +363,12 @@ function createEngine(deps) {
             const written = String(command.Value2 === undefined ? '' : command.Value2);
             // CmdSetVar's own conveniences read the inventory ({weapon}, {class}, {nr10},
             // {helm}, {cape} and ".qty"), which the reference serves from its loader's
-            // GetInventoryItems - loader-only, so #48 owns it. The value is left as written and
-            // the reason is reported instead of a stand-in item name.
+            // GetInventoryItems. That helper is now on the surface (#48) but this loop holds no
+            // game access of its own beyond the session, so the value is left as written and the
+            // reason is reported rather than a stand-in item name being invented.
             if (/^\{(weapon|class|nr10|helm|cape)\}$/.test(key) || /\.qty$/i.test(written)) {
                 log('CmdSetVar: "' + (/\.qty$/i.test(written) ? written : key) + '" reads the ' +
-                    'inventory, which the stock game does not answer (loader-only GetInventoryItems, #48)');
+                    'inventory (the loader\'s GetInventoryItems), which this loop cannot reach yet');
             }
             vars[key] = written.indexOf('[') !== -1 ? resolve(written) : written;
         },
@@ -440,9 +442,9 @@ function createEngine(deps) {
             try {
                 await session.setSpawnPoint();
             } catch (error) {
-                // The reference's World.SetSpawnPoint is its loader's; the stock game does not
-                // answer that name, so a session that cannot set it says so and the wait below
-                // still runs. That is a #48 gap, named rather than swallowed.
+                // SetSpawnPoint is one of the loader surface's own rows (#48), so a session that
+                // cannot set it has a reason worth reading - an unattached bridge, a window that
+                // went away - and the wait below still runs, as the reference's own block does.
                 log('death: could not set the spawn point: ' + message(error));
             }
         }
