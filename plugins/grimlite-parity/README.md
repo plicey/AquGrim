@@ -1,0 +1,14 @@
+# Grimlite Parity
+
+A second bundled game plugin: Grimlite-Li's user-facing surface (client-side tools, packet
+tools, the bot engine) for Adventure Quest Worlds, kept out of the bundled game plugin so a
+user who does not select it runs today's app unchanged.
+
+Scaffold stage: the plugin loads, is selectable in Settings → General → Active plugin, and
+contributes its menu, keybind and one placeholder window. The primary surface is a local
+page because no game-specific wiring exists yet.
+
+It declares `apiVersion: 2` and the game access permissions its later features use
+(`game-bridge`, `packet-tap`, `packet-send`; see `docs/PLUGINS.md` section 5).
+
+One active plugin per process still holds: select this plugin and restart to run it.

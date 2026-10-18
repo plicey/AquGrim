@@ -27,6 +27,18 @@ Mark items with `[x]` when verified. Leave `[ ]` if not run yet.
 
 ---
 
+## Grimlite Parity (scaffold)
+
+- [ ] Set active plugin to **Grimlite Parity**, restart
+- [ ] The window opens the plugin's local placeholder page (no game is wired yet)
+- [ ] Window menu shows the **Grimlite** entry → *Parity placeholder window* opens it
+- [ ] **Alt+Shift+G** opens the same window (exactly one, from a game window and from a browser window)
+- [ ] **F1** Help: platform section + "Grimlite Parity" section
+- [ ] Settings → General lists *Grimlite Parity (bundled) · 0.1.0* in the active plugin picker
+- [ ] Switch back to Adventure Quest Worlds, restart: AQW behaves exactly as before
+
+---
+
 ## Adventure Quest Worlds
 
 - [ ] Switch active plugin to **Adventure Quest Worlds**, restart

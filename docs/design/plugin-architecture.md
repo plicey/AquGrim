@@ -496,8 +496,16 @@ Migration-only escape: AQW plugin may `require()` legacy modules until PR 8 comp
 | `windows.spawnHelperProcess` | `spawn-helper-process` |
 | `getStore` / persistent writes | `persistent-store` |
 | Feature windows with `webSecurity: false` or `plugins: true` + custom protocol | `unsafe-renderer` |
+| Game access, reserved for the parity work (`apiVersion: 2`) | `game-bridge`, `packet-tap`, `packet-send` |
 
 Unknown permissions in the manifest → load failure. Missing permission on method call → throw; activation fails → fallback to bundled AQW.
+
+**Manifest api versions.** `res/platform/manifest-schema.js` holds the versions the app can run
+(`SUPPORTED_API_VERSIONS`, currently `1` and `2`). The check is additive by construction: a version
+in the list loads, a version outside it is refused by name at discovery so a newer plugin never
+activates only to fail at its first guarded call. `2` adds the three game access permissions above
+and nothing else; the version-1 back-compat affordances (`unprefixedIpc`) stay version 1's alone.
+`minAppVersion` remains the second, independent half of the gate.
 
 ### Lifecycle hooks
 

@@ -8,7 +8,12 @@ const KNOWN_PERMISSIONS = {
     'inject-scripts': true,
     'persistent-store': true,
     'spawn-helper-process': true,
-    'unsafe-renderer': true
+    'unsafe-renderer': true,
+    // Game access (apiVersion 2). Read and write are separate so a read-only tool does not
+    // need write access: the bridge channel, the packet tap, and frame injection.
+    'game-bridge': true,
+    'packet-tap': true,
+    'packet-send': true
 };
 
 const KNOWN_CAPABILITIES = {
@@ -33,6 +38,11 @@ function isStringArray(value) {
         return typeof item === 'string';
     });
 }
+
+// Manifest api versions this platform can run. Additive versions keep older plugins
+// loading unchanged; a version that is not in this list is refused by name at discovery,
+// so a newer plugin never activates and fails later at its first guarded call.
+const SUPPORTED_API_VERSIONS = [1, 2];
 
 function parseSemver(version) {
     if (!isNonEmptyString(version)) return null;
@@ -88,8 +98,13 @@ function validateManifest(manifest, opts) {
     if (!isNonEmptyString(manifest.version)) {
         errors.push('version is required');
     }
-    if (manifest.apiVersion !== 1) {
-        errors.push('apiVersion must be 1');
+    if (manifest.apiVersion == null) {
+        errors.push('apiVersion is required');
+    } else if (SUPPORTED_API_VERSIONS.indexOf(manifest.apiVersion) === -1) {
+        errors.push(
+            'apiVersion ' + manifest.apiVersion + ' is not supported (this app supports ' +
+            SUPPORTED_API_VERSIONS.join(' and ') + ')'
+        );
     }
     if (!isNonEmptyString(manifest.main) || hasPathEscape(manifest.main)) {
         errors.push('main must be a relative path without ".."');
@@ -195,6 +210,7 @@ function validateManifest(manifest, opts) {
 module.exports = {
     KNOWN_PERMISSIONS: KNOWN_PERMISSIONS,
     KNOWN_CAPABILITIES: KNOWN_CAPABILITIES,
+    SUPPORTED_API_VERSIONS: SUPPORTED_API_VERSIONS,
     validateManifest: validateManifest,
     parseSemver: parseSemver,
     compareSemver: compareSemver,
