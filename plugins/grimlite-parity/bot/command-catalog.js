@@ -424,9 +424,11 @@ function display(command) {
 // Skill.ToString: the reference strips a leading "1: " the game returned and picks the shape by
 // the skill's own Type - Label is the plain Text, Safe prints the HP/MP gate, Normal the index.
 function skillRow(skill) {
-    let text = skill.Text === undefined || skill.Text === null ? null : String(skill.Text);
-    if (text !== null && /^[1-4]: /.test(text)) text = text.slice(3);
-    const name = text === null ? skillName(skill.Index) : text;
+    // `name` is the skill's own Text when it has one - the shadowing bug that made this throw was
+    // a local named `text`, which is also the module's string helper.
+    let label = skill.Text === undefined || skill.Text === null ? null : String(skill.Text);
+    if (label !== null && /^[1-4]: /.test(label)) label = label.slice(3);
+    const name = label === null ? skillName(skill.Index) : label;
     let row;
     if (skill.Type === 2) row = name;
     else if (skill.Type === 1) {
