@@ -149,6 +149,85 @@ opt-in is on (and the window says so if you press Start without it).
 
 ---
 
+## Bot Manager (ticket #36) - needs a display, the reference client and a bot file
+
+The sheet, the catalog, the document mechanics, the customiser and the tree are covered offline
+by `npm test` (against the reference's own designer strings and its shipped corpus). What is left
+for a human is everything WinForms drew: the tab layout, the generated form, the menus behind
+right-click, and whether the file the window writes opens in the reference.
+
+Active plugin **Grimlite Parity**, restart, then **Grimlite → Bot Manager** (or **Alt+Shift+M**).
+
+- [ ] The window opens titled **Bot Manager**, about 1004x640, with the eleven tabs in the
+      reference's own order: Combat, Map, Item, Quest, Misc, Misc 2, Options, Options 2, Hunt,
+      Bots, Info
+- [ ] Every tab holds the reference's controls with its own labels (Combat: the skill boxes and
+      *Attack without animations*; Map: cell/pad and *Join Map SWF*; Quest: *Quest ID* with its
+      *Add to whitelist*; Bots: the folder tree; Info: the author and description boxes)
+- [ ] **Load bot** opens a native dialog; pick a `.gbot` and the left list fills with the file's
+      commands, each row carrying the reference's own text (*Move to cell: x, y*, *Kill monster*,
+      *Delay 500ms*, *Quest: 1234*, ...)
+- [ ] The left selector switches Commands → Skills → Quests → Drops → Boosts → Items: the list and
+      the six counters under it follow the switch, and the counters read the same numbers the
+      reference shows (Commands is two lines: *Number of* / *Commands: n*)
+- [ ] **Search** finds a command by its text, walks to the next hit on each press, and wraps from
+      the last hit back to the first; a text that is not there leaves the selection alone
+- [ ] Rows render in the reference's per-class colour; a command whose class has never been
+      customised is #FFDCDCDC
+- [ ] **Ctrl+Up / Ctrl+Down** move the selection (and a multi-selection as one block) and the list
+      keeps the moved rows selected; at either end nothing moves
+- [ ] **Ctrl+D**-style duplicate copies the selection directly below itself and selects the copies;
+      **Delete** removes every selected row; **Clear** empties the current list, and with **all**
+      ticked it empties all six
+- [ ] **Ctrl+C** copies the selected commands as their display text, one per line, in list order
+- [ ] **Remove** (and Ctrl+X) cuts the rows to the clipboard; the reference's whole-configuration
+      copy and paste move a complete set of lists through the clipboard, and pasting something
+      that is not a bot is refused rather than half-applied
+- [ ] **Insert above:** a modifier-click on an add button puts the new command at the selection
+      instead of at the end, and the list scrolls the new row into view
+- [ ] **Variant toggle:** the same modifier on the add button flips the command's variant the
+      reference flips (for example the quest command's reaccept flag)
+- [ ] **Double-click** a row opens the generated property form for that command, titled with the
+      command's own name and offering one row per member the reference's form offers (its skip
+      list - Tag, Description1/2, $type, Text - is not shown)
+- [ ] Editing a field and pressing OK writes back to the same row in the list; Cancel changes
+      nothing; a value the member's type cannot take is reported instead of thrown
+- [ ] **Raw Command Editor** from the form shows the command's own JSON; a valid edit replaces the
+      command, and text that does not parse is reported and leaves the command untouched
+- [ ] Every add button on every tab builds the command the reference builds from the fields beside
+      it (Combat *Add skill* → a skill row; Map *Move to cell* → *Move to cell: 1, Left*; Item
+      *Equip* → the item's name; Misc *Delay* → *Delay 500ms*)
+- [ ] A list button fills the *other* lists the reference fills: *Add all skills* → every skill of
+      the equipped class, *Whitelist* → the item whitelist, *Unbank list* → the unbanked items,
+      *Boost* → the boosted items; adding the same entry twice does not duplicate the ones the
+      reference dedupes
+- [ ] A button whose field is empty contributes nothing (it does not append a half-built command)
+- [ ] The Options and Options 2 tickboxes and number boxes write the `Configuration` keys the
+      reference binds them to, immediately, and they survive **Save bot** → reopen
+- [ ] Right-click the list: **Change Fonts** (colour customiser and size), **Multiline Toggle**,
+      **Toggle Tabpages** and **Command Customizer** are all offered
+- [ ] The command customiser lists the three extras (Index, Variable, ExtendedVariable) before the
+      classes; a colour picked for one class paints that class's rows and no others; size is
+      clamped to 20-100 and changes the row height and font together
+- [ ] Colours, centring and size survive closing the window, and survive a restart
+- [ ] The **Bots** tab shows the chosen folder's subfolders and its `.gbot` files, one level at a
+      time (a folder expands to its own contents, not the whole tree); the root shows a count
+- [ ] Selecting a folder in the tree shows the count for that folder; selecting a bot opens it
+      (ctrl-click contributes it as a `CmdLoadBot` instead)
+- [ ] **Add folder** makes a directory under the bots root; a name that would escape the root is
+      refused; the chosen bots directory is remembered across restarts
+- [ ] Drop a `.gbot` file onto the window: it opens the same way Load bot does; dropping two at
+      once is ignored rather than picking one arbitrarily
+- [ ] Save the edited bot, then open the same file in the reference client's Bot Manager: the
+      commands, skills, quests and settings read the same, and a bot that came from Windows keeps
+      its own line endings
+- [ ] Save an untouched bot loaded from disk: the file has exactly the keys it came with (a key
+      absent because it equalled the reference's default must not reappear)
+- [ ] **Enable Bot / Disable Bot** writes the flag the reference writes; nothing here starts the
+      engine - running a bot is ticket #37
+
+---
+
 ## Adventure Quest Worlds
 
 - [ ] Switch active plugin to **Adventure Quest Worlds**, restart

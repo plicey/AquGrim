@@ -16,6 +16,8 @@ const MIN_SIZE = 20;
 const MAX_SIZE = 100;
 // The three combo entries the form adds before the classes. They colour the segments a command
 // row is split into (DrawString: the command itself, its variable, the extended variable, index).
+// The three names the reference's own combo lists before the classes (CommandColorForm_Load);
+// everything else in the combo is a class, and a class's name is its own label.
 const EXTRA_NAMES = ['Index', 'Variable', 'ExtendedVariable'];
 
 /** The reference's own key for a name: its class minus "Cmd", plus the suffix (CommandColorForm). */
@@ -32,7 +34,8 @@ function create(deps) {
 
     function state() {
         if (cache) return cache;
-        const empty = { colours: {}, centered: {}, commandsSize: DEFAULT_SIZE, font: '', botsDirectory: defaultBotsDirectory };
+        const empty = { colours: {}, centered: {}, commandsSize: DEFAULT_SIZE, font: '',
+            botsDirectory: defaultBotsDirectory, ui: {} };
         if (!store) return (cache = empty);
         try {
             const read = store.readOrCreate(function () { return empty; }) || {};
@@ -42,7 +45,8 @@ function create(deps) {
                 commandsSize: read.commandsSize,
                 font: typeof read.font === 'string' ? read.font : '',
                 botsDirectory: typeof read.botsDirectory === 'string' && read.botsDirectory
-                    ? read.botsDirectory : defaultBotsDirectory
+                    ? read.botsDirectory : defaultBotsDirectory,
+                ui: read.ui && typeof read.ui === 'object' ? read.ui : {}
             };
         } catch (error) {
             // A store that will not parse is not a reason for the window to break: the reference's
@@ -115,6 +119,17 @@ function create(deps) {
         },
         botsDirectory: function () {
             return state().botsDirectory;
+        },
+        /**
+         * A control's own state, which is not part of a bot: the reference keeps chkMerge in the
+         * form and never writes it into the file (Configuration has no such member).
+         */
+        ui: function (key) {
+            return state().ui[key];
+        },
+        setUi: function (key, value) {
+            state().ui[key] = value;
+            save();
         },
         setBotsDirectory: function (directory) {
             state().botsDirectory = directory == null ? '' : String(directory);

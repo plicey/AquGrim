@@ -77,6 +77,20 @@ async function activate(host) {
     // because the window is sandboxed.
     require('./features/devtest/devtest-main.js').register(host);
 
+    // The Bot Manager's main-process half: the sheet, the parsed document, the two dialogs and the
+    // folder tree, all of which a sandboxed page cannot reach for itself.
+    require('./features/bot-manager/bot-manager.js').createBotManager({
+        host: host,
+        store: host.getStore(require('./bot/display-settings.js').STORE_NAMESPACE),
+        // The reference puts its Bots/ folder beside the executable (Application.StartupPath); here
+        // that is the app's own data directory, beside the store the plugin already keeps there.
+        defaultBotsDirectory: path.join(host.appDataDirectory, 'Bots'),
+        message: function () { return host.getLocaleStrings('botManagerMessages') || {}; },
+        showOpenDialog: function (owner, options) {
+            return require('electron').dialog.showOpenDialog(owner, options);
+        }
+    }).register(host);
+
     host.registerLocales({
         'en-US': require('./locales/en-US.js')
     });

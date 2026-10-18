@@ -27,6 +27,16 @@ function register(host, windowTitle) {
                         host.windows.openFeatureWindow(windows.BOT_FILE_WINDOW_ID);
                     }
                 },
+                // The editor sits beside the bot file it edits: the reference's Bot Manager is the
+                // window its Bot menu opens.
+                {
+                    label: labels.grimliteBotManager || 'Bot Manager',
+                    accelerator: keybinds.grimliteBotManager,
+                    registerAccelerator: false,
+                    click: function () {
+                        host.windows.openFeatureWindow(windows.BOT_MANAGER_WINDOW_ID);
+                    }
+                },
                 // Eye Dropper above Notepad, as Root.cs orders its Tools menu.
                 {
                     label: labels.grimliteEyedropper || 'Eye Dropper',
