@@ -10,18 +10,27 @@ exports.dialogMessages = {
             return keyb || '';
         }
         return '' +
+            expand(k.grimliteEyedropper) + '' +
+            expand(k.grimliteNotepad) + '' +
+            expand(k.grimliteAbout) + '' +
             expand(k.grimliteParityPlaceholder) + '';
     }
 };
 
 exports.menuMessages = {
     grimliteMenu: "",
+    grimliteEyedropper: "",
+    grimliteNotepad: "",
+    grimliteAbout: "",
     grimlitePlaceholder: ""
 };
 
 exports.windowTitles = {
     primary: "",
-    placeholder: ""
+    placeholder: "",
+    eyedropper: "",
+    notepad: "",
+    about: ""
 };
 
 exports.settingsMessages = {
@@ -37,4 +46,21 @@ exports.settingsMessages = {
     settingsSections: {
         packets: ""
     }
+};
+
+exports.notepadMessages = {
+    hint: "",
+    saveTitle: "",
+    savedAs: "",
+    saveFailed: ""
+};
+
+exports.eyedropperMessages = {
+    capturing: "",
+    captureFailed: "",
+    hint: ""
+};
+
+exports.aboutMessages = {
+    reloadHint: ""
 };

@@ -49,21 +49,7 @@ function mapItemDump(entries) {
     return 'Player map items :\n' + lines.join('\n');
 }
 
-/**
- * Which helper a keystroke asks for, if any. The reference tests `debugskill` first and
- * replaces the box, so a text holding both gets the skill dump.
- * @param {string} text current contents of the box
- * @returns {'skill'|'mapitems'|null}
- */
-function helperFor(text) {
-    const value = String(text || '');
-    if (value.indexOf('debugskill') !== -1) return 'skill';
-    if (value.indexOf('mapitems') !== -1) return 'mapitems';
-    return null;
-}
-
 module.exports = {
     skillDump: skillDump,
-    mapItemDump: mapItemDump,
-    helperFor: helperFor
+    mapItemDump: mapItemDump
 };

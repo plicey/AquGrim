@@ -77,13 +77,16 @@ test('the parity plugin is discovered as a bundled plugin and activates', async 
   assert.strictEqual(winConfig.webPreferences.nodeIntegration, false);
   assert.strictEqual(winConfig.useContentSize, true);
 
-  // Its own menu entry, opening that window and nothing else.
+  // Its own menu entries; the placeholder is still reachable from the same menu (#25 added the
+  // Eye Dropper, Notepad and About entries above it).
   assert.strictEqual(state.menus.length, 1);
   const items = state.menus[0]({ labels: {}, keybinds: {} });
   assert.strictEqual(items.length, 1);
   assert.ok(Array.isArray(items[0].submenu) && items[0].submenu.length >= 1);
-  items[0].submenu[0].click();
-  assert.deepStrictEqual(opened, [PLACEHOLDER_ID]);
+  items[0].submenu.forEach(function (entry) {
+    if (typeof entry.click === 'function') entry.click();
+  });
+  assert.ok(opened.indexOf(PLACEHOLDER_ID) !== -1, 'the placeholder window must stay reachable');
 });
 
 test('an app older than the plugin refuses it at discovery, and still loads the others', () => {

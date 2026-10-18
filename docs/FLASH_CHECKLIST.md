@@ -31,11 +31,39 @@ Mark items with `[x]` when verified. Leave `[ ]` if not run yet.
 
 - [ ] Set active plugin to **Grimlite Parity**, restart
 - [ ] The window opens the plugin's local placeholder page (no game is wired yet)
-- [ ] Window menu shows the **Grimlite** entry → *Parity placeholder window* opens it
-- [ ] **Alt+Shift+G** opens the same window (exactly one, from a game window and from a browser window)
+- [ ] Window menu shows the **Grimlite** entry → *Eye Dropper*, *Notepad*, *About* and *Parity placeholder window*
+- [ ] **Alt+Shift+E / Alt+Shift+N / Alt+Shift+A / Alt+Shift+G** open those four (exactly one each, from a game window and from a browser window)
 - [ ] **F1** Help: platform section + "Grimlite Parity" section
 - [ ] Settings → General lists *Grimlite Parity (bundled) · 0.1.0* in the active plugin picker
 - [ ] Switch back to Adventure Quest Worlds, restart: AQW behaves exactly as before
+
+---
+
+## Grimlite Parity windows (ticket #25) - needs a display
+
+Notepad (Grimlite → Notepad, Alt+Shift+N)
+
+- [ ] The font list, the size box and the colour swatch change the selection (or what is typed next)
+- [ ] Dropping a .txt file onto the sheet appends its text without disturbing the existing formatting
+- [ ] **Ctrl+S** and **Save…** open a native dialog filtered *txt / gbot / all files*, and the file it writes holds the plain text shown in the sheet
+- [ ] Typing the skill-dump word replaces the sheet with the lowercased equipped class name (no skill blocks yet: the class actions arrive with the bridge, ticket #28)
+- [ ] Typing the map-item word replaces the sheet with the header and one [id] = name line per known id (nothing yet: the history starts empty until the game is read)
+- [ ] Closing the window and reopening it does not leak the old text into a second window
+
+Eye Dropper (Grimlite → Eye Dropper, Alt+Shift+E)
+
+- [ ] Pressing on the button and releasing over a pixel prints #AARRGGBB / r, g, b / #RRGGBB for that pixel
+- [ ] The line just picked fills the readout box in the captured colour, with black or white text per the reference brightness rule
+- [ ] Each further pick appends a line to the history below
+- [ ] Picking on a second monitor reads the right pixel (the display under the release point, not the primary)
+- [ ] With a screen recorder or another capture running, a failed capture says so instead of printing a wrong colour
+
+About (Grimlite → About, Alt+Shift+A)
+
+- [ ] The version line shows the running app version, with the reference it follows named underneath
+- [ ] Each of the seven credit links opens in the system browser; Kuzyph is listed without being clickable (it has no handler upstream)
+- [ ] **Reload Game Movie** reloads the game window and reports that it did (with no game window open it says so instead)
+- [ ] Reloading with the local origin on returns to the same loopback URL
 
 ---
 

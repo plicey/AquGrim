@@ -2,11 +2,200 @@
 // The reference is Grimlite-Li (Grimoire/UI/Notepad.cs, EyeDropper.cs, AboutForm.cs); the
 // expected values below are computed from that C# source, not from the code under test.
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 
+const platform = require('../../res/platform');
 const notepadDumps = require('../../plugins/grimlite-parity/features/notepad/dumps.js');
+const notepadSource = require('../../plugins/grimlite-parity/features/notepad/game-source.js');
 const eyedropper = require('../../plugins/grimlite-parity/features/eyedropper/colour.js');
 const about = require('../../plugins/grimlite-parity/features/about/credits.js');
 const reload = require('../../plugins/grimlite-parity/features/about/reload.js');
+
+const pluginRoot = path.join(__dirname, '../../plugins/grimlite-parity');
+const appVersion = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf8')).version;
+// Root.cs puts Eye Dropper above Notepad in the Tools menu and About in a menu of its own;
+// this port keeps that order inside its single Grimlite menu.
+const WINDOW_IDS = ['grimlite-parity-eyedropper', 'grimlite-parity-notepad', 'grimlite-parity-about'];
+
+function activateParity(deps) {
+  const plugin = {
+    source: 'bundled',
+    root: pluginRoot,
+    manifest: JSON.parse(fs.readFileSync(path.join(pluginRoot, 'plugin.json'), 'utf8'))
+  };
+  return platform.activatePlugin(plugin, {
+    appVersion: appVersion,
+    appDataDirectory: path.join(__dirname, '../tmp-plugin-data'),
+    clearRequireCache: true,
+    log: function () {},
+    deps: deps || {}
+  });
+}
+
+// Ticket #25: three small surfacing windows, in the app's own conventions - sandboxed, no
+// Flash, dark local pages - and none of them needing a permission the manifest does not
+// declare (the Host refuses a call whose permission is missing, so activating at all is the
+// check for that).
+test('the parity plugin registers the notepad, eye dropper and about windows', async () => {
+  const activated = await activateParity();
+  const windows = activated.host._getState().featureWindows;
+
+  WINDOW_IDS.forEach(function (id) {
+    const found = windows.filter(function (w) {
+      return w.id === id;
+    });
+    assert.strictEqual(found.length, 1, 'missing feature window ' + id);
+    const config = found[0].config;
+    assert.strictEqual(config.webPreferences.sandbox, true, id + ' must be sandboxed');
+    assert.strictEqual(config.webPreferences.plugins, false, id + ' must not load Flash');
+    assert.strictEqual(config.webPreferences.contextIsolation, true, id + ' must isolate contexts');
+    assert.strictEqual(config.webPreferences.nodeIntegration, false, id + ' must not expose Node');
+    assert.strictEqual(config.useContentSize, true, id + ' sizes its content, like the platform\'s');
+    assert.ok(/^file:\/\//.test(found[0].url), id + ' must be a local page');
+    // The page is the plugin's own file, and it exists on disk.
+    const pagePath = require('url').fileURLToPath(found[0].url);
+    assert.ok(pagePath.indexOf(pluginRoot) === 0, id + ' page must live in the plugin');
+    assert.ok(fs.existsSync(pagePath), 'missing page file: ' + pagePath);
+    // Sandboxed preloads may only require electron, so every window needs its own file.
+    const preload = config.webPreferences.preload;
+    assert.ok(typeof preload === 'string' && fs.existsSync(preload), id + ' needs a preload');
+    assert.strictEqual(
+      fs.readFileSync(preload, 'utf8').indexOf('require(') !== -1 &&
+        /require\((['"])electron\1\)/.test(fs.readFileSync(preload, 'utf8')),
+      true,
+      id + ' preload must require electron only'
+    );
+  });
+});
+
+test('the grimlite menu opens each of the three windows', async () => {
+  const opened = [];
+  const activated = await activateParity({
+    openFeatureWindow: function (id) {
+      opened.push(id);
+      return {};
+    }
+  });
+  const state = activated.host._getState();
+  const items = [];
+  state.menus.forEach(function (contributor) {
+    contributor({ labels: {}, keybinds: {} }).forEach(function (top) {
+      (top.submenu || []).forEach(function (item) {
+        items.push(item);
+      });
+    });
+  });
+
+  const labels = items.map(function (item) {
+    return item.label;
+  });
+  ['Eye Dropper', 'Notepad', 'About'].forEach(function (label) {
+    assert.ok(labels.indexOf(label) !== -1, 'menu is missing ' + label + ' (has ' + labels.join(', ') + ')');
+  });
+
+  items.forEach(function (item) {
+    if (['Eye Dropper', 'Notepad', 'About'].indexOf(item.label) !== -1) item.click();
+  });
+  assert.deepStrictEqual(opened, WINDOW_IDS);
+});
+
+// A window that declared webSecurity:false or plugins:true would need `unsafe-renderer`, and
+// IPC or a store would need their own permission. These three use neither, so the manifest is
+// unchanged by this ticket: if activating needed a permission it does not declare, the Host
+// would have thrown above.
+test('the three windows need no permission the manifest does not already declare', async () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(pluginRoot, 'plugin.json'), 'utf8'));
+  assert.ok(manifest.permissions.indexOf('unsafe-renderer') === -1, 'these windows need no unsafe renderer');
+  assert.ok(manifest.permissions.indexOf('persistent-store') === -1, 'these windows persist nothing');
+  const activated = await activateParity();
+  WINDOW_IDS.forEach(function (id) {
+    assert.strictEqual(
+      activated.host._getState().featureWindows.filter(function (w) { return w.id === id; }).length,
+      1
+    );
+  });
+});
+
+// Notepad.cs's helpers read the game (`world.actions.active`, the recent map items). Until the
+// bridge ticket (#28) lands there is no game to read, so the source reports nothing rather than
+// inventing a value - the dump formatters above are what this ticket owns.
+test('the notepad game source reports nothing until a game source is attached', () => {
+  const source = notepadSource.createGameSource();
+  assert.strictEqual(source.equippedClass(), '');
+  assert.deepStrictEqual(source.skillActions(), []);
+  assert.deepStrictEqual(source.mapItems(), []);
+});
+
+test('the notepad game source hands the dumps what the attached provider reports', () => {
+  const source = notepadSource.createGameSource();
+  source.attach({
+    equippedClass: function () { return 'Void Highlord'; },
+    skillActions: function () { return [{ skillID: 1 }]; },
+    mapItems: function () { return { 7: 'Balmblossom (battleon)', 23725: 'Balmblossom (tercess)' }; }
+  });
+  assert.strictEqual(source.equippedClass(), 'Void Highlord');
+  assert.deepStrictEqual(source.skillActions(), [{ skillID: 1 }]);
+  // Ids are handed over lowest first, the order Root.SaveRecentMapItemMerged writes the file in.
+  assert.deepStrictEqual(source.mapItems(), [[7, 'Balmblossom (battleon)'], [23725, 'Balmblossom (tercess)']]);
+  source.attach({ equippedClass: function () { throw new Error('no game'); } });
+  assert.strictEqual(source.equippedClass(), '', 'a provider that throws is not a dump crash');
+});
+
+// A page calling a bridge method its preload does not expose does nothing at all, silently.
+// Both sides are plain text here, so the agreement can be checked without a renderer.
+test('every bridge call a page makes is exposed by that page\'s preload', () => {
+  const pages = [
+    ['notepad', 'aquastarNotepad', 'notepad.html', 'preload_notepad.js'],
+    ['eyedropper', 'aquastarEyedropper', 'eyedropper.html', 'preload_eyedropper.js'],
+    ['about', 'aquastarAbout', 'about.html', 'preload_about.js']
+  ];
+  pages.forEach(function (page) {
+    const dir = path.join(pluginRoot, 'features', page[0]);
+    const html = fs.readFileSync(path.join(dir, page[2]), 'utf8');
+    const preload = fs.readFileSync(path.join(dir, page[3]), 'utf8');
+
+    // Pages bind the exposed object to a local name first (`var bridge = window.aquastarX || null`),
+    // so calls are found through whatever identifier that page assigned it to.
+    const bound = html.match(new RegExp('([A-Za-z0-9_]+)\\s*=\\s*window\\.' + page[1]));
+    assert.ok(bound, page[0] + ' page never binds window.' + page[1]);
+    const called = (html.match(new RegExp('\\b' + bound[1] + '\\.([A-Za-z0-9_]+)\\(', 'g')) || []).map(
+      function (hit) {
+        return hit.slice(bound[1].length + 1, -1);
+      }
+    );
+    assert.ok(called.length > 0, page[0] + ' page never uses its bridge');
+
+    const exposed = (preload.match(/^\s*([A-Za-z0-9_]+): function/gm) || []).map(function (line) {
+      return line.trim().split(':')[0];
+    });
+    called.forEach(function (name) {
+      assert.ok(
+        exposed.indexOf(name) !== -1,
+        page[3] + ' does not expose ' + name + ' (has ' + exposed.join(', ') + ')'
+      );
+    });
+
+    // Every window's page loads the shared focus stylesheet, like the platform's own windows.
+    assert.ok(html.indexOf('res/features/common/focus.css') !== -1, page[0] + ' needs the shared focus style');
+    // Sandboxed preloads may only require electron.
+    const requires = (preload.match(/require\((['"])[^'"]+\1\)/g) || []);
+    requires.forEach(function (call) {
+      assert.ok(call.indexOf('electron') !== -1, page[3] + ' must require electron only, got ' + call);
+    });
+    // A page whose inline script does not parse loads as a blank window, so each block is
+    // checked as JavaScript here instead of waiting for a human to see nothing.
+    const blocks = html.match(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g) || [];
+    assert.ok(blocks.length > 0, page[0] + ' has no inline script to check');
+    blocks.forEach(function (block, index) {
+      const source = block.replace(/^<script[^>]*>/, '').replace(/<\/script>$/, '');
+      assert.doesNotThrow(
+        function () { new (require('vm').Script)(source); },
+        page[2] + ' inline script ' + index + ' does not parse'
+      );
+    });
+  });
+});
 
 // Notepad.cs richTextBox1_TextChanged: the equipped class lowercased on line 1, then one
 // "Skill-<i>" block per action, whose properties are printed in name order as
@@ -187,4 +376,126 @@ test('the about reload control skips a window whose webContents is gone', () => 
   });
   assert.strictEqual(count, 0);
   assert.strictEqual(reloaded, 0, 'a missing webContents is not an error, it is a closed window');
+});
+
+// The Notepad's save path is the reference's Ctrl+S: a native save dialog with the same filter
+// list (txt / gbot / all files) and the plain text written out.
+test('the notepad save dialog writes the text it was given, with the reference filters', async () => {
+  const notepad = require('../../plugins/grimlite-parity/features/notepad/notepad.js');
+  const written = [];
+  const dialogs = [];
+  const window = notepad.createNotepad({
+    showSaveDialog: function (owner, options) {
+      dialogs.push(options);
+      return Promise.resolve({ canceled: false, filePath: '/tmp/notes.txt' });
+    },
+    writeFile: function (filePath, text) { written.push([filePath, text]); },
+    getMessages: function () { return {}; }
+  });
+  const handlers = {};
+  window.register({
+    ipc: {
+      handle: function (channel, listener) { handlers[channel] = listener; }
+    }
+  });
+
+  const result = await handlers['notepadSave']({}, 'hello');
+  assert.deepStrictEqual(written, [['/tmp/notes.txt', 'hello']]);
+  assert.deepStrictEqual(
+    dialogs[0].filters.map(function (f) { return [f.name, f.extensions]; }),
+    [['txt files', ['txt']], ['gbot files', ['gbot']], ['All files', ['*']]]
+  );
+  assert.ok(result.saved.indexOf('/tmp/notes.txt') !== -1);
+});
+
+test('a cancelled notepad save writes nothing', async () => {
+  const notepad = require('../../plugins/grimlite-parity/features/notepad/notepad.js');
+  let writes = 0;
+  const window = notepad.createNotepad({
+    showSaveDialog: function () { return Promise.resolve({ canceled: true }); },
+    writeFile: function () { writes++; },
+    getMessages: function () { return {}; }
+  });
+  const handlers = {};
+  window.register({ ipc: { handle: function (c, l) { handlers[c] = l; } } });
+  const result = await handlers['notepadSave']({}, 'hello');
+  assert.deepStrictEqual(result, { canceled: true });
+  assert.strictEqual(writes, 0);
+});
+
+test('a failed notepad save reports the reason instead of throwing at the window', async () => {
+  const notepad = require('../../plugins/grimlite-parity/features/notepad/notepad.js');
+  const window = notepad.createNotepad({
+    showSaveDialog: function () { return Promise.resolve({ canceled: false, filePath: '/nope/x.txt' }); },
+    writeFile: function () { throw new Error('EACCES'); },
+    getMessages: function () { return {}; }
+  });
+  const handlers = {};
+  window.register({ ipc: { handle: function (c, l) { handlers[c] = l; } } });
+  const result = await handlers['notepadSave']({}, 'hello');
+  assert.ok(/EACCES/.test(result.error), JSON.stringify(result));
+});
+
+// EyeDropper.cs reads the pixel under the pointer when the capture finishes. In Electron the
+// screen comes from desktopCapturer, so the pick is composed from the cursor point, the display
+// under it and that display's thumbnail - each handed in, so it can be checked without a screen.
+test('the eye dropper picks the pixel under the cursor, in the reference formats', async () => {
+  const eyedropperWindow = require('../../plugins/grimlite-parity/features/eyedropper/eyedropper.js');
+  const display = { id: 7, bounds: { x: 0, y: 0, width: 4, height: 2 }, size: { width: 4, height: 2 } };
+  // Four pixels: black, red, green, blue in BGRA.
+  const bitmap = Buffer.from([
+    0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0xff, 0xff, 0x00, 0xff, 0x00, 0xff, 0xff, 0x00, 0x00, 0xff,
+    0x10, 0x20, 0x30, 0xff, 0x40, 0x50, 0x60, 0xff, 0x70, 0x80, 0x90, 0xff, 0xa0, 0xb0, 0xc0, 0xff
+  ]);
+  const picker = eyedropperWindow.createEyedropper({
+    getCursorPoint: function () { return { x: 2, y: 1 }; },
+    getDisplayNearestPoint: function () { return display; },
+    captureDisplay: function () {
+      return Promise.resolve({ bitmap: bitmap, size: { width: 4, height: 2 } });
+    }
+  });
+
+  const picked = await picker.pick();
+  // The bytes for pixel (2, 1) are 70 80 90 A0 in bitmap order: B=0x70, G=0x80, R=0x90.
+  assert.strictEqual(picked.text, '#FF908070 / 144, 128, 112 / #908070');
+  assert.deepStrictEqual(picked.colour, { r: 144, g: 128, b: 112, a: 255 });
+  assert.strictEqual(picked.cssColour, '#908070');
+  assert.strictEqual(picked.textColour, '#ffffff');
+});
+
+test('a screen the eye dropper cannot capture reports an error instead of a colour', async () => {
+  const eyedropperWindow = require('../../plugins/grimlite-parity/features/eyedropper/eyedropper.js');
+  const picker = eyedropperWindow.createEyedropper({
+    getCursorPoint: function () { return { x: 0, y: 0 }; },
+    getDisplayNearestPoint: function () { return { size: { width: 1, height: 1 }, bounds: { x: 0, y: 0 } }; },
+    captureDisplay: function () { return Promise.resolve(null); }
+  });
+  const picked = await picker.pick();
+  assert.strictEqual(picked.colour, null);
+  assert.ok(picked.error, 'a failed capture must say so');
+});
+
+// The reference reads the pixel under the cursor when the drag ends, not when the control is
+// clicked: picking at click time would read whatever is under the button itself.
+test('the eye dropper reads the pixel where the pick was released', async () => {
+  const eyedropperWindow = require('../../plugins/grimlite-parity/features/eyedropper/eyedropper.js');
+  let askedFor = null;
+  const picker = eyedropperWindow.createEyedropper({
+    getCursorPoint: function () {
+      throw new Error('the cursor must not be read: the released point decides');
+    },
+    getDisplayNearestPoint: function (point) {
+      askedFor = point;
+      return { size: { width: 1, height: 1 }, bounds: { x: 0, y: 0 } };
+    },
+    captureDisplay: function () {
+      return Promise.resolve({
+        bitmap: Buffer.from([0x01, 0x02, 0x03, 0xff]),
+        size: { width: 1, height: 1 }
+      });
+    }
+  });
+  const picked = await picker.pick({ x: 1500, y: 900 });
+  assert.deepStrictEqual(askedFor, { x: 1500, y: 900 });
+  assert.strictEqual(picked.text, '#FF030201 / 3, 2, 1 / #030201');
 });

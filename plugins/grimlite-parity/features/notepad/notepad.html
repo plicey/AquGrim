@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Grimlite Parity - Notepad</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
+  }
+  body { display: flex; flex-direction: column; box-sizing: border-box; }
+  #bar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid #2c2c2c; flex: 0 0 auto; }
+  #bar label { color: #9a9a9a; }
+  button, select, input[type="number"] {
+    background: #232323; color: #e6e6e6; border: 1px solid #383838;
+    border-radius: 4px; padding: 4px 8px; font-size: 12px;
+  }
+  button:hover { background: #2c2c2c; }
+  input[type="color"] { background: transparent; border: 1px solid #383838; border-radius: 4px; width: 32px; height: 26px; padding: 1px; }
+  #grow { flex: 1 1 auto; }
+  /* The notepad surface itself: rich text in, rich text out. */
+  #sheet {
+    flex: 1 1 auto; overflow-y: auto; padding: 10px 12px; outline: none;
+    background: #1b1b1b; border-top: 1px solid #2c2c2c; font-size: 13px; line-height: 1.45;
+    white-space: pre-wrap;
+  }
+  #sheet.drop-target { background: #14243a; }
+  #hint { flex: 0 0 auto; padding: 6px 10px; color: #6f6f6f; border-top: 1px solid #2c2c2c; }
+</style>
+</head>
+<body>
+  <div id="bar">
+    <label for="font">Font</label>
+    <select id="font">
+      <option value="Arial, Helvetica, sans-serif">Arial</option>
+      <option value="'Courier New', monospace">Courier New</option>
+      <option value="Georgia, serif">Georgia</option>
+      <option value="'Times New Roman', serif">Times New Roman</option>
+      <option value="Verdana, sans-serif">Verdana</option>
+    </select>
+    <input id="size" type="number" min="8" max="72" step="1" value="13" title="Font size">
+    <input id="colour" type="color" value="#e6e6e6" title="Text colour">
+    <button id="save" type="button">Save…</button>
+    <span id="grow"></span>
+  </div>
+  <div id="sheet" contenteditable="true" spellcheck="false" aria-label="Notepad"></div>
+  <div id="hint">Drop a text file here to append it.</div>
+
+  <script>
+    // The page owns the rich text: formatting is applied to the selection with execCommand,
+    // which is what a contenteditable surface has for "what is selected, or what is typed
+    // next". The reference reaches the same place through WinForms' FontDialog/ColorDialog.
+    // Saving needs a native dialog, so only that crosses the preload bridge.
+    (function () {
+      var sheet = document.getElementById('sheet');
+      var fontSelect = document.getElementById('font');
+      var sizeInput = document.getElementById('size');
+      var colourInput = document.getElementById('colour');
+      var hint = document.getElementById('hint');
+      var bridge = window.aquastarNotepad || null;
+
+      function apply(command, value) {
+        sheet.focus();
+        document.execCommand(command, false, value);
+      }
+
+      fontSelect.addEventListener('change', function () { apply('fontName', fontSelect.value); });
+      // execCommand's font size is a 1-7 bucket, so the simplest faithful control is its
+      // default body size; anything more needs a span wrapper per selection.
+      sizeInput.addEventListener('change', function () { apply('fontSize', '7'); });
+      colourInput.addEventListener('input', function () { apply('foreColor', colourInput.value); });
+
+      // The reference appends a dropped file's text; keep that, leaving the rest of the sheet
+      // untouched (it is rich text, so appending a text node keeps the existing formatting).
+      ['dragenter', 'dragover'].forEach(function (name) {
+        sheet.addEventListener(name, function (event) {
+          event.preventDefault();
+          sheet.classList.add('drop-target');
+        });
+      });
+      ['dragleave', 'drop'].forEach(function (name) {
+        sheet.addEventListener(name, function () { sheet.classList.remove('drop-target'); });
+      });
+      sheet.addEventListener('drop', function (event) {
+        event.preventDefault();
+        var files = event.dataTransfer && event.dataTransfer.files;
+        if (!files || !files.length) return;
+        Array.prototype.forEach.call(files, function (file) {
+          var reader = new FileReader();
+          reader.onload = function () {
+            sheet.appendChild(document.createTextNode('\n' + String(reader.result) + '\n'));
+          };
+          reader.readAsText(file);
+        });
+      });
+
+      function replaceSheet(text) {
+        sheet.textContent = text;
+      }
+
+      // Notepad.cs checks on every change and replaces the whole box. This triggers on the
+      // helper word only when it is what was just typed, so a note that merely mentions the
+      // word is not swallowed.
+      sheet.addEventListener('input', function () {
+        if (!bridge) return;
+        var text = sheet.textContent || '';
+        if (/debugskills*$/.test(text)) {
+          bridge.skillDump().then(function (dump) { if (dump) replaceSheet(dump); });
+        } else if (/mapitemss*$/.test(text)) {
+          bridge.mapItemDump().then(function (dump) { if (dump) replaceSheet(dump); });
+        }
+      });
+
+      // Ctrl+S saves, like the reference's richTextBox1_KeyDown.
+      document.addEventListener('keydown', function (event) {
+        if (!(event.ctrlKey || event.metaKey) || String(event.key).toLowerCase() !== 's') return;
+        event.preventDefault();
+        save();
+      });
+      document.getElementById('save').addEventListener('click', save);
+
+      function save() {
+        if (!bridge) return;
+        bridge.save(sheet.textContent || '').then(function (result) {
+          if (result && result.canceled) return;
+          if (result && result.error) hint.textContent = result.error;
+          else if (result && result.saved) hint.textContent = result.saved;
+        });
+      }
+
+      if (bridge) {
+        bridge.getMessages().then(function (messages) {
+          if (messages && messages.hint) hint.textContent = messages.hint;
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -20,6 +20,12 @@ function formatColour(colour) {
         ' / #' + argb.slice(2);
 }
 
+/** The same colour as a CSS hex string, for painting the readout swatch. */
+function cssColour(colour) {
+    const c = colour || {};
+    return '#' + hex2(c.r) + hex2(c.g) + hex2(c.b);
+}
+
 /**
  * Text colour for the readout box: Color.GetBrightness() > 0.7 means black text. GetBrightness
  * is HSL lightness, (max + min) / 2, scaled to 0-1.
@@ -65,6 +71,7 @@ function readPixel(buffer, width, x, y) {
 
 module.exports = {
     formatColour: formatColour,
+    cssColour: cssColour,
     readoutTextColour: readoutTextColour,
     imagePoint: imagePoint,
     readPixel: readPixel
