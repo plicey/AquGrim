@@ -1,0 +1,23 @@
+{
+  "$type": "Grimoire.UI.SetItem, Grimoire",
+  "Set": {
+    "$type": "System.Collections.Generic.List`1[[Grimoire.UI.ISetInterface, Grimoire]], mscorlib",
+    "$values": [
+      {
+        "$type": "Grimoire.UI.Item, Grimoire",
+        "Type": "Weapon",
+        "Name": "Blinding Light of Destiny"
+      },
+      {
+        "$type": "Grimoire.UI.Item, Grimoire",
+        "Type": "Class",
+        "Name": "ArchPaladin"
+      },
+      {
+        "$type": "Grimoire.UI.Item, Grimoire",
+        "Type": "Armor",
+        "Name": "Sepulchure's Armor"
+      }
+    ]
+  }
+}
