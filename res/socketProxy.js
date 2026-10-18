@@ -33,6 +33,18 @@ function isAllowedHost(host) {
     });
 }
 
+// Origins allowed to open a tunnel. The relay listens on localhost, so any page on this
+// machine can reach it; a browser cannot forge Origin, which is what makes this the gate.
+// The app's own wrapper is a file:// page. "null" is refused on purpose: sandboxed iframes
+// and data: URLs report it, so allowing it would hand the tunnel back to any web page.
+// shortcut: any file:// page can still tunnel while Ruffle runs, since Origin carries no
+// path; add a per-session token if that matters once this relay carries game traffic.
+const ALLOWED_ORIGINS = ['file://'];
+
+function isAllowedOrigin(origin) {
+    return ALLOWED_ORIGINS.indexOf(String(origin || '').toLowerCase()) !== -1;
+}
+
 function start() {
     if (wss) return;
     wss = new WebSocket.Server({ port: PROXY_PORT, host: PROXY_HOST, perMessageDeflate: false });
@@ -42,6 +54,10 @@ function start() {
         const host = u.searchParams.get('host');
         const port = Number(u.searchParams.get('port'));
 
+        if (!isAllowedOrigin(req.headers.origin)) {
+            ws.close(1008, 'origin not allowed');
+            return;
+        }
         if (!host || !port) {
             ws.close(1008, 'missing host or port');
             return;
@@ -75,6 +91,7 @@ function stop() {
 
 exports.allowHosts = allowHosts;
 exports.isAllowedHost = isAllowedHost;
+exports.isAllowedOrigin = isAllowedOrigin;
 exports.start = start;
 exports.stop = stop;
 exports.proxyUrl = 'ws://' + PROXY_HOST + ':' + PROXY_PORT;
