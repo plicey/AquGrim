@@ -428,3 +428,68 @@ human:
 | Date | Who | Notes |
 |------|-----|--------|
 | 2026-03-24 | maintainer | Partial manual run on Example Companion / menus / basic flows — looked OK; not every box above was exercised |
+
+---
+
+## Grimlite Parity - Loaders and grabbers (ticket #31) - needs the real game
+
+**All four loaders work; the grabbers read the game's own objects.** The loaders ask the
+reference's own name first and then the stock game's own request, so every target has a route
+that exists. Each name below was checked against the decompressed game SWF
+`/var/tmp/aq-origin/game.swf` with the two-condition test the merged bridge.js documents: an exact
+ABC string-pool entry *and* at least one multiname referencing it, because a pool entry nothing
+references is a literal rather than a callable member (a plain substring search wrongly "finds"
+`BankSlots` inside `txtBankSlots`).
+
+| Loader | The reference's own call | In the stock game | What answers instead |
+|---|---|---|---|
+| `Load` (shop) | `ResetShopInfo`, `LoadShop` | absent | `world.sendLoadShopRequest` (pool entry, 1 reference) |
+| `Load` (hair shop) | `LoadHairShop` | absent | `world.sendLoadHairShopRequest` (1 reference) |
+| `Load` (armour customizer) | `LoadArmorCustomizer` | absent | `world.openArmorCustomize` (1 reference) |
+| `Load` (quest) | `LoadQuest`, `LoadQuests` | absent | `world.getQuest`, `world.getQuests` (1 reference each) |
+| `F Accept` | `Accept`, `IsInProgress` | `Accept` is a pool entry with **zero** references, `IsInProgress` is absent | `world.acceptQuest`, `world.isQuestInProgress` (1 reference each) |
+| `Ghost` accept | `%xt%zm%acceptQuest%1%<id>%` (Quest.GhostAccept) | n/a - a frame, not a call | `sfc.sendString` (1 reference) |
+
+The grabbers read the game's own objects, all verified the same way: `world.getInventory`,
+`world.invTree`, `world.bankinfo`, `world.tempitems`, `world.questTree`, `world.shopinfo`,
+`world.cells`, `world.strFrame` and `world.getMonstersByCell`.
+
+**Equip SWF** reaches the game too: the reference's `SetEquip` is absent from the game, but the
+line the reference keeps commented out beside it is not - `world.myAvatar.loadMovieAtES` is a pool
+entry with four live references, and it is the same route ticket #30's Cosmetics window verified.
+
+**Blocked on the bridge growing the reference loader's surface:** `GetInventoryItems`,
+`GetBankItems`, `GetTempItems`, `GetQuestTree`, `LoadShop`, `LoadHairShop`, `LoadArmorCustomizer`,
+`ResetShopInfo`, `LoadQuest`, `LoadQuests`, `Complete`, `IsInProgress`, `SetEquip`, `BankSlots`,
+`UsedBankSlots` and `BuyItemQtyById`. All are absent from the game's pool and all are present in
+the reference's own `Loader/grimoire.swf` with live references. Until that surface exists, a call
+only it could serve reports the name it is waiting for rather than a value; because the loaders
+ask the reference's name first, they start working the day it lands, with no change here.
+
+The bot lists are no longer a stub: ticket #36's Bot Manager landed, so the grabbers'
+list actions append to its document with the reference's own Contains guard and reach a
+saved `.gbot`. With no bot open they still report that nothing is holding a list.
+
+Rows, menus, search, the XML export, the list wiring and the window shell are covered by `npm test`;
+these boxes are the live half and none can be ticked without a running client and a display.
+
+- [ ] **Loaders/grabbers** opens from the Grimlite menu and from its own key binding, at the reference's own size, with the combo open on **Quest**
+- [ ] The count box and **F Accept** are enabled only while the target is **Quest**, which is what `cbLoad_SelectedIndexChanged` does
+- [ ] **Load** on Shop / Hair shop / Armour customizer opens that window in the game, and the status line names the path that served it
+- [ ] **Load** on Quest with a count of 3 loads 3 consecutive ids; a comma list loads exactly as written; a non-numeric box is refused out loud (the reference refuses it silently)
+- [ ] **F Accept** loads the batch and accepts only the quests the game does not already have in progress, after the reference's 1000ms wait and with its per-accept pacing
+- [ ] **Ghost** checked sends the raw frame, and the quest arrives without the client's own accept animation
+- [ ] Each of the eight grabbers fills the tree from a live client: shop items, quest ids, quest items with drop rates, inventory, temp inventory, bank, monsters, all monsters
+- [ ] **Temp inventory** and **Bank** fill from a real client (both flatten a slot-keyed object, so a live client is what confirms the shape)
+- [ ] The order combo is enabled only for quest and monster grabs, and it changes the row text: `Name - Id` against `Id - Name`, monsters by name against by `MonMapID`
+- [ ] **Search** selects the first match, then steps through the rest and wraps past the last
+- [ ] **Save** writes a `.xml` through the reference's own dialog ("Save grabber data", "XML files|*.xml"), the file opens in another XML tool, and double-clicking the tree loads it back
+- [ ] Right-click menus appear only on rows that carry one, with the reference's own entries and order, and each entry does what it says
+- [ ] **Equip SWF** puts the item's movie on the slot its category maps to (Cape `ba`, Pet `pe`, Armor/Class `co`, Helm `he`, Misc `mi`, anything else `Weapon`)
+- [ ] **Buy This Item** reports the loader name it is waiting for (`BuyItemQtyById`) rather than appearing to buy anything
+- [ ] **Add buy command** puts a `CmdBuy` with the shop, item and quantity the row carries into the Bot Manager's Commands list
+- [ ] **Accept Quest**, **Complete Quest (Once)** and **Complete Quest (Maxed)** reach the game, and the status line names which path served each
+- [ ] **Copy Bypass Packet** puts the reference's own JSON on the clipboard, and pasting it into the packet tamperer updates the quest's progress
+- [ ] **Go to Wikipage** and **Search on Wiki** open in the app's own browser window rather than the system browser, with the name's spaces turned into `+`
+- [ ] The bot list actions (**Add to both**, **Add to whitelist**, **Add to unbank list** and the three "Add all" aggregates) append to the **Bot Manager**'s own Drops, Items and Quests lists with the reference's Contains guard, and the rows survive a Save to `.gbot`
+- [ ] **Copy all** and **Copy all Reqs** put the reference's own two lines on the clipboard, the second with its extra comma

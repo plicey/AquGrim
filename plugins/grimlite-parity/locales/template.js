@@ -12,6 +12,8 @@ exports.dialogMessages = {
         return '' +
             expand(k.grimliteBotFile) + '' +
             expand(k.grimliteBank) + '' +
+            expand(k.grimliteLoaders) + '' +
+            '' +
             expand(k.grimliteBotManager) + '' +
             expand(k.grimliteEyedropper) + '' +
             expand(k.grimliteNotepad) + '' +
@@ -30,6 +32,7 @@ exports.menuMessages = {
     grimliteNotepad: "",
     grimliteAbout: "",
     grimliteBank: "",
+    grimliteLoaders: "",
     grimliteSets: "",
     grimliteCosmetics: "",
     grimlitePlaceholder: "",
@@ -56,6 +59,7 @@ exports.windowTitles = {
     primary: "",
     botFile: "",
     bank: "",
+    loaders: "",
     sets: "",
     botManager: "",
     placeholder: "",
@@ -178,4 +182,9 @@ exports.cosmeticsMessages = {
         cape: "",
         misc: ""
     }
+};
+
+exports.loadersMessages = {
+    openTitle: "",
+    nothingToSave: ""
 };

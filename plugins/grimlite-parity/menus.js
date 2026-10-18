@@ -79,6 +79,16 @@ function register(host, windowTitle) {
                         host.windows.openFeatureWindow(windows.DEVTEST_WINDOW_ID);
                     }
                 },
+                {
+                    // The reference puts this under Tools, word for word (Root.cs:784) and
+                    // reaches it from ShowForm(Loaders.Instance) (Root.cs:339).
+                    label: labels.grimliteLoaders || 'Loaders/grabbers',
+                    accelerator: keybinds.grimliteLoaders,
+                    registerAccelerator: false,
+                    click: function () {
+                        host.windows.openFeatureWindow(windows.LOADERS_WINDOW_ID);
+                    }
+                },
                 // The reference's own Tools-menu words and order: Bank, then the Sets form it
                 // keeps hidden (Root.cs:820-831). Hidden there or not, the form is reachable,
                 // so it ships as a normal entry here.
