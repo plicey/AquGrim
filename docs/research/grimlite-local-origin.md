@@ -163,3 +163,59 @@ question, and it is answerable the same way: extend `fake-login-body` and re-run
 `harness.js` (`--fake-login`, `--fake-login-body`, `--debug-port`) are changed; `selftest.js`
 still passes. The probe is deliberately opt-in and never on for a real run.
 
+
+## 10. RESOLVED: the socket half, proven with a real login (2026-10-18)
+
+A human run with a real account settled both open questions, and the answer overturns the earlier
+assumption about where to steer.
+
+### The client never fetches `api/data/servers`
+
+| Evidence | Value |
+|----------|-------|
+| Requests for `/servers` in the logged-in run | **zero** (gateway log and `webRequest`, 198 requests total) |
+| The login response | `POST /game/api/login/now` -> **2372 bytes** of real upstream JSON |
+| What the client rendered | the live list (Twilly 632, Twig 256, Artix 1500 ...), matching the live upstream figures |
+| Where it dialled | `172.16.0.2:50040 -> 172.65.204.220:5591` - **the real Sepulchure server**, not the relay |
+| Relay connections | **zero** |
+
+So the server list arrives **inside the login response**, and the client dials the address it finds
+there. The `--steer` rewrite of `/game/api/data/servers` was steering a path this client never
+takes - which is also why the earlier fake-login run showed a placeholder list: a synthetic response
+with no server rows leaves it with nothing to dial.
+
+### The proof, with the fix
+
+`steerLoginBody()` rewrites every `{sIP, iPort}` row anywhere in the login response. Driving the
+fake-login probe with one row `{sIP:'127.0.0.1', iPort:8589}` produced:
+
+- the client rendered **"SPIKE-TEST - 1 Players Adventuring Now"** as a real selectable server, and
+- clicking it made the client dial the relay:
+
+```text
+[47.92s] RELAY connect | 127.0.0.1:44922
+[47.92s] RELAY C->S-policy-request | <policy-file-request/>
+[47.92s] RELAY S->C-policy | <cross-domain-policy><allow-access-from domain='*' to-ports='*'/></cross-domain-policy>
+[47.94s] RELAY connect | 127.0.0.1:44936
+[47.94s] RELAY C->S-game-traffic-opens-upstream | <msg t='sys'><body action='verChk' r='0'><ver v='157' /></body></msg>
+[48.06s] RELAY upstream-open | sock7.aq.com:5593
+[48.51s] RELAY S->C 54b | <msg t='sys'><body action='apiOK' r='0'></body></msg>
+[48.51s] RELAY C->S 166b | <msg t='sys'><body action='login' r='0'><login z='zone_master'>...
+```
+
+The full handshake runs through loopback: policy request, `verChk`, `apiOK`, then the client's own
+SmartFox `login` frame. **Ticket #15 is proven** - the client connects to the relay and real game
+traffic flows through it.
+
+### Consequences for the map
+
+- **#3's proxy is real.** The interception point is the login response body, not a server-list
+  endpoint. The relay's 40 lines already handle this traffic (8 frames, 315 bytes, on the first try).
+- **#8's bridge plan holds.** The game SWF is served same-origin from `127.0.0.1`, so #7's
+  `ApplicationDomain` sharing applies as designed; nothing here needs cross-origin access.
+- The credential exposure `grimlite-proxy.md` section 6 warns about is confirmed in the traffic:
+  the `login` frame carries the password in cleartext (`<pword><![CDATA[...]]></pword>`).
+
+`selftest.js` now covers the steering (`gateway steers server rows inside a login response`), using
+`--upstream=` to run against a stub instead of the live API.
+

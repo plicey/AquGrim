@@ -144,6 +144,41 @@ async function main() {
         assert.ok(body.count > 0, 'no requests recorded');
     });
 
+    // The steering point that matters: the client never fetches api/data/servers. The live
+    // list arrives inside the login response, so that body is what has to point at the relay.
+    await check('gateway steers server rows inside a login response', async function () {
+        const upstreamPort = RELAY_PORT + 41;
+        const stub = http.createServer(function (req, res) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ bSuccess: 1, servers: [
+                { sName: 'A', sIP: 'sock7.aq.com', iPort: 5593 },
+                { sName: 'B', sIP: 'sock8.aq.com', iPort: 5589 }
+            ] }));
+        });
+        await new Promise(function (r) { stub.listen(upstreamPort, '127.0.0.1', r); });
+
+        const steerPort = RELAY_PORT + 5;   // distinct from both the gateway's own port and the relay
+        const gw2 = createGateway({ port: GW_PORT + 3, rewrite: { host: '127.0.0.1', port: steerPort },
+            steer: true, quiet: true, upstream: 'http://127.0.0.1:' + upstreamPort });
+        await gw2.start();
+        const original = process.env.AQ_STEER_UPSTREAM;
+        const res = await new Promise(function (resolve, reject) {
+            const req = http.request({ host: '127.0.0.1', port: GW_PORT + 3, path: '/game/api/login/now',
+                method: 'POST', headers: { 'Content-Type': 'application/json' } }, function (r2) {
+                const c = [];
+                r2.on('data', function (d) { c.push(d); });
+                r2.on('end', function () { resolve(JSON.parse(Buffer.concat(c).toString())); });
+            });
+            req.on('error', reject);
+            req.end('{}');
+        });
+        await gw2.close();
+        stub.close();
+        assert.strictEqual(res.servers[0].sIP, '127.0.0.1', 'row 0 host not steered');
+        assert.strictEqual(res.servers[0].iPort, steerPort, 'row 0 port not steered');
+        assert.strictEqual(res.servers[1].sIP, '127.0.0.1', 'row 1 host not steered');
+    });
+
     await gw.close();
     await relay.close();
     up.server.close();

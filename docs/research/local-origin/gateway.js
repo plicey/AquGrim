@@ -98,6 +98,9 @@ function localize(absUrl, selfOrigin) {
 function createGateway(opts) {
     const port = Number(opts.port || 8488);
     const selfOrigin = 'http://127.0.0.1:' + port;
+    // --upstream=<origin>: send every route to one host instead of the real aq.com origins,
+    // so selftest.js can exercise the login steering offline.
+    const upstreamOverride = opts.upstream || null;
     const allowDomain = opts.allowDomain || '*';
     const quiet = !!opts.quiet;
     const rewrite = opts.rewrite || null;   // {host, port} for /__servers and --steer
@@ -133,6 +136,36 @@ function createGateway(opts) {
         '    <site-control permitted-cross-domain-policies="all"/>\n' +
         '    <allow-access-from domain="' + allowDomain + '"/>\n' +
         '</cross-domain-policy>\n';
+
+    function steerLogin(pathname, method) {
+        return !!rewrite && steer && method === 'POST' && /\/api\/login\/now$/.test(pathname);
+    }
+
+    // Point every entry the login response carries at the relay. The list field is not
+    // documented anywhere, so find any array of objects that looks like a server row and
+    // rewrite the fields that name a host and port, wherever it sits.
+    function steerLoginBody(raw) {
+        let doc;
+        try { doc = JSON.parse(raw.toString('utf8')); } catch (e) {
+            return { body: raw, note: 'login response not JSON; left untouched' };
+        }
+        let rows = 0;
+        function walk(node) {
+            if (!node || typeof node !== 'object') return;
+            if (Array.isArray(node)) { node.forEach(walk); return; }
+            if (typeof node.sIP === 'string' && node.iPort != null) {
+                node.sIP = rewrite.host;
+                node.iPort = rewrite.port;
+                rows++;
+            }
+            Object.keys(node).forEach(function (k) { walk(node[k]); });
+        }
+        walk(doc);
+        if (!rows) return { body: raw, note: 'login response carried no server rows' };
+        const body = Buffer.from(JSON.stringify(doc));
+        return { body: body, note: 'login response: ' + rows + ' server row(s) steered to ' +
+            rewrite.host + ':' + rewrite.port };
+    }
 
     function sendLocal(res, body, type, meta) {
         record(Object.assign({ method: 'GET', status: 200, bytes: body.length, local: true }, meta));
@@ -205,7 +238,7 @@ function createGateway(opts) {
 
     function proxy(req, res, route) {
         const u = new URL(req.url, selfOrigin);
-        const startUrl = route.origin + route.path + u.search;
+        const startUrl = (upstreamOverride || route.origin) + route.path + u.search;
         const entry = {
             method: req.method,
             path: decodeURIComponent(new URL(startUrl).pathname) + u.search,
@@ -232,7 +265,9 @@ function createGateway(opts) {
             if (opts.userAgent) headers['user-agent'] = opts.userAgent;
 
             if (body && body.length) headers['content-length'] = body.length;
-            const upstream = https.request(target, { method: req.method, headers: headers }, function (upRes) {
+            // The override is plain http (selftest); real upstreams are https.
+            const transport = upstreamOverride ? http : https;
+            const upstream = transport.request(target, { method: req.method, headers: headers }, function (upRes) {
                 const status = upRes.statusCode;
                 const loc = upRes.headers.location;
                 if (loc && status >= 300 && status < 400 && depth < 5) {
@@ -263,6 +298,22 @@ function createGateway(opts) {
                     if (k === 'etag' || k === 'last-modified' || k === 'expires' || k === 'content-encoding' ||
                         k === 'content-length' || k === 'transfer-encoding') continue;
                     outHeaders[k] = upRes.headers[k];
+                }
+                // The client never fetches api/data/servers: the live list arrives inside the
+                // login response and the client dials straight from it. Steering therefore has
+                // to rewrite the login response body, not a list endpoint. Evidence: the
+                // logged-in run on #15 (2026-10-18) made zero /servers requests and connected
+                // to the real game IP.
+                if (steerLogin(target.pathname, req.method)) {
+                    const chunks = [];
+                    upRes.on('data', function (c) { chunks.push(c); });
+                    upRes.on('end', function () {
+                        const steered = steerLoginBody(Buffer.concat(chunks));
+                        record(Object.assign(entry, { bytes: steered.body.length, note: steered.note }));
+                        res.writeHead(status, outHeaders);
+                        res.end(steered.body);
+                    });
+                    return;
                 }
                 if (outHeaders.location) {
                     const mapped = localize(outHeaders.location, selfOrigin);
