@@ -39,6 +39,7 @@ global.test = function (name, fn) {
   './unit/grimlite-bot-tabs.test.js',
   './unit/grimlite-bot-manager.test.js',
   './unit/grimlite-bot-manager-window.test.js',
+  './unit/grimlite-bot-manager-game-reads.test.js',
   './unit/plugin-game-access.test.js',
   './unit/grimlite-parity.test.js',
   './unit/bridge-channel.test.js',

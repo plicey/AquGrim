@@ -88,7 +88,10 @@ async function activate(host) {
         message: function () { return host.getLocaleStrings('botManagerMessages') || {}; },
         showOpenDialog: function (owner, options) {
             return require('electron').dialog.showOpenDialog(owner, options);
-        }
+        },
+        // The controls that act on the running game read through the generic bridge surface. A
+        // name the stock game does not have reports the helper it waits for instead of a value.
+        bridge: host.bridge
     }).register(host);
 
     host.registerLocales({

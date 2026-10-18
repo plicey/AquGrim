@@ -15,6 +15,7 @@ const tabs = require('../../bot/tabs.js');
 const actions = require('../../bot/tab-actions.js');
 const displaySettings = require('../../bot/display-settings.js');
 const botTree = require('../../bot/bot-tree.js');
+const gameReads = require('../../bot/game-reads.js');
 const { createFromHost } = require('../../bot/bot-dialogs.js');
 
 // UserFriendlyCommandEditor.Show's skip list. A statement's own Text is skipped too (the
@@ -336,6 +337,87 @@ function createBotManager(deps) {
         return view(Object.assign({ refused: false, canceled: false }, failure || { error: null }));
     }
 
+    /**
+     * The bridge hands back a JSON string (AquaBridge.toJson). A member the game does not have
+     * arrives as {"error": "no member ..."} on a call that itself succeeded - which is exactly the
+     * answer that must not be mistaken for an empty value, so it is checked first.
+     */
+    function parseValue(raw, name) {
+        let parsed;
+        try {
+            parsed = JSON.parse(String(raw));
+        } catch (error) {
+            // A value JSON cannot express; the bridge stringifies those, so take it as it came.
+            return { value: raw };
+        }
+        if (parsed && typeof parsed === 'object' && typeof parsed.error === 'string') {
+            return { error: parsed.error };
+        }
+        if (parsed === null || parsed === undefined) {
+            // The path exists and is empty: the game has not logged in or drawn it yet. Saying so
+            // keeps an empty box from looking like a real reading.
+            return { error: 'the game reports no ' + name + ' yet (no character in the world?)' };
+        }
+        return { value: parsed };
+    }
+
+    /** Read the named dot-paths through the generic surface, one call each, first failure wins. */
+    function readGame(names) {
+        const bridge = deps.bridge;
+        if (!bridge) return Promise.resolve({ ok: false, error: 'this window has no game bridge' });
+        return Promise.resolve(bridge.attach()).then(function (attached) {
+            if (!attached || attached.ok !== true) {
+                return { ok: false, error: (attached && attached.error) || 'the game bridge is not attached' };
+            }
+            const values = {};
+            return names.reduce(function (chain, name) {
+                return chain.then(function (state) {
+                    if (!state.ok) return state;
+                    return Promise.resolve(bridge.call('getGameObject', [gameReads.READS[name]]))
+                        .then(function (result) {
+                            if (!result || result.ok !== true) {
+                                return { ok: false, error: (result && result.error) ||
+                                    ('the bridge did not answer ' + name) };
+                            }
+                            const read = parseValue(result.value, name);
+                            if (read.error) return { ok: false, error: read.error };
+                            state.values[name] = read.value;
+                            return state;
+                        });
+                });
+            }, Promise.resolve({ ok: true, values: values })).then(function (state) {
+                return state.ok ? { ok: true, values: state.values } : state;
+            });
+        });
+    }
+
+    /**
+     * A control that acts on the game. A reachable one reads through the generic surface; the
+     * rest report the helper they wait for, so a press is never a silent no-op.
+     */
+    function gameAction(id, modifiers) {
+        const spec = gameReads.GAME_BUTTONS[id];
+        if (!spec) return Promise.resolve({ ok: false, error: 'not a game control: ' + id });
+        const variant = gameReads.variantOf(spec, modifiers);
+        if (variant && (variant.needs || variant.why)) {
+            return Promise.resolve({ ok: false, error: gameReads.why(variant, id) });
+        }
+        if (!spec.reads) return Promise.resolve({ ok: false, error: gameReads.why(spec, id) });
+        return readGame(spec.reads);
+    }
+
+    /**
+     * btnSoundTest_Click: five Console.Beep()s - the notification test for the drop-sound list.
+     * Electron's own alert sound is the equivalent; there is no game involved, so it does not go
+     * through the bridge.
+     */
+    function beep(count) {
+        const times = count === undefined ? 5 : count;
+        const shell = deps.shell || require('electron').shell;
+        for (let i = 0; i < times; i++) shell.beep();
+        return { ok: true };
+    }
+
     function treeSelect(segments, ctrl) {
         const root = settings.botsDirectory() || deps.defaultBotsDirectory || '';
         const file = botTree.resolve(root, Array.isArray(segments) ? segments : []);
@@ -380,6 +462,26 @@ function createBotManager(deps) {
                     // so the page never has to spell a control's behaviour out itself.
                     commandButtons: Object.keys(actions.COMMAND_BUTTONS),
                     listButtons: Object.keys(actions.LIST_BUTTONS),
+                    // The ids that act on the running game, and the reasons the ones that cannot
+                    // are waiting. The page draws them either way; none is a dead button.
+                    gameButtons: gameReads.ids(),
+                    gameReasons: gameReads.ids().reduce(function (out, id) {
+                        const spec = gameReads.GAME_BUTTONS[id];
+                        if (!spec.reads) out[id] = gameReads.why(spec, id);
+                        return out;
+                    }, {}),
+                    // The reachable controls' own field branches, so the page fills the boxes the
+                    // reference fills rather than guessing at them.
+                    gameRows: gameReads.ids().reduce(function (out, id) {
+                        const spec = gameReads.GAME_BUTTONS[id];
+                        if (spec.reads) {
+                            out[id] = {};
+                            ['plain', 'alt', 'ctrl'].forEach(function (branch) {
+                                if (spec[branch]) out[id][branch] = spec[branch];
+                            });
+                        }
+                        return out;
+                    }, {}),
                     settings: actions.SETTINGS,
                     numbers: actions.NUMBERS
                 };
@@ -429,6 +531,10 @@ function createBotManager(deps) {
                 return addFolder(argv[0]);
             case 'botManagerTreeSelect':
                 return treeSelect(argv[0], argv[1] === true);
+            case 'botManagerGame':
+                return gameAction(argv[0], argv[1]);
+            case 'botManagerBeep':
+                return beep();
             case 'botManagerDrop':
                 return drop(argv[0] || []);
             case 'botManagerCopy':
@@ -447,7 +553,8 @@ function createBotManager(deps) {
                 'botManagerSelect', 'botManagerKey', 'botManagerForm', 'botManagerEdit',
                 'botManagerRaw', 'botManagerSetting', 'botManagerStyle', 'botManagerTree',
                 'botManagerChooseDirectory', 'botManagerAddFolder', 'botManagerTreeSelect',
-                'botManagerDrop', 'botManagerCopy', 'botManagerPaste'];
+                'botManagerDrop', 'botManagerCopy', 'botManagerPaste', 'botManagerGame',
+                'botManagerBeep'];
             channels.forEach(function (channel) {
                 host.ipc.handle(channel, function (event) {
                     const rest = Array.prototype.slice.call(arguments, 1);

@@ -366,7 +366,7 @@ test('the window reaches its page only through its own namespaced channels', asy
   w.feature.register({ ipc: { handle: function (channel) { registered.push(channel); } } });
   assert.deepStrictEqual(registered.slice().sort(), [
     'botManagerAdd', 'botManagerAddFolder', 'botManagerAddList', 'botManagerChooseDirectory',
-    'botManagerCopy', 'botManagerDrop', 'botManagerPaste',
+    'botManagerBeep', 'botManagerCopy', 'botManagerDrop', 'botManagerGame', 'botManagerPaste',
     'botManagerEdit', 'botManagerForm', 'botManagerKey', 'botManagerLoad', 'botManagerMessages',
     'botManagerRaw', 'botManagerSave', 'botManagerSelect', 'botManagerSetting', 'botManagerSheet',
     'botManagerStatements', 'botManagerStyle', 'botManagerTree', 'botManagerTreeSelect'

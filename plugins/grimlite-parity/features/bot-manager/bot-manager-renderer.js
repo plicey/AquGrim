@@ -333,6 +333,16 @@
     if ((sheet.listButtons || []).indexOf(id) !== -1) {
       return api.addList(id, valuesFromSheet(), modifiers).then(applyState);
     }
+    if ((sheet.gameButtons || []).indexOf(id) !== -1) {
+      return api.game(id, modifiers).then(function (result) {
+        // A control the game cannot answer reports why; it never fills a field with nothing.
+        if (!result || result.ok !== true) {
+          setStatus((result && result.error) || 'the game did not answer', true);
+          return;
+        }
+        fillFromGame(id, result.values, modifiers);
+      });
+    }
     switch (id) {
     case 'btnRemove': return api.key('remove').then(applyState);
     case 'btnClear': return api.key('clear', { all: checked('chkAll') }).then(applyState);
@@ -347,6 +357,8 @@
     case 'btnSavedAdd': return addFolder();
     case 'btnSoundAdd': return addSound();
     case 'btnSoundDelete': return removeSound();
+    // btnSoundTest_Click: the reference beeps five times to test the drop notification.
+    case 'btnSoundTest': return api.beep();
     case 'lstLogText': return null;
     default: return Promise.resolve(null);
     }
@@ -355,6 +367,26 @@
   function value(id) {
     var node = document.getElementById(id);
     return node ? node.value : '';
+  }
+
+  /**
+   * Write a game read into the fields the control owns, using the reference's own branches: the
+   * plain press replaces each box, the alt press appends to it (btnCurrCell_Click). The sheet
+   * carries the mapping, so this never spells a control's behaviour out itself.
+   */
+  function fillFromGame(id, values, modifiers) {
+    var spec = (sheet.gameRows || {})[id] || {};
+    var branch = (modifiers && modifiers.alt && spec.alt) || (modifiers && modifiers.ctrl && spec.ctrl) || spec.plain || {};
+    var set = branch.append || branch;
+    var appending = !!branch.append;
+    Object.keys(set).forEach(function (controlId) {
+      var node = document.getElementById(controlId);
+      if (!node) return;
+      var next = values[set[controlId]];
+      if (next === undefined || next === null) return;
+      node.value = appending ? (node.value + ',' + next) : String(next);
+    });
+    setStatus(messages.read || 'Read from the game.', false);
   }
 
   function loadCommand() {

@@ -35,6 +35,10 @@ contextBridge.exposeInMainWorld('aquastarBotManager', {
     treeSelect: function (segments, ctrl) {
         return ipcRenderer.invoke(CH('botManagerTreeSelect'), segments, ctrl === true);
     },
+    game: function (id, modifiers) {
+        return ipcRenderer.invoke(CH('botManagerGame'), id, modifiers || {});
+    },
+    beep: function () { return ipcRenderer.invoke(CH('botManagerBeep')); },
     drop: function (files) { return ipcRenderer.invoke(CH('botManagerDrop'), files || []); },
     // The native clipboard is main-process work; this window has no Node.
     clipboardWrite: function (text) { return ipcRenderer.invoke(CH('botManagerCopy'), text); },
