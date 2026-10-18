@@ -15,7 +15,12 @@ const DEFAULTS = {
     // The reference's own action list carries "Show Cosmetics form" (Hotkeys.cs:409). Its
     // bindings ship empty and its picker takes one key; this port gives the window a default on
     // a key no binding of the app's or the game plugin's own uses.
-    grimliteCosmetics: 'Alt+Shift+C'
+    grimliteCosmetics: 'Alt+Shift+C',
+    // The reference's Options menu and Hotkeys window are menu entries upstream with no shortcut
+    // of their own; this port gives each a key on the Alt+Shift family it already uses, so nothing
+    // the app or the game plugin holds is taken. Not K: that is this plugin's own Bank entry.
+    grimliteOptions: 'Alt+Shift+O',
+    grimliteHotkeys: 'Alt+Shift+H'
 };
 
 function register(host) {
@@ -82,6 +87,18 @@ function register(host) {
             id: 'grimliteCosmetics',
             action: function () {
                 host.windows.openFeatureWindow(windows.COSMETICS_WINDOW_ID);
+            }
+        },
+        {
+            id: 'grimliteOptions',
+            action: function () {
+                host.windows.openFeatureWindow(windows.OPTIONS_WINDOW_ID);
+            }
+        },
+        {
+            id: 'grimliteHotkeys',
+            action: function () {
+                host.windows.openFeatureWindow(windows.HOTKEYS_WINDOW_ID);
             }
         }
     ]);

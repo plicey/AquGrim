@@ -495,6 +495,120 @@ human:
 
 ---
 
+## Options and Hotkeys (ticket #34) - needs the real game and a display
+
+The toggle set, its order, the walkspeed field and the whole hotkey vocabulary are covered offline
+by `npm test` against the reference's own Options menu (Root.cs) and its `Hotkeys.cs` - the
+persisted index is the order, so the order is part of the behaviour. What a human has to check is
+everything only the real game and a real keyboard can show.
+
+Active plugin **Grimlite Parity**, restart, then **Grimlite -> Options** (or **Alt+Shift+O**) and
+**Grimlite -> Hotkeys** (or **Alt+Shift+H**).
+
+**First, and important.** The seven option calls and the three game-reaching hotkey actions are
+names the reference's own loader SWF provides and the **stock game does not carry**. Verified by
+exact token match against the decompressed game SWF at `/var/tmp/aq-origin/game.swf` and the
+reference loader at `/var/tmp/grimlite-src/Loader/grimoire.swf`:
+
+    name                  stock game   reference loader   port routes it to
+    SetInfiniteRange          -            yes            world.actions.active[i].range, i = 0..5
+    SetProvokeMonsters        -            yes            world.aggroAllMon
+    SetEnemyMagnet            -            yes            myAvatar.pMC x/y -> target.pMC x/y
+    SetLagKiller              -            yes            world.visible
+    DestroyPlayers            -            yes            (none - see below)
+    SetSkipCutscenes          -            yes            mcExtSWF children, world.visible, showInterface
+    SetWalkSpeed              -            yes            world.WALKSPEED
+    CancelTarget              -            yes            world.cancelTarget, twice
+    LoadHairShop              -            yes            world.sendLoadHairShopRequest
+    LoadArmorCustomizer       -            yes            openArmorCustomize
+
+The game carries lowercase cousins (`walkSpeed`, `cancelTarget`, `loadHairShop`,
+`openArmorCustomize`), which are different members with different signatures and which the
+reference never calls - nothing here substitutes one for the other.
+
+**A loader-only name is not a dead end, because the loader is a renaming layer.** Read from its own
+decompiled bodies (`/var/tmp/aq48/out-loader/scripts/grimoire/game/Settings.as`, `Player.as`,
+`Shops.as`), each of these names stands for reads, writes and calls on paths the stock game **does**
+carry (`world`, `actions.active[].range`, `aggroAllMon`, `myAvatar.pMC`, `mcExtSWF`,
+`showInterface`, `WALKSPEED`, `cancelTarget`, `sendLoadHairShopRequest`, `openArmorCustomize` -
+all exact runs in the decompressed game). So the port asks the game for the reference's own name
+first and, when the game answers `no member <name>`, does what that loader body does through the
+generic callbacks. The day a bridge implements the loader's surface, the game's own answer wins and
+these routes are simply not reached.
+
+The one exception is **Hide Players**: the loader's `DestroyPlayers` walks every entry of
+`world.avatars` and destroys the ones that are not the player's own. The generic callbacks read and
+write paths named in advance and cannot enumerate that map, so there is nothing honest to send for
+it and the window reports the full reason instead. Whether the four toggles that now route really
+work in a live client is what the boxes below are for.
+
+- [ ] The Options window opens titled **Options**, listing all seven toggles in the reference's
+      order: Infinite Range, Provoke, Enemy Magnet, Lag Killer, Hide Players, Skip Cutscenes,
+      Walkspeed - and **every one of them unticked on a first run**
+- [ ] Ticking **Infinite Range** and attacking a monster far away hits it; unticking sends no undo
+      call (the reference has none) and the loop stops re-sending it
+- [ ] Ticking **Provoke** makes monsters attack the character, and re-sends it on every pass
+- [ ] Ticking **Enemy Magnet** pulls the target onto the character, and does nothing at all (no
+      error) when nothing is targeted
+- [ ] **Lag Killer** hides the game movie itself when ticked (`world.visible` goes false) and
+      shows it again when unticked - the one toggle with a real off call
+- [ ] **Skip Cutscenes** clears a running cutscene and gives the interface back
+- [ ] Ticking **Hide Players** removes other players from the room - **or** shows the stated
+      reason that the loader-only call has no route through the generic callbacks. Both outcomes
+      are correct here; a tick that silently did nothing is not
+- [ ] When the game does refuse a routed call, the window's status line shows that refusal
+      (`no member <name> ... - and the game's own route to it failed: ...`) rather than a tick
+      that quietly did nothing
+- [ ] **Walkspeed**: the field shows **20** before it is ever touched (the reference's own
+      default), the tick disables the field, and turning the tick off restores the game's own 8
+- [ ] Typing a number while the tick is off only remembers it; the number goes out the moment the
+      tick is on and keeps going out every 250 ms while it stays on
+- [ ] The number field clamps to the reference's own 1..99 box
+- [ ] **Stop applying** stops the re-send loop with the ticks left as they were; **Start applying**
+      re-sends everything that is on, straight away
+- [ ] The ticks and the walkspeed number survive an app restart and are still there when the
+      window is closed and reopened
+- [ ] The Hotkeys window opens titled **Hotkeys** with an **empty** list, a key picker and an
+      action picker
+- [ ] The key picker offers exactly Escape, Left, Up, Right, Down, D0-D9, A-Z, F1-F12, Alt, Tab,
+      Shift - single keys only, no combination
+- [ ] The action picker offers the reference's own 23 in order, from *Start/Stop Bot* to
+      *Start/Stop AutoAttack*
+- [ ] Picking a key and an action and pressing **Add** puts a row reading `<Key>: <Action>` (e.g.
+      `D1: Show Notepad`) in the list, and pressing that key opens the target
+- [ ] **Remove** gives the key back: pressing it afterwards does nothing
+- [ ] Rebinding the **same** key to another action replaces the row instead of adding a second
+- [ ] Binding a key the app already holds (F2, Ctrl+J, F11, F9, Alt+9, Alt+H / F1, Ctrl+F5) is
+      refused with the owner named, not taken silently
+- [ ] Binding bare **Alt** or **Shift** is refused with the reason (a bare modifier cannot be
+      registered on its own)
+- [ ] A key bound to an action whose window has not shipped yet (Show Bank, Show Maid, Show Fast
+      Travels, Start/Stop Bot, ...) is **inert**: nothing opens, nothing throws, and the window
+      says that window has not shipped
+- [ ] **Minimize to tray** fires while another app has focus; every other binding fires only while
+      AquaGrim does
+- [ ] The bindings survive an app restart, in the order the list was built
+
+### Options and hotkeys: what could not be checked here, and why
+
+Everything above needs the game running against the real origin, plus a keyboard and a display;
+this session has no display and must not boot Electron, so **not one of these calls has been run
+against a live client**. The routes are transcribed one-for-one from the reference loader's own
+decompiled bodies, and the game paths they read are all present in the decompressed game SWF, but
+whether each does the right thing on a live session - in particular whether `world.visible` is the
+flag Lag Killer wants, whether `actions.active` is the skill bar the range is set on, and whether
+`myAvatar.target.pMC` is writeable from outside the game - is exactly what a human has to confirm.
+
+Two further things a human should note:
+
+- **Hide Players has no route** (`DestroyPlayers` needs to enumerate `world.avatars`, which the
+  generic callbacks cannot do), so it reports the reason. If the bridge implements the loader's
+  helper surface later, that toggle starts working with no change to this window.
+- **Minimize to tray** is implemented as raising the app's main window. Electron has no tray toggle
+  here, so this is the port's nearest equivalent, not the reference's own behaviour.
+
+---
+
 ## Verification log
 
 | Date | Who | Notes |

@@ -138,11 +138,52 @@ this module may make on its own.
 **The bridge still owes the loader's surface** before Bank can transfer anything: see the ticket
 #29 section of `docs/FLASH_CHECKLIST.md`.
 
+## Options and Hotkeys
+
+The **Options** window (Grimlite → Options, Alt+Shift+O) holds the seven toggles the reference
+actually ships, in its own order - Infinite Range, Provoke, Enemy Magnet, Lag Killer, Hide Players,
+Skip Cutscenes, Walkspeed - with the walkspeed value field beside them. Every one is off until the
+user ticks it, and the ticks and the number are kept in this plugin's own store, so they survive a
+restart. The re-apply loops are the reference's: a one-second pass, the group behind its two-second
+gate in the order `OptionsManager.cs` re-applies it, and a 250 ms push for walkspeed alone while
+its tick is on. The client never turns one of these on by itself.
+
+The **Hotkeys** window (Grimlite → Hotkeys, Alt+Shift+H) binds one key to one action from the
+reference's own 23-item vocabulary, in its order, and fires it. The set ships empty, the picker
+offers single keys only, a bound key fires while this app has focus except **Minimize to tray**,
+and a key the app or the game plugin already holds is refused with its owner named rather than
+stolen.
+
+Both windows call the game by the reference's own names, and **all ten of those names are ones the
+reference's own loader SWF provides and the stock game does not carry**: `SetInfiniteRange`,
+`SetProvokeMonsters`, `SetEnemyMagnet`, `SetLagKiller`, `DestroyPlayers`,
+`SetSkipCutscenes`, `SetWalkSpeed`, `CancelTarget`, `LoadHairShop`, `LoadArmorCustomizer`
+(exact token match against both SWFs; the game has lowercase cousins - `walkSpeed`,
+`cancelTarget`, `loadHairShop`, `openArmorCustomize` - which are different members with
+different signatures, and the reference never calls them).
+
+That is not a dead end, because the loader is a **renaming layer**, not a second implementation.
+Its own decompiled bodies show each name standing for reads, writes and calls on game paths the
+stock game does carry, and `game-calls.js` - the small adapter beside these windows - transcribes
+those bodies: it asks the game for the reference's name first, and when the game answers `no member
+<name>` it does what the loader's body does through the generic callbacks. So Infinite Range sets
+the six action ranges, Provoke calls the game's own `world.aggroAllMon`, Lag Killer drives
+`world.visible`, Walkspeed writes `world.WALKSPEED`, Cancel Target calls `world.cancelTarget`
+twice, and so on. The day a bridge implements the loader's surface, the game's own answer wins and
+these routes are simply not reached.
+
+The one exception is the **Hide Players** toggle: `DestroyPlayers` walks every entry of
+`world.avatars`, and the generic callbacks can only read and write paths named in advance. There
+is nothing honest to send for it, so the window reports the full reason rather than guessing at a
+name or pretending the tick worked.
+
 ## Windows
 
 - **Bot file** (Alt+Shift+B) — open, edit and save a `.gbot` (#24).
 - **Bank** (Alt+Shift+K) — transfer by category and AC-ness, plus Bank All (#29).
 - **Sets** — save, list, load, clear and equip `.gset` sets (#29).
+- **Options** (Alt+Shift+O) — the reference's seven option toggles and the walkspeed field (#34).
+- **Hotkeys** (Alt+Shift+H) — bind one key to one action from the reference's vocabulary (#34).
 - **Parity placeholder** (Alt+Shift+G).
 
 ## Loaders and grabbers (#31)

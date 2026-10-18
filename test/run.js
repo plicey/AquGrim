@@ -84,7 +84,11 @@ global.test = function (name, fn) {
   './unit/grimlite-sets.test.js',
   './unit/grimlite-bank-sets-windows.test.js',
   './unit/grimlite-bank-sets-pages.test.js',
-  './unit/grimlite-bridge.test.js'
+  './unit/grimlite-bridge.test.js',
+  './unit/grimlite-options.test.js',
+  './unit/grimlite-hotkeys.test.js',
+  './unit/grimlite-options-hotkeys-windows.test.js',
+  './unit/grimlite-game-routes.test.js'
 ].forEach((file) => require(path.join(__dirname, file)));
 
 (async () => {
