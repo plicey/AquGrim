@@ -83,7 +83,7 @@ test('example-companion activate registers core Host capabilities', async () => 
         return Promise.resolve({
           ok: true,
           html: JSON.stringify({
-            full_name: 'aquaspy/AquaStar',
+            full_name: 'plicey/AquGrim',
             stargazers_count: 1,
             description: 'test'
           })

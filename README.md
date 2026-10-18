@@ -7,7 +7,7 @@ AquaStar is a Flash-capable companion launcher (Electron 11 + PPAPI). It ships w
 
 ## How to download
 
-Go to this link: https://github.com/aquaspy/AquaStar/releases and download the correct one for your system
+Go to this link: https://github.com/plicey/AquGrim/releases and download the correct one for your system
 
 ## Current working and missing
 
@@ -70,7 +70,7 @@ As after version 1.2 AQLite is a part of vanilla game, what we offer is support 
 
 Download this project's folder into your PC, or clone it directly from this repository using git like:
 ```
-  git clone https://github.com/aquaspy/AquaStar.git
+  git clone https://github.com/plicey/AquGrim.git
 ```
 If your Operating System's flash library file (like .dll or .so) is not in the FlashPlayer folder,
 get it from your own system (win64 and linux are already supported, and mac's one is in the folder too)

@@ -34,7 +34,7 @@ function attach(host) {
     host.ipc.handle('fetchGithubRepoMeta', async function () {
         try {
             const result = await host.net.fetchText(
-                'https://api.github.com/repos/aquaspy/AquaStar',
+                'https://api.github.com/repos/plicey/AquGrim',
                 {
                     headers: {
                         'User-Agent': 'AquaStar-ExampleCompanion',
