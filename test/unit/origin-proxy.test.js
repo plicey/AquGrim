@@ -206,3 +206,25 @@ test('the page that embeds the game is served from the origin, not proxied upstr
     await upstream.close();
   }
 });
+test('a slow upstream does not hold the client open forever', async function () {
+  // gameversion answers 200, 302 and 404 minutes apart; a request that never gets an answer
+  // must fail visibly rather than leave the loader spinning on a request that never completes.
+  const upstream = await startUpstream(function () {
+    // never answers
+  });
+  const proxy = createOriginProxy({
+    routes: [{ prefix: '/', origin: upstream.origin }],
+    upstreamTimeoutMs: 150
+  });
+  const origin = await proxy.listen(0);
+  try {
+    const started = Date.now();
+    const res = await request(origin + '/game/api/data/gameversion?ver=0.95');
+    assert.strictEqual(res.status, 504, 'the client gets a status it can act on');
+    assert.ok(res.body.indexOf('gameversion') !== -1 || res.body.indexOf('upstream') !== -1, res.body);
+    assert.ok(Date.now() - started < 5000, 'the answer comes back on the timeout, not never');
+  } finally {
+    await proxy.close();
+    await upstream.close();
+  }
+});

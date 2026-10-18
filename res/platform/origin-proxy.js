@@ -11,6 +11,9 @@ const https = require('https');
 const fs = require('fs');
 
 const MAX_REDIRECTS = 5;
+// A hung upstream must surface as a failure the client can act on, not as a request that
+// never completes: the version payload upstream is known to answer late or not at all.
+const DEFAULT_UPSTREAM_TIMEOUT_MS = 20000;
 
 function upstreamFor(routes, pathname) {
     let best = null;
@@ -31,12 +34,15 @@ function createOriginProxy(opts) {
     // Local files the origin answers itself (the page that embeds the game): served from the
     // game's own origin so page and SWF are same-origin, which a file:// page is not.
     const files = opts.files || {};
+    const upstreamTimeoutMs = opts.upstreamTimeoutMs || DEFAULT_UPSTREAM_TIMEOUT_MS;
     const log = opts.log || function () {};
     let publishedPort = null;
 
     function forward(req, res, target, body, depth) {
         const headers = Object.assign({}, req.headers);
-        delete headers['accept-encoding'];
+        // The body is buffered so a redirect's Location can be followed and a redirect the
+        // origin will not follow can be answered: ask for it uncompressed and plainly sized.
+        headers['accept-encoding'] = 'identity';
         // The body is re-framed by the upstream request itself; a forwarded chunked header
         // would describe framing that no longer applies.
         delete headers['transfer-encoding'];
@@ -76,6 +82,12 @@ function createOriginProxy(opts) {
                 res.writeHead(upRes.statusCode, outHeaders);
                 res.end(out);
             });
+        });
+        upstream.setTimeout(upstreamTimeoutMs, function () {
+            upstream.abort();
+            log('upstream timeout ' + target.hostname + target.pathname);
+            if (!res.headersSent) res.writeHead(504, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('local origin: no answer from ' + target.hostname + target.pathname);
         });
         upstream.on('error', function (error) {
             // Surface the failure to the client instead of leaving the request hanging.
