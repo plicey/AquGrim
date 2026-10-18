@@ -7,6 +7,7 @@ const url = require('url');
 const menus = require('./menus.js');
 const keybinds = require('./keybinds.js');
 const windows = require('./windows.js');
+const logger = require('./features/packets/logger.js');
 
 function activate(host) {
     const placeholderUrl = url.pathToFileURL(windows.PLACEHOLDER_PAGE).href;
@@ -26,6 +27,9 @@ function activate(host) {
     windows.register(host, windowTitle);
     menus.register(host, windowTitle);
     keybinds.register(host);
+    // The packet logger is this plugin's reading half of the platform tap: it subscribes, and
+    // never writes a frame (that needs packet-send, which only the spammer and tamperer hold).
+    logger.createLoggerFeature(host).register();
 
     host.registerLocales({
         'en-US': require('./locales/en-US.js')

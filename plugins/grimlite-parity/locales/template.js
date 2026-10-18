@@ -10,18 +10,22 @@ exports.dialogMessages = {
             return keyb || '';
         }
         return '' +
+            '' +
             expand(k.grimliteParityPlaceholder) + '';
     }
 };
 
 exports.menuMessages = {
     grimliteMenu: "",
-    grimlitePlaceholder: ""
+    grimlitePlaceholder: "",
+    packetsMenu: "",
+    packetsSniffer: ""
 };
 
 exports.windowTitles = {
     primary: "",
-    placeholder: ""
+    placeholder: "",
+    packetLogger: ""
 };
 
 exports.settingsMessages = {

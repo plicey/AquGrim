@@ -5,18 +5,22 @@ exports.dialogMessages = {
             return keyb || '';
         }
         return 'Grimlite Parity\n' +
+            'Packets -> Sniffer - Packet logger (client and server traffic)\n' +
             expand(k.grimliteParityPlaceholder) + ' - Parity placeholder window';
     }
 };
 
 exports.menuMessages = {
     grimliteMenu: 'Grimlite',
-    grimlitePlaceholder: 'Parity placeholder window'
+    grimlitePlaceholder: 'Parity placeholder window',
+    packetsMenu: 'Packets',
+    packetsSniffer: 'Sniffer'
 };
 
 exports.windowTitles = {
     primary: 'AquaStar - Grimlite Parity',
-    placeholder: 'Grimlite Parity - Placeholder'
+    placeholder: 'Grimlite Parity - Placeholder',
+    packetLogger: 'Packet logger'
 };
 
 // Read by the Settings window (see res/features/settings/settings.html): the smoke keys the

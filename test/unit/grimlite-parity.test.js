@@ -65,11 +65,13 @@ test('the parity plugin is discovered as a bundled plugin and activates', async 
   assert.strictEqual(state.primaryGame.isGameUrl('https://example.com/other'), false);
   assert.ok(primaryUrl.indexOf(pluginRoot.replace(/\\/g, '/')) !== -1);
 
-  // One feature window, in the app's window conventions (sandboxed, no Flash, dark page).
+  // Feature windows, in the app's window conventions (sandboxed, no Flash, dark page). The
+  // placeholder is the scaffold's; the packet logger (ticket #26) joins it.
   const windows = state.featureWindows.filter(function (w) {
     return w.id === PLACEHOLDER_ID;
   });
   assert.strictEqual(windows.length, 1);
+  assert.ok(state.featureWindows.length >= 1);
   const winConfig = windows[0].config;
   assert.strictEqual(winConfig.webPreferences.sandbox, true);
   assert.strictEqual(winConfig.webPreferences.plugins, false);
@@ -77,12 +79,13 @@ test('the parity plugin is discovered as a bundled plugin and activates', async 
   assert.strictEqual(winConfig.webPreferences.nodeIntegration, false);
   assert.strictEqual(winConfig.useContentSize, true);
 
-  // Its own menu entry, opening that window and nothing else.
+  // Its own menu entries, opening those windows and nothing else.
   assert.strictEqual(state.menus.length, 1);
   const items = state.menus[0]({ labels: {}, keybinds: {} });
-  assert.strictEqual(items.length, 1);
-  assert.ok(Array.isArray(items[0].submenu) && items[0].submenu.length >= 1);
-  items[0].submenu[0].click();
+  assert.ok(items.length >= 1);
+  const grimlite = items[items.length - 1];
+  assert.ok(Array.isArray(grimlite.submenu) && grimlite.submenu.length >= 1);
+  grimlite.submenu[0].click();
   assert.deepStrictEqual(opened, [PLACEHOLDER_ID]);
 });
 
