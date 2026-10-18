@@ -14,6 +14,21 @@ never writes: it holds `packet-tap`, not `packet-send`. Nothing arrives until th
 traffic is steered through the relay (Settings → Packets), because the tap carries what the
 relay carries.
 
+The **packet spammer** (Packets → Spammer) is the write half: a saved list, a delay, Start/Stop and
+Send once, with the reference's own file shape (`<autoer>` with `<packet>`, `<author>` and
+`<spamspeed>`) read and written both ways, a file authored elsewhere included. It holds
+`packet-send` and never subscribes to the tap, so a send-only tool needs no read permission at all.
+
+The **Packet Tamperer** (Packets → Tamperer) shows one side while editing the other: two capture
+switches that gate their own direction independently, a case-insensitive text filter, the send and
+receive boxes, and **Send to server** / **Send to client** / **Clear**. It holds both permissions,
+because it reads the tap and writes frames. An injected frame goes out NUL-framed on the side it
+was sent and appears on the tap afterwards, so a Sniffer window sees it too.
+
+Both write through `host.packets.send({ direction, text })`, which answers whether the frame went
+out. `false` means there is no live connection (steering off, or the session between connections);
+neither window hides that, and neither queues the frame for later.
+
 Windows that need no game state come first (ticket #25): **Notepad** (rich text, font and
 colour, drag-and-drop of text files, save through a native dialog, and the reference's two
 typed helpers), **Eye Dropper** (a pixel printed as ARGB hex, decimal channels and RRGGBB)
@@ -60,8 +75,9 @@ and game share one origin, which is what makes that domain access legal under PP
 (`docs/research/grimlite-bridge-spike.md`).
 
 Features so far: the **Bot Manager**, the **Dev Test** window (type a function and arguments, call
-it, see the result, with the reference's own modes), the **packet logger** opened from Packets →
-Sniffer, the three display windows above, and the placeholder window the scaffold shipped.
+it, see the result, with the reference's own modes), the three packet tools opened from Packets →
+Sniffer / Spammer / Tamperer, the Bank and Sets windows, the three display windows above, and the
+placeholder window the scaffold shipped.
 
 The **Cosmetics** window (Grimlite → Cosmetics, Alt+Shift+C) is the reference's own grid: eight
 rows (Helm, Armor, Class, Weapon, Off.H, Pet, Cape, Misc), each with a file box, a link box and a
@@ -169,3 +185,30 @@ name or pretending the tick worked.
 - **Options** (Alt+Shift+O) — the reference's seven option toggles and the walkspeed field (#34).
 - **Hotkeys** (Alt+Shift+H) — bind one key to one action from the reference's vocabulary (#34).
 - **Parity placeholder** (Alt+Shift+G).
+
+## Loaders and grabbers (#31)
+
+`features/loaders/` is the reference's Tools -> Loaders/grabbers window: four loaders (hair shop,
+shop, quest, armour customizer) with its quest-count control, its `F Accept` batch and its ghost
+variant, and eight grabbers (shop items, quest ids, quest items with drop rates, inventory, temp
+inventory, bank, monsters, all monsters) with search, name/id ordering, the reference's XML export
+and its per-row and aggregate right-click menus.
+
+It extends the game access above rather than adding a second adapter: `features/loaders/game.js`
+exports `createGameAccess(bridge, log)` with the same attach-once and report-what-happened rules,
+plus the reads and the loaders this window needs. Wiki links go through `host.windows.openUrl`,
+so they open in the app's own browser window rather than the system browser the reference uses.
+
+What each loader can reach, and what it is still waiting for, is tabulated in the ticket #31
+section of `docs/FLASH_CHECKLIST.md`. The short version: all four loaders work by falling back to
+the game's own request, every grabber reads a game object, and `Complete`, `SetEquip`,
+`BuyItemQtyById` and the loader-only read names report themselves by name until the bridge grows
+the reference loader's surface.
+
+## Windows
+
+ - **Bot file** (Alt+Shift+B) — open, edit and save a `.gbot` (#24).
+ - **Bank** (Alt+Shift+K) — transfer by category and AC-ness, plus Bank All (#29).
+ - **Sets** — save, list, load, clear and equip `.gset` sets (#29).
+- **Loaders/grabbers** (Alt+Shift+L) — the four loaders, the eight grabbers and their menus (#31).
+ - **Parity placeholder** (Alt+Shift+G).

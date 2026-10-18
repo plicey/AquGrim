@@ -64,6 +64,17 @@ function createRelay(options) {
         return null;
     }
 
+    // The connection currently carrying the session. One client connects at a time (the client
+    // dials one server), so the newest live connection is the one a frame belongs on.
+    function liveConnection() {
+        let newest = null;
+        connections.forEach(function (state) {
+            if (state.closed) return;
+            if (!newest || state.id > newest.id) newest = state;
+        });
+        return newest;
+    }
+
     function policyFor(listenPort) {
         return "<cross-domain-policy><allow-access-from domain='" + policyDomain +
             "' to-ports='" + listenPort + "'/></cross-domain-policy>\0";
@@ -234,18 +245,37 @@ function createRelay(options) {
             return list;
         },
 
-        // Write one frame back out, NUL-framed, on the given side of an open connection.
+        // Write one frame back out, NUL-framed, on the given side of an open connection. A frame
+        // written this way is reported to onFrame like traffic from either peer: everything that
+        // crosses the relay is on the tap, whatever put it there.
         send: function (id, direction, frame) {
             const state = connections.get(id);
             if (!state) return false;
             if (direction !== 'toServer' && direction !== 'toClient') return false;
             const bytes = Buffer.isBuffer(frame) ? frame : Buffer.from(String(frame), 'utf8');
-            if (direction === 'toClient') { state.client.write(Buffer.concat([bytes, NUL])); return true; }
-            const upstream = upstreamFor(state);
-            if (!upstream) return false;   // closed between the lookup and the write
-            if (state.upstreamReady) upstream.write(Buffer.concat([bytes, NUL]));
-            else state.carry.push(bytes);
+            if (direction === 'toClient') {
+                state.client.write(Buffer.concat([bytes, NUL]));
+            } else {
+                const upstream = upstreamFor(state);
+                if (!upstream) return false;   // closed between the lookup and the write
+                if (state.upstreamReady) upstream.write(Buffer.concat([bytes, NUL]));
+                else state.carry.push(bytes);
+            }
+            onFrame({ id: state.id, direction: direction, data: bytes });
             return true;
+        },
+
+        /**
+         * Write one frame on the connection carrying the session, for a caller that was never
+         * told a connection id (res/platform/plugin-host.js gates this behind packet-send). The
+         * frame is reported to onFrame like any other traffic, so a tap watching the session sees
+         * what was injected, on the side it was injected into.
+         */
+        sendLive: function (direction, frame) {
+            if (direction !== 'toServer' && direction !== 'toClient') return false;
+            const state = liveConnection();
+            if (!state) return false;
+            return this.send(state.id, direction, frame);
         },
 
         close: function () {

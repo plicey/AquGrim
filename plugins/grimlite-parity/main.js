@@ -17,6 +17,9 @@ const botFile = require('./features/bot-file/bot-file.js');
 const bankWindow = require('./features/bank/bank-window.js');
 const setsWindow = require('./features/sets/sets-window.js');
 const logger = require('./features/packets/logger.js');
+const loaders = require('./features/loaders/loaders.js');
+const spammerWindow = require('./features/packets/spammer-window.js');
+const tampererWindow = require('./features/packets/tamperer-window.js');
 
 const resRoot = path.join(__dirname, '..', '..', 'res');
 
@@ -163,7 +166,13 @@ async function activate(host) {
     // The packet logger is this plugin's reading half of the platform tap: it subscribes, and
     // never writes a frame (that needs packet-send, which only the spammer and tamperer hold).
     logger.createLoggerFeature(host).register();
-
+    // Loaders and grabbers (#31): the reference's Tools -> Loaders/grabbers window. Its rows, its
+    // menus and its four loaders are all main-process work, because the page is sandboxed.
+    // The write half (#27): both windows send through host.packets.send (packet-send). The
+    // spammer never reads, so it needs packet-tap for nothing; the tamperer reads through the same
+    // tap the logger does, which is why it holds both permissions.
+    spammerWindow.createFromHost(host).attach();
+    tampererWindow.createFromHost(host).attach();
     // Bot files are user documents: this window opens one from the user's own directory, shows
     // it and writes the edit back through the same dialog.
     botFile.createBotFileFeature(host).attach();
@@ -177,7 +186,7 @@ async function activate(host) {
     setsWindow.createFromHost(host).attach();
     // The Bot Manager's main-process half: the sheet, the parsed document, the two dialogs and the
     // folder tree, all of which a sandboxed page cannot reach for itself.
-    require('./features/bot-manager/bot-manager.js').createBotManager({
+    const botManager = require('./features/bot-manager/bot-manager.js').createBotManager({
         host: host,
         store: host.getStore(require('./bot/display-settings.js').STORE_NAMESPACE),
         // The reference puts its Bots/ folder beside the executable (Application.StartupPath); here
@@ -190,7 +199,16 @@ async function activate(host) {
         // The controls that act on the running game read through the generic bridge surface. A
         // name the stock game does not have reports the helper it waits for instead of a value.
         bridge: host.bridge
-    }).register(host);
+    });
+    botManager.register(host);
+
+    // Loaders and grabbers (#31): the reference's Tools -> Loaders/grabbers window. Its rows, its
+    // menus and its four loaders are all main-process work, because the page is sandboxed. Its
+    // "Add to both / whitelist / unbank / quest list" entries append to the Bot Manager's own
+    // lists, so they are handed that window's live document rather than a copy of it.
+    loaders.createFromHost(host, {
+        botLists: loaders.createBotLists({ bot: botManager.bot() })
+    }).attachTo(host);
 
     // The Cosmetics window (#30): a page beside the game that reads the room's players and their
     // wear through the bridge and writes one slot at a time. It holds game-bridge, which the

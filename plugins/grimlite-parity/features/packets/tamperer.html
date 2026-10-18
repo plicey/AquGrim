@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Packet Tamperer</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
+  }
+  body { display: flex; flex-direction: column; padding: 12px; box-sizing: border-box; gap: 8px; }
+  textarea {
+    font-family: Consolas, "Courier New", monospace; font-size: 12px; resize: none;
+    background: #1b1b1b; border: 1px solid #333; border-radius: 4px; padding: 6px;
+    color: #dedede; box-sizing: border-box; width: 100%;
+  }
+  textarea:focus { outline: none; border-color: #4da3ff; }
+  #send { flex: 0 0 34%; }
+  #receive { flex: 1 1 auto; }
+  #toolbar { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; flex-wrap: wrap; }
+  #toolbar label { display: flex; align-items: center; gap: 5px; color: #dcdcdc; cursor: pointer; }
+  .spacer { flex: 1 1 auto; }
+  #filterRow { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+  #filter {
+    flex: 1 1 auto; font-family: inherit; font-size: 12px; background: #1b1b1b;
+    border: 1px solid #333; border-radius: 4px; padding: 5px 8px; color: #dcdcdc;
+  }
+  #filter:focus { outline: none; border-color: #4da3ff; }
+  button {
+    font: inherit; font-size: 12px; color: #e6e6e6; background: #232323; border: 1px solid #383838;
+    border-radius: 4px; padding: 5px 10px; cursor: pointer;
+  }
+  button:hover { background: #2c2c2c; }
+  button:disabled { color: #6f6f6f; cursor: default; background: #1b1b1b; }
+  #status { flex: 0 0 auto; min-height: 17px; color: #9a9a9a; font-size: 12px; }
+  #status.err { color: #ff8e8e; }
+  #status.ok { color: #7fd08a; }
+</style>
+</head>
+<body>
+  <div id="toolbar">
+    <label><input type="checkbox" id="fromServer"> <span id="fromServerLabel">Capture from server</span></label>
+    <label><input type="checkbox" id="fromClient"> <span id="fromClientLabel">Capture from client</span></label>
+    <span class="spacer"></span>
+    <button id="clear">Clear</button>
+    <button id="toClient">Send to client</button>
+    <button id="toServer">Send to server</button>
+  </div>
+
+  <textarea id="send" spellcheck="false" placeholder="The frame to send"></textarea>
+  <textarea id="receive" readonly spellcheck="false"></textarea>
+
+  <div id="filterRow">
+    <span id="filterLabel">Filter by text</span>
+    <input id="filter" type="text">
+  </div>
+  <div id="status"></div>
+
+  <script>
+  (function () {
+    const api = window.aquastarTamperer;
+    const sendBox = document.getElementById('send');
+    const receiveBox = document.getElementById('receive');
+    const filterBox = document.getElementById('filter');
+    const status = document.getElementById('status');
+    const fromClient = document.getElementById('fromClient');
+    const fromServer = document.getElementById('fromServer');
+    let failure = '';
+
+    function switches() {
+      return { fromClient: fromClient.checked, fromServer: fromServer.checked };
+    }
+
+    function draw() {
+      document.getElementById('toServer').disabled = sendBox.value.length === 0;
+      document.getElementById('toClient').disabled = sendBox.value.length === 0;
+      document.getElementById('clear').disabled = receiveBox.value.length === 0;
+      const watching = fromClient.checked || fromServer.checked;
+      status.className = failure ? 'err' : (watching ? 'ok' : '');
+      status.textContent = failure || (watching
+        ? 'Capturing ' + (fromClient.checked ? 'client' : '') +
+          (fromClient.checked && fromServer.checked ? ' and ' : '') +
+          (fromServer.checked ? 'server' : '') + ' traffic.'
+        : 'Tick a capture switch to watch one side of the session.');
+    }
+
+    // Each tick of a switch goes to the main process, which subscribes the tap while either is on
+    // and gates each direction itself: the reference hooks one callback per checkbox.
+    async function applySwitches() {
+      const wanted = switches();
+      failure = '';
+      draw();
+      try {
+        if (wanted.fromClient || wanted.fromServer) await api.watch(wanted);
+        else await api.unwatch();
+      } catch (error) {
+        failure = 'Could not read traffic: ' + ((error && error.message) || error);
+      }
+      draw();
+    }
+
+    fromClient.addEventListener('change', applySwitches);
+    fromServer.addEventListener('change', applySwitches);
+
+    api.onCapture(function (payload) {
+      receiveBox.value = payload.text;
+      receiveBox.scrollTop = receiveBox.scrollHeight;
+      draw();
+    });
+
+    filterBox.addEventListener('input', function () {
+      api.setFilter(filterBox.value);
+    });
+
+    document.getElementById('clear').addEventListener('click', async function () {
+      await api.clear();
+      receiveBox.value = '';
+      draw();
+    });
+
+    document.getElementById('toServer').addEventListener('click', async function () {
+      const answer = await api.sendToServer(sendBox.value);
+      if (!answer.sent) {
+        failure = 'Nothing was written: the client is not connected to the relay.';
+      } else {
+        failure = '';
+      }
+      draw();
+    });
+
+    document.getElementById('toClient').addEventListener('click', async function () {
+      const answer = await api.sendToClient(sendBox.value);
+      if (!answer.sent) {
+        failure = 'Nothing was written: the client is not connected to the relay.';
+      } else {
+        failure = '';
+      }
+      draw();
+    });
+
+    sendBox.addEventListener('input', draw);
+
+    api.getMessages().then(function (messages) {
+      document.title = messages.title || 'Packet Tamperer';
+      document.getElementById('fromClientLabel').textContent = messages.captureFromClient;
+      document.getElementById('fromServerLabel').textContent = messages.captureFromServer;
+      document.getElementById('filterLabel').textContent = messages.filterByText;
+      document.getElementById('toServer').textContent = messages.sendToServer;
+      document.getElementById('toClient').textContent = messages.sendToClient;
+      document.getElementById('clear').textContent = messages.clear;
+      draw();
+    });
+
+    // Opening the window reads nothing: the reference hooks its callbacks when a switch is ticked.
+    api.unwatch().catch(function () { /* nothing was watching yet */ });
+    draw();
+  })();
+  </script>
+</body>
+</html>

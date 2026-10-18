@@ -443,6 +443,10 @@ function createBotManager(deps) {
     const feature = {
         /** The parsed document's own editor, which is what the window's tests drive. */
         editor: function () { return editor; },
+        // The document the window is editing, for the other features that write into a bot's own
+        // lists (the grabbers' Add to both / whitelist / unbank and Add to quest list, #31). A
+        // getter, because loading a bot replaces the document rather than editing it in place.
+        bot: function () { return botDocument; },
         store: function () { return deps.store; },
         settings: settings,
 
