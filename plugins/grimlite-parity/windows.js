@@ -17,6 +17,8 @@ const DEVTEST_WINDOW_ID = 'grimlite-parity-devtest';
 const COSMETICS_WINDOW_ID = 'grimlite-parity-cosmetics';
 const LOGGER_WINDOW_ID = 'grimlite-parity-packet-logger';
 const LOADERS_WINDOW_ID = 'grimlite-parity-loaders';
+const SPAMMER_WINDOW_ID = 'grimlite-parity-packet-spammer';
+const TAMPERER_WINDOW_ID = 'grimlite-parity-packet-tamperer';
 const BOT_MANAGER_WINDOW_ID = 'grimlite-parity-bot-manager';
 
 // Every one of these is a page inside this plugin: no Flash, no Node in the page, and IPC
@@ -152,6 +154,24 @@ function register(host, windowTitle) {
             config: windowConfig(host, 'loaders', 'preload_loaders.js', { width: 271, height: 367 })
         },
         {
+            // PacketSpammer.Designer.cs is 348x242: a short list, a text box and the nine controls.
+            id: SPAMMER_WINDOW_ID,
+            title: function () {
+                return windowTitle('packetSpammer', 'Packet spammer');
+            },
+            url: pageUrl('packets', 'spammer.html'),
+            config: windowConfig(host, 'packets', 'preload_spammer.js', { width: 420, height: 400 })
+        },
+        {
+            // PacketTamperer.Designer.cs is 561x492: two rich boxes, the four buttons and the filter.
+            id: TAMPERER_WINDOW_ID,
+            title: function () {
+                return windowTitle('packetTamperer', 'Packet Tamperer');
+            },
+            url: pageUrl('packets', 'tamperer.html'),
+            config: windowConfig(host, 'packets', 'preload_tamperer.js', { width: 640, height: 520 })
+        },
+        {
             // The editor: the reference's own window is the widest of them, because the eleven tabs
             // and the six lists share the form (BotManager.Designer.cs is 1004x631).
             id: BOT_MANAGER_WINDOW_ID,
@@ -181,5 +201,7 @@ module.exports = {
     ABOUT_WINDOW_ID: ABOUT_WINDOW_ID,
     LOGGER_WINDOW_ID: LOGGER_WINDOW_ID,
     LOADERS_WINDOW_ID: LOADERS_WINDOW_ID,
+    SPAMMER_WINDOW_ID: SPAMMER_WINDOW_ID,
+    TAMPERER_WINDOW_ID: TAMPERER_WINDOW_ID,
     BOT_MANAGER_WINDOW_ID: BOT_MANAGER_WINDOW_ID
 };

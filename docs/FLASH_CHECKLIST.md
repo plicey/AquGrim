@@ -149,6 +149,78 @@ opt-in is on (and the window says so if you press Start without it).
 
 ---
 
+## Packet spammer and tamperer (ticket #27) - needs a display, the network and an account
+
+Same active plugin and the same **Settings → Packets → Steer game traffic through a local relay**
+opt-in as the logger above: these two windows write through the relay, so with steering off their
+Send actions report that nothing was written instead of pretending.
+
+**Packet spammer** (Packets → Spammer):
+
+- [ ] The window is titled **Packet spammer** and carries the reference's own nine controls: the
+      list, the packet box, **Add**, **Remove**, **Clear**, **Load**, **Save**, the delay spinner,
+      **Send once**, **Stop** and **Start**
+- [ ] The delay spinner starts at 1000 and refuses to go below 100 or above 61000
+- [ ] Type a frame and press Add (or Enter): it joins the list; **Remove** deletes the row that is
+      selected, and does nothing with none selected
+- [ ] **Save** opens a native dialog titled *Save spammer file*, filtered `*.xml`, starting in
+      `%AppData%/AquaStar/Spammer`; a name with no extension is saved as `.xml`
+- [ ] Open the saved file in a text editor: one line, `<autoer>`, one `<packet>` per row, then
+      `<author>Author</author>` and `<spamspeed>` - the reference's own shape
+- [ ] **Load** reads it back with the same packets and the same delay in the spinner
+- [ ] Load a spammer file that came from a **reference** client (or a guide): the packets load and
+      the listed speed arrives in the spinner
+- [ ] **Start**: the selected row walks the list in order, one frame per delay, wrapping at the end
+      (sign in and watch the game react, or watch Packets → Sniffer in a second window)
+- [ ] While it runs, **Add / Remove / Clear / Load** are dead, and **Stop** is live
+- [ ] **Stop** stops it: no further frames arrive, and the counter stops climbing
+- [ ] **Send once** writes the text box exactly once and does not start the loop
+- [ ] With the game window closed (or steering off), **Start** and **Send once** report that the
+      frame was not written - they do not look like they worked
+- [ ] Every frame the spammer sends shows up in Packets → Sniffer, on the **Client** side, once
+
+**Packet Tamperer** (Packets → Tamperer):
+
+- [ ] The window is titled **Packet Tamperer** with two checkboxes (**Capture from client**,
+      **Capture from server**), the send box above the receive box, the **Filter by text** box and
+      **Send to client / Send to server / Clear**
+- [ ] Both switches start **clear of ticks**, and the receive box stays empty until one is ticked
+- [ ] Tick only **Capture from client** and sign in: client frames appear as `From client: ...`
+      lines, one per line with a blank line after each, and no server frames appear
+- [ ] Untick it and tick only **Capture from server**: server frames appear as `From server: ...`
+      and the client frames that already arrived are still there
+- [ ] Tick both: both directions appear in the order they happened
+- [ ] Untick both: capture stops (nothing new arrives) while everything captured stays on screen
+- [ ] Type in **Filter by text**: only the matching lines are shown, case-insensitively; clear it
+      and every captured line is still there (nothing was dropped)
+- [ ] **Clear** empties the receive box and leaves the two switches where you put them
+- [ ] Type an edited frame in the send box and press **Send to server**: the game acts on it, and a
+      Sniffer window shows it on the **Client** side
+- [ ] Press **Send to client**: the client receives it, and Sniffer shows it on the **Server** side
+- [ ] With both buttons and an empty send box: both are dead, as in the reference
+- [ ] Close the tamperer window while capturing: the Sniffer keeps working, and reopening the
+      tamperer starts with both switches clear again
+
+### What could not be checked here, and why
+
+The spammer's and tamperer's sending has never been run against a live client from this machine:
+there is no display, no account session and no relay steering in the test environment. What the
+tests do cover is the whole data path over real sockets - a rewritten login response pointing at
+the relay, a client socket, the relay's forwarding, and the injected frame arriving NUL-framed on
+the right side and showing up on the tap afterwards.
+
+Two behaviours a human has to judge:
+
+- whether a frame injected with **Send to client** is accepted by the game's own client code
+  (the reference does this through `sendClientPacket` in its private loader, which this port does
+  not run; here the frame goes back down the socket the server itself would have spoken on).
+- whether the reference's own file loader round-trips a file *this port* wrote with the same delay
+  - its reader compares the literal string `"spamspeed"` against a digits test, so it resets its
+  spinner to 2000 whatever the file says. The port's reader takes the file's value (see the note
+  in `features/packets/spammer.js`).
+
+---
+
 ## Grimlite Parity — Bank and Sets (ticket #29) — needs the real game and dialogs
 
 **Blocked on the bridge growing the reference loader's call surface.** The bridge (#28, merged)

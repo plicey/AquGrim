@@ -47,6 +47,25 @@ ok(
   'parity bot file page'
 );
 ok(fs.existsSync(path.join(parity, 'bot', 'bots.js')), 'parity bot file reader/writer');
+
+// The packet spammer and tamperer (ticket #27): a page and a sandboxed preload each, plus the
+// file the spammer round-trips.
+['spammer', 'tamperer'].forEach(function (tool) {
+  ok(fs.existsSync(path.join(parity, 'features', 'packets', tool + '.html')),
+    'parity ' + tool + ' page');
+  const source = fs.readFileSync(
+    path.join(parity, 'features', 'packets', 'preload_' + tool + '.js'), 'utf8');
+  ok(source.indexOf("require('electron')") !== -1, tool + ' preload requires electron');
+  ok(source.indexOf("require('../../") === -1, tool + ' preload requires nothing project-local');
+});
+const spammerXml = require(path.join(parity, 'features', 'packets', 'spammer.js'));
+const spammerFile = spammerXml.parseFile(
+  fs.readFileSync(path.join(root, 'test', 'fixtures', 'grimlite-spammer', 'elsewhere.xml'), 'utf8'));
+ok(spammerFile.ok && spammerFile.packets.length === 3,
+  'a spammer file authored elsewhere loads its packet list');
+ok(spammerXml.parseFile(spammerXml.serializeFile({ packets: spammerFile.packets,
+  delay: spammerFile.delay })).delay === spammerFile.delay,
+  'a spammer file round-trips its list and delay');
 ok(
   fs.existsSync(path.join(parity, 'features', 'bank', 'bank.html')),
   'parity bank page'
