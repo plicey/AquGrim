@@ -135,3 +135,31 @@ This is login-and-report, not build-and-debug. Step 4 is the only step that can 
 - **`--synth` is a workaround, not fidelity.** It replaces a 404 from a flaky upstream endpoint with a captured body; the run that proves the boot was the no-synth one, but a future run against a broken `gameversion` needs it or will show a loader error that is upstream's fault, not the gateway's.
 - **3xx responses are followed server-side**, which suits this spike because the goal is that the client never leaves `127.0.0.1`. The app can only `redirectURL` a request; it cannot edit a response and cannot follow a redirect for Flash, so #8's real implementation has to decide where that difference matters.
 - **Not tested:** Ruffle's path, the `.aq.com` UA policy, the ad-block rules, and same-origin `ApplicationDomain` loading (#7) from this origin. The last is the follow-up that would turn this gateway into #8's bridge host.
+
+## 9. Addendum: the fake-login probe (AFK, 2026-10-18)
+
+Edited the scratch gateway and harness to answer `/game/api/login/now` with a synthetic success
+(`--fake-login=1`, `--fake-login-body=<file>`), so the post-login flow can be driven without an
+account. Driven over the DevTools protocol (`--debug-port`).
+
+**Result: the account gate is passable, and the client reaches a screen no earlier run could.**
+
+| Step | Outcome |
+|------|---------|
+| `POST /game/api/login/now` answered `{"bSuccess":1,...}` through the local origin | Accepted. The client stops showing the rejection and moves on. |
+| Client renders **Select a Server** ("aqspike, please select a server.") | Reached, reproducibly, with a 347-byte synthetic body |
+| Client requests `api/data/servers` | **No.** Four runs, no request, with either the minimal or the full 16-field response |
+| Relay connection | **No.** Still zero, so #15's second half stays unproven |
+
+**What this narrows.** The socket connect is not blocked by the login *step* alone - a synthetic
+success passes it - it is blocked by whatever the client does between accepting `bSuccess` and
+fetching the server list. The server screen it renders is a placeholder ("Galanoth", FULL, red
+crossed-out icon, "999,999 Players Adventuring Now") that appears without any list request, so the
+client is waiting on something the fake response does not carry. Whether that is a token field, a
+later call in the same response, or a GET the client only issues for a real session is the next
+question, and it is answerable the same way: extend `fake-login-body` and re-run.
+
+**Files.** `gateway.js` (`--fake-login`, `--fake-login-body`, `/__control?fakeLogin=1`) and
+`harness.js` (`--fake-login`, `--fake-login-body`, `--debug-port`) are changed; `selftest.js`
+still passes. The probe is deliberately opt-in and never on for a real run.
+

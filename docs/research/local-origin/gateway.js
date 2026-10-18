@@ -106,6 +106,12 @@ function createGateway(opts) {
     const entries = [];
     const counters = Object.create(null);
     const controls = { synth: !!opts.synth, paused: false };
+    // --fake-login: answer api/login/now with a synthetic success so a run can reach the
+    // server list and the socket without an account. Probing only; never ship this.
+    controls.fakeLogin = !!opts.fakeLogin;
+    // A file lets a human iterate on the response shape without editing this scratch file.
+    const FAKE_LOGIN = opts.fakeLoginBody ? fs.readFileSync(opts.fakeLoginBody, 'utf8')
+        : JSON.stringify({ bSuccess: 1, sMsg: '', sToken: 'spike' });
 
     function record(entry) {
         entries.push(entry);
@@ -132,6 +138,20 @@ function createGateway(opts) {
         record(Object.assign({ method: 'GET', status: 200, bytes: body.length, local: true }, meta));
         res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store' });
         res.end(body);
+    }
+
+    // The client only needs bSuccess to move past the account step; every later request is
+    // proxied normally, so a wrong shape shows up as a client-side parse failure, not silence.
+    function sendFakeLogin(req, res, path) {
+        const chunks = [];
+        req.on('data', function (c) { chunks.push(c); });
+        req.on('end', function () {
+            const body = Buffer.from(FAKE_LOGIN);
+            record({ method: 'POST', path: path, status: 200, bytes: body.length, local: true,
+                bodyBytes: Buffer.concat(chunks).length, note: 'FAKE login success' });
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+            res.end(body);
+        });
     }
 
     // The WAF in front of game.aq.com answers 403 to bare requests: it wants an Accept
@@ -285,6 +305,7 @@ function createGateway(opts) {
         if (pathname === '/__control') {
             if (u.searchParams.get('synth') !== null) controls.synth = u.searchParams.get('synth') === '1';
             if (u.searchParams.get('pause') !== null) controls.paused = u.searchParams.get('pause') === '1';
+            if (u.searchParams.get('fakeLogin') !== null) controls.fakeLogin = u.searchParams.get('fakeLogin') === '1';
             res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
             res.end(JSON.stringify(controls));
             return;
@@ -308,6 +329,10 @@ function createGateway(opts) {
         }
         if (opts.wrapper && pathname === '/wrapper.html') {
             sendLocal(res, fs.readFileSync(opts.wrapper), MIME['.html'], { path: pathname });
+            return;
+        }
+        if (controls.fakeLogin && req.method === 'POST' && /\/api\/login\/now$/.test(pathname)) {
+            sendFakeLogin(req, res, pathname + u.search);
             return;
         }
         if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'POST') {
@@ -360,7 +385,9 @@ if (require.main === module) {
         userAgent: args.userAgent || null,
         wrapper: args.wrapper ? path.resolve(args.wrapper) : null,
         rewrite: args.rewrite ? { host: '127.0.0.1', port: Number(args.rewrite) } : null,
-        steer: args.rewrite ? args.steer !== '0' : false
+        steer: args.rewrite ? args.steer !== '0' : false,
+        fakeLogin: !!args.fakeLogin,
+        fakeLoginBody: args.fakeLoginBody || null
     });
     gw.start().then(function (origin) {
         console.log('[gw] listening on ' + origin + (args.synth ? ' (--synth)' : ''));

@@ -6,6 +6,8 @@
 // Flags: --gw=<port> gateway port, --relay=<port> local TCP relay, --relay-target=host:port,
 //        --wait=<ms> observation window, --shots=<n>, --synth=0 to stop synthesising
 //        gameversion, --swf=<path> entry SWF, --wmode=direct|opaque, --no-gpu, --out=<dir>.
+//        --fake-login=1 answers api/login/now with a synthetic success, to prove the
+//        post-login flow without an account (never for a real run).
 
 const { app, BrowserWindow, session, ipcMain } = require('electron');
 const path = require('path');
@@ -43,6 +45,9 @@ app.commandLine.appendSwitch('ppapi-flash-version', '34.0.0.137');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
+// --debug-port=<n> opens the DevTools protocol so drive-probe.js can type into the login
+// form without a human (xdotool is absent on this machine).
+if (args.debugPort) app.commandLine.appendSwitch('remote-debugging-port', String(args.debugPort));
 if (!USE_GPU) {
     app.commandLine.appendSwitch('disable-gpu');
     app.commandLine.appendSwitch('disable-gpu-compositing');
@@ -80,6 +85,8 @@ app.whenReady().then(async function () {
     const gw = createGateway({
         port: GW_PORT,
         synth: SYNTH,
+        fakeLogin: args.fakeLogin === '1' || args.fakeLogin === true,
+        fakeLoginBody: args.fakeLoginBody ? path.resolve(args.fakeLoginBody) : null,
         logFile: path.join(OUT, 'gateway.jsonl'),
         userAgent: args.ua || null,
         wrapper: path.join(__dirname, 'wrapper.html'),
