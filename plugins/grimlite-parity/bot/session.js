@@ -149,8 +149,9 @@ const LOADER_BODIES = {
         body: 'the reference loader keeps this list itself, fed by the game own dropItem frames ' +
             '(Flash.cs HandlerDropItem); no game path answers it',
         reason: 'the reference keeps this list itself, filled from the game own dropItem frames ' +
-            '(HandlerDropItem / Flash.cs), so there is no game path to read it from; ticket #33 ' +
-            'owns the drop list'
+            '(HandlerDropItem / Flash.cs), so no game path answers it, and this client own list is ' +
+            'the drop window own (ticket #33): it is fed by the packet tap only while that window ' +
+            'is watching, which a bot session cannot reach'
     }
 };
 
@@ -449,8 +450,10 @@ function createSession(deps) {
         /**
          * The dropped items. The reference's own DropStack, filled from the game's dropItem frames
          * (HandlerDropItem / Flash.cs), so there is no game path to read it from and the surface
-         * has no row for it: this refuses with where the list would come from rather than letting a
-         * "has dropped" statement answer a confident no.
+         * has no row for it. This client's own list is the drop window's (#33), fed by the packet
+         * tap only while that window watches, so it is not a read this session can make: the
+         * refusal says where the list lives rather than letting a "has dropped" statement answer a
+         * confident no.
          */
         dropStack: function () {
             return Promise.reject(refusal(LOADER_BODIES.DropStack.reason));
