@@ -11,6 +11,7 @@ let instancesApi = null;
 let constantApi = null;
 let BrowserWindowApi = null;
 let createOriginProxyApi = null;
+let settingsApi = null;
 let gameOriginProxy = null;
 let gameOriginBaseUrl = '';
 
@@ -29,6 +30,17 @@ function setDependencies(deps) {
     if (deps.constant) constantApi = deps.constant;
     if (deps.BrowserWindow) BrowserWindowApi = deps.BrowserWindow;
     if (deps.createOriginProxy) createOriginProxyApi = deps.createOriginProxy;
+    if (deps.settings) settingsApi = deps.settings;
+}
+
+/** Current platform settings (renderMode, ...); read live, the user can change them. */
+function currentSettings() {
+    if (typeof settingsApi === 'function') return settingsApi() || {};
+    try {
+        return require('../keybindings.js').keybinds || {};
+    } catch (e) {
+        return {};
+    }
 }
 
 /**
@@ -156,6 +168,9 @@ function getPrimaryUrl() {
     const primary = getPrimaryGame();
     if (primary && typeof primary.getUrl === 'function') {
         const url = primary.getUrl();
+        // Ruffle loads the game into a file:// page, where a loopback URL is a cross-origin
+        // fetch that page cannot make - the origin is a PPAPI mechanism only.
+        if (currentSettings().renderMode === 'ruffle') return url;
         // The plugin may know its hosts are not a plain mirror; ask it before assuming.
         if (typeof primary.toServeFromOrigin === 'function') {
             return primary.toServeFromOrigin(url, gameOriginBaseUrl);

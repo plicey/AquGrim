@@ -13,6 +13,58 @@ function fakeHost(state, pluginRoot) {
   };
 }
 
+test('Ruffle render mode keeps the live game URL: the origin is a PPAPI mechanism', async function () {
+  runtime.clear();
+  let renderMode = 'flash';
+  runtime.setDependencies({
+    instances: { newBrowserWindow: function () { return {}; } },
+    settings: function () {
+      return { renderMode: renderMode };
+    },
+    constant: { customSwfUrl: '', activeCustomSwfPath: '' },
+    createOriginProxy: function () {
+      return {
+        listen: function () {
+          return Promise.resolve('http://127.0.0.1:41000');
+        },
+        close: function () {
+          return Promise.resolve();
+        }
+      };
+    }
+  });
+  runtime.adopt(
+    fakeHost({
+      primaryGame: {
+        id: 'main',
+        getUrl: function () {
+          return 'https://game.example/game/gamefiles/Loader4.swf?ver=b';
+        },
+        isGameUrl: function () {
+          return true;
+        }
+      },
+      launches: [],
+      gameOrigin: { routes: [{ prefix: '/', origin: 'https://game.example' }] },
+      trustedFlashUrls: [],
+      keybinds: [],
+      keybindDefaults: {},
+      featureWindows: []
+    }),
+    { id: 'sample' }
+  );
+  await runtime.startGameOrigin();
+  assert.strictEqual(
+    runtime.getPrimaryUrl(),
+    'http://127.0.0.1:41000/game/gamefiles/Loader4.swf?ver=b'
+  );
+  // Ruffle loads the SWF into a file:// page, where a loopback URL is a cross-origin fetch
+  // that page cannot make: it gets the live URL instead of a black window.
+  renderMode = 'ruffle';
+  assert.strictEqual(runtime.getPrimaryUrl(), 'https://game.example/game/gamefiles/Loader4.swf?ver=b');
+  await runtime.stopGameOrigin();
+});
+
 test('plugin-runtime starts the declared game origin and routes the game URL through it', async () => {
   runtime.clear();
   const started = [];
@@ -30,6 +82,9 @@ test('plugin-runtime starts the declared game origin and routes the game URL thr
       setSwfWrapperBase: function (base) {
         wrapperBases.push(base);
       }
+    },
+    settings: function () {
+      return {};
     },
     createOriginProxy: function (opts) {
       started.push(opts);
