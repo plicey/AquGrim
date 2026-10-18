@@ -37,6 +37,7 @@ const maidWindow = require('./features/maid/maid-window.js');
 const { createHotkeys } = require('./features/hotkeys/hotkeys.js');
 const { createHotkeysWindow } = require('./features/hotkeys/hotkeys-window.js');
 const { createGameCalls } = require('./game-calls.js');
+const chromeFeature = require('./features/chrome/chrome.js');
 
 const BRIDGE_TITLE = 'AquaStar - Grimlite Parity';
 
@@ -416,6 +417,31 @@ async function activate(host) {
 
     host.registerLocales({
         'en-US': require('./locales/en-US.js')
+    });
+
+    // The in-game chrome strip (ticket #45): the reference's own toolbar above the Flash surface.
+    // The platform owns the strip's box, its height and the window geometry that goes with it
+    // (res/windows/game-chrome.js); what is declared here is the game-specific half - the six
+    // controls, their words and what each one does - because the platform names no game.
+    //
+    // Start Bot runs the document the Bot Manager holds through the same per-window engine the Bot
+    // Manager's own tick drives (#36), so the three refusals are the engine's own words (#37) and
+    // the strip never re-implements a check the engine already makes.
+    const chrome = chromeFeature.createFromHost(host, {
+        runtime: runtime,
+        windowKey: gameWindowKey,
+        bot: function () { return botManager.bot(); },
+        // Read live: this plugin's catalog is merged into the platform's after activate().
+        messages: function () { return host.getLocaleStrings('chromeMessages') || {}; },
+        openWindow: function (id) { return host.windows.openFeatureWindow(id); },
+        log: function (line) { host.log('chrome: ' + line); }
+    });
+    host.registerGameChrome({
+        height: chromeFeature.HEIGHT,
+        controls: function () { return chrome.controls(); },
+        state: function () { return chrome.state(); },
+        action: function (id, args) { return chrome.action(id, args); },
+        menuLabel: function () { return (host.getLocaleStrings('chromeMessages') || {}).menu || 'Game chrome'; }
     });
 
     // The three windows: each owns its own main-process module (a page plus a sandbox-safe

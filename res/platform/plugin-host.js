@@ -40,6 +40,7 @@ function createPluginHost(options) {
 
     const state = {
         primaryGame: null,
+        gameChrome: null,
         gameOrigin: null,
         launches: [],
         sessionRules: [],
@@ -434,6 +435,64 @@ function createPluginHost(options) {
                 throw new Error('[AquaStar:plugins] setPrimaryGame requires isGameUrl()');
             }
             state.primaryGame = cfg;
+        },
+
+        /**
+         * Declare the controls the game window's chrome strip carries (ticket #45). The platform
+         * owns the strip: its height, the window geometry it implies, and the page that draws it.
+         * What is declared here is the game-specific half - the controls, their labels, and what
+         * each one does - because the platform names no game.
+         *
+         * @param {{height: number, controls: Function, state: Function, action: Function,
+         *          menuLabel?: Function}} declaration
+         */
+        registerGameChrome: function (declaration) {
+            if (!declaration || typeof declaration !== 'object' || Array.isArray(declaration)) {
+                throw new Error('[AquaStar:plugins] registerGameChrome expects a declaration object');
+            }
+            if (!(Number(declaration.height) > 0)) {
+                throw new Error('[AquaStar:plugins] registerGameChrome needs a positive height: ' +
+                    'the strip is what the game surface gives up');
+            }
+            if (typeof declaration.controls !== 'function') {
+                throw new Error('[AquaStar:plugins] registerGameChrome expects controls()');
+            }
+            if (typeof declaration.state !== 'function') {
+                throw new Error('[AquaStar:plugins] registerGameChrome expects state()');
+            }
+            if (typeof declaration.action !== 'function') {
+                throw new Error('[AquaStar:plugins] registerGameChrome expects action(id, args)');
+            }
+            if (declaration.menuLabel != null && typeof declaration.menuLabel !== 'function') {
+                throw new Error('[AquaStar:plugins] registerGameChrome menuLabel must be a function');
+            }
+            const controls = declaration.controls();
+            if (!Array.isArray(controls) || !controls.length) {
+                throw new Error('[AquaStar:plugins] registerGameChrome needs at least one control');
+            }
+            const seen = {};
+            controls.forEach(function (control) {
+                if (!control || typeof control.id !== 'string' || !control.id) {
+                    throw new Error('[AquaStar:plugins] registerGameChrome control needs an id');
+                }
+                // A picker may carry no text of its own - the reference's two list boxes have
+                // none, and their options are their labels. A button or a tick is its caption,
+                // so one of those with no label is a control that cannot be used and is refused.
+                if (typeof control.label !== 'string') {
+                    throw new Error('[AquaStar:plugins] registerGameChrome control "' + control.id +
+                        '" needs a label (an empty string is allowed for a picker)');
+                }
+                if (!control.label && control.kind !== 'select') {
+                    throw new Error('[AquaStar:plugins] registerGameChrome control "' + control.id +
+                        '" needs a label');
+                }
+                if (seen[control.id]) {
+                    throw new Error('[AquaStar:plugins] Duplicate chrome control id "' +
+                        control.id + '" in plugin "' + pluginId + '"');
+                }
+                seen[control.id] = true;
+            });
+            state.gameChrome = declaration;
         },
 
         /**

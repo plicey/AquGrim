@@ -5,10 +5,29 @@
 
 <style>
   html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#000; }
+  body { display:flex; flex-direction:column; }
+  /* The chrome strip is a sibling of the surface, not a layer over it: the surface fills what is
+     left, which is the layout change and not a new compositing capability (ticket #45). */
+  #chrome {
+    flex:0 0 auto; display:none; width:100%; box-sizing:border-box; overflow:hidden;
+    align-items:center; gap:8px; padding:0 4px;
+    /* The reference's own dark toolstrip colours (Root.cs's DarkUI theme). */
+    background:#1e1e24; color:#c8c8c8; font:12px system-ui, sans-serif; white-space:nowrap;
+  }
+  /* A control must fit the strip's own height: the reference's are 17 to 23 px on a 27 px bar. */
+  #chrome select, #chrome button, #chrome input { font:inherit; height:21px; box-sizing:border-box; }
+  #chrome label { display:inline-flex; align-items:center; gap:4px; cursor:pointer; }
+  #chrome select, #chrome button {
+    background:#272727; color:#c8c8c8; border:1px solid #3a3a44; border-radius:2px;
+  }
+  #chrome span.status { margin-left:auto; overflow:hidden; text-overflow:ellipsis; }
+  #stage { flex:1 1 auto; position:relative; min-height:0; }
   object { display:block; width:100%; height:100%; border:none; outline:none; }
 </style>
 </head>
 <body>
+<div id="chrome" role="toolbar"></div>
+<div id="stage"></div>
 <script>
   (function() {
     var params = new URLSearchParams(window.location.search);
@@ -53,7 +72,102 @@
       obj.appendChild(el);
     });
 
-    document.body.appendChild(obj);
+    document.getElementById('stage').appendChild(obj);
+
+    // The chrome strip (ticket #45). The page knows nothing about a game: the platform answers
+    // what to draw, from whatever the active plugin declared, and reports back what was pressed.
+    // A page whose window has no strip - or a build with no chrome API at all - leaves the
+    // surface filling the page, which is the layout this wrapper had before this ticket.
+    var api = window.aquastarChrome;
+    if (!api || typeof api.getView !== 'function') return;
+
+    var strip = document.getElementById('chrome');
+    var current = null;
+
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined && text !== null) node.textContent = String(text);
+      return node;
+    }
+
+    function send(id, args) {
+      Promise.resolve(api.action(id, args || {})).then(function (result) {
+        if (result && result.view) draw(result.view);
+        // The strip's own words for the last press: a refusal is what the user needs to see, and a
+        // press that worked says nothing rather than leaving the previous refusal on screen.
+        show(result && result.error ? result.error : '');
+      }, function (error) {
+        show(String(error && error.message ? error.message : error));
+      });
+    }
+
+    function show(text) {
+      var box = document.getElementById('chromeStatus');
+      if (box) box.textContent = text;
+    }
+
+    /** One control, drawn from its kind. Every one reports what it is; none is a dead button. */
+    function control(entry, view) {
+      var value = view.values ? view.values[entry.id] : undefined;
+      if (entry.kind === 'select') {
+        var select = el('select');
+        select.id = 'chrome-' + entry.id;
+        var options = (view.options && view.options[entry.id]) || [];
+        options.forEach(function (option) {
+          var one = el('option', null, option);
+          one.value = option;
+          if (String(option) === String(value)) one.selected = true;
+          select.appendChild(one);
+        });
+        select.addEventListener('change', function () {
+          send(entry.id, { value: select.value });
+        });
+        return select;
+      }
+      if (entry.kind === 'check') {
+        var label = el('label');
+        var box = el('input');
+        box.type = 'checkbox';
+        box.id = 'chrome-' + entry.id;
+        box.checked = value === true;
+        box.addEventListener('change', function () {
+          send(entry.id, { checked: box.checked });
+        });
+        label.appendChild(box);
+        label.appendChild(el('span', null, entry.label));
+        return label;
+      }
+      var button = el('button', null, entry.label);
+      button.id = 'chrome-' + entry.id;
+      button.addEventListener('click', function () { send(entry.id, {}); });
+      return button;
+    }
+
+    function draw(view) {
+      current = view;
+      // The strip is hidden and the surface keeps the whole page: that is the no-chrome mode the
+      // screenshot and recording paths size their capture from.
+      strip.style.display = view && view.enabled ? 'flex' : 'none';
+      strip.style.height = view && view.enabled ? (view.height + 'px') : '0';
+      while (strip.firstChild) strip.removeChild(strip.firstChild);
+      if (!view || !view.enabled) return;
+      (view.controls || []).forEach(function (entry) {
+        strip.appendChild(control(entry, view));
+      });
+      strip.appendChild(el('span', 'status', view.error || ''));
+      strip.lastChild.id = 'chromeStatus';
+    }
+
+    if (typeof api.onView === 'function') {
+      api.onView(function (view) { draw(view); });
+    }
+    Promise.resolve(api.getView()).then(draw, function (error) {
+      // No strip is the safe answer: a page that cannot read the layout fills itself with game.
+      current = null;
+      strip.style.display = 'none';
+      show(String(error && error.message ? error.message : error));
+    });
   })();
 </script>
 </body>

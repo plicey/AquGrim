@@ -28,6 +28,10 @@ const flash         = require('./res/flash.js');
 const keyb          = require('./res/keybindings.js');
 // Platform IPC (always registered from main — never by plugins).
 const ipcRecording  = require('./res/ipc/recording.js');
+// The game window's chrome strip IPC (ticket #45): the platform's own wrapper page asks for the
+// strip it must draw and reports the controls the user pressed. Bare, like this module: it
+// registers its handlers on require and nothing here calls it afterwards.
+require('./res/ipc/game-chrome.js');
 const inst          = require('./res/instances.js');
 const windowsMenu   = require('./res/windows/menu.js');
 const socketProxy   = require('./res/socketProxy.js');

@@ -339,3 +339,36 @@ entries the Sets dialog reads, because this build has no handle on the reference
 the equip and combat loops are bounded where the reference's are unbounded, so a window that went
 away mid-command reports what it saw rather than spinning the app.
 
+## The in-game chrome strip (ticket #45)
+
+`features/chrome/chrome.js` is the reference's own toolbar - `splitContainer1`, 27 px, above the
+Flash panel (`Root.cs:620`) - as the six controls it draws, in its own order and with its own
+words: Start Bot, Auto Attack, the pad and cell pickers, the **x** refresh control and Bank. The
+pad list is the reference's own eight cells (`Root.cs:691`-`699`).
+
+The strip's box, its height, the window geometry that goes with it and the page that draws it are
+the **platform's** (`res/windows/game-chrome.js`, `res/swf_wrapper.html`), because the platform
+names no game: this module is the game-specific half, handed over through
+`host.registerGameChrome`. The strip is HTML above the surface inside the wrapper the game SWF
+already loads through, which is a layout change rather than a second window.
+
+Three things this module deliberately does not do:
+
+- **It re-implements none of Start Bot's three refusals.** An empty command list, nobody signed in
+  and a bot already running are the engine's own conditions (#37), so the strip hands the press to
+  the same per-window runtime the Bot Manager's Enable tick drives and shows the engine's own
+  sentence back. A second wording here would be a second thing to keep true.
+- **It spells no game path.** Every read and every call is a member of the session the bot runs
+  against (`bot/session.js`), and each of those is a loader name the surface (#48) owns. The two
+  casts (`UseSkill`, `ForceUseSkill`) went from refused to answered in ticket #49 without a line
+  changing here, which is the point of asking for the name rather than for a path; a cast the game
+  refuses is reported on the strip and the rotation continues, which is what the reference's own
+  loop does with a cast it cannot complete.
+- **It never invents a value.** A read that cannot be established is reported beside the boxes it
+  could not fill, rather than answered with a zero or an empty list that would look like real game
+  state.
+
+The Game-menu entry that hides and restores the strip is the same toggle as the reference's own
+"Change Launcher Skin" action (`Root.cs:1750`-`1768`, `Hotkeys.cs:405`-`408`), which hides the
+menu bar and the whole toolbar and drops the window's height by the same amount. It is checkable,
+and its checked state is the layout itself rather than what was last clicked.
