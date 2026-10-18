@@ -17,6 +17,7 @@
   "permissions": [
     "game-bridge",
     "packet-tap",
-    "packet-send"
+    "packet-send",
+    "persistent-store"
   ]
 }

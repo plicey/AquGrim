@@ -10,17 +10,34 @@ exports.dialogMessages = {
             return keyb || '';
         }
         return '' +
+            expand(k.grimliteBotFile) + '' +
             expand(k.grimliteParityPlaceholder) + '';
     }
 };
 
 exports.menuMessages = {
     grimliteMenu: "",
+    grimliteBotFile: "",
     grimlitePlaceholder: ""
+};
+
+exports.botFileMessages = {
+    title: "",
+    open: "",
+    save: "",
+    revert: "",
+    opened: "",
+    saved: "",
+    unchanged: "",
+    notABot: "",
+    openTitle: "",
+    saveTitle: "",
+    filterName: ""
 };
 
 exports.windowTitles = {
     primary: "",
+    botFile: "",
     placeholder: ""
 };
 
