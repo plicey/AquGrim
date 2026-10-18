@@ -19,6 +19,7 @@ const setsWindow = require('./features/sets/sets-window.js');
 const logger = require('./features/packets/logger.js');
 const botRuntime = require('./bot/runtime.js');
 const botSession = require('./bot/session.js');
+const itemsModel = require('./bot/items.js');
 const loaders = require('./features/loaders/loaders.js');
 const spammerWindow = require('./features/packets/spammer-window.js');
 const tampererWindow = require('./features/packets/tamperer-window.js');
@@ -138,8 +139,26 @@ async function activate(host) {
     // own session, variables, ints and index: the reference is a singleton because it is
     // single-client, and spec #19 overrides that for this app.
     //
+    // The item and quest commands' own access (#39). Its two doors are the plugin's one adapter:
+    // bridge.js's loader surface for the reference loader's names and its generic callbacks for the
+    // wants no name answers. It is built per window, like the session, so a command acts on the
+    // game its bot is driving; the channel it sits on resolves the window per call, which is the
+    // same limit the runtime notes below.
+    const bridgeGame = require('./bridge.js').createGameAccess(host).botGame();
     const runtime = botRuntime.createRuntimeManager({
         createSession: function () { return botSession.createSession({ bridge: host.bridge, log: host.log }); },
+        // The frames the drop and ghost-accept paths need are a raw send through the relay, which
+        // is the same packet-send permission the packet tools hold.
+        createGame: function () {
+            return itemsModel.createAccess({
+                loaderCall: bridgeGame.helper,
+                call: bridgeGame.call,
+                sendFrame: function (direction, text) {
+                    return host.packets.send({ direction: direction, text: text });
+                },
+                log: function (line) { host.log('bot: ' + line); }
+            });
+        },
         log: function (line) { host.log('bot: ' + line); }
     });
 

@@ -212,3 +212,32 @@ the reference loader's surface.
  - **Sets** — save, list, load, clear and equip `.gset` sets (#29).
 - **Loaders/grabbers** (Alt+Shift+L) — the four loaders, the eight grabbers and their menus (#31).
  - **Parity placeholder** (Alt+Shift+G).
+
+## Item and quest commands (ticket #39)
+
+`bot/items.js` is the reference's own Item and Quest command classes - the seventeen the command
+catalog declares - in the engine's vocabulary. `bot/runtime.js` hands its handlers to each window's
+engine as a second dispatch table, so a saved bot carrying a `CmdBuy` or a `CmdAcceptQuest` runs
+them; a class the engine's own flow table already owns is left alone.
+
+Every read and write goes through one door, `createAccess`'s `ask`, and every name that door
+accepts is in one of two tables with its evidence beside it:
+
+- `LOADER_BODIES` - the names the reference loader itself registers, asked for by that name
+  through ticket #48's surface (`loader-surface.js`). A test asserts every one is on
+  `implemented()`, so a name this build cannot answer is a build failure rather than something a
+  user meets halfway through a bot.
+- `GAME_READS` - the four questions no loader name answers (the loaded shop's rows, the quest
+  value behind a slot, the game's own maximum turn-ins, the inventory tree the game files drops
+  in, and the avatar's coins). Each row records the game source that proves the path or call.
+- `OWN_ROUTES` - the three wants that are neither: `ExitCombat` and `cell refresh` are the
+  loader's own `Jump` on `Cell` and `Pad` with the reference's waits around them, and `GetDrop`
+  and `GhostAccept` are frames the reference builds by hand, sent through the packet path.
+
+Three things are deliberately not the reference's own method, and each says so where it is read:
+`CmdBuyBack` reports that the reference drives it over account.aq.com's pages (out of scope per
+spec #19, and referenced zero times in the reference's own bot corpus); `CmdEquipSet` needs the
+entries the Sets dialog reads, because this build has no handle on the reference's own folder; and
+the equip and combat loops are bounded where the reference's are unbounded, so a window that went
+away mid-command reports what it saw rather than spinning the app.
+

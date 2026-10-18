@@ -312,13 +312,64 @@ const SURFACE = {
     },
     IsAvailable: {
         compute: function (ctx, p) {
+            return questValidation(ctx, p[0]).then(function (why) { return why === ''; });
+        }
+    },
+    CanComplete: {
+        compute: function (ctx, p) {
             const id = parseInt(p[0], 10);
-            return ctx.get('world.questTree.' + id).then(function (quest) {
-                return quest !== null && quest !== undefined;
+            // The loader writes the game's own canTurnInQuest and the validation string in one
+            // &&, which short-circuits: a quest that fails validation never reaches the game
+            // call at all. Kept in that order, because the first half is the decisive one.
+            return questValidation(ctx, p[0]).then(function (why) {
+                if (why !== '') return false;
+                return ctx.call('world.canTurnInQuest', [id]).then(function (turnIn) {
+                    return truthy(turnIn);
+                });
             });
-        },
-        why: 'the loader validates the quest against achievements and required items; until that ' +
-            'is ported this answers whether the quest is known at all, which is all it can know'
+        }
+    },
+    GetQuestTree: {
+        compute: function (ctx) {
+            return ctx.get('world.questTree').then(function (tree) {
+                const keys = tree && typeof tree === 'object' ? Object.keys(tree) : [];
+                return keys.map(function (key) { return tree[key]; })
+                    .filter(function (quest) { return quest && typeof quest === 'object'; });
+            });
+        }
+    },
+    BuyItem: {
+        compute: function (ctx, p) {
+            return shopItem(ctx, p[0]).then(function (item) {
+                return ctx.call('world.sendBuyItemRequest', [item]);
+            });
+        }
+    },
+    BuyItemQty: {
+        compute: function (ctx, p) {
+            return shopItem(ctx, p[0]).then(function (item) {
+                return ctx.call('world.sendBuyItemRequestWithQuantity',
+                    [{ accept: 1, iQty: parseInt(p[1], 10), iSel: item }]);
+            });
+        }
+    },
+    BuyItemQtyById: {
+        compute: function (ctx, p) {
+            const itemId = parseInt(p[1], 10);
+            const shopItemId = parseInt(p[2], 10);
+            return ctx.get('world.shopinfo.items').then(function (items) {
+                const list = Array.isArray(items) ? items : [];
+                const item = list.filter(function (one) {
+                    return one && Number(one.ItemID) === itemId && Number(one.ShopItemID) === shopItemId;
+                })[0];
+                if (!item) {
+                    throw new Error('no shop item with item id ' + itemId + ' and shop item id ' +
+                        shopItemId + ' is in the loaded shop');
+                }
+                return ctx.call('world.sendBuyItemRequestWithQuantity',
+                    [{ accept: 1, iQty: parseInt(p[0], 10), iSel: item }]);
+            });
+        }
     },
     PlayerByName: {
         compute: function (ctx, p) {
@@ -440,17 +491,20 @@ const SURFACE = {
     IsConnMCBackButtonVisible: { why: 'the reference reads its own connection dialog control' },
     Buff: { why: 'the reference writes god-mode values onto itself; not a game call' },
     DestroyPlayers: { why: 'the reference calls destroyAvatar per live avatar object' },
-    SetEquip: { why: 'the reference swaps live equipment clips (loadMovieAtES); ticket #39 owns items' },
+    // Player.as:SetEquip writes objData.eqp[slot] and then calls loadMovieAtES on the
+    // live avatar clip. The second half is reachable (the Cosmetics window uses it) but the
+    // first is not: objData.eqp is a live object graph, and writing one slot of it through a
+    // dot-path cannot carry the entry shape the game expects. An item is worn by asking the
+    // game to wear it - world.sendEquipItemRequest, the Equip row above - which is what every
+    // equipping command in this port does.
+    SetEquip: { why: 'the reference writes a live equip entry and then swaps the clip; the ' +
+        'clip half is loadMovieAtES (reachable), the entry half is a live object graph the ' +
+        'bridge cannot carry, and world.sendEquipItemRequest is the game own way to wear it' },
     ChangeName: { why: 'the reference paints its own name plates; not a game read' },
     ChangeGuild: { why: 'the reference paints its own guild tags; not a game read' },
     ChangeAccessLevel: { why: 'the reference styles its own name plate and sets iUpgDays' },
     ChangeColorName: { why: 'the reference sets a text colour on its own name plate' },
     GetShops: { why: 'the reference keeps its own list of shops it has seen (LoadedShops)' },
-    GetQuestTree: { why: 'the reference clones each quest and reshapes it (CloneObject); ticket #39 owns quests' },
-    CanComplete: { why: 'the reference validates the quest and calls world.canTurnInQuest; ticket #39 owns quests' },
-    BuyItem: { why: 'the reference resolves a shop item by name; ticket #39 owns shops' },
-    BuyItemQty: { why: 'the reference resolves a shop item by name; ticket #39 owns shops' },
-    BuyItemQtyById: { why: 'the reference resolves a shop item by id pair; ticket #39 owns shops' },
     LoadBankItems: { why: 'the loader sends its own loadBank frame; ticket #29\'s window uses the game path' },
     MuteToggle: { why: 'the reference mutes its own chat box; not a game call' },
     UseSkill: { why: 'the reference checks readiness, walks the avatar and calls testAction; ticket #38 owns combat' },
@@ -495,6 +549,164 @@ function upper(value) {
 function index(value) {
     const n = parseInt(value, 10);
     return isFinite(n) ? String(n) : '0';
+}
+
+/**
+ * Quests.as:GetQuestValidationString, in JS: the first requirement a quest fails, as the sentence
+ * the loader writes, or the empty string when nothing fails. The loader's own checks, in its order:
+ * the daily/monthly achievement, the upgrade gate, the quest-slot progress, the level, the class
+ * points and the faction reputation. The last check - required items - is the one this port leaves
+ * to the game: it is world.canTurnInQuest's own business (World.as walks the same turnin list), and
+ * CanComplete below asks it directly rather than counting the bag a second time.
+ */
+/**
+ * Quests.as:GetQuestValidationString, in JS: the first requirement a quest fails, as the sentence
+ * the loader writes, or the empty string when nothing fails. The loader's own checks, in its own
+ * order: the daily/monthly achievement, the upgrade gate, the quest-slot progress, the level, the
+ * class points and the faction reputation. The last check - required items - is the one this port
+ * leaves to the game: it is world.canTurnInQuest's own business (World.as walks the same turnin
+ * list), and CanComplete below asks it directly rather than counting the bag a second time.
+ *
+ * The quest row is read once and then checked against, which is what the loader does with its own
+ * _loc10_ local. That matters here more than it does there: every read below is a round trip out
+ * of the renderer, and the loader's own body spends one.
+ */
+function questValidation(ctx, rawId) {
+    const id = parseInt(rawId, 10);
+    return ctx.get('world.questTree.' + id).then(function (quest) {
+        if (quest === null || quest === undefined) return 'Quest not found/loaded.';
+        const checks = [
+            // The daily/monthly achievement: sField and iIndex name the counter to read.
+            function () {
+                if (quest.sField == null || quest.iIndex == null) return null;
+                return ctx.call('world.getAchievement', [quest.sField, quest.iIndex])
+                    .then(function (value) {
+                        if (Number(value) === 0) return null;
+                        return quest.sField === 'im0'
+                            ? 'Monthly Quests are only available once per month.'
+                            : 'Daily Quests are only available once per day.';
+                    });
+            },
+            // bUpg: member-only quests, gated on the avatar's own isUpgraded().
+            function () {
+                if (!truthy(quest.bUpg)) return null;
+                return ctx.call('world.myAvatar.isUpgraded', []).then(function (upgraded) {
+                    return truthy(upgraded) ? null : 'Upgrade is required for this quest!';
+                });
+            },
+            // iSlot: a one-shot quest whose counter has not reached iValue - 1 is not unlocked.
+            function () {
+                const slot = Number(quest.iSlot);
+                if (!(slot >= 0)) return null;
+                return ctx.call('world.getQuestValue', [slot]).then(function (value) {
+                    const progress = Number(value) || 0;
+                    const wanted = (Number(quest.iValue) || 0) - 1;
+                    return progress < wanted ? 'Quest has not been unlocked!' : null;
+                });
+            },
+            // iLvl against the avatar's own level.
+            function () {
+                const level = Number(quest.iLvl) || 0;
+                if (level <= 0) return null;
+                return ctx.get('world.myAvatar.objData.intLevel').then(function (mine) {
+                    return level > (Number(mine) || 0) ? 'Unlocks at Level ' + level + '.' : null;
+                });
+            },
+            // iClass/iReqCP: class points on a specific class, reported as its rank.
+            function () {
+                const classId = Number(quest.iClass) || 0;
+                if (classId <= 0) return null;
+                return Promise.all([
+                    ctx.call('world.myAvatar.getCPByID', [classId]),
+                    questRank(ctx, Number(quest.iReqCP)),
+                    ctx.get('arrRanks')
+                ]).then(function (both) {
+                    const required = Number(quest.iReqCP) || 0;
+                    if ((Number(both[0]) || 0) >= required) return null;
+                    return rankSentence(ctx, both[1], required, both[2],
+                        String(quest.sClass || ''), ' Class Points on ');
+                });
+            },
+            // FactionID/iReqRep: reputation, reported the same way. FactionID 1 is the
+            // unaligned faction, which the game does not gate on.
+            function () {
+                const factionId = Number(quest.FactionID) || 0;
+                if (factionId <= 1) return null;
+                return Promise.all([
+                    ctx.call('world.myAvatar.getRep', [factionId]),
+                    questRank(ctx, Number(quest.iReqRep)),
+                    ctx.get('arrRanks')
+                ]).then(function (both) {
+                    const required = Number(quest.iReqRep) || 0;
+                    if ((Number(both[0]) || 0) >= required) return null;
+                    return rankSentence(ctx, both[1], required, both[2],
+                        String(quest.sFaction || ''), ' Reputation for ');
+                });
+            }
+        ];
+        // The loader returns the sentence of the first check that fails, and '' when none do.
+        return checks.reduce(function (chain, check) {
+            return chain.then(function (why) {
+                if (why) return why;
+                return check();
+            });
+        }, Promise.resolve(null)).then(function (why) { return why || ''; });
+    });
+}
+
+/**
+ * Root.Game.getRankFromPoints, asked of the game by that name rather than counted here: the
+ * reference loader calls the game's own function for both the class-point and the reputation
+ * rank, so this does too. arrRanks (the table the function indexes) is read separately, because
+ * the message the loader writes subtracts the rank's own floor from the requirement.
+ */
+function questRank(ctx, points) {
+    return ctx.call('getRankFromPoints', [points]).then(function (rank) {
+        const value = Number(rank);
+        return isFinite(value) && value > 0 ? value : 1;
+    });
+}
+
+/**
+ * The two sentences the loader writes for a rank gate, which differ only in the phrase between
+ * the shortfall and the name: "Requires 500 Class Points on Sword, Rank 3." against
+ * "Requires Sword, Rank 3." when the requirement lands exactly on the rank's own floor.
+ */
+function rankSentence(ctx, rank, required, ranks, what, phrase) {
+    const floor = Array.isArray(ranks) ? Number(ranks[rank - 1]) || 0 : 0;
+    const missing = required - floor;
+    return missing > 0
+        ? 'Requires ' + missing + phrase + what + ', Rank ' + rank + '.'
+        : 'Requires ' + what + ', Rank ' + rank + '.';
+}
+
+/**
+ * Root.Game.getRankFromPoints, asked of the game by that name rather than counted here: the
+ * reference loader calls the game's own function for both the class-point and the reputation
+ * rank, so this does too. arrRanks (the table the function indexes) is still read separately,
+ * because the message the loader writes subtracts the rank's own floor from the requirement.
+ */
+function questRank(ctx, points) {
+    return ctx.call('getRankFromPoints', [points]).then(function (rank) {
+        const value = Number(rank);
+        return isFinite(value) && value > 0 ? value : 1;
+    });
+}
+
+/**
+ * Shops.as:GetShopItem - the loaded shop's row whose sName matches, case-insensitively, or a
+ * refusal naming the item. BuyItem and BuyItemQty are both this lookup plus one game call.
+ */
+function shopItem(ctx, rawName) {
+    const want = String(rawName === null || rawName === undefined ? '' : rawName).toLowerCase();
+    return ctx.get('world.shopinfo.items').then(function (items) {
+        const list = Array.isArray(items) ? items : [];
+        for (let i = 0; i < list.length; i++) {
+            const item = list[i];
+            if (item && String(item.sName || '').toLowerCase() === want) return item;
+        }
+        throw new Error('no item named "' + rawName + '" is in the loaded shop');
+    });
 }
 
 /**

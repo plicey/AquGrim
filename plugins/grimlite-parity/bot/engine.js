@@ -133,6 +133,10 @@ function evaluate(input) {
  *
  * @param {object} deps
  * @param {object} deps.session      the injected game session (spec Seam 4); see session.js
+ * @param {object} [deps.handlers]   a second vocabulary to dispatch: the feature tickets' own
+ *                                   command classes (items and quests today), keyed the same way.
+ *                                   A key the engine already handles is left alone, so a feature
+ *                                   table can never replace the loop's own behaviour.
  * @param {(config: object) => Promise<any>} [deps.relogin]  the reference's AutoRelogin.Login
  * @param {(options: object) => Promise<any>} [deps.options] the reference's OptionsManager
  * @param {(ms: number) => Promise<void>} [deps.sleep]       pacing, injected so tests do not wait
@@ -291,6 +295,10 @@ function createEngine(deps) {
         const parsed = parseInt(String(raw), 10);
         return isNaN(parsed) ? null : parsed;
     }
+
+    // A feature ticket's own vocabulary (#38-#42), dispatched after this table. Kept apart so the
+    // loop's flow commands cannot be shadowed by a feature that happens to name one the same.
+    const extraHandlers = deps.handlers && typeof deps.handlers === 'object' ? deps.handlers : {};
 
     // The flow vocabulary this ticket owns. A class that is not here is reported by name and
     // skipped, so a bot never hangs on a command this build cannot run yet.
@@ -528,7 +536,8 @@ function createEngine(deps) {
 
         const className = catalog.classNameOf(command);
         dispatched.push({ index: at, className: className });
-        const handler = handlers[className];
+        // The engine's own flow vocabulary first, then whatever a feature ticket registered.
+        const handler = handlers[className] || extraHandlers[className];
         if (!handler) {
             log(className + ' is not implemented yet (#38-#42); skipping it');
         } else {
@@ -605,7 +614,9 @@ function createEngine(deps) {
         resolve: resolve,
         waitUntil: waitUntil,
         /** The classes this engine executes; everything else is reported by name. */
-        handlers: function () { return handlers; }
+        handlers: function () { return handlers; },
+        /** The feature vocabulary this engine was given, if any. */
+        extraHandlers: function () { return extraHandlers; }
     };
 }
 

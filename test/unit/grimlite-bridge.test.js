@@ -195,8 +195,14 @@ test('the adapter exposes only what this plugin\'s features ask for', () => {
     // surface (ticket #48) as the one other door: loaderCall for a name, loaderSurface to list
     // what it holds. Anything else added here should be a deliberate decision, which is the
     // point of pinning the list.
-    'equipItem', 'loaderCall', 'loaderSurface', 'readBankSlots', 'readInventory', 'sleep',
-    'transferToBank'
+    //
+    // botGame is that deliberate decision for ticket #39: the bot's item and quest commands run
+    // on an injected access, and this is the one shape it is built from - the loader surface's
+    // call for the reference loader's own names, and the raw channel for the wants no name
+    // answers. It is handed straight to bot/items.js, so those commands reach the game through
+    // this module rather than through a second copy of the surface's table.
+    'botGame', 'equipItem', 'loaderCall', 'loaderSurface', 'readBankSlots', 'readInventory',
+    'sleep', 'transferToBank'
   ]);
 });
 

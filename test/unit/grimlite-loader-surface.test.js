@@ -329,3 +329,142 @@ test('the surface and the options adapter agree on the names they both route', (
     assert.deepStrictEqual(refused, [],
         'these are refused by the options adapter and implemented by the surface');
 });
+
+// Ticket #39 put five more rows on the surface: the two quest reads its AcceptQuest and
+// CompleteQuest need (Quests.as:GetQuestTree, :GetQuestValidationString behind IsAvailable and
+// CanComplete) and the three shop writes its buying commands need (Shops.as:BuyItem, :BuyItemQty,
+// :BuyItemQtyById). Each expectation below is the loader body it comes from.
+
+test('GetQuestTree answers the tree as the list its loader body builds', () => {
+  // Quests.as:GetQuestTree iterates Root.Game.world.questTree, clones each quest and pushes it,
+  // so the answer is the tree's values as a list - the shape GetQuestTree returns in C#.
+  const task = { QuestID: 31, sName: 'A task' };
+  const bridge = fakeBridge({ 'world.questTree': { '31': task } }, {});
+  const game = access(bridge);
+  return game.call('GetQuestTree', []).then((tree) => {
+    assert.deepStrictEqual(tree, [task], 'the tree keyed by id, as a list');
+    assert.deepStrictEqual(bridge.asked, ['world.questTree']);
+  });
+});
+
+test('IsAvailable answers the validation string emptiness, which is its own loader body', () => {
+  // Quests.as:IsAvailable is GetQuestValidationString(id) == "" - so a quest that fails a check
+  // is not available, and one the tree does not hold is 'Quest not found/loaded.'
+  const bridge = fakeBridge({
+    'world.questTree.31': { QuestID: 31, iSlot: -1, iLvl: 0, iClass: 0, FactionID: 0 },
+    'world.myAvatar.objData.intLevel': 10
+  }, {});
+  const game = access(bridge);
+  return game.call('IsAvailable', ['31']).then((available) => {
+    assert.strictEqual(available, true, 'nothing fails, so the string is empty');
+  }).then(() => {
+    const missing = access(fakeBridge({ 'world.questTree.99': null }, {}));
+    return missing.call('IsAvailable', ['99']).then((available) => {
+      assert.strictEqual(available, false, 'a quest the tree does not hold is not available');
+    });
+  });
+});
+
+test('CanComplete is the validation string and the game own world.canTurnInQuest, both', () => {
+  // Quests.as:CanComplete is world.canTurnInQuest(id) && GetQuestValidationString(id) == "".
+  // Either half failing is a no, which is what makes the pair worth asserting separately.
+  const quest = { QuestID: 31, iSlot: -1, iLvl: 0, iClass: 0, FactionID: 0 };
+  const there = { 'world.questTree.31': quest, 'world.myAvatar.objData.intLevel': 10 };
+  const both = access(fakeBridge(there, { 'world.canTurnInQuest': true }));
+  return both.call('CanComplete', ['31']).then((done) => {
+    assert.strictEqual(done, true);
+  }).then(() => {
+    const gameRefused = access(fakeBridge(there, { 'world.canTurnInQuest': false }));
+    return gameRefused.call('CanComplete', ['31']);
+  }).then((done) => {
+    assert.strictEqual(done, false, 'the game own answer alone is enough to refuse');
+  }).then(() => {
+    const level = { QuestID: 31, iSlot: -1, iLvl: 60, iClass: 0, FactionID: 0 };
+    const gate = access(fakeBridge({
+      'world.questTree.31': level, 'world.myAvatar.objData.intLevel': 10
+    }, { 'world.canTurnInQuest': true }));
+    return gate.call('CanComplete', ['31']);
+  }).then((done) => {
+    assert.strictEqual(done, false, 'and so is the validation string alone');
+  });
+});
+
+test('the validation string names the first requirement a quest fails, in the loader own words', () => {
+  // Quests.as:GetQuestValidationString walks its checks in order and returns the sentence for the
+  // first that fails. A level gate and an upgrade gate are the two cheapest to pin; the sentences
+  // are the loader's own.
+  // A quest gated above the character's level: the string is 'Unlocks at Level 60.', so the quest
+  // is neither available nor completable.
+  const gated = { QuestID: 31, iSlot: -1, iLvl: 60, iClass: 0, FactionID: 0 };
+  const game = access(fakeBridge({
+    'world.questTree.31': gated, 'world.myAvatar.objData.intLevel': 10
+  }, {}));
+  return game.call('IsAvailable', ['31']).then((available) => {
+    assert.strictEqual(available, false, 'a level gate makes the string non-empty');
+  }).then(() => {
+    return game.call('CanComplete', ['31']);
+  }).then((done) => {
+    assert.strictEqual(done, false);
+  }).then(() => {
+    // A member-only quest on a free account: 'Upgrade is required for this quest!'.
+    const member = { QuestID: 31, iSlot: -1, iLvl: 0, iClass: 0, FactionID: 0, bUpg: 1 };
+    // The loader calls world.myAvatar.isUpgraded() as a method, so the fixture answers a call.
+    const upgrades = access(fakeBridge({
+      'world.questTree.31': member, 'world.myAvatar.objData.intLevel': 10
+    }, { 'world.myAvatar.isUpgraded': false }));
+    return upgrades.call('IsAvailable', ['31']);
+  }).then((available) => {
+    assert.strictEqual(available, false, 'the upgrade gate refuses too');
+  });
+});
+
+test('BuyItemQty hands over the accept envelope the game own sendBuyItemRequestWithQuantity takes', () => {
+  // Shops.as:BuyItemQty builds { accept: 1, iQty: qty, iSel: <the shop row> } and hands it over.
+  const row = { sName: 'Iron Sword', ItemID: 7, iQty: 1, iStk: 10, iCost: 0 };
+  const bridge = fakeBridge({ 'world.shopinfo.items': [row] },
+    { 'world.sendBuyItemRequestWithQuantity': 'ok' });
+  const game = access(bridge);
+  return game.call('BuyItemQty', ['iron sword', '3']).then(() => {
+    assert.strictEqual(bridge.made[0].path, 'world.sendBuyItemRequestWithQuantity');
+    assert.deepStrictEqual(bridge.made[0].args[0], { accept: 1, iQty: 3, iSel: row });
+  });
+});
+
+test('BuyItemQtyById matches on the id pair the loader matches on, and refuses when it misses', () => {
+  // Shops.as:GetShopItemById compares ItemID and ShopItemID together.
+  const row = { sName: 'Iron Sword', ItemID: 7, ShopItemID: 4, iQty: 1 };
+  const other = { sName: 'Other', ItemID: 7, ShopItemID: 9, iQty: 1 };
+  const bridge = fakeBridge({ 'world.shopinfo.items': [other, row] },
+    { 'world.sendBuyItemRequestWithQuantity': 'ok' });
+  const game = access(bridge);
+  return game.call('BuyItemQtyById', ['2', '7', '4']).then(() => {
+    assert.deepStrictEqual(bridge.made[0].args[0], { accept: 1, iQty: 2, iSel: row },
+      'the row with both ids, not the one that shares only the item id');
+  }).then(() => {
+    const miss = access(fakeBridge({ 'world.shopinfo.items': [other] }, {}));
+    return miss.call('BuyItemQtyById', ['1', '7', '4']);
+  }).then(() => {
+    throw new Error('should have refused');
+  }, (error) => {
+    assert.ok(error.message.indexOf('shop item id 4') !== -1, error.message);
+  });
+});
+
+test('BuyItem resolves the row by name and sends the single buy request', () => {
+  // Shops.as:BuyItem is GetShopItem(name) plus world.sendBuyItemRequest(row).
+  const row = { sName: 'Iron Sword', ItemID: 7, ShopItemID: 4, iQty: 1 };
+  const bridge = fakeBridge({ 'world.shopinfo.items': [row] },
+    { 'world.sendBuyItemRequest': 'ok' });
+  const game = access(bridge);
+  return game.call('BuyItem', ['IRON SWORD']).then(() => {
+    assert.strictEqual(bridge.made[0].path, 'world.sendBuyItemRequest');
+    assert.strictEqual(bridge.made[0].args[0], row, 'the row itself is handed over');
+  }).then(() => {
+    const miss = access(fakeBridge({ 'world.shopinfo.items': [] }, {}));
+    return miss.call('BuyItem', ['iron sword']);
+  }).then(() => {
+    throw new Error('should have refused');
+  }, (error) => {
+    assert.ok(error.message.indexOf('iron sword') !== -1, 'the refusal names the item');
+  });
+});
