@@ -22,6 +22,7 @@ const TAMPERER_WINDOW_ID = 'grimlite-parity-packet-tamperer';
 const BOT_MANAGER_WINDOW_ID = 'grimlite-parity-bot-manager';
 const OPTIONS_WINDOW_ID = 'grimlite-parity-options';
 const HOTKEYS_WINDOW_ID = 'grimlite-parity-hotkeys';
+const DROP_WINDOW_ID = 'grimlite-parity-drop';
 
 // Every one of these is a page inside this plugin: no Flash, no Node in the page, and IPC
 // through its own sandbox-safe preload (docs/PLUGINS.md §4.7/§4.8).
@@ -201,6 +202,16 @@ function register(host, windowTitle) {
             },
             url: pageUrl('hotkeys', 'hotkeys.html'),
             config: windowConfig(host, 'hotkeys', 'preload_hotkeys.js', { width: 320, height: 330 })
+        },
+        {
+            // DropUi.Designer.cs's own client area is 401x300; the reference asks for 401
+            // width through ClientSize, which useContentSize makes the room the page gets.
+            id: DROP_WINDOW_ID,
+            title: function () {
+                return windowTitle('drop', 'DropList');
+            },
+            url: pageUrl('drops', 'drops.html'),
+            config: windowConfig(host, 'drops', 'preload_drops.js', { width: 401, height: 300 })
         }
     ]);
 }
@@ -225,7 +236,8 @@ module.exports = {
         TAMPERER_WINDOW_ID,
         BOT_MANAGER_WINDOW_ID,
         OPTIONS_WINDOW_ID,
-        HOTKEYS_WINDOW_ID
+        HOTKEYS_WINDOW_ID,
+        DROP_WINDOW_ID
     ],
     PLACEHOLDER_PAGE: PLACEHOLDER_PAGE,
     PLACEHOLDER_WINDOW_ID: PLACEHOLDER_WINDOW_ID,
@@ -246,5 +258,6 @@ module.exports = {
     TAMPERER_WINDOW_ID: TAMPERER_WINDOW_ID,
     BOT_MANAGER_WINDOW_ID: BOT_MANAGER_WINDOW_ID,
     OPTIONS_WINDOW_ID: OPTIONS_WINDOW_ID,
-    HOTKEYS_WINDOW_ID: HOTKEYS_WINDOW_ID
+    HOTKEYS_WINDOW_ID: HOTKEYS_WINDOW_ID,
+    DROP_WINDOW_ID: DROP_WINDOW_ID
 };

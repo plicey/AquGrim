@@ -73,6 +73,34 @@ ok(
 ok(fs.existsSync(path.join(parity, 'features', 'sets', 'sets.html')), 'parity sets page');
 ok(fs.existsSync(path.join(parity, 'bridge.js')), 'parity game access interface');
 
+// The drop list (ticket #33): a page and a sandboxed preload, and the frame parser the fixtures
+// drive. The fixture is the reference's own shape, so this asserts the wire is still read.
+['drops'].forEach(function (tool) {
+  ok(fs.existsSync(path.join(parity, 'features', tool, tool + '.html')), 'parity ' + tool + ' page');
+  const preloadSource = fs.readFileSync(
+    path.join(parity, 'features', tool, 'preload_' + tool + '.js'), 'utf8');
+  ok(preloadSource.indexOf("require('electron')") !== -1, tool + ' preload requires electron');
+  ok(preloadSource.indexOf("require('../") === -1, tool + ' preload requires nothing project-local');
+});
+const dropLogic = require(path.join(parity, 'features', 'drops', 'drops.js'));
+const dropFixture = require(path.join(root, 'test', 'fixtures', 'grimlite-drops', 'reference.json'));
+const dropsRead = dropFixture.frames.filter(function (entry) {
+  return !!entry.item;
+}).every(function (entry) {
+  const parsed = dropLogic.parseDropFrame(entry.frame);
+  return parsed !== null && parsed.name === entry.item.name && parsed.quantity === entry.item.quantity;
+});
+ok(dropsRead, 'a dropItem frame from the fixture reads as its item');
+// Every other frame in the fixture is not a drop: a different cmd, an XT frame, or the answer to
+// a take. None of them may become a row.
+ok(dropFixture.frames.filter(function (entry) { return !entry.item; })
+  .every(function (entry) { return dropLogic.parseDropFrame(entry.frame) === null; }),
+  'a frame that is not a drop is not read as one');
+ok(dropFixture.frames.filter(function (entry) { return entry.taken; }).every(function (entry) {
+  const parsed = dropLogic.parseGetDropFrame(entry.frame);
+  return parsed !== null && parsed.id === entry.taken.id && parsed.success === entry.taken.success;
+}), 'a getDrop answer from the fixture reads as its verdict');
+
 // A set this app writes must stay readable by the reference client: round-trip a fixture.
 const sets = require(path.join(parity, 'features', 'sets', 'sets.js'));
 const setPath = path.join(root, 'test', 'fixtures', 'grimlite-sets', 'reference-set.gset');

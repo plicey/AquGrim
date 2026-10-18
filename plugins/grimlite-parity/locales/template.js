@@ -24,7 +24,8 @@ exports.dialogMessages = {
             expand(k.grimliteParityPlaceholder) + '' +
             expand(k.grimliteParityDevTest) + '' +
             expand(k.grimliteOptions) + '' +
-            expand(k.grimliteHotkeys) + '';
+            expand(k.grimliteHotkeys) + '' +
+            expand(k.grimliteDrop) + '';
     }
 };
 
@@ -41,6 +42,7 @@ exports.menuMessages = {
     grimliteCosmetics: "",
     grimliteOptions: "",
     grimliteHotkeys: "",
+    grimliteDrop: "",
     grimlitePlaceholder: "",
     grimliteDevTest: "",
     packetsMenu: "",
@@ -77,6 +79,7 @@ exports.windowTitles = {
     cosmetics: "",
     options: "",
     hotkeys: "",
+    drop: "",
     devtest: "",
     packetLogger: "",
     packetSpammer: "",
@@ -212,6 +215,28 @@ exports.hotkeysMessages = {
     saved: "",
     empty: "",
     selectFirst: ""
+};
+
+exports.dropsMessages = {
+    title: "",
+    name: "",
+    qty: "",
+    category: "",
+    flags: "",
+    take: "",
+    blacklist: "",
+    clear: "",
+    rejectInGame: "",
+    count: "",
+    pickFirst: "",
+    working: "",
+    taken: "",
+    rejectedN: "",
+    cleared: "",
+    confirmTitle: "",
+    confirmMessage: "",
+    confirmYes: "",
+    confirmNo: ""
 };
 
 exports.loadersMessages = {

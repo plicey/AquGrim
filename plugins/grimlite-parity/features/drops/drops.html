@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DropList</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #171721; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
+  }
+  body { padding: 0; box-sizing: border-box; display: flex; flex-direction: column; }
+  /* DropUi.Designer.cs draws the list as a FixedSingle white-on-#2E2E3C list with columns, and
+     the four controls on a strip under it. */
+  .list {
+    flex: 1 1 auto; min-height: 0; overflow: auto; margin: 0;
+    background: #2e2e3c; border: 1px solid #444; border-bottom: none;
+  }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  thead th {
+    position: sticky; top: 0; background: #23232d; color: #fff; font-weight: 600;
+    text-align: left; padding: 3px 6px; border-bottom: 1px solid #3a3a46; cursor: pointer;
+    user-select: none;
+  }
+  /* The reference's own column widths: Name 230, Qty 30, Category 60, AC | Member 80. */
+  th.name, td.name { width: auto; }
+  th.qty, td.qty { width: 34px; text-align: center; }
+  th.category, td.category { width: 64px; text-align: center; }
+  th.flags, td.flags { width: 88px; text-align: center; }
+  tbody td { padding: 2px 6px; color: #dcdcdc; border-bottom: 1px solid #3a3a46; }
+  tbody tr { cursor: default; }
+  tbody tr.selected td { background: #3c78c8; color: #fff; }
+  /* An item the player cannot take is shown as such, never offered as a normal action. */
+  tbody tr.blocked td { color: #8a8a8a; }
+  tbody tr.blocked td.name::after { content: ' (' attr(data-reason) ')'; }
+  .bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 8px; }
+  .bar .spacer { flex: 1 1 auto; }
+  button {
+    font: inherit; color: #eee; background: #2a2a2a; border: 1px solid #444;
+    border-radius: 4px; padding: 4px 10px; cursor: pointer;
+  }
+  button:disabled { color: #777; cursor: default; }
+  .check { display: flex; align-items: center; gap: 6px; color: #dcdcdc; }
+  #count { color: #cfcfcf; }
+  #status { min-height: 16px; padding: 0 8px 6px; color: #9a9a9a; }
+  #status.err { color: #ff8e8e; }
+  #status.ok { color: #7fd08a; }
+</style>
+</head>
+<body>
+  <div class="list" id="list">
+    <table>
+      <thead><tr>
+        <th class="name" data-column="name" id="thName">Name</th>
+        <th class="qty" data-column="quantity" id="thQty">Qty</th>
+        <th class="category" data-column="category" id="thCategory">Category</th>
+        <th class="flags" data-column="flags" id="thFlags">AC | Member</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="bar">
+    <button id="blacklist">Reject &amp; Blacklist</button>
+    <label class="check"><input type="checkbox" id="reject"> <span id="rejectLabel">Reject ingame drop</span></label>
+    <span class="spacer"></span>
+    <button id="take">Take Drop</button>
+  </div>
+  <div class="bar">
+    <button id="clear">Clear</button>
+    <span class="spacer"></span>
+    <span id="count">Drop count : 0</span>
+  </div>
+  <div id="status"></div>
+<script>
+(function () {
+  var api = window.aquastarDrops;
+  var rows = document.getElementById('rows');
+  var count = document.getElementById('count');
+  var reject = document.getElementById('reject');
+  var status = document.getElementById('status');
+  var state = { rows: [], count: 0, rejecting: false };
+  var messages = {};
+  var selected = {};
+  var sort = { column: null, descending: false };
+
+  function setStatus(text, kind) {
+    status.textContent = text || '';
+    status.className = kind || '';
+  }
+
+  // DropUi's own AC | Member cell: "AC" or "No", then "Yes" or "Free".
+  function flagsText(row) {
+    return (row.isAcItem ? 'AC' : 'No') + ' | ' + (row.isMemberOnly ? 'Yes' : 'Free');
+  }
+
+  // ListViewItemComparer: numbers compare as numbers, everything else case-insensitively.
+  function compare(a, b) {
+    var na = parseFloat(a);
+    var nb = parseFloat(b);
+    if (!isNaN(na) && !isNaN(nb) && String(na) === a && String(nb) === b) return na - nb;
+    return String(a).localeCompare(String(b), undefined, { sensitivity: 'accent' });
+  }
+
+  function valueOf(row, column) {
+    if (column === 'flags') return flagsText(row);
+    if (column === 'quantity') return String(row.quantity);
+    return String(row[column] === undefined ? '' : row[column]);
+  }
+
+  function visibleRows() {
+    var list = state.rows.slice();
+    if (!sort.column) return list;
+    list.sort(function (a, b) {
+      var result = compare(valueOf(a, sort.column), valueOf(b, sort.column));
+      return sort.descending ? -result : result;
+    });
+    return list;
+  }
+
+  function draw() {
+    rows.innerHTML = '';
+    visibleRows().forEach(function (row) {
+      var tr = document.createElement('tr');
+      tr.dataset.name = row.name;
+      // A blocked row is marked, and its own reason is what the marker says.
+      if (row.takeable === false) tr.className = 'blocked';
+      if (selected[row.name]) tr.className = (tr.className ? tr.className + ' ' : '') + 'selected';
+
+      [['name', row.name], ['qty', String(row.quantity)],
+        ['category', row.category], ['flags', flagsText(row)]].forEach(function (pair) {
+        var td = document.createElement('td');
+        td.className = pair[0];
+        td.textContent = pair[1];
+        if (pair[0] === 'name' && row.takeable === false && row.reason) {
+          td.setAttribute('data-reason', row.reason);
+        }
+        tr.appendChild(td);
+      });
+      tr.addEventListener('click', function (event) {
+        // FullRowSelect + MultiSelect: a plain click takes the row, a shift/ctrl click adds it.
+        if (!event.ctrlKey && !event.metaKey && !event.shiftKey) selected = {};
+        selected[row.name] = selected[row.name] ? undefined : true;
+        if (!selected[row.name]) delete selected[row.name];
+        draw();
+      });
+      rows.appendChild(tr);
+    });
+    count.textContent = (messages.count || 'Drop count :') + ' ' + state.count;
+    reject.checked = state.rejecting === true;
+  }
+
+  function chosen() {
+    return Object.keys(selected);
+  }
+
+  function apply(next) {
+    // A partial answer (a take that reports what it did, before the rows catch up) must not blank
+    // the list: only an answer carrying rows replaces it.
+    if (!next) return;
+    if (Array.isArray(next.rows)) state = next;
+    else if (typeof next.count === 'number') state = Object.assign({}, state, next, { rows: state.rows });
+    else state = Object.assign({}, state, next);
+    // A row that has gone is no longer selected, whichever way it went.
+    var live = {};
+    state.rows.forEach(function (row) { if (selected[row.name]) live[row.name] = true; });
+    selected = live;
+    draw();
+  }
+
+  function report(result) {
+    if (!result || !result.failed || !result.failed.length) {
+      var taken = result && result.taken ? result.taken.length : 0;
+      setStatus(taken ? (messages.taken || 'Took {n}.').replace('{n}', taken) : '', 'ok');
+      return;
+    }
+    setStatus(result.failed.map(function (f) { return f.name + ': ' + f.reason; }).join('; '), 'err');
+  }
+
+  function refresh() {
+    return api.state().then(apply);
+  }
+
+  function main() {
+    return api.getMessages().then(function (strings) {
+      messages = strings || {};
+      document.title = messages.title;
+      document.getElementById('thName').textContent = messages.name;
+      document.getElementById('thQty').textContent = messages.qty;
+      document.getElementById('thCategory').textContent = messages.category;
+      document.getElementById('thFlags').textContent = messages.flags;
+      document.getElementById('take').textContent = messages.take;
+      document.getElementById('blacklist').textContent = messages.blacklist;
+      document.getElementById('clear').textContent = messages.clear;
+      document.getElementById('rejectLabel').textContent = messages.rejectInGame;
+    }).then(function () { return api.watch(); }).then(apply).then(function () {
+      document.querySelectorAll('thead th').forEach(function (th) {
+        th.addEventListener('click', function () {
+          var column = th.dataset.column;
+          sort.descending = sort.column === column ? !sort.descending : false;
+          sort.column = column;
+          draw();
+        });
+      });
+
+      document.getElementById('take').addEventListener('click', function () {
+        var names = chosen();
+        if (!names.length) { setStatus(messages.pickFirst || 'Select a drop first.', 'err'); return; }
+        setStatus(messages.working || 'Taking...', '');
+        api.take(names).then(function (result) { apply(result); report(result); });
+      });
+      document.getElementById('blacklist').addEventListener('click', function () {
+        var names = chosen();
+        if (!names.length) { setStatus(messages.pickFirst || 'Select a drop first.', 'err'); return; }
+        api.blacklist(names).then(function (result) {
+          apply(result);
+          setStatus((messages.rejectedN || 'Held {n} name(s) for this session.')
+            .replace('{n}', result.blacklisted), 'ok');
+        });
+      });
+      document.getElementById('clear').addEventListener('click', function () {
+        api.clear().then(function (result) {
+          apply(result);
+          setStatus(result.cleared ? (messages.cleared || 'Cleared.') : '',
+            result.cleared ? 'ok' : '');
+        });
+      });
+      // DropUi.RejectIngameDrop_Checkedchanged sets the flag the moment the box moves.
+      reject.addEventListener('change', function () {
+        api.reject(reject.checked).then(apply);
+      });
+    }).catch(function (error) {
+      setStatus(String(error.message || error), 'err');
+    });
+  }
+
+  api.onRows(apply);
+  main();
+})();
+</script>
+</body>
+</html>
