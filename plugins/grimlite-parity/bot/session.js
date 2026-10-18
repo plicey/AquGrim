@@ -74,7 +74,9 @@
 //   targetId()                   -> number|null  its MonMapID, or null when nothing is targeted
 //   state()                      -> number   Player.State: 0 Dead, 1 Idle, 2 InCombat (State)
 //   selfId()                     -> number   this character's id, which aura frames are keyed by
-//   selfAura(name)               -> number   tapped stack count of one aura on this character
+//   selfAura(name)               -> number   Player.GetAuras(true, name): the tapped stack
+//                                             count, or the loader's GetAurasValue for a name
+//                                             containing "locked" (which this bridge refuses)
 //   targetAura(name)             -> number   the same for the current target
 //   monsterAuraDuration(id, name)-> number   ms left of one aura on one monster, 0 for none
 //   lastAnimationMessage()       -> string   the last anims[].msg the tap saw, lowercased
@@ -783,14 +785,24 @@ function createSession(deps) {
         },
 
         /**
-         * Player.GetAuras(true, name) for a name outside its own "locked" special case: the tapped
-         * cache's value, in stacks (auras.js). A tap that is not there is a refusal naming what is
-         * missing, never a zero - zero is what "the stack is gone" reads as.
+         * Player.GetAuras(true, name), which is two sources and not one: the tapped cache for a
+         * name that does not contain "locked" (auras.js), and the loader's own GetAurasValue for
+         * one that does - the reference's exact test, `isSelf && !auraName.ContainsIgnoreCase(
+         * "locked")`. That lookup is a name this bridge refuses, so a locked condition is a
+         * refusal rather than a cache answer the reference would never have consulted. A tap that
+         * is not there is a refusal naming what is missing, never a zero - zero is what "the stack
+         * is gone" reads as.
          */
         selfAura: async function (name) {
+            const wanted = name === undefined || name === null ? '' : String(name);
+            if (wanted.toLowerCase().indexOf('locked') !== -1) {
+                // The C# argument is `isSelf.ToString()`, which the loader's own body reads back
+                // as the string "True"; the name is handed on as written, spaces and all.
+                return loaderCall('GetAurasValue', ['True', wanted]);
+            }
             const store = tapped();
             const id = await session.selfId();
-            return store.value('p:' + id, name);
+            return store.value('p:' + id, wanted);
         },
 
         /**

@@ -555,23 +555,55 @@ function createEngine(deps) {
         return read1(method, String(entry && entry.Index));
     }
 
-    let auraReported = false;
-
     /**
-     * Skill.hasaura: a row with no aura condition is ready, which is also what the reference's own
-     * Compare does with a condition it cannot parse. A real condition reads the avatar's own aura
-     * counts (the loader's GetAurasValue, ticket #42), so that is reported once rather than faked.
+     * Skill.hasaura, against the aura state #42 caches.
+     *
+     * A row with no condition is ready, and so is one whose condition the reference cannot parse -
+     * `string.IsNullOrWhiteSpace(aura)`, no operator among `!=`, `>=`, `<=`, `=`, or a split on
+     * that operator that is not exactly two parts: all three are `return true` in the reference's
+     * own body. Everything else is a comparison against THIS character's own stacks
+     * (`Player.GetAuras(true, aura[0])`), which the reference serves from the cache its packet
+     * handlers fill and this build reads through the session seam (bot/auras.js, ticket #42).
+     *
+     * A read that cannot be made is a reason, never a ready row: the reference consults its cache
+     * for every one of these, so a build that cannot consult it holds the row back and says why.
+     * Casting on a condition nobody could evaluate is the silent no-op this gate exists to stop.
      */
-    function hasAura(entry) {
-        if (!entry || !entry.aura) return true;
-        if (!auraReported) {
-            auraReported = true;
-            log('a skill aura condition reads the avatar\'s own aura counts (ticket #42); this ' +
-                'loop treats it as ready, which is what the reference does with one it cannot parse');
+    async function hasAura(entry) {
+        const written = entry && entry.aura !== undefined && entry.aura !== null
+            ? String(entry.aura) : '';
+        if (!written.trim()) return true;
+
+        // The reference's own scan order, and the first hit wins: "Chi!=2" is `!=`, not `=`.
+        const op = written.indexOf('!=') !== -1 ? '!='
+            : written.indexOf('>=') !== -1 ? '>='
+                : written.indexOf('<=') !== -1 ? '<='
+                    : written.indexOf('=') !== -1 ? '=' : null;
+        if (op === null) return true;
+        const parts = written.split(op).filter(function (one) { return one.length > 0; });
+        if (parts.length !== 2) return true;
+
+        const told = await read1('selfAura', parts[0]);
+        if (!told.ok) {
+            reportOnce('skill-aura:' + parts[0] + ':' + told.error,
+                'skill ' + String(entry && entry.Index) + ' has the aura condition "' + written +
+                '"; that read was refused, so the condition cannot be honoured: ' + told.error);
+            return false;
         }
-        // "Ready" is what Skill.hasaura returns for a condition it cannot parse, so an aura row is
-        // cast rather than silently dropped - the reference's own choice when it cannot tell.
-        return true;
+        // `int.TryParse(aura[1], out int t)` leaves its 0 behind when the value will not parse,
+        // and it is strict: "3x" and "3.5" are its 0, not the 3 parseInt would take from them,
+        // and a value outside Int32 fails rather than saturating.
+        const value = parts[1].trim();
+        const parsed = /^[+-]?\d+$/.test(value) ? Number(value) : NaN;
+        const wanted = Number.isInteger(parsed) && Math.abs(parsed) <= 2147483647 ? parsed : 0;
+        const stacks = Number(told.value);
+        const count = isFinite(stacks) ? stacks : 0;
+        // The four cases as Compare writes them - including `<=` comparing with `<`, which is the
+        // reference's own body rather than what its operator reads as.
+        if (op === '>=') return count >= wanted;
+        if (op === '<=') return count < wanted;
+        if (op === '=') return count === wanted;
+        return count !== wanted;
     }
 
     /** Move the rotation's cursor the way the reference does at the end of one cast. */
@@ -608,7 +640,7 @@ function createEngine(deps) {
             else skill.attack = start;
             return;
         }
-        if (!hasAura(entry) && !entry.waitCd) {
+        if (!(await hasAura(entry)) && !entry.waitCd) {
             advance(which, count, start);
             return;
         }
@@ -621,7 +653,7 @@ function createEngine(deps) {
             reportOnce('skill:' + String(entry.Index) + ':' + cast.error,
                 'skill ' + entry.Index + ' could not be cast: ' + cast.error);
         }
-        if (entry.waitCd && !hasAura(entry)) await sleep(200);
+        if (entry.waitCd && !(await hasAura(entry))) await sleep(200);
         advance(which, count, start);
     }
 

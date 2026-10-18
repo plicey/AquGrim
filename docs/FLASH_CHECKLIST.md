@@ -843,6 +843,10 @@ boxes can be ticked without a live client, and two of them are the whole point o
 - [ ] A **Skill Set** command changes which skill the attack rotation starts from, which is the
       label row `[NAME]` in the Skills list (Bot.cs's `SkillSet`)
 - [ ] A skill row the game refuses (a locked or unavailable skill) does not stop the fight
+- [ ] A skill row whose **aura condition** is unmet is not cast, and the rotation moves past it;
+      land the aura (a class skill or a potion) and the same row casts. An aura condition on a name
+      containing "locked" is reported once and the row held back, which is the reference's own
+      `GetAurasValue` path rather than the tapped cache (ticket #50)
 
 ### The fight and its exits
 
@@ -906,15 +910,12 @@ or the player's own click) - a fake success here would have been worse than the 
 - [ ] With auto-attack on, run a `CmdKill` bot and confirm the rotation casts on cooldown and the
       `SkillDelay`/`WaitForSkill` settings pace it as they do in the reference
 
-**Three more places this build reports rather than acts**, each because the option reaches something
+**Two more places this build reports rather than acts**, each because the option reaches something
 the engine does not have yet, and none of them silently ignored:
 
 - **AntiCounter** watches the reference's own packet tap for `prepares a counter attack` and the
   Counter Attack aura fading. This engine has no tap, so the log says so once and the fight runs
   without the pause.
-- **A skill aura condition** (`Skill.hasaura`) reads the avatar's own aura counts - the loader's
-  `GetAurasValue`, which is ticket #42's surface. The row is treated as ready, which is exactly what
-  the reference's own `Compare` does with a condition it cannot parse, and the log says so once.
 - **CmdKillFor / CmdShortHunt / CmdQuestHunt** are wired for their map, join and kill halves, but
   their "until the item or quest is done" loops read the inventory (`GetInventoryItems`,
   `GetTempItems` - both answered) and, for a quest, the quest's own required items
