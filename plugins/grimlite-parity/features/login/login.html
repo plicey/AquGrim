@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Grimlite Parity - Char Select</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px; }
+  body { display: flex; flex-direction: column; box-sizing: border-box; padding: 14px; gap: 12px; }
+  h1 { margin: 0; font-size: 16px; }
+  .card { border: 1px solid #2c2c2c; border-radius: 8px; padding: 12px; background: #1b1b1b; }
+  h2 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #6f6f6f; }
+  #list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  #list li { display: flex; align-items: center; gap: 8px; }
+  #list .who { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button { background: #232323; color: #e6e6e6; border: 1px solid #383838; border-radius: 4px;
+    padding: 6px 12px; font-size: 12px; cursor: pointer; }
+  button:hover { background: #2c2c2c; }
+  button.primary { background: #2b6fce; border-color: #2b6fce; color: #fff; }
+  button.primary:hover { background: #3579d8; }
+  input { background: #161616; color: #e6e6e6; border: 1px solid #383838; border-radius: 4px;
+    padding: 6px 8px; font: inherit; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row input { flex: 1 1 auto; }
+  #notice { color: #b9b9b9; }
+  #status { color: #9a9a9a; min-height: 1.2em; }
+  #status.error { color: #ff9a9a; }
+</style>
+</head>
+<body>
+  <h1 id="title">Char Select</h1>
+  <div class="card">
+    <h2 id="savedHeading">Saved characters</h2>
+    <ul id="list"></ul>
+  </div>
+  <div class="card">
+    <div class="row">
+      <input id="username" type="text" autocomplete="off" spellcheck="false">
+      <input id="password" type="password" autocomplete="off">
+      <button id="add" type="button">Add</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="import" type="button">Read CharSelect.cfg</button>
+    </div>
+  </div>
+  <div class="card">
+    <div id="notice"></div>
+  </div>
+  <div id="status"></div>
+
+  <script>
+    (function () {
+      var bridge = window.aquastarLogin || null;
+      if (!bridge) return;
+
+      var list = document.getElementById('list');
+      var status = document.getElementById('status');
+      var notice = document.getElementById('notice');
+      var username = document.getElementById('username');
+      var password = document.getElementById('password');
+      var messages = {};
+
+      function say(text, isError) {
+        status.textContent = text || '';
+        status.className = isError ? 'error' : '';
+      }
+
+      // A status line a page cannot read is not a status a user can rely on; every branch here
+      // ends in one, including the failures.
+      function draw(state) {
+        list.textContent = '';
+        (state.characters || []).forEach(function (character) {
+          var item = document.createElement('li');
+          var who = document.createElement('span');
+          who.className = 'who';
+          who.textContent = character.username;
+
+          var signIn = document.createElement('button');
+          signIn.type = 'button';
+          signIn.className = 'primary';
+          signIn.textContent = messages.signIn || 'Sign in';
+          signIn.addEventListener('click', function () {
+            say((messages.signingIn || 'Signing in as {user}...').replace('{user}', character.username));
+            bridge.signIn(character.username).then(function (result) {
+              if (result && result.signedIn) {
+                say((messages.signedIn || 'Signed in as {user}.').replace('{user}', result.username));
+                return;
+              }
+              say((result && result.error) || messages.signInFailed, true);
+            });
+          });
+
+          var remove = document.createElement('button');
+          remove.type = 'button';
+          remove.textContent = messages.remove || 'Remove';
+          remove.addEventListener('click', function () {
+            bridge.remove(character.username).then(function (state2) {
+              say('');
+              draw(state2);
+            });
+          });
+
+          item.appendChild(who);
+          item.appendChild(signIn);
+          item.appendChild(remove);
+          list.appendChild(item);
+        });
+        if (!(state.characters || []).length) {
+          var empty = document.createElement('li');
+          empty.textContent = messages.empty || 'No characters saved yet.';
+          list.appendChild(empty);
+        }
+        if (state.heldIn) notice.textContent = state.heldIn;
+      }
+
+      bridge.getMessages().then(function (strings) {
+        messages = strings || {};
+        document.getElementById('title').textContent = messages.title || 'Char Select';
+        document.getElementById('savedHeading').textContent = messages.savedHeading || 'Saved characters';
+        document.getElementById('add').textContent = messages.add || 'Add';
+        document.getElementById('import').textContent = messages.importFile || 'Read CharSelect.cfg';
+        username.placeholder = messages.usernamePlaceholder || 'Username';
+        password.placeholder = messages.passwordPlaceholder || 'Password';
+        return bridge.getList();
+      }).then(draw);
+
+      document.getElementById('add').addEventListener('click', function () {
+        bridge.add(username.value, password.value).then(function (state) {
+          if (state && state.added === false) { say(state.error || messages.addFailed, true); return; }
+          password.value = '';
+          username.value = '';
+          say(messages.added || 'Saved for this session.');
+          draw(state);
+        });
+      });
+
+      document.getElementById('import').addEventListener('click', function () {
+        bridge.importFile().then(function (result) {
+          if (result && result.error) { say(result.error, true); return; }
+          say((messages.imported || 'Imported {count} character(s).').replace('{count}', result.imported));
+          draw(result);
+        });
+      });
+
+      // The list follows the session, so a dropped connection is when it matters.
+      bridge.onConnection(function (state) {
+        if (state && state.state === 'connected') say(messages.connected || 'Connected.');
+        else if (state && state.state === 'lost') say(messages.disconnected || 'Connection lost.');
+      });
+    })();
+  </script>
+</body>
+</html>

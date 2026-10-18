@@ -24,6 +24,7 @@ exports.menuMessages = {
     grimliteEyedropper: 'Eye Dropper',
     grimliteNotepad: 'Notepad',
     grimliteAbout: 'About',
+    grimliteCharSelect: 'Char Select',
     grimliteBank: 'Bank',
     grimliteSets: 'Sets',
     grimliteCosmetics: 'Cosmetics',
@@ -59,6 +60,7 @@ exports.windowTitles = {
     eyedropper: 'Grimlite Parity - Eye Dropper',
     notepad: 'Grimlite Parity - Notepad',
     about: 'Grimlite Parity - About',
+    charSelect: 'Grimlite Parity - Char Select',
     cosmetics: 'Grimlite Parity - SWF Cosmetics',
     devtest: 'Dev Test',
     packetLogger: 'Packet logger'
@@ -188,4 +190,27 @@ exports.cosmeticsMessages = {
         cape: 'Grab Cape',
         misc: 'Grab Ground'
     }
+};
+
+// The Char Select window (#35). The reference's own list is a menu of usernames; this port draws it
+// as a window so it can say where the credentials are held and offer a removal.
+exports.loginMessages = {
+    title: 'Char Select',
+    savedHeading: 'Saved characters',
+    empty: 'No characters saved yet.',
+    usernamePlaceholder: 'Username',
+    passwordPlaceholder: 'Password',
+    add: 'Add',
+    added: 'Saved for this session.',
+    usernameRequired: 'Enter a username first.',
+    addFailed: 'Could not save that character.',
+    signIn: 'Sign in',
+    signingIn: 'Signing in as {user}...',
+    signedIn: 'Signed in as {user}.',
+    signInFailed: 'The game did not accept the sign-in.',
+    remove: 'Remove',
+    importFile: 'Read CharSelect.cfg',
+    imported: 'Imported {count} character(s).',
+    connected: 'Connected.',
+    disconnected: 'Connection lost.'
 };

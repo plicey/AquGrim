@@ -80,6 +80,11 @@ async function activate(host) {
     // because the window is sandboxed.
     require('./features/devtest/devtest-main.js').register(host);
 
+    // Char Select (#35): the session's credentials, the one-click sign-in and the window that
+    // follows the connection. This plugin's window follows this plugin's game, so the list shows
+    // itself while the session is down and hides itself while it is up (Flash.cs:400-409).
+    require('./features/login/login-main.js').createFromHost(host);
+
     // Bank and Sets (#29). Both draw their own window and reach the game only through the
     // injected game access in bridge.js, which sits on this plugin's bridge channel (ticket #28).
     bankWindow.createFromHost(host).attach();

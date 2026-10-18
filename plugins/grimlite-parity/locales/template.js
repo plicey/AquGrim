@@ -29,6 +29,7 @@ exports.menuMessages = {
     grimliteEyedropper: "",
     grimliteNotepad: "",
     grimliteAbout: "",
+    grimliteCharSelect: "",
     grimliteBank: "",
     grimliteSets: "",
     grimliteCosmetics: "",
@@ -62,6 +63,7 @@ exports.windowTitles = {
     eyedropper: "",
     notepad: "",
     about: "",
+    charSelect: "",
     cosmetics: "",
     devtest: "",
     packetLogger: ""
@@ -178,4 +180,25 @@ exports.cosmeticsMessages = {
         cape: "",
         misc: ""
     }
+};
+
+exports.loginMessages = {
+    title: "",
+    savedHeading: "",
+    empty: "",
+    usernamePlaceholder: "",
+    passwordPlaceholder: "",
+    add: "",
+    added: "",
+    usernameRequired: "",
+    addFailed: "",
+    signIn: "",
+    signingIn: "",
+    signedIn: "",
+    signInFailed: "",
+    remove: "",
+    importFile: "",
+    imported: "",
+    connected: "",
+    disconnected: ""
 };
