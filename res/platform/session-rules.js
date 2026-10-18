@@ -6,6 +6,12 @@
 // never register their own listeners. This module registers a single listener per
 // event (filtered by the union of all rule URL patterns) and fans each request out to
 // every rule whose patterns match, in registration order.
+//
+// Response bodies: Electron 11 has no webRequest.filterResponseData (added in a later
+// Electron line), so a body cannot be rewritten on the wire. A rule that declares
+// onResponseBody instead hands its matched request to a body service (ctx.responseBody),
+// which serves that URL from loopback with the replacement body. The rule stays inside the
+// single onBeforeRequest listener, so one-listener-per-event still holds.
 
 /**
  * Match an Electron/Chrome match pattern ("*://*.example.com/*", "<all_urls>") against a URL.
@@ -59,7 +65,7 @@ function unionUrls(rules) {
 }
 
 function applySessionRules(session, rules, ctx) {
-    if (!session || !session.webRequest || !Array.isArray(rules)) return;
+    if (!session || !session.webRequest || !Array.isArray(rules)) return { responseBody: { engaged: [], unengaged: [] } };
     ctx = ctx || {};
     const settings = ctx.settings || {};
 
@@ -70,7 +76,27 @@ function applySessionRules(session, rules, ctx) {
     });
 
     const headerRules = active.filter(function (r) { return typeof r.onBeforeSendHeaders === 'function'; });
-    const requestRules = active.filter(function (r) { return typeof r.onBeforeRequest === 'function'; });
+    const responseBodyRules = active.filter(function (r) { return typeof r.onResponseBody === 'function'; });
+
+    // A body rule with no body service cannot steer, so it is reported rather than silently
+    // left as a plain passthrough. Callers decide whether that is fatal (a relay must not
+    // come up pretending it steers) - the layer only refuses to lie about it.
+    const bodyService = ctx.responseBody && typeof ctx.responseBody.urlFor === 'function'
+        ? ctx.responseBody
+        : null;
+    const report = { responseBody: { engaged: [], unengaged: [] } };
+    responseBodyRules.forEach(function (rule) {
+        if (bodyService) { report.responseBody.engaged.push(rule.id); return; }
+        report.responseBody.unengaged.push(rule.id);
+        if (typeof ctx.logLine === 'function') {
+            ctx.logLine('[AquaStar] session rule "' + rule.id +
+                '" needs a response body but none is available; the response is served unmodified');
+        }
+    });
+
+    const requestRules = active.filter(function (r) {
+        return typeof r.onBeforeRequest === 'function' || typeof r.onResponseBody === 'function';
+    });
 
     if (headerRules.length) {
         session.webRequest.onBeforeSendHeaders({ urls: unionUrls(headerRules) }, function (details, callback) {
@@ -102,6 +128,15 @@ function applySessionRules(session, rules, ctx) {
                     return;
                 }
                 const rule = matching[index++];
+                if (typeof rule.onBeforeRequest !== 'function') {
+                    // A body rule: route this request to the service that serves the replacement.
+                    if (bodyService) {
+                        callback({ redirectURL: bodyService.urlFor(details) });
+                        return;
+                    }
+                    next();
+                    return;
+                }
                 rule.onBeforeRequest(details, ctx, function (result) {
                     result = result || {};
                     // A cancel or redirect from any rule is final.
@@ -111,6 +146,8 @@ function applySessionRules(session, rules, ctx) {
             })();
         });
     }
+
+    return report;
 }
 
 module.exports = {
