@@ -32,6 +32,9 @@ function createOriginProxy(opts) {
     function forward(req, res, target, body, depth) {
         const headers = Object.assign({}, req.headers);
         delete headers['accept-encoding'];
+        // The body is re-framed by the upstream request itself; a forwarded chunked header
+        // would describe framing that no longer applies.
+        delete headers['transfer-encoding'];
         headers.host = target.host;   // upstreams answer by Host, not by the loopback address
         if (body && body.length) headers['content-length'] = String(body.length);
         const upstream = http.request(target, { method: req.method, headers: headers }, function (upRes) {
@@ -51,7 +54,7 @@ function createOriginProxy(opts) {
                     }
                     if (next) {
                         log('redirect ' + upRes.statusCode + ' ' + target.pathname + ' -> ' + next);
-                        follow(next, depth + 1, body);
+                        forward(req, res, new URL(next), body, depth + 1);
                         return;
                     }
                 }
@@ -59,6 +62,11 @@ function createOriginProxy(opts) {
                 delete outHeaders['content-encoding'];
                 delete outHeaders['content-length'];
                 delete outHeaders['transfer-encoding'];
+                if (upRes.statusCode >= 300 && upRes.statusCode < 400) {
+                    // The client may only ever talk to loopback: it never gets a Location.
+                    delete outHeaders.location;
+                    log('unfollowed redirect ' + upRes.statusCode + ' ' + target.pathname);
+                }
                 res.writeHead(upRes.statusCode, outHeaders);
                 res.end(out);
             });
