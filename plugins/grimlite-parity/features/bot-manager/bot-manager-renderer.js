@@ -772,6 +772,21 @@
       merge.dataset.wired = '1';
       merge.addEventListener('change', function () { api.setting('Merge', merge.checked).then(function (next) { state = Object.assign({}, state, next); }); });
     }
+    // chkEnableBot_CheckedChanged: the tick starts this window's bot and clears it stops it. A
+    // refused start un-ticks itself and shows the reason, which is the reference's own refusal
+    // path (an empty list, nobody signed in, one already running).
+    var enable = document.getElementById('chkEnable');
+    if (enable && !enable.dataset.wired) {
+      enable.dataset.wired = '1';
+      enable.addEventListener('change', function () {
+        api.enable(enable.checked).then(function (next) {
+          enable.checked = !!(next && next.enabled);
+          state = Object.assign({}, state, next);
+          if (next && next.error) setStatus(next.error, true);
+          else setStatus(enable.checked ? messages.botStarted : messages.botStopped, false);
+        });
+      });
+    }
     // The label list: a plain double-click fills the label box, ctrl jumps to the command.
     var labels = document.getElementById('lbLabels');
     if (labels && !labels.dataset.wired) {
