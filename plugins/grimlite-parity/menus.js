@@ -13,6 +13,14 @@ function register(host, windowTitle) {
                 click: function () {
                     host.windows.openFeatureWindow(windows.PLACEHOLDER_WINDOW_ID);
                 }
+            }, {
+                // The reference keeps this under Tools → Swf Dev Test (Grimlite/UI/Root.cs).
+                label: labels.grimliteDevTest || 'Dev Test',
+                accelerator: keybinds.grimliteParityDevTest,
+                registerAccelerator: false,
+                click: function () {
+                    host.windows.openFeatureWindow(windows.DEVTEST_WINDOW_ID);
+                }
             }]
         }];
     });

@@ -10,18 +10,21 @@ exports.dialogMessages = {
             return keyb || '';
         }
         return '' +
-            expand(k.grimliteParityPlaceholder) + '';
+            expand(k.grimliteParityPlaceholder) + '' +
+            expand(k.grimliteParityDevTest) + '';
     }
 };
 
 exports.menuMessages = {
     grimliteMenu: "",
-    grimlitePlaceholder: ""
+    grimlitePlaceholder: "",
+    grimliteDevTest: ""
 };
 
 exports.windowTitles = {
     primary: "",
-    placeholder: ""
+    placeholder: "",
+    devtest: ""
 };
 
 exports.settingsMessages = {

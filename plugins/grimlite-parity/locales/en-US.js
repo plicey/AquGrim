@@ -5,18 +5,21 @@ exports.dialogMessages = {
             return keyb || '';
         }
         return 'Grimlite Parity\n' +
-            expand(k.grimliteParityPlaceholder) + ' - Parity placeholder window';
+            expand(k.grimliteParityPlaceholder) + ' - Parity placeholder window\n' +
+            expand(k.grimliteParityDevTest) + ' - Dev Test (call a game function)';
     }
 };
 
 exports.menuMessages = {
     grimliteMenu: 'Grimlite',
-    grimlitePlaceholder: 'Parity placeholder window'
+    grimlitePlaceholder: 'Parity placeholder window',
+    grimliteDevTest: 'Dev Test'
 };
 
 exports.windowTitles = {
     primary: 'AquaStar - Grimlite Parity',
-    placeholder: 'Grimlite Parity - Placeholder'
+    placeholder: 'Grimlite Parity - Placeholder',
+    devtest: 'Dev Test'
 };
 
 // Read by the Settings window (see res/features/settings/settings.html): the smoke keys the

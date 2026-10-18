@@ -15,8 +15,20 @@
     "locales"
   ],
   "permissions": [
+    "game-origin",
+    "flash-trust",
     "game-bridge",
     "packet-tap",
     "packet-send"
+  ],
+  "bridgeCallbacks": [
+    "getGameObject",
+    "getGameObjectS",
+    "setGameObject",
+    "callGameFunction",
+    "callGameFunction0",
+    "isNull",
+    "sendClientPacket",
+    "pollEvents"
   ]
 }
