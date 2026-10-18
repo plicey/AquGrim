@@ -32,6 +32,7 @@ global.test = function (name, fn) {
   './unit/plugin-host-permissions.test.js',
   './unit/plugin-api-version.test.js',
   './unit/plugin-game-access.test.js',
+  './unit/grimlite-parity.test.js',
   './unit/plugin-runtime.test.js',
   './unit/flash-trust.test.js',
   './unit/keybind-dispatcher.test.js',

@@ -24,6 +24,10 @@ function ok(cond, msg) {
 
 const aqw = path.join(root, 'plugins', 'adventure-quest-worlds');
 const example = path.join(root, 'plugins', 'example-companion');
+const parity = path.join(root, 'plugins', 'grimlite-parity');
+// The real app version: a bundled plugin that declares a newer apiVersion or a higher
+// minAppVersion must be discoverable by the build it ships in.
+const appVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
 
 ok(fs.existsSync(path.join(aqw, 'plugin.json')), 'AQW plugin.json');
 ok(fs.existsSync(path.join(example, 'plugin.json')), 'example plugin.json');
@@ -33,20 +37,33 @@ ok(fs.existsSync(path.join(example, 'assets', 'rectangle.swf')), 'example rectan
 ok(fs.statSync(path.join(example, 'assets', 'rectangle.swf')).size > 500, 'rectangle.swf size');
 ok(fs.existsSync(path.join(example, 'flash', 'BoxMover.as')), 'BoxMover.as source');
 ok(fs.existsSync(path.join(example, 'flash', 'StaticRect.as')), 'StaticRect.as source');
+ok(fs.existsSync(path.join(parity, 'plugin.json')), 'parity plugin.json');
+ok(
+  fs.existsSync(path.join(parity, 'features', 'placeholder', 'placeholder.html')),
+  'parity placeholder page'
+);
 
 const discovered = platform.discoverPlugins({
   bundledDir: path.join(root, 'plugins'),
-  appVersion: '1.12.2',
+  appVersion: appVersion,
   log: function () {}
 });
 const ids = discovered.plugins.map(function (p) { return p.manifest.id; });
 ok(ids.indexOf('adventure-quest-worlds') !== -1, 'discover AQW');
 ok(ids.indexOf('example-companion') !== -1, 'discover example-companion');
+ok(ids.indexOf('grimlite-parity') !== -1, 'discover grimlite-parity');
 ok(ids.indexOf('my-flash-game') === -1, 'skip _template');
 
 const exManifest = JSON.parse(fs.readFileSync(path.join(example, 'plugin.json'), 'utf8'));
-const validated = platform.manifestSchema.validateManifest(exManifest, { appVersion: '1.12.2' });
+const validated = platform.manifestSchema.validateManifest(exManifest, { appVersion: appVersion });
 ok(validated.ok, 'example manifest validates: ' + ((validated.errors || []).join('; ')));
+
+// The app must be able to run the apiVersion the newer bundled plugin declares.
+const parityManifest = JSON.parse(fs.readFileSync(path.join(parity, 'plugin.json'), 'utf8'));
+const parityValidated = platform.manifestSchema.validateManifest(parityManifest, {
+  appVersion: appVersion
+});
+ok(parityValidated.ok, 'parity manifest validates: ' + ((parityValidated.errors || []).join('; ')));
 
 const preload = fs.readFileSync(
   path.join(example, 'features', 'dashboard', 'preload_dashboard.js'),
