@@ -207,8 +207,10 @@ test('the session asks for the loader own names, not hand-rolled paths', async (
   assert.strictEqual(await session.manaMax(), 90);
   assert.deepStrictEqual(bridge.asked(), ['IsLoggedIn', 'Health', 'HealthMax', 'Mana', 'ManaMax']);
 
-  // And the two reads it does own are the two the surface has no row for.
-  assert.deepStrictEqual(Object.keys(sessionModel.PATHS).sort(), ['mapLoading', 'name']);
+  // And the reads it does own are the ones the surface has no row for: the two above, and
+  // CurrentTargetId (#42), which the reference's own loader registers no name for either - its
+  // body is Flash.GetGameObject("world.myAvatar.target.objData.MonMapID") and nothing more.
+  assert.deepStrictEqual(Object.keys(sessionModel.PATHS).sort(), ['mapLoading', 'name', 'targetId']);
 });
 
 test('a helper the surface refuses is reported with the surface own reason', async () => {

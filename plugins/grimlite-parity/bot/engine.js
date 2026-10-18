@@ -270,6 +270,11 @@ function createEngine(deps) {
             sleep: sleep,
             log: log,
             resolve: resolve,
+            // Bot.IsVar / Bot.GetVar, which the statement classes call directly: an operand in
+            // [brackets] is a variable reference, anything else is a literal, and that rule is
+            // the reference's own test rather than ResolveVars' substitution.
+            isVar: isVar,
+            getVar: getVar,
             vars: vars,
             ints: ints,
             read: read,
@@ -420,6 +425,10 @@ function createEngine(deps) {
             if (resolve(command.Value1) === resolve(command.Value2)) ctx.skipNext();
         }
     };
+
+    // The aura, target and combat statements (ticket #42) are one table of their own, so that a
+    // parallel statement ticket merges beside this line rather than into the object above.
+    Object.assign(handlers, require('./statements-auras.js').handlers);
 
     // ---------------------------------------------------------------- the loop
 

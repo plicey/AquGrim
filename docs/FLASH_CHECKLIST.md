@@ -794,3 +794,26 @@ whether the game acts on each call.
 - [ ] The four **Fast travels 2** buttons (Treetitanbattle, Ultradrakath, Tower of Doom 10, Necrodungeon) fake their quest's progress, wait, and then enter their room
 - [ ] **Unlock** with a quest id the client does not hold loads it and waits for it; with one the game never sends it reports the id and injects nothing
 - [ ] The generated packet is shown read-only, **Copy** puts the same text on the clipboard, and **Send** hands it to the client as a JSON frame
+
+## Grimlite Parity - the aura, target and combat statements (ticket #42) - needs a display, a real game and an account
+
+The aura statements read a cache the **packet tap** fills (`bot/auras.js`), not a game lookup: the
+reference's `CmdPlayerAura*` read `AuraManager.SelfAura`, which its own packet handlers fill, and a
+`GetAurasValue` call answers a frame stale. The remaining statements read three loader names the
+surface answers (#48): `HasTarget`, `GetTargetHealth` and `State`; `Player.CurrentTargetId`, which
+the loader registers no name for, is a read of the session's own.
+
+The derivations, comparisons and expiry are covered by `npm test` against frames and fakes. What
+needs a live client is whether the game's real frames have the shape these tests assume.
+
+- [ ] Apply an aura in game (a potion, a class skill, or another player's buff) and a bot with **Player aura value equals** on its name lets the command under it run; drop the aura and it skips it
+- [ ] **Target aura value equals/greater/less** answers for the monster you have targeted, and does not answer with your own stacks of the same name
+- [ ] **Monster (ID) Aura duration is less than** holds at the boundary it reads (the reference skips only on `> x`), and skips when that monster has no aura by that name at all
+- [ ] Gaining and losing an aura is seen within a tick: an aura applied and one that expires both change what the statement answers
+- [ ] **Is has target** / **Is not has target** follow the target you set and clear in game
+- [ ] **Target health greater/less than** hold at their own bound, and **between** needs a comma and holds strictly inside it
+- [ ] The **Default** box decides **Target health** statements while nothing is targeted: `false` skips, anything else holds, and no health is read either way
+- [ ] **Is in combat** answers yes only while the game shows you fighting (**Not in combat** is yes while dead and while idle)
+- [ ] **Name equals** matches your character's name whatever the casing
+- [ ] **Special Anims** (no skill box) holds on a comma-separated term of the last animation message the server sent, and **Special Anims** with a skill box reports the cast it cannot make rather than casting
+- [ ] Walking through a map change drops the monster aura state (their ids belong to the map you left) and **clearAuras** takes your auras except the Fate/Sage/Body/Might/Elixir family, while a respawn takes all of them

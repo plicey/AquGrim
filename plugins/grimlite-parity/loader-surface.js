@@ -457,8 +457,18 @@ const SURFACE = {
     ForceUseSkill: { why: 'the reference calls world.testAction for one skill; ticket #38 owns combat' },
     SetTargetPvP: { why: 'the reference scans live avatars for a same-cell PvP target; ticket #38 owns combat' },
     CancelTargetSelf: { why: 'the reference compares two live avatar objects; ticket #38 owns combat' },
-    GetAurasValue: { why: 'the reference reads live aura arrays off the avatar; ticket #42 owns auras' },
-    AuraDuration: { why: 'the reference reads live aura arrays off the avatar; ticket #42 owns auras' },
+    // The one pair the reference never uses for its own statements: #42 derives aura state from
+    // the packet tap instead (bot/auras.js), because the reference's statements read a cache the
+    // frames fill rather than a lookup, and a lookup answers a packet stale. Kept named so a
+    // caller that asks for them gets that reason rather than a bare "no member".
+    GetAurasValue: {
+        why: 'its body reads the avatar\'s live aura array one frame behind the game; the aura ' +
+            'state is derived from the packet tap instead (bot/auras.js, ticket #42)'
+    },
+    AuraDuration: {
+        why: 'its body reads the avatar\'s live aura array and the frame timestamp; the aura ' +
+            'state and its remaining time come from the packet tap instead (bot/auras.js, #42)'
+    },
     GetMonstersInCell: { why: 'the reference reshapes live monster objects; ticket #38 owns combat' },
     GetVisibleMonstersInCell: { why: 'the reference reshapes live monster objects; ticket #38 owns combat' },
     GetMonsterHealth: { why: 'the reference reshapes a live monster object; ticket #38 owns combat' },
