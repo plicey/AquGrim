@@ -371,6 +371,10 @@ the origin.
 A failure to start is the plugin's to catch: a plugin that cannot get an origin stays on its live
 URLs.
 
+Pass `userAgent` when the plugin has a session rule that rewrites `User-Agent` for its own
+hosts. Those rules match URL patterns, so they never see a loopback URL: the origin applies the
+plugin's policy to the upstream request instead, and the upstream keeps seeing what it saw before.
+
 Permission: `spawn-helper-process`. Script path must stay **inside the plugin directory** (no `..`).
 
 Used by AQW Char Page Studio. Most plugins never need this.

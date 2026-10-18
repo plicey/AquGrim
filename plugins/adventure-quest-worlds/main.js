@@ -77,7 +77,11 @@ async function activate(host) {
     const settings = (typeof host.getPlatformSettings === 'function' && host.getPlatformSettings()) || {};
     if (settings.localOrigin === true) {
         try {
-            const baseUrl = await host.declareGameOrigin({ routes: gameOrigin.routes() });
+            const baseUrl = await host.declareGameOrigin({
+                routes: gameOrigin.routes(),
+                // The artix-ua session rule matches *.aq.com, so it never sees loopback.
+                userAgent: gameOrigin.userAgent
+            });
             host.log('game origin: ' + baseUrl);
         } catch (err) {
             host.log('game origin unavailable (' + (err && err.message ? err.message : err) +

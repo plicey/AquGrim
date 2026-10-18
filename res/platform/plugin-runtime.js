@@ -63,6 +63,7 @@ function startGameOrigin(declaration) {
     const proxy = create({
         routes: declared.routes,
         files: files,
+        userAgent: typeof declared.userAgent === 'function' ? declared.userAgent : null,
         log: function (line) { console.log('[AquaStar:origin] ' + line); }
     });
     return Promise.resolve(proxy.listen(0)).then(function (baseUrl) {

@@ -228,3 +228,27 @@ test('a slow upstream does not hold the client open forever', async function () 
     await upstream.close();
   }
 });
+test('a declared user-agent policy is applied to upstream requests', async function () {
+  // The plugin's own UA policy targets the live hosts, so it never matches loopback URLs:
+  // without this the upstream would see Electron's raw UA instead of the launcher's.
+  const upstream = await startUpstream(plain('ua:'));
+  const proxy = createOriginProxy({
+    routes: [{ prefix: '/', origin: upstream.origin }],
+    userAgent: function (received) {
+      return received.replace(/ Chrome\/\S+| Electron\/\S+/g, '').replace(/\s{2,}/g, ' ').trim();
+    }
+  });
+  const origin = await proxy.listen(0);
+  try {
+    await request(origin + '/game/gamefiles/Loader4.swf', {
+      headers: { 'user-agent': 'Mozilla/5.0 (X11) AquaStar/2 Chrome/87 Electron/11.5.0 Safari/537.36' }
+    });
+    assert.strictEqual(
+      upstream.seen[0].headers['user-agent'],
+      'Mozilla/5.0 (X11) AquaStar/2 Safari/537.36'
+    );
+  } finally {
+    await proxy.close();
+    await upstream.close();
+  }
+});

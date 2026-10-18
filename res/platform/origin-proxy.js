@@ -35,6 +35,10 @@ function createOriginProxy(opts) {
     // game's own origin so page and SWF are same-origin, which a file:// page is not.
     const files = opts.files || {};
     const upstreamTimeoutMs = opts.upstreamTimeoutMs || DEFAULT_UPSTREAM_TIMEOUT_MS;
+    // A plugin's own User-Agent policy targets its live hosts, so it never matches the
+    // loopback URLs the origin sees. The plugin passes the policy here instead; without one
+    // the upstream would get whatever UA the client sent.
+    const userAgent = typeof opts.userAgent === 'function' ? opts.userAgent : null;
     const log = opts.log || function () {};
     let publishedPort = null;
 
@@ -47,6 +51,9 @@ function createOriginProxy(opts) {
         // would describe framing that no longer applies.
         delete headers['transfer-encoding'];
         headers.host = target.host;   // upstreams answer by Host, not by the loopback address
+        if (userAgent && headers['user-agent']) {
+            headers['user-agent'] = userAgent(headers['user-agent']);
+        }
         if (body && body.length) headers['content-length'] = String(body.length);
         const transport = target.protocol === 'https:' ? https : http;
         const upstream = transport.request(target, { method: req.method, headers: headers }, function (upRes) {

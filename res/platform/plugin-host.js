@@ -391,9 +391,12 @@ function createPluginHost(options) {
         /**
          * Serve this plugin's game paths from a loopback origin and answer with its base URL.
          * routes: [{ prefix, origin }] - longest matching prefix wins, path preserved.
+         * userAgent: optional (received) => sent policy for the plugin's own hosts, which the
+         * loopback URLs it sees would otherwise never match.
          */
         declareGameOrigin: function (declaration) {
             requirePermission('declareGameOrigin', 'game-origin');
+            declaration = declaration || {};
             const routes = declaration && declaration.routes;
             if (!Array.isArray(routes) || !routes.length || !routes.every(function (route) {
                 if (!route || typeof route.prefix !== 'string' || !route.prefix) return false;
@@ -416,7 +419,11 @@ function createPluginHost(options) {
                 throw new Error('[AquaStar:plugins] game origin not wired');
             }
             state.gameOrigin = { routes: routes };
-            return Promise.resolve(deps.startGameOrigin({ routes: routes, pluginId: pluginId }))
+            return Promise.resolve(deps.startGameOrigin({
+                routes: routes,
+                userAgent: typeof declaration.userAgent === 'function' ? declaration.userAgent : null,
+                pluginId: pluginId
+            }))
                 .then(function (baseUrl) {
                     state.gameOrigin.baseUrl = baseUrl;
                     return baseUrl;
