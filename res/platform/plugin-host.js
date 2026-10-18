@@ -59,11 +59,27 @@ function createPluginHost(options) {
         ipcListeners: [],
         stores: {}
     };
-
     const deps = Object.assign({}, options.deps || {});
     const log = typeof options.log === 'function'
         ? options.log
         : function (msg) { console.log('[AquaStar:plugins] ' + msg); };
+
+    const bridgeChannel = require('./bridge-channel.js').createBridgeChannel({
+        // The window the platform opened for this plugin's own game: the only page whose
+        // <object> is the bridge's. Resolved per call, so a window that reopened is picked up.
+        getGameWindow: function () {
+            if (typeof deps.getGameWindow === 'function') return deps.getGameWindow();
+            return null;
+        },
+        executeJavaScript: function (webContents, source, label) {
+            if (typeof deps.executeJavaScript !== 'function') {
+                return Promise.resolve(null);
+            }
+            return deps.executeJavaScript(webContents, source, label);
+        },
+        probeNames: Array.isArray(manifest.bridgeCallbacks) ? manifest.bridgeCallbacks : [],
+        log: function (msg) { log('bridge: ' + msg); }
+    });
 
     // Auto-wire main-process IPC + namespaced JSON stores when running under Electron.
     try {
@@ -423,6 +439,8 @@ function createPluginHost(options) {
         /**
          * Serve this plugin's game paths from a loopback origin and answer with its base URL.
          * routes: [{ prefix, origin }] - longest matching prefix wins, path preserved.
+         * files: optional { "/path": absoluteFile } - local files the origin answers itself, which
+         * is how a plugin serves the page and SWF that must share the game's origin.
          * userAgent: optional (received) => sent policy for the plugin's own hosts, which the
          * loopback URLs it sees would otherwise never match.
          */
@@ -447,12 +465,28 @@ function createPluginHost(options) {
                     '[AquaStar:plugins] game origin already declared by plugin "' + pluginId + '"'
                 );
             }
+            let files = {};
+            if (declaration.files != null) {
+                if (typeof declaration.files !== 'object' || Array.isArray(declaration.files)) {
+                    throw new Error('[AquaStar:plugins] declareGameOrigin files must be an object');
+                }
+                Object.keys(declaration.files).forEach(function (servedPath) {
+                    const target = declaration.files[servedPath];
+                    if (servedPath.charAt(0) !== '/' || typeof target !== 'string' || !target) {
+                        throw new Error(
+                            '[AquaStar:plugins] declareGameOrigin files must map "/path" to an absolute file'
+                        );
+                    }
+                    files[servedPath] = target;
+                });
+            }
             if (typeof deps.startGameOrigin !== 'function') {
                 throw new Error('[AquaStar:plugins] game origin not wired');
             }
-            state.gameOrigin = { routes: routes };
+            state.gameOrigin = { routes: routes, files: files };
             return Promise.resolve(deps.startGameOrigin({
                 routes: routes,
+                files: files,
                 userAgent: typeof declaration.userAgent === 'function' ? declaration.userAgent : null,
                 pluginId: pluginId
             }))
@@ -480,6 +514,34 @@ function createPluginHost(options) {
             Object.keys(catalog).forEach(function (localeId) {
                 state.locales[localeId] = catalog[localeId];
             });
+        },
+
+        /**
+         * The game bridge: the plugin's own call surface on the game window's movie, driven from
+         * the page side (res/platform/bridge-channel.js). Gated on `game-bridge`: a plugin that has
+         * not declared it cannot attach, and cannot call.
+         *
+         * `call` never throws for a bridge that is absent or slow - it reports why, so a feature
+         * window can show the reason instead of dying.
+         */
+        bridge: {
+            attach: function () {
+                requirePermission('host.bridge.attach', 'game-bridge');
+                return bridgeChannel.attach();
+            },
+            call: function (name, args) {
+                requirePermission('host.bridge.call', 'game-bridge');
+                return bridgeChannel.call(name, args);
+            },
+            attachedWindow: function () {
+                requirePermission('host.bridge.attachedWindow', 'game-bridge');
+                return bridgeChannel.attachedWindow();
+            },
+            /** The callback names this plugin's bridge registers (its manifest's declaration). */
+            callbacks: function () {
+                requirePermission('host.bridge.callbacks', 'game-bridge');
+                return Array.isArray(manifest.bridgeCallbacks) ? manifest.bridgeCallbacks.slice() : [];
+            }
         },
 
         getPlatformSettings: function () {

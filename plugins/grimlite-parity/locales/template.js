@@ -12,16 +12,24 @@ exports.dialogMessages = {
         return '' +
             expand(k.grimliteBotFile) + '' +
             expand(k.grimliteBank) + '' +
-            expand(k.grimliteParityPlaceholder) + '';
+            expand(k.grimliteEyedropper) + '' +
+            expand(k.grimliteNotepad) + '' +
+            expand(k.grimliteAbout) + '' +
+            expand(k.grimliteParityPlaceholder) + '' +
+            expand(k.grimliteParityDevTest) + '';
     }
 };
 
 exports.menuMessages = {
     grimliteMenu: "",
     grimliteBotFile: "",
+    grimliteEyedropper: "",
+    grimliteNotepad: "",
+    grimliteAbout: "",
     grimliteBank: "",
     grimliteSets: "",
-    grimlitePlaceholder: ""
+    grimlitePlaceholder: "",
+    grimliteDevTest: ""
 };
 
 exports.botFileMessages = {
@@ -43,7 +51,11 @@ exports.windowTitles = {
     botFile: "",
     bank: "",
     sets: "",
-    placeholder: ""
+    placeholder: "",
+    eyedropper: "",
+    notepad: "",
+    about: "",
+    devtest: ""
 };
 
 exports.bankMessages = {
@@ -93,4 +105,22 @@ exports.settingsMessages = {
     settingsSections: {
         packets: ""
     }
+};
+
+exports.notepadMessages = {
+    hint: "",
+    noGame: "",
+    saveTitle: "",
+    savedAs: "",
+    saveFailed: ""
+};
+
+exports.eyedropperMessages = {
+    capturing: "",
+    captureFailed: "",
+    hint: ""
+};
+
+exports.aboutMessages = {
+    reloadHint: ""
 };
