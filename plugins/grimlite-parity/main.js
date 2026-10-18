@@ -30,6 +30,7 @@ const createEyedropper = require('./features/eyedropper/eyedropper.js').createEy
 const createAbout = require('./features/about/about.js').createAbout;
 const createCosmetics = require('./features/cosmetics/cosmetics-window.js').createFromHost;
 const createOptionsWindow = require('./features/options/options-window.js').createFromHost;
+const createTravelWindow = require('./features/travel/travel-window.js').createFromHost;
 const { createHotkeys } = require('./features/hotkeys/hotkeys.js');
 const { createHotkeysWindow } = require('./features/hotkeys/hotkeys-window.js');
 const { createGameCalls } = require('./game-calls.js');
@@ -293,6 +294,11 @@ async function activate(host) {
         feature: hotkeys,
         messages: host.getLocaleStrings('hotkeysMessages') || {}
     }).attachTo(host);
+
+    // Fast travels and the map bypasser (#32): the reference's Tools -> Fast travels form. Every
+    // game call goes through the plugin's own loader-name adapter (features/travel/game-access.js)
+    // and the generic bridge callbacks underneath it, so nothing here touches Flash itself.
+    createTravelWindow(host).attach();
 
     host.registerLocales({
         'en-US': require('./locales/en-US.js')
