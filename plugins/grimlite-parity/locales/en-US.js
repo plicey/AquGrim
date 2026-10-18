@@ -6,6 +6,7 @@ exports.dialogMessages = {
         }
         return 'Grimlite Parity\n' +
             expand(k.grimliteBotFile) + ' - Bot file window\n' +
+            expand(k.grimliteBank) + ' - Bank window\n' +
             expand(k.grimliteParityPlaceholder) + ' - Parity placeholder window';
     }
 };
@@ -13,6 +14,8 @@ exports.dialogMessages = {
 exports.menuMessages = {
     grimliteMenu: 'Grimlite',
     grimliteBotFile: 'Bot file',
+    grimliteBank: 'Bank',
+    grimliteSets: 'Sets',
     grimlitePlaceholder: 'Parity placeholder window'
 };
 
@@ -35,7 +38,48 @@ exports.botFileMessages = {
 exports.windowTitles = {
     primary: 'AquaStar - Grimlite Parity',
     botFile: 'Grimlite Parity - Bot File',
+    bank: 'Grimlite Parity - Bank',
+    sets: 'Grimlite Parity - Set',
     placeholder: 'Grimlite Parity - Placeholder'
+};
+
+// The Bank window (ticket #29). The reference's own labels, verbatim from
+// Grimoire/UI/BankForm.Designer.cs: "What to bank (optional)", "AC or Non-AC", "Bank all
+// except selected", "Bank", "Bank All". The two refusals are the logic's.
+exports.bankMessages = {
+    title: 'Bank',
+    categoryLabel: 'What to bank (optional)',
+    acLabel: 'AC or Non-AC',
+    allExcept: 'Bank all except selected',
+    bank: 'Bank',
+    bankAll: 'Bank All',
+    working: 'Banking...',
+    done: 'Transferred {n} of {t} item(s).',
+    failed: 'That transfer did not run.'
+};
+
+// The Sets window (ticket #29). The reference's own control words from
+// Grimoire/UI/Set.Designer.cs: "Add", "Clear", "Save", "Load", and its "R" refresh glyph.
+exports.setsMessages = {
+    window: {
+        title: 'Set',
+        refresh: 'R',
+        add: 'Add',
+        clear: 'Clear',
+        save: 'Save',
+        load: 'Load',
+        equip: 'Equip',
+        setHeading: 'Set',
+        savedHeading: 'Saved sets'
+    },
+    added: 'Added to the set.',
+    cleared: 'Cleared.',
+    saved: 'Saved.',
+    loaded: 'Loaded.',
+    equipped: 'Equipped {n} item(s).',
+    openTitle: 'Load Set',
+    saveTitle: 'Save Set',
+    filterName: 'Grimoire sets'
 };
 
 // Read by the Settings window (see res/features/settings/settings.html): the smoke keys the

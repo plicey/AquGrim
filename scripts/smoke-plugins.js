@@ -47,6 +47,20 @@ ok(
   'parity bot file page'
 );
 ok(fs.existsSync(path.join(parity, 'bot', 'bots.js')), 'parity bot file reader/writer');
+ok(
+  fs.existsSync(path.join(parity, 'features', 'bank', 'bank.html')),
+  'parity bank page'
+);
+ok(fs.existsSync(path.join(parity, 'features', 'sets', 'sets.html')), 'parity sets page');
+ok(fs.existsSync(path.join(parity, 'bridge.js')), 'parity game access interface');
+
+// A set this app writes must stay readable by the reference client: round-trip a fixture.
+const sets = require(path.join(parity, 'features', 'sets', 'sets.js'));
+const setPath = path.join(root, 'test', 'fixtures', 'grimlite-sets', 'reference-set.gset');
+const setText = fs.readFileSync(setPath, 'utf8');
+const parsedSet = sets.parseSet(setText);
+ok(parsedSet.ok, 'a bundled .gset fixture parses: ' + parsedSet.error);
+ok(sets.serializeSet(parsedSet.entries) === setText, '.gset fixture re-serialises byte-exact');
 
 // The bot file window's preload is sandboxed, so it may only require('electron').
 const botPreload = fs.readFileSync(

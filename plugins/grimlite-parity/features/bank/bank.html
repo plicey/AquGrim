@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bank</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
+  }
+  body { padding: 12px; box-sizing: border-box; }
+  label { display: block; color: #dcdcdc; margin: 0 0 4px; }
+  select, button {
+    font: inherit; color: #eee; background: #2a2a2a; border: 1px solid #444;
+    border-radius: 4px; padding: 5px 8px;
+  }
+  select { width: 100%; box-sizing: border-box; }
+  .row { margin-bottom: 12px; }
+  .buttons { display: flex; gap: 8px; margin-top: 14px; }
+  .buttons button { flex: 1; cursor: pointer; }
+  .check { display: flex; align-items: center; gap: 6px; color: #dcdcdc; }
+  #status { margin-top: 12px; min-height: 17px; color: #9a9a9a; }
+  #status.err { color: #ff8e8e; }
+  #status.ok { color: #7fd08a; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <label for="category" id="categoryLabel">What to bank (optional)</label>
+    <select id="category"></select>
+  </div>
+  <div class="row">
+    <label for="ac" id="acLabel">AC or Non-AC</label>
+    <select id="ac"></select>
+  </div>
+  <div class="row">
+    <label class="check"><input type="checkbox" id="allExcept"> <span id="allExceptLabel">Bank all except selected</span></label>
+  </div>
+  <div class="buttons">
+    <button id="bank" class="primary">Bank</button>
+    <button id="bankAll">Bank All</button>
+  </div>
+  <div id="status"></div>
+<script>
+(function () {
+  var api = window.aquastarBank;
+  var category = document.getElementById('category');
+  var ac = document.getElementById('ac');
+  var allExcept = document.getElementById('allExcept');
+  var status = document.getElementById('status');
+
+  function setStatus(text, kind) {
+    status.textContent = text || '';
+    status.className = kind || '';
+  }
+
+  function fill(select, names) {
+    // Nothing is preselected: both of the reference's dialogs open blank and refuse the run
+    // until the user chooses, which is what its "Please select ..." messages are for.
+    select.innerHTML = '';
+    var blank = document.createElement('option');
+    blank.value = '';
+    select.appendChild(blank);
+    (names || []).forEach(function (name) {
+      var option = document.createElement('option');
+      option.value = name;
+      option.textContent = name;
+      select.appendChild(option);
+    });
+  }
+
+  function selection() {
+    return {
+      category: category.value || null,
+      ac: ac.value === '' ? null : ac.value === 'ACs',
+      allExcept: allExcept.checked
+    };
+  }
+
+  // The ticket asks a transfer to report completion, so the window shows what moved of what
+  // was chosen; anything short of all of it is reported as a problem, not a success.
+  function report(strings, result) {
+    if (!result || result.error) {
+      setStatus((result && result.error) || strings.failed, 'err');
+      return;
+    }
+    setStatus(strings.done.replace('{n}', result.transferred).replace('{t}', result.total),
+      result.transferred === result.total ? 'ok' : 'err');
+  }
+
+  function main() {
+    var strings = {};
+    return api.getMessages().then(function (loaded) {
+      strings = loaded || {};
+      document.getElementById('categoryLabel').textContent = strings.categoryLabel;
+      document.getElementById('acLabel').textContent = strings.acLabel;
+      document.getElementById('allExceptLabel').textContent = strings.allExcept;
+      document.getElementById('bank').textContent = strings.bank;
+      document.getElementById('bankAll').textContent = strings.bankAll;
+      document.title = strings.title;
+    }).then(api.getLists).then(function (lists) {
+      fill(category, lists.categories);
+      fill(ac, lists.acChoices);
+    }).then(function () {
+      function run(which) {
+        setStatus(strings.working, '');
+        api[which](selection()).then(function (result) {
+          report(strings, result);
+        }).catch(function (error) {
+          setStatus(String(error.message || error), 'err');
+        });
+      }
+      document.getElementById('bank').addEventListener('click', function () { run('bankCategory'); });
+      document.getElementById('bankAll').addEventListener('click', function () { run('bankAll'); });
+    }).catch(function (error) {
+      setStatus(String(error.message || error), 'err');
+    });
+  }
+
+  main();
+})();
+</script>
+</body>
+</html>

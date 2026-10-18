@@ -94,6 +94,8 @@ test('the parity plugin is discovered as a bundled plugin and activates', async 
   const windowIds = {};
   windowIds[PLACEHOLDER_ID] = true;
   windowIds['grimlite-parity-bot-file'] = true;
+  windowIds['grimlite-parity-bank'] = true;
+  windowIds['grimlite-parity-sets'] = true;
   assert.deepStrictEqual(registered.sort(), Object.keys(windowIds).sort());
   assert.ok(items[0].submenu.every(function (item) { return typeof item.click === 'function'; }));
 });

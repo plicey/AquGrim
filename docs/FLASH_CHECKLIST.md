@@ -63,6 +63,36 @@ covered there against the reference corpus (parse → save → byte-identical, 6
 
 ---
 
+## Grimlite Parity — Bank and Sets (ticket #29) — needs the real game and dialogs
+
+**Blocked on ticket #28.** Everything below that touches the game is unreachable today: the
+plugin's game access (`plugins/grimlite-parity/bridge.js`) reports "the game bridge is not
+wired in this build (ticket #28) yet" for every call, and never pretends to have transferred or
+equipped anything. The window shells, the list model, the persistence and the set file format
+are covered by `npm test`; these boxes are the live half.
+
+- [ ] With ticket #28 merged: **Bank** transfers the chosen category, honouring the AC/non-AC
+      choice, and does not touch equipped items or Treasure Potion
+- [ ] **Bank all except selected** moves everything outside the selection, and nothing in it
+- [ ] **Bank All** with ACs moves AC items even when the bank is full; with non-ACs it stops
+      when the bank fills, without an error
+- [ ] A long transfer paces itself: the game accepts every move, and no "transaction already in
+      progress" style rejection appears
+- [ ] The window reports completion (how many of how many) when a transfer ends
+- [ ] **Sets → Add** fills the combo with the five groups (Weapons, Classes, Armors, Helmets,
+      Capes) and the separators cannot be picked
+- [ ] **Save** writes a set where the dialog points, and a `.gset` written by **Grimlite-Li**
+      (`Sets/` beside its exe) opens here and lists its items
+- [ ] A set saved **here** opens in Grimlite-Li's own Sets form (Tools → Sets)
+- [ ] **Equip** equips the set's items in order; an item not in the bag is skipped and
+      reported, not fatal
+- [ ] If the game refuses an equip, the sequence stops and the window says so rather than
+      continuing as if it worked
+- [ ] Closing either window and reopening it (**Grimlite → Bank** / **Sets**) restores its
+      state, and the sets folder is the one last used
+
+---
+
 ## Adventure Quest Worlds
 
 - [ ] Switch active plugin to **Adventure Quest Worlds**, restart
