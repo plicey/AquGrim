@@ -495,6 +495,95 @@ human:
 
 ---
 
+---
+
+## Bot engine runtime and lifecycle (ticket #37) - needs a display, a real game and an account
+
+Everything in this section is about a bot *running*. The loop, its ordering, the variables, the
+refusals and the per-window registry are covered by `npm test` against injected fakes; nothing
+below can be, because each box needs a live client to answer.
+
+### A bot runs end to end
+
+- [ ] Open a `.gbot`, tick **Enable Bot** (Bot Manager -> Info tab), and the character starts
+      following the list: the first command's effect appears in the game within a couple of seconds
+- [ ] The window's log shows the command being run, and **un-ticking** Enable Bot stops it at once
+- [ ] A bot whose last command is **Stop bot** ends by itself and un-ticks
+- [ ] A label + **Goto label** pair loops, and **Restart bot** starts the list over
+- [ ] **Index Up / Down / Goto** land where the reference lands: Goto n resumes at command *n + 1*
+      (the reference's own arithmetic), and a Goto past the end wraps to the top
+- [ ] A statement that does not hold skips exactly the one command under it, and the command under
+      it runs when the statement holds
+- [ ] **Set Bot Delay** paces the commands after it, and a **Blank** does not wait the delay
+
+### Variables and ints
+
+- [ ] **Set variable** / **Update variable** substitute into a later command's field as `[name]`
+- [ ] `{PLAYERNAME}` in a command's text becomes the character's own name
+- [ ] An arithmetic value (`5*2+1`) is evaluated; a plain string is passed through untouched
+- [ ] A reference to a variable that was never set is left as written and the log says
+      `[Var Error] Key for [x] not found/Undefined`
+- [ ] **Int 1..n** counts up and down, and **Int is / is not / equals** compare as they do upstream
+
+### Lifecycle: reload, death, disconnect
+
+- [ ] Walking through a map door pauses the bot and it resumes where it was once the map is up -
+      the index does not move on while the map loads
+- [ ] Dying with **Restart upon death** ticked restarts the list; unticked, the bot re-runs the
+      command it died on
+- [ ] The character respawns before the bot carries on (the reference waits for its own respawn
+      point, up to ten one-second polls)
+- [ ] Pulling the network out with **Auto Relogin** off stops the bot, and the log says
+      `disconnected. Last cmd: [n]...`
+- [ ] With **Auto Relogin** on, the character logs back in and the bot restarts from the top. This
+      build has no relogin wired in yet (#35 pending), so today it logs
+      `auto-relogin is on but no relogin is wired in yet (#35); stopping` and stops - that message
+      is the expected result until #35 lands
+
+### Windows
+
+- [ ] Minimising the game window does not pause a running bot (the app already disables background
+      throttling for game windows)
+- [ ] Closing the game window stops that window's bot rather than leaving it polling
+- [ ] Two game windows each run a bot, and each window's own Enable Bot tick and state belong to
+      that window
+
+### What could not be checked here, and why
+
+The engine consumes an injected session (spec #19, Seam 4). Eight of its ten wants are asked for by
+the reference loader's **own helper name** through the surface ticket #48 built
+(`loader-surface.js`), which holds one row per name reaching the path that name's decompiled body
+reads: `IsLoggedIn`, `Health`, `HealthMax`, `Mana`, `ManaMax`, `SetSpawnPoint`, `Rest`,
+`CancelTarget`. Reading `grimoire/game/Player.as` and `World.as` beside that table is the check
+that the session and the table agree.
+
+The two the surface does **not** answer, and what this ticket does instead:
+
+- **`MapLoadComplete`** - the loader's body reads `world.mapLoadInProgress` *and then* inspects its
+  own display list ("the top child is not the connection movie"). The surface refuses it because
+  ticket #41 owns that state, so the session's `ready()` reads the game's own
+  `world.mapLoadInProgress` - the half a reload trips, and the half the loop's pause keys off. The
+  display-list half is **not checked**, so a map that is loaded but still showing the connection
+  movie would read as ready here.
+- **`GetUsername`** - the reference loader holds the login it captured from its own login form
+  (`Root.as`), which ticket #35 owns; it does not read the name out of the game. The session reads
+  `world.myAvatar.objData.strUsername` instead, the field `Player.as` line 455 itself assigns, so
+  `{PLAYERNAME}` still resolves to the character's name.
+
+That is all a static check, not a live read: **no path and no helper has been exercised against a
+real client**, so the first run is the milestone rather than a formality.
+
+Two known limits to look for on that first run:
+
+- **The bridge channel addresses one game window at a time.** `res/platform/bridge-channel.js`
+  resolves its target as the most recently created window this plugin says is its game, so two game
+  windows are currently read as one. The bot engine itself is per-window and tested as such
+  (`test/unit/grimlite-bot-runtime.test.js`); when the channel can be scoped, only the caller of
+  `createRuntimeManager` changes in `plugins/grimlite-parity/main.js`. The two-window box above
+  cannot pass until then, and it is a bridge-channel property rather than a bot-engine one.
+- **Auto-relogin is not wired** (#35). The bot honours the setting by naming the gap and stopping,
+  rather than silently ignoring a tick the user set.
+
 ## Options and Hotkeys (ticket #34) - needs the real game and a display
 
 The toggle set, its order, the walkspeed field and the whole hotkey vocabulary are covered offline
@@ -679,3 +768,29 @@ these boxes are the live half and none can be ticked without a running client an
 - [ ] **Go to Wikipage** and **Search on Wiki** open in the app's own browser window rather than the system browser, with the name's spaces turned into `+`
 - [ ] The bot list actions (**Add to both**, **Add to whitelist**, **Add to unbank list** and the three "Add all" aggregates) append to the **Bot Manager**'s own Drops, Items and Quests lists with the reference's Contains guard, and the rows survive a Save to `.gbot`
 - [ ] **Copy all** and **Copy all Reqs** put the reference's own two lines on the clipboard, the second with its extra comma
+
+## Grimlite Parity - Fast travels and the map bypasser (ticket #32) - needs the real game and a display
+
+`features/travel/` is the reference's Tools -> **Fast travels** form. Its destinations, groups,
+labels, map/cell/pad triples, shop ids and quest ids are data (`travel-data.js`), the join-or-walk
+decision, the private-room suffix, the quest-progress frames and the bypasser are logic
+(`travel.js`), and the page, window, menu entry and key binding are checked by `npm test` -
+including that the page draws every button exactly once, and that the awe shop button the
+reference keeps inside its own box is drawn at all.
+
+Every game call it makes is a loader name the bridge's surface answers (#48). No helper here is
+waiting on a bridge that does not exist; what cannot be checked without a running client is
+whether the game acts on each call.
+
+- [ ] **Fast travels** opens from the Grimlite menu and with Alt+Shift+T, and **Show Fast Travels** in the Hotkeys window runs the same action
+- [ ] Every button in **Fast travels** moves the character: a destination in the map you are standing in walks to its cell without re-joining, and one in another map joins it
+- [ ] The tercess destinations walk to tercess's own entry cell (`m22`/`Left`) first when you are elsewhere, and do not when you are already in tercess
+- [ ] **Private** checked numbers the room (the map joins as `<map>-<number>`); unchecked joins the bare map, and the box's range is the reference's own (100000 opens it, 1000000 is the maximum)
+- [ ] **Binky (doomvault)** fakes quest 20's progress before it joins - without it the room refuses entry
+- [ ] **Awe Shop (museum)** opens the shop of the ticked enchantment type: Lucky 639, Thief 637, Hybrid 633, Healer 638, Fighter 635, Wizard 636
+- [ ] **Ultraboss & Daily** asks the game for the reference's own sixteen quest ids
+- [ ] **Bypass All** blanks the storyline fields the client has sent and says the reference's own message; a relog restores the original progression, which is what the message promises
+- [ ] **DoomvaultB** fakes quest 20, sends the achievement frame to the **server**, fakes quest 27 and then enters the room - the one button whose frame is written to the server rather than handed to the client
+- [ ] The four **Fast travels 2** buttons (Treetitanbattle, Ultradrakath, Tower of Doom 10, Necrodungeon) fake their quest's progress, wait, and then enter their room
+- [ ] **Unlock** with a quest id the client does not hold loads it and waits for it; with one the game never sends it reports the id and injects nothing
+- [ ] The generated packet is shown read-only, **Copy** puts the same text on the clipboard, and **Send** hands it to the client as a JSON frame

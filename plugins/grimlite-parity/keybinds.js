@@ -7,6 +7,10 @@ const DEFAULTS = {
     grimliteEyedropper: 'Alt+Shift+E',
     grimliteNotepad: 'Alt+Shift+N',
     grimliteAbout: 'Alt+Shift+A',
+    // The reference ships its hotkeys EMPTY (Grimoire/UI/Root.cs only loads them from a user
+    // config), so every default here is this port's own choice; H was already taken by the
+    // Hotkeys window (#34), so Char Select keeps the family's next free letter.
+    grimliteCharSelect: 'Alt+Shift+S',
     grimliteParityDevTest: 'Alt+Shift+D',
     grimliteBank: 'Alt+Shift+K',
     // The reference's own action list carries "Show Loaders" (Hotkeys.cs:398); this port gives
@@ -23,7 +27,11 @@ const DEFAULTS = {
     grimliteHotkeys: 'Alt+Shift+H',
     // The reference's own "Show DropUi" action (Hotkeys.cs:415). Not I: the platform already
     // holds Alt+Shift+I (res/keybindings.js:187).
-    grimliteDrop: 'Alt+Shift+P'
+    grimliteDrop: 'Alt+Shift+P',
+    // The reference's own action list carries "Show Fast Travels" (Hotkeys.cs:402). Alt+Shift+T
+    // takes nothing: the app holds no plain Alt+T and the game plugin's own reminders entry is
+    // Alt+T, which this family leaves alone.
+    grimliteFastTravels: 'Alt+Shift+T'
 };
 
 function register(host) {
@@ -51,6 +59,15 @@ function register(host) {
             id: 'grimliteAbout',
             action: function () {
                 host.windows.openFeatureWindow(windows.ABOUT_WINDOW_ID);
+            }
+        },
+        {
+            // The reference's own action list has no Char Select entry: its char list is a menu,
+            // not a hotkey (Hotkeys.cs has no Char Select action). This port gives the window a
+            // default on a key no binding of the app's or the game plugin's own uses.
+            id: 'grimliteCharSelect',
+            action: function () {
+                host.windows.openFeatureWindow(windows.LOGIN_WINDOW_ID);
             }
         },
         {
@@ -109,6 +126,12 @@ function register(host) {
             id: 'grimliteDrop',
             action: function () {
                 host.windows.openFeatureWindow(windows.DROP_WINDOW_ID);
+            }
+        },
+        {
+            id: 'grimliteFastTravels',
+            action: function () {
+                host.windows.openFeatureWindow(windows.TRAVEL_WINDOW_ID);
             }
         }
     ]);

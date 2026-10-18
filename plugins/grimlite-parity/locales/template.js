@@ -25,7 +25,8 @@ exports.dialogMessages = {
             expand(k.grimliteParityDevTest) + '' +
             expand(k.grimliteOptions) + '' +
             expand(k.grimliteHotkeys) + '' +
-            expand(k.grimliteDrop) + '';
+            expand(k.grimliteDrop) + '' +
+            expand(k.grimliteFastTravels) + '';
     }
 };
 
@@ -36,6 +37,7 @@ exports.menuMessages = {
     grimliteEyedropper: "",
     grimliteNotepad: "",
     grimliteAbout: "",
+    grimliteCharSelect: "",
     grimliteBank: "",
     grimliteLoaders: "",
     grimliteSets: "",
@@ -43,6 +45,7 @@ exports.menuMessages = {
     grimliteOptions: "",
     grimliteHotkeys: "",
     grimliteDrop: "",
+    grimliteTravels: "",
     grimlitePlaceholder: "",
     grimliteDevTest: "",
     packetsMenu: "",
@@ -76,10 +79,12 @@ exports.windowTitles = {
     eyedropper: "",
     notepad: "",
     about: "",
+    charSelect: "",
     cosmetics: "",
     options: "",
     hotkeys: "",
     drop: "",
+    travels: "",
     devtest: "",
     packetLogger: "",
     packetSpammer: "",
@@ -180,7 +185,9 @@ exports.botManagerMessages = {
     saveSize: "",
     chooseDirectoryTitle: "",
     addFolderFailed: "",
-    read: ""
+    read: "",
+    botStarted: "",
+    botStopped: ""
 };
 
 exports.cosmeticsMessages = {
@@ -239,6 +246,27 @@ exports.dropsMessages = {
     confirmNo: ""
 };
 
+exports.travelMessages = {
+    title: "",
+    private: "",
+    aweGroup: "",
+    bypasser: "",
+    bypassHint: "",
+    generatedPacket: "",
+    unlock: "",
+    copy: "",
+    send: "",
+    working: "",
+    joining: "",
+    walking: "",
+    questsLoaded: "",
+    shopOpened: "",
+    bypassed: "",
+    copied: "",
+    done: "",
+    failed: ""
+};
+
 exports.loadersMessages = {
     openTitle: "",
     nothingToSave: ""
@@ -267,4 +295,25 @@ exports.tampererMessages = {
     sendToServer: "",
     sendToClient: "",
     clear: ""
+};
+
+exports.loginMessages = {
+    title: "",
+    savedHeading: "",
+    empty: "",
+    usernamePlaceholder: "",
+    passwordPlaceholder: "",
+    add: "",
+    added: "",
+    usernameRequired: "",
+    addFailed: "",
+    signIn: "",
+    signingIn: "",
+    signedIn: "",
+    signInFailed: "",
+    remove: "",
+    importFile: "",
+    imported: "",
+    connected: "",
+    disconnected: ""
 };

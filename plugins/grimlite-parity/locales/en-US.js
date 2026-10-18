@@ -20,7 +20,8 @@ exports.dialogMessages = {
             expand(k.grimliteParityDevTest) + ' - Dev Test (call a game function)\n' +
             expand(k.grimliteOptions) + ' - Options: the reference\'s own option toggles\n' +
             expand(k.grimliteHotkeys) + ' - Hotkeys: bind one key to one action\n' +
-            expand(k.grimliteDrop) + ' - Drop Ui: what has dropped, and taking it';
+            expand(k.grimliteDrop) + ' - Drop Ui: what has dropped, and taking it\n' +
+            expand(k.grimliteFastTravels) + ' - Fast travels: the destination buttons and the map bypasser';
     }
 };
 
@@ -31,6 +32,7 @@ exports.menuMessages = {
     grimliteEyedropper: 'Eye Dropper',
     grimliteNotepad: 'Notepad',
     grimliteAbout: 'About',
+    grimliteCharSelect: 'Char Select',
     grimliteBank: 'Bank',
     grimliteLoaders: 'Loaders/grabbers',
     grimliteSets: 'Sets',
@@ -38,6 +40,7 @@ exports.menuMessages = {
     grimliteOptions: 'Options',
     grimliteHotkeys: 'Hotkeys',
     grimliteDrop: 'Drop Ui',
+    grimliteTravels: 'Fast travels',
     grimlitePlaceholder: 'Parity placeholder window',
     grimliteDevTest: 'Dev Test',
     packetsMenu: 'Packets',
@@ -73,10 +76,12 @@ exports.windowTitles = {
     eyedropper: 'Grimlite Parity - Eye Dropper',
     notepad: 'Grimlite Parity - Notepad',
     about: 'Grimlite Parity - About',
+    charSelect: 'Grimlite Parity - Char Select',
     cosmetics: 'Grimlite Parity - SWF Cosmetics',
     options: 'Options',
     hotkeys: 'Hotkeys',
     drop: 'DropList',
+    travels: 'Fast travels',
     devtest: 'Dev Test',
     packetLogger: 'Packet logger',
     packetSpammer: 'Packet spammer',
@@ -188,7 +193,9 @@ exports.botManagerMessages = {
     saveSize: 'Save Size',
     chooseDirectoryTitle: 'Choose your bots directory',
     addFolderFailed: 'That folder could not be added.',
-    read: 'Read from the game.'
+    read: 'Read from the game.',
+    botStarted: 'Bot started.',
+    botStopped: 'Bot stopped.'
 };
 
 // The Cosmetics window (ticket #30). The slot labels, the list's own row words and the button
@@ -257,6 +264,31 @@ exports.dropsMessages = {
     confirmNo: 'No'
 };
 
+// The Fast travels window (ticket #32). Its control words are the reference's own
+// (Grimoire/UI/Travel.cs: "Private", "Awe Enchantment Shop", "Map Bypasser", "Story Quest ID that
+// required to unlock the map", "Unlock", "Generated packet", "Copy"); the sentences a page needs
+// to report itself are written here.
+exports.travelMessages = {
+    title: 'Fast travels',
+    private: 'Private',
+    aweGroup: 'Awe Enchantment Shop',
+    bypasser: 'Map Bypasser',
+    bypassHint: 'Story Quest ID that required to unlock the map',
+    generatedPacket: 'Generated packet',
+    unlock: 'Unlock',
+    copy: 'Copy',
+    send: 'Send',
+    working: 'Working...',
+    joining: 'Joining {map}...',
+    walking: 'Walking to {cell} in {map}...',
+    questsLoaded: 'Asked the game for {n} quest(s).',
+    shopOpened: 'Opened shop {id}.',
+    bypassed: 'Storyline bypassed.',
+    copied: 'Copied.',
+    done: 'Done.',
+    failed: 'That did not run.'
+};
+
 // The Loaders and grabbers window (ticket #31). The dialog title and the filter are the
 // reference's own (Loaders.cs:141-147); the control words are in the page, which draws them.
 exports.loadersMessages = {
@@ -290,4 +322,27 @@ exports.tampererMessages = {
     sendToServer: 'Send to server',
     sendToClient: 'Send to client',
     clear: 'Clear'
+};
+
+// The Char Select window (#35). The reference's own list is a menu of usernames; this port draws it
+// as a window so it can say where the credentials are held and offer a removal.
+exports.loginMessages = {
+    title: 'Char Select',
+    savedHeading: 'Saved characters',
+    empty: 'No characters saved yet.',
+    usernamePlaceholder: 'Username',
+    passwordPlaceholder: 'Password',
+    add: 'Add',
+    added: 'Saved for this session.',
+    usernameRequired: 'Enter a username first.',
+    addFailed: 'Could not save that character.',
+    signIn: 'Sign in',
+    signingIn: 'Signing in as {user}...',
+    signedIn: 'Signed in as {user}.',
+    signInFailed: 'The game did not accept the sign-in.',
+    remove: 'Remove',
+    importFile: 'Read CharSelect.cfg',
+    imported: 'Imported {count} character(s).',
+    connected: 'Connected.',
+    disconnected: 'Connection lost.'
 };

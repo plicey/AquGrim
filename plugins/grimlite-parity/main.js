@@ -17,6 +17,8 @@ const botFile = require('./features/bot-file/bot-file.js');
 const bankWindow = require('./features/bank/bank-window.js');
 const setsWindow = require('./features/sets/sets-window.js');
 const logger = require('./features/packets/logger.js');
+const botRuntime = require('./bot/runtime.js');
+const botSession = require('./bot/session.js');
 const loaders = require('./features/loaders/loaders.js');
 const spammerWindow = require('./features/packets/spammer-window.js');
 const tampererWindow = require('./features/packets/tamperer-window.js');
@@ -29,6 +31,7 @@ const createAbout = require('./features/about/about.js').createAbout;
 const createCosmetics = require('./features/cosmetics/cosmetics-window.js').createFromHost;
 const createOptionsWindow = require('./features/options/options-window.js').createFromHost;
 const createDropWindow = require('./features/drops/drop-window.js').createFromHost;
+const createTravelWindow = require('./features/travel/travel-window.js').createFromHost;
 const { createHotkeys } = require('./features/hotkeys/hotkeys.js');
 const { createHotkeysWindow } = require('./features/hotkeys/hotkeys-window.js');
 const { createGameCalls } = require('./game-calls.js');
@@ -133,6 +136,37 @@ async function activate(host) {
         return titles[key] || fallback;
     }
 
+    // The engine's per-window registry (#37). One independent bot per game window, each with its
+    // own session, variables, ints and index: the reference is a singleton because it is
+    // single-client, and spec #19 overrides that for this app.
+    //
+    const runtime = botRuntime.createRuntimeManager({
+        createSession: function () { return botSession.createSession({ bridge: host.bridge, log: host.log }); },
+        log: function (line) { host.log('bot: ' + line); }
+    });
+
+    // What a bot is filed under: the game window the bridge channel is bound to, and `game` while
+    // it is not bound to one yet. A bot's variables, ints and index belong to the game it drives,
+    // so the key is that window and not the window the button was pressed in.
+    //
+    // Resolved once and then kept: a key that changed under a running bot would lose its own
+    // state, and today the channel can only address one game window at a time anyway
+    // (res/platform/bridge-channel.js picks the most recently created one, so two game windows are
+    // driven as one). That limit is the channel's, and it is named in docs/FLASH_CHECKLIST.md under
+    // this ticket; the runtime itself is per-window and tested so, so when the channel can be
+    // scoped this function is the only thing that changes.
+    let botWindowKey = null;
+    function gameWindowKey() {
+        // Once bound, stay bound: a start and its later stop have to land on the same bot. While
+        // nothing is bound yet the key is re-resolved, so the first press after the game window
+        // appears picks it up rather than sticking on the placeholder forever.
+        if (botWindowKey && botWindowKey !== 'game') return botWindowKey;
+        const bridge = host.bridge;
+        const win = bridge && typeof bridge.attachedWindow === 'function' ? bridge.attachedWindow() : null;
+        botWindowKey = win && !win.isDestroyed() ? 'game-window-' + win.id : 'game';
+        return botWindowKey;
+    }
+
     let baseUrl = '';
     try {
         baseUrl = await host.declareGameOrigin({
@@ -181,6 +215,11 @@ async function activate(host) {
     // because the window is sandboxed.
     require('./features/devtest/devtest-main.js').register(host);
 
+    // Char Select (#35): the session's credentials, the one-click sign-in and the window that
+    // follows the connection. This plugin's window follows this plugin's game, so the list shows
+    // itself while the session is down and hides itself while it is up (Flash.cs:400-409).
+    require('./features/login/login-main.js').createFromHost(host);
+
     // Bank and Sets (#29). Both draw their own window and reach the game only through the
     // injected game access in bridge.js, which sits on this plugin's bridge channel (ticket #28).
     bankWindow.createFromHost(host).attach();
@@ -189,6 +228,11 @@ async function activate(host) {
     // folder tree, all of which a sandboxed page cannot reach for itself.
     const botManager = require('./features/bot-manager/bot-manager.js').createBotManager({
         host: host,
+        // The engine (#37): the window's Enable Bot tick starts and stops this bot, and the window
+        // reads its own running flag, pause and index back for its log. The bot's state is keyed by
+        // the game window it drives, so a bot belongs to its game rather than to the button.
+        runtime: runtime,
+        windowKeyFor: gameWindowKey,
         store: host.getStore(require('./bot/display-settings.js').STORE_NAMESPACE),
         // The reference puts its Bots/ folder beside the executable (Application.StartupPath); here
         // that is the app's own data directory, beside the store the plugin already keeps there.
@@ -267,6 +311,11 @@ async function activate(host) {
             };
         }())
     }).attach();
+
+    // Fast travels and the map bypasser (#32): the reference's Tools -> Fast travels form. Every
+    // game call goes through the plugin's own loader-name adapter (features/travel/game-access.js)
+    // and the generic bridge callbacks underneath it, so nothing here touches Flash itself.
+    createTravelWindow(host).attach();
 
     host.registerLocales({
         'en-US': require('./locales/en-US.js')

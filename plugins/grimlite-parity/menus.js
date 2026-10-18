@@ -27,6 +27,18 @@ function register(host, windowTitle) {
         }, {
             label: labels.grimliteMenu || 'Grimlite',
             submenu: [
+                // The reference keeps Char Select as its own top-level menu, leftmost in its menu
+                // bar (Root.cs:1150-1152 lists it before Tools/Packets/About). Here it is the first
+                // entry of the one menu this port contributes, which is the same position in the
+                // order the user reads.
+                {
+                    label: labels.grimliteCharSelect || 'Char Select',
+                    accelerator: keybinds.grimliteCharSelect,
+                    registerAccelerator: false,
+                    click: function () {
+                        host.windows.openFeatureWindow(windows.LOGIN_WINDOW_ID);
+                    }
+                },
                 // Bot file first: it is the window that works on a document of the user's own,
                 // like the reference's Bot Manager.
                 {
@@ -155,6 +167,16 @@ function register(host, windowTitle) {
                     click: function () {
                         host.windows.openFeatureWindow(windows.DROP_WINDOW_ID);
                     }
+                },
+                {
+                    // The reference's Tools menu, word for word (Root.cs:775): its first entry,
+                    // wired to its own "Show Fast Travels" action (Hotkeys.cs:402).
+                    label: labels.grimliteTravels || 'Fast travels',
+                    accelerator: keybinds.grimliteFastTravels,
+                    registerAccelerator: false,
+                    click: function () {
+                        host.windows.openFeatureWindow(windows.TRAVEL_WINDOW_ID);
+                    }
                 }
             ]
         }];
@@ -166,5 +188,6 @@ module.exports = {
     PLACEHOLDER_WINDOW_ID: windows.PLACEHOLDER_WINDOW_ID,
     LOGGER_WINDOW_ID: windows.LOGGER_WINDOW_ID,
     SPAMMER_WINDOW_ID: windows.SPAMMER_WINDOW_ID,
-    TAMPERER_WINDOW_ID: windows.TAMPERER_WINDOW_ID
+    TAMPERER_WINDOW_ID: windows.TAMPERER_WINDOW_ID,
+    TRAVEL_WINDOW_ID: windows.TRAVEL_WINDOW_ID
 };

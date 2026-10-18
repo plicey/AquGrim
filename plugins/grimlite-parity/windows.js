@@ -9,6 +9,7 @@ const BOT_FILE_PRELOAD = path.join(featureRoot, 'bot-file', 'preload_bot_file.js
 const BOT_FILE_WINDOW_ID = 'grimlite-parity-bot-file';
 const BANK_WINDOW_ID = 'grimlite-parity-bank';
 const SETS_WINDOW_ID = 'grimlite-parity-sets';
+const LOGIN_WINDOW_ID = 'grimlite-parity-char-select';
 const NOTEPAD_WINDOW_ID = 'grimlite-parity-notepad';
 const EYEDROPPER_WINDOW_ID = 'grimlite-parity-eyedropper';
 const ABOUT_WINDOW_ID = 'grimlite-parity-about';
@@ -23,6 +24,9 @@ const BOT_MANAGER_WINDOW_ID = 'grimlite-parity-bot-manager';
 const OPTIONS_WINDOW_ID = 'grimlite-parity-options';
 const HOTKEYS_WINDOW_ID = 'grimlite-parity-hotkeys';
 const DROP_WINDOW_ID = 'grimlite-parity-drop';
+// The id the Hotkeys window's own "Show Fast Travels" action already names
+// (features/hotkeys/action-targets.js), so that action is inert only until this window registers.
+const TRAVEL_WINDOW_ID = 'grimlite-parity-travels';
 
 // Every one of these is a page inside this plugin: no Flash, no Node in the page, and IPC
 // through its own sandbox-safe preload (docs/PLUGINS.md §4.7/§4.8).
@@ -140,6 +144,17 @@ function register(host, windowTitle) {
             config: windowConfig(host, 'about', 'preload_about.js', { width: 520, height: 560 })
         },
         {
+            // The reference's Char Select is a top-level menu whose items are the saved usernames
+            // (Root.cs:1150-1152); a menu cannot say where the credentials are held or offer a
+            // removal, so criterion 4 and the Remove half of criterion 5 get a window.
+            id: LOGIN_WINDOW_ID,
+            title: function () {
+                return windowTitle('charSelect', 'Grimlite Parity - Char Select');
+            },
+            url: pageUrl('login', 'login.html'),
+            config: windowConfig(host, 'login', 'preload_login.js', { width: 460, height: 480 })
+        },
+        {
             id: LOGGER_WINDOW_ID,
             title: function () {
                 return windowTitle('packetLogger', 'Packet logger');
@@ -212,6 +227,16 @@ function register(host, windowTitle) {
             },
             url: pageUrl('drops', 'drops.html'),
             config: windowConfig(host, 'drops', 'preload_drops.js', { width: 401, height: 300 })
+        },
+        {
+            // Travel.cs's own client area is 359x411; the port's page draws its two columns with
+            // the app's font, so it opens a little wider than the reference's form.
+            id: TRAVEL_WINDOW_ID,
+            title: function () {
+                return windowTitle('travels', 'Fast travels');
+            },
+            url: pageUrl('travel', 'travel.html'),
+            config: windowConfig(host, 'travel', 'preload_travel.js', { width: 430, height: 470 })
         }
     ]);
 }
@@ -237,7 +262,8 @@ module.exports = {
         BOT_MANAGER_WINDOW_ID,
         OPTIONS_WINDOW_ID,
         HOTKEYS_WINDOW_ID,
-        DROP_WINDOW_ID
+        DROP_WINDOW_ID,
+        TRAVEL_WINDOW_ID
     ],
     PLACEHOLDER_PAGE: PLACEHOLDER_PAGE,
     PLACEHOLDER_WINDOW_ID: PLACEHOLDER_WINDOW_ID,
@@ -246,6 +272,7 @@ module.exports = {
     BOT_FILE_WINDOW_ID: BOT_FILE_WINDOW_ID,
     BANK_WINDOW_ID: BANK_WINDOW_ID,
     SETS_WINDOW_ID: SETS_WINDOW_ID,
+    LOGIN_WINDOW_ID: LOGIN_WINDOW_ID,
     DEVTEST_PAGE: DEVTEST_PAGE,
     DEVTEST_WINDOW_ID: DEVTEST_WINDOW_ID,
     COSMETICS_WINDOW_ID: COSMETICS_WINDOW_ID,
@@ -259,5 +286,6 @@ module.exports = {
     BOT_MANAGER_WINDOW_ID: BOT_MANAGER_WINDOW_ID,
     OPTIONS_WINDOW_ID: OPTIONS_WINDOW_ID,
     HOTKEYS_WINDOW_ID: HOTKEYS_WINDOW_ID,
-    DROP_WINDOW_ID: DROP_WINDOW_ID
+    DROP_WINDOW_ID: DROP_WINDOW_ID,
+    TRAVEL_WINDOW_ID: TRAVEL_WINDOW_ID
 };
