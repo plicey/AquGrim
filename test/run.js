@@ -41,6 +41,7 @@ global.test = function (name, fn) {
   './unit/bridge-host.test.js',
   './unit/dev-test-window.test.js',
   './unit/grimlite-parity-windows.test.js',
+  './unit/grimlite-loaders.test.js',
   './unit/parity-boot.test.js',
   './unit/plugin-runtime.test.js',
   './unit/flash-trust.test.js',
