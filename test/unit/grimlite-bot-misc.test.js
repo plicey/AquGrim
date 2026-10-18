@@ -305,6 +305,36 @@ test('CmdProvoke sets provoke, and CmdToggleProvoke follows its own Type', async
     [true], 'off becomes on');
 });
 
+test('a provoke the Options window cannot answer is reported, not an unhandled rejection', async () => {
+  // The real seam is the Options feature (#34), whose setToggle reaches the game and answers
+  // { ok, error }. In a bot that refusal has to reach the log; an unhandled rejection would kill
+  // the loop or vanish into the console.
+  const refused = engine({
+    options: {
+      setProvoke: function () { return Promise.resolve({ ok: false, error: 'Hide Players has no route' }); },
+      getProvoke: function () { return false; }
+    }
+  });
+  await run(refused, 'CmdProvoke', { Set: true });
+  assert.ok(refused.records.some(function (l) {
+    return /CmdProvoke/.test(l) && /Hide Players has no route/.test(l);
+  }), 'the window own reason reaches the log: ' + refused.records.join('|'));
+
+  const threw = engine({
+    options: { setProvoke: function () { return Promise.reject(new Error('the bridge is not attached')); } }
+  });
+  await run(threw, 'CmdToggleProvoke', { Type: 1 });
+  assert.ok(threw.records.some(function (l) {
+    return /CmdToggleProvoke/.test(l) && /not attached/.test(l);
+  }), 'a rejected toggle is reported too: ' + threw.records.join('|'));
+
+  // No options seam at all - the plugin wired one, but a build that did not must say so rather
+  // than reporting a tick that never moved.
+  const none = await run(engine({ options: null }), 'CmdProvoke', { Set: true });
+  assert.ok(none.records.some(function (l) { return /no option toggles wired/.test(l); }),
+    'a build with no toggles says so: ' + none.records.join('|'));
+});
+
 // ------------------------------------------------------------------ the packet-shaped helpers
 
 test('a packet gets the reference own substitutions: rooms, name, map, dashes and the 1e stamp', () => {
@@ -367,6 +397,16 @@ test('CmdPacketDelay waits first and sends once, which is the reference own orde
 
   const client = await run(engine(), 'CmdPacketDelay', { Packet: 'x', Delay: 700, Client: true });
   assert.deepStrictEqual(client.sent, [{ direction: 'toClient', text: 'x' }]);
+});
+
+test('the two packet classes keep their own Delay defaults, which differ upstream', async () => {
+  // CmdPacket's own initialiser is 1000; CmdPacketDelay carries none, so a file without the key
+  // sends straight away. Sharing one default would make one of the two behave unlike the client
+  // it says it is, which is the whole point of the ticket.
+  assert.deepStrictEqual((await run(engine(), 'CmdPacket', { Packet: 'x', SpamTimes: 2 })).waited,
+    [1000, 1000], 'CmdPacket paces itself 1000 ms by default');
+  assert.deepStrictEqual((await run(engine(), 'CmdPacketDelay', { Packet: 'x' })).waited, [],
+    'CmdPacketDelay waits nothing when its Delay is not set');
 });
 
 test('a frame the relay will not take is reported, not counted as sent', async () => {
@@ -495,6 +535,22 @@ test('CmdLoadBot loads the file, pushes the running one and starts the new list 
     'PassDropList defaults true, so the old drops are unioned in');
 });
 
+test('a merged drop list is a HashSet with the reference own case-insensitive comparer', async () => {
+  // `new HashSet<string>(drops, StringComparer.OrdinalIgnoreCase).UnionWith(old)`: a drop the
+  // new list already carries in different case is the same drop, so it is not added twice.
+  const loaded = { Commands: [command('CmdStop', {})], Drops: ['Fire Staff', 'new drop'] };
+  const files = { '/b/x.gbot': JSON.stringify(loaded) };
+  const made = engine({
+    botsDirectory: function () { return '/b'; },
+    exists: function (file) { return Object.prototype.hasOwnProperty.call(files, file); },
+    readFile: function (file) { return files[file]; }
+  });
+  await made.start(bot([command('CmdLoadBot', { BotFilePath: 'x.gbot' })],
+    { Drops: ['FIRE STAFF', 'New Drop', 'Something Else'] }));
+  await made.tick();
+  assert.deepStrictEqual(made.drops(), ['Fire Staff', 'new drop', 'Something Else']);
+});
+
 test('CmdLoadBot keeps the old skills only when PassSkillPreset asks for them', async () => {
   const skills = [{ $type: 'Grimoire.Game.Data.Skill, Grimoire', Index: '1' }];
   const files = { '/b/x.gbot': JSON.stringify({ Commands: [command('CmdStop', {})] }) };
@@ -606,6 +662,9 @@ test('CmdLog sends its output to the pane its own Debug flag names, and clears o
 
   const cleared = await run(engine(), 'CmdLog', { Text: '{CLEAR}' });
   assert.deepStrictEqual(cleared.cleared, ['clear'], 'AppendScript clears the pane on {CLEAR}');
+  assert.ok(cleared.records.some(function (l) { return l.indexOf('{CLEAR}') !== -1; }),
+    'and then appends that very text, which is what the reference own pane does: ' +
+    cleared.records.join('|'));
 });
 
 test('CmdLog colours what lies between its own markers, one colour per backslash segment', () => {

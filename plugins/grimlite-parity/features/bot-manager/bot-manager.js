@@ -42,7 +42,12 @@ function createBotManager(deps) {
         write: function (value) { require('electron').clipboard.writeText(String(value)); },
         read: function () { return require('electron').clipboard.readText(); }
     };
-    const settings = displaySettings.create({
+    // The settings instance, injected: the plugin shell also builds one (the engine's CmdLoadBot
+    // resolves a relative path against the same bots directory), and two instances would each
+    // cache their own copy of the store - so a directory the user picked in this window would not
+    // reach the running bot until the app restarted. A caller that passes nothing gets its own,
+    // which is what a test and a single-window build want.
+    const settings = deps.settings || displaySettings.create({
         store: deps.store,
         defaultBotsDirectory: deps.defaultBotsDirectory || ''
     });

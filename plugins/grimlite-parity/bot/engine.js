@@ -353,11 +353,15 @@ function createEngine(deps) {
             ? previousConfig.Drops : null;
         if (oldSkills !== null) loaded.Skills = oldSkills;
         if (oldDrops !== null) {
-            // `new HashSet<string>(newConfiguration.Drops).UnionWith(oldDropList)`: the old
-            // list is merged in, so nothing the running bot was picking up is dropped.
+            // `new HashSet<string>(newConfiguration.Drops, StringComparer.OrdinalIgnoreCase)
+            // .UnionWith(oldDropList)`: the old list is merged in, so nothing the running bot was
+            // picking up is dropped, and a drop named in different case is the same drop.
             const merged = (Array.isArray(loaded.Drops) ? loaded.Drops : []).slice();
             oldDrops.forEach(function (drop) {
-                if (merged.indexOf(drop) === -1) merged.push(drop);
+                const seen = merged.some(function (held) {
+                    return String(held).toLowerCase() === String(drop).toLowerCase();
+                });
+                if (!seen) merged.push(drop);
             });
             loaded.Drops = merged;
         }

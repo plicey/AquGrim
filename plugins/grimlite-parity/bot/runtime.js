@@ -23,10 +23,28 @@
  * @param {(key: string) => object} deps.createSession  the injected game session for that window
  * @param {(ms: number) => Promise<void>} [deps.sleep]  pacing, shared by every entry
  * @param {(line: string) => void} [deps.log]
+ *
+ * The rest of `deps` is forwarded to every engine this manager builds, unchanged: the shell seams
+ * the misc commands need (#40) - packets, beep, readFile, exists, botsDirectory, spammer, timers,
+ * logDebug, logClear. They are the plugin shell's, so the manager passes them on rather than
+ * inventing its own: an engine given no seam reports the command it cannot carry out instead of
+ * looking wired while doing nothing.
  */
 function createRuntimeManager(deps) {
     deps = deps || {};
     const entries = new Map();
+
+    // Everything but the three the manager itself owns. A seam is passed through as it was given,
+    // so an engine built here has exactly the reach the caller handed the manager - no more.
+    const SEAMS = ['packets', 'beep', 'readFile', 'exists', 'botsDirectory', 'spammer', 'timers',
+        'logDebug', 'logClear', 'options', 'relogin'];
+    function seams() {
+        const out = {};
+        SEAMS.forEach(function (name) {
+            if (deps[name] !== undefined) out[name] = deps[name];
+        });
+        return out;
+    }
 
     function keyOf(key) {
         return key === undefined || key === null || key === '' ? 'default' : String(key);
@@ -38,11 +56,11 @@ function createRuntimeManager(deps) {
         let entry = entries.get(id);
         if (entry) return entry;
 
-        const engine = require('./engine.js').createEngine({
+        const engine = require('./engine.js').createEngine(Object.assign({
             session: deps.createSession(id),
             sleep: deps.sleep,
             log: deps.log
-        });
+        }, seams()));
         entry = {
             key: id,
             engine: engine,

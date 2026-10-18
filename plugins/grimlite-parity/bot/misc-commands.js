@@ -141,6 +141,31 @@ function createHandlers(deps) {
         }
     }
 
+    /**
+     * The one wanted value CmdProvoke and CmdToggleProvoke both arrive at, handed to the Options
+     * window own toggle. That call reaches the game in the real build, so it can refuse or reject:
+     * a refusal is logged with its own words rather than left as an unhandled rejection.
+     */
+    function setProvoke(ctx, className, wanted) {
+        const options = ctx.options();
+        if (typeof options.setProvoke !== "function") {
+            log(className + ": this build has no option toggles wired");
+            return undefined;
+        }
+        return Promise.resolve()
+            .then(function () { return options.setProvoke(wanted); })
+            .then(function (answer) {
+                // The Options feature answers { ok, error }; a plain true/false is the seam a test
+                // injects, and either way a refusal is reported rather than swallowed.
+                if (answer && answer.ok === false) {
+                    log(className + ": the game refused it: " + (answer.error || "no reason given"));
+                }
+                return answer;
+            }, function (error) {
+                log(className + ": " + message(error));
+            });
+    }
+
     /** The values CmdPacket own rewrite reads, each only when the frame asks for it. */
     async function packetValues(text) {
         const source = String(text === null || text === undefined ? "" : text);
@@ -156,10 +181,14 @@ function createHandlers(deps) {
      * CmdPacket and CmdPacketDelay: rewrite the frame, then write it, SpamTimes times for the
      * former and once for the latter. CmdPacketDelay waits the Delay first and then sends;
      * CmdPacket sends first and then waits, which is each reference body own order.
+     *
+     * The two classes do not share a Delay default: CmdPacket's own property initialiser is 1000
+     * while CmdPacketDelay carries none, so a file that leaves the key out waits 1000 ms in one
+     * and nothing at all in the other.
      */
-    async function sendFrames(ctx, command, forClient, once) {
+    async function sendFrames(ctx, command, forClient, once, delayDefault) {
         const times = once ? 1 : Math.max(0, number(command.SpamTimes, 1));
-        const delay = Math.max(0, number(command.Delay, 1000));
+        const delay = Math.max(0, number(command.Delay, delayDefault));
         const raw = ctx.resolve(command.Packet);
         const values = await packetValues(raw);
         let text = misc.packetText(raw, values, ctx.random);
@@ -308,36 +337,29 @@ function createHandlers(deps) {
         },
 
         CmdProvoke: function (ctx, command) {
-            const options = ctx.options();
-            if (typeof options.setProvoke !== "function") {
-                log("CmdProvoke: this build has no option toggles wired");
-                return;
-            }
-            options.setProvoke(command.Set === true);
+            return setProvoke(ctx, "CmdProvoke", command.Set === true);
         },
 
         CmdToggleProvoke: function (ctx, command) {
-            const options = ctx.options();
-            if (typeof options.setProvoke !== "function") {
-                log("CmdToggleProvoke: this build has no option toggles wired");
-                return;
-            }
             const type = number(command.Type, -1);
-            if (type === 0) options.setProvoke(false);
-            else if (type === 1) options.setProvoke(true);
+            let wanted;
+            if (type === 0) wanted = false;
+            else if (type === 1) wanted = true;
             else {
+                const options = ctx.options();
                 const now = typeof options.getProvoke === "function" ? options.getProvoke() : false;
-                options.setProvoke(now !== true);
+                wanted = now !== true;
             }
+            return setProvoke(ctx, "CmdToggleProvoke", wanted);
         },
 
         CmdPacket: async function (ctx, command) {
             await sendFrames(ctx, command,
-                command.ForClient === true || command.Client === true, false);
+                command.ForClient === true || command.Client === true, false, 1000);
         },
 
         CmdPacketDelay: async function (ctx, command) {
-            await sendFrames(ctx, command, command.Client === true, true);
+            await sendFrames(ctx, command, command.Client === true, true, 0);
         },
 
         CmdPacketSpammer: function (ctx, command) {
@@ -359,6 +381,10 @@ function createHandlers(deps) {
             // `mSpammer.ActionW == ADD ? labels.Add(label) : labels.RemoveAll(label)`, and then
             // `while (labels.Contains(label) && Packet != null)`: send, wait, repeat. The wait is
             // a real timer here, because the referent loop runs beside the bot own loop.
+            //
+            // One condition of that while body is left out: the reference holds the frame while
+            // it is completing a quest (`if (!_onCompletingQuest)`), and quest turn-in is #39's.
+            // When that lands, the send belongs behind the same flag rather than beside it.
             background.labels = background.labels.filter(function (label) {
                 return label !== command.Label;
             });
@@ -441,9 +467,11 @@ function createHandlers(deps) {
 
         CmdLog: async function (ctx, command) {
             const text = String(command.Text === undefined ? "" : command.Text);
+            // '{CLEAR}' is not a substitution: LogForm.AppendScript clears its pane when the text
+            // contains it and then appends that very text, so a bot that writes it gets an empty
+            // pane holding the line - which is what the reference's own pane does.
             if (text.indexOf("{CLEAR}") !== -1) {
                 logClear();
-                return;
             }
             const values = await logValues(text, ctx.ints);
             const shaped = misc.logText(text, values);

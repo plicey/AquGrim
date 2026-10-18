@@ -201,3 +201,33 @@ test('a bot that writes a Configuration key edits the document it was started wi
   assert.strictEqual(document.BotDelay, 40,
     'CmdBotDelay writes Configuration.BotDelay, which is the document the editor holds');
 });
+
+test('the seams a misc command needs reach the engine the plugin actually runs', async () => {
+  // The engine takes its shell seams by injection (#40). A manager that does not pass them on
+  // builds an engine whose CmdBeep beeps nothing, whose CmdPacket frames go nowhere and whose
+  // CmdLoadBot cannot read a file - the commands would look wired while doing nothing, which is
+  // the one failure a user cannot see. So the manager forwards what it is given: no seam here
+  // means the command says so rather than pretending.
+  const sent = [];
+  const beeps = [];
+  const r = runtime({
+    packets: { send: function (frame) { sent.push(frame); return true; } },
+    beep: function (count) { beeps.push(count); },
+    readFile: function () { return JSON.stringify({ Commands: [command('CmdStop', {})] }); },
+    exists: function (file) { return file === '/b/x.gbot'; },
+    botsDirectory: function () { return '/b'; },
+    timers: { setTimeout: function () { return 1; }, clearTimeout: function () {} }
+  });
+  await r.manager.start('win-a', {
+    Commands: [
+      command('CmdBeep', { Times: 2 }),
+      command('CmdPacket', { Packet: 'hello' }),
+      command('CmdLoadBot', { BotFilePath: 'x.gbot' }),
+      command('CmdStop', {})
+    ]
+  });
+  await r.manager.idle('win-a');
+  assert.deepStrictEqual(beeps, [2], 'CmdBeep reaches the injected sound');
+  assert.deepStrictEqual(sent, [{ direction: 'toServer', text: 'hello' }],
+    'CmdPacket writes through the injected relay');
+});

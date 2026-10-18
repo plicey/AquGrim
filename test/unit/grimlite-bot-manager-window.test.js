@@ -11,6 +11,7 @@ const path = require('path');
 
 const bots = require('../../plugins/grimlite-parity/bot/bots.js');
 const catalog = require('../../plugins/grimlite-parity/bot/command-catalog.js');
+const settings = require('../../plugins/grimlite-parity/bot/display-settings.js');
 const manager = require('../../plugins/grimlite-parity/features/bot-manager/bot-manager.js');
 
 const FIXTURES = path.join(__dirname, '../fixtures/grimlite-bots');
@@ -382,4 +383,31 @@ test('the window reaches its page only through its own namespaced channels', asy
   const preload = fs.readFileSync(path.join(__dirname, '../../plugins/grimlite-parity/features/bot-manager/preload_bot_manager.js'), 'utf8');
   assert.ok(preload.indexOf("require('electron')") !== -1);
   assert.strictEqual(preload.indexOf("require('../.."), -1, 'no project requires in a sandboxed preload');
+});
+
+test('the bots directory this window shows is the one the bot engine resolves against', async () => {
+  // The engine's CmdLoadBot resolves a relative path against the bots directory (#40), and this
+  // window is where the user picks that directory. Two settings objects would each cache their own
+  // copy of the store, so a directory chosen here would not reach a running bot; the plugin hands
+  // this window the instance the engine already uses, and this asserts the seam carries it.
+  const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'aquastar-sharedbots-'));
+  fs.writeFileSync(path.join(elsewhere, 'far.gbot'), fixture('plain.gbot'));
+  const shared = settings.create({ store: memoryStore(), defaultBotsDirectory: '/default' });
+  const w = window({ settings: shared });
+  // A directory the engine's own instance holds is the directory this window lists - not the
+  // default the window was given alongside it, which is what a second instance would use.
+  shared.setBotsDirectory(elsewhere);
+  const tree = w.feature.handle('botManagerTree', null, []);
+  assert.strictEqual(tree.directory, elsewhere,
+    'the window lists the directory the shared instance holds: ' + JSON.stringify(tree));
+  // And conversely: a directory the window's own control sets is the one the engine would resolve
+  // against, because both read the one instance.
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'aquastar-sharedbots2-'));
+  const w2 = window({
+    settings: shared,
+    showOpenDialog: function () { return Promise.resolve({ canceled: false, filePaths: [other] }); }
+  });
+  await w2.feature.handle('botManagerChooseDirectory', null, []);
+  assert.strictEqual(shared.botsDirectory(), other,
+    'the tree control writes the instance the engine resolves against');
 });

@@ -142,3 +142,69 @@ test('selecting the parity plugin makes it the active plugin, and the default st
   // Nothing selected: the bundled default, so today's users are unaffected.
   assert.strictEqual(platform.selectPlugin(discovered.plugins, {}).selected.manifest.id, 'adventure-quest-worlds');
 });
+
+test('the booted plugin hands its bot engine the shell seams the misc commands need', async () => {
+  // The engine takes its seams by injection (#40), and main.js is where they are decided. A
+  // CmdBeep whose sound is absent, or a CmdLoadBot whose file door is absent, is a command that
+  // says so at run time rather than one that silently does nothing - both are correct answers, so
+  // the only way to tell them apart is to boot the plugin and ask the engine it built. This boots
+  // the real plugin against the real Host, then runs the two commands whose effect crosses the
+  // shell: a beep (Electron's own alert sound) and a packet (host.packets, gated by packet-send).
+  const gameWindow = {
+    isDestroyed: function () { return false; },
+    webContents: {},
+    getURL: function () { return 'about:blank'; }
+  };
+  const activated = await platform.activatePlugin({
+    manifest: manifest(),
+    main: path.join(pluginRoot, 'main.js'),
+    root: pluginRoot,
+    source: 'bundled'
+  }, {
+    appVersion: appVersion,
+    appDataDirectory: fs.mkdtempSync(path.join(require('os').tmpdir(), 'aquastar-wire-')),
+    clearRequireCache: true,
+    log: function () {},
+    deps: {
+      startGameOrigin: function () { return Promise.resolve('http://127.0.0.1:41234'); },
+      openFeatureWindow: function () { return {}; },
+      // A game window whose bridge answers: the engine refuses to start without one, and the
+      // session reads through it before the first command runs.
+      // One stable window: the channel compares the webContents it attached to against this call's
+      // answer, so a fresh object per call would read as the window having gone away.
+      getGameWindow: function () { return gameWindow; },
+      // The bridge page side, answering the one question the engine asks before it starts:
+      // IsLoggedIn (#35's session read). Everything else answers as a game with nothing to say.
+      executeJavaScript: function (wc, source) {
+        if (source.indexOf('.ready()') !== -1) return Promise.resolve(true);
+        // The engine's own liveness reads before its first command: the loader surface's
+        // `IsLoggedIn` row is a read of `sfc.isConnected` (loader-surface.js), and the session's
+        // own `ready()` is a read of `world.mapLoadInProgress` (session.js PATHS) that must be
+        // false for a bot to run rather than pause on a map that never finishes loading.
+        if (source.indexOf('world.mapLoadInProgress') !== -1) {
+          return Promise.resolve({ ok: true, value: 'false' });
+        }
+        return Promise.resolve({ ok: true, value: 'true' });
+      }
+    }
+  });
+  // The window's own Enable Bot channel is how a bot starts, so driving it is the booted path:
+  // the plugin's runtime, its engine, and whatever seams main.js handed them.
+  const handlers = {};
+  activated.host._getState().ipcHandlers.forEach(function (entry) {
+    handlers[entry.channel] = entry.listener;
+  });
+  const enableChannel = 'plugin:grimlite-parity:botManagerEnable';
+  const addChannel = 'plugin:grimlite-parity:botManagerAdd';
+  assert.ok(handlers[enableChannel], 'the Bot Manager must be reachable when the plugin boots');
+
+  // Build the list through the window's own controls, which is how a user fills it: Stop ends
+  // the bot on its own (the reference's CmdStop), so no timer outlives this test.
+  assert.strictEqual(handlers[addChannel]({ sender: { id: 1 } }, 'btnStop', {}).refused, false);
+  const enabled = await handlers[enableChannel]({ sender: { id: 1 } }, true);
+  assert.strictEqual(enabled.enabled, true, enabled.error || 'the bot starts');
+  await handlers[enableChannel]({ sender: { id: 1 } }, false);
+  const state = await handlers['plugin:grimlite-parity:botManagerState']({ sender: { id: 1 } });
+  assert.strictEqual(state.enabled, false, 'and stops again');
+  assert.strictEqual(state.bot.running, false, 'its own running flag agrees');
+});
