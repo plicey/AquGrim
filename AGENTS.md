@@ -91,7 +91,7 @@ Automated: `npm test` and `npm run smoke:plugins`.
 
 ### Issue tracker
 
-GitHub Issues (uplicey/AquGrim) tracked via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+GitHub Issues (plicey/AquGrim) tracked via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
