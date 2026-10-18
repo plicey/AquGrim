@@ -30,6 +30,8 @@ const createEyedropper = require('./features/eyedropper/eyedropper.js').createEy
 const createAbout = require('./features/about/about.js').createAbout;
 const createCosmetics = require('./features/cosmetics/cosmetics-window.js').createFromHost;
 const createOptionsWindow = require('./features/options/options-window.js').createFromHost;
+const createDropWindow = require('./features/drops/drop-window.js').createFromHost;
+const createTravelWindow = require('./features/travel/travel-window.js').createFromHost;
 const { createHotkeys } = require('./features/hotkeys/hotkeys.js');
 const { createHotkeysWindow } = require('./features/hotkeys/hotkeys-window.js');
 const { createGameCalls } = require('./game-calls.js');
@@ -293,6 +295,27 @@ async function activate(host) {
         feature: hotkeys,
         messages: host.getLocaleStrings('hotkeysMessages') || {}
     }).attachTo(host);
+
+    // The drop list (#33): the tap says what dropped, the bridge says whether it can be taken,
+    // and the window is the user's hand on both. Its tap subscription is taken when the window
+    // opens and released when it closes, so a list nobody is watching costs nothing.
+    createDropWindow(host, {
+        // The reference's own dialog text, so a translated build can carry its own.
+        confirm: (function () {
+            const strings = host.getLocaleStrings('dropsMessages') || {};
+            return {
+                title: strings.confirmTitle,
+                message: strings.confirmMessage,
+                yes: strings.confirmYes,
+                no: strings.confirmNo
+            };
+        }())
+    }).attach();
+
+    // Fast travels and the map bypasser (#32): the reference's Tools -> Fast travels form. Every
+    // game call goes through the plugin's own loader-name adapter (features/travel/game-access.js)
+    // and the generic bridge callbacks underneath it, so nothing here touches Flash itself.
+    createTravelWindow(host).attach();
 
     host.registerLocales({
         'en-US': require('./locales/en-US.js')

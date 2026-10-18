@@ -24,7 +24,9 @@ exports.dialogMessages = {
             expand(k.grimliteParityPlaceholder) + '' +
             expand(k.grimliteParityDevTest) + '' +
             expand(k.grimliteOptions) + '' +
-            expand(k.grimliteHotkeys) + '';
+            expand(k.grimliteHotkeys) + '' +
+            expand(k.grimliteDrop) + '' +
+            expand(k.grimliteFastTravels) + '';
     }
 };
 
@@ -42,6 +44,8 @@ exports.menuMessages = {
     grimliteCosmetics: "",
     grimliteOptions: "",
     grimliteHotkeys: "",
+    grimliteDrop: "",
+    grimliteTravels: "",
     grimlitePlaceholder: "",
     grimliteDevTest: "",
     packetsMenu: "",
@@ -79,6 +83,8 @@ exports.windowTitles = {
     cosmetics: "",
     options: "",
     hotkeys: "",
+    drop: "",
+    travels: "",
     devtest: "",
     packetLogger: "",
     packetSpammer: "",
@@ -216,6 +222,49 @@ exports.hotkeysMessages = {
     saved: "",
     empty: "",
     selectFirst: ""
+};
+
+exports.dropsMessages = {
+    title: "",
+    name: "",
+    qty: "",
+    category: "",
+    flags: "",
+    take: "",
+    blacklist: "",
+    clear: "",
+    rejectInGame: "",
+    count: "",
+    pickFirst: "",
+    working: "",
+    taken: "",
+    rejectedN: "",
+    cleared: "",
+    confirmTitle: "",
+    confirmMessage: "",
+    confirmYes: "",
+    confirmNo: ""
+};
+
+exports.travelMessages = {
+    title: "",
+    private: "",
+    aweGroup: "",
+    bypasser: "",
+    bypassHint: "",
+    generatedPacket: "",
+    unlock: "",
+    copy: "",
+    send: "",
+    working: "",
+    joining: "",
+    walking: "",
+    questsLoaded: "",
+    shopOpened: "",
+    bypassed: "",
+    copied: "",
+    done: "",
+    failed: ""
 };
 
 exports.loadersMessages = {

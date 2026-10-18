@@ -24,7 +24,14 @@ const DEFAULTS = {
     // of their own; this port gives each a key on the Alt+Shift family it already uses, so nothing
     // the app or the game plugin holds is taken. Not K: that is this plugin's own Bank entry.
     grimliteOptions: 'Alt+Shift+O',
-    grimliteHotkeys: 'Alt+Shift+H'
+    grimliteHotkeys: 'Alt+Shift+H',
+    // The reference's own "Show DropUi" action (Hotkeys.cs:415). Not I: the platform already
+    // holds Alt+Shift+I (res/keybindings.js:187).
+    grimliteDrop: 'Alt+Shift+P',
+    // The reference's own action list carries "Show Fast Travels" (Hotkeys.cs:402). Alt+Shift+T
+    // takes nothing: the app holds no plain Alt+T and the game plugin's own reminders entry is
+    // Alt+T, which this family leaves alone.
+    grimliteFastTravels: 'Alt+Shift+T'
 };
 
 function register(host) {
@@ -112,6 +119,19 @@ function register(host) {
             id: 'grimliteHotkeys',
             action: function () {
                 host.windows.openFeatureWindow(windows.HOTKEYS_WINDOW_ID);
+            }
+        },
+        {
+            // The reference's own action list, index 20: "Show DropUi".
+            id: 'grimliteDrop',
+            action: function () {
+                host.windows.openFeatureWindow(windows.DROP_WINDOW_ID);
+            }
+        },
+        {
+            id: 'grimliteFastTravels',
+            action: function () {
+                host.windows.openFeatureWindow(windows.TRAVEL_WINDOW_ID);
             }
         }
     ]);

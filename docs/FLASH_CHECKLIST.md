@@ -768,3 +768,29 @@ these boxes are the live half and none can be ticked without a running client an
 - [ ] **Go to Wikipage** and **Search on Wiki** open in the app's own browser window rather than the system browser, with the name's spaces turned into `+`
 - [ ] The bot list actions (**Add to both**, **Add to whitelist**, **Add to unbank list** and the three "Add all" aggregates) append to the **Bot Manager**'s own Drops, Items and Quests lists with the reference's Contains guard, and the rows survive a Save to `.gbot`
 - [ ] **Copy all** and **Copy all Reqs** put the reference's own two lines on the clipboard, the second with its extra comma
+
+## Grimlite Parity - Fast travels and the map bypasser (ticket #32) - needs the real game and a display
+
+`features/travel/` is the reference's Tools -> **Fast travels** form. Its destinations, groups,
+labels, map/cell/pad triples, shop ids and quest ids are data (`travel-data.js`), the join-or-walk
+decision, the private-room suffix, the quest-progress frames and the bypasser are logic
+(`travel.js`), and the page, window, menu entry and key binding are checked by `npm test` -
+including that the page draws every button exactly once, and that the awe shop button the
+reference keeps inside its own box is drawn at all.
+
+Every game call it makes is a loader name the bridge's surface answers (#48). No helper here is
+waiting on a bridge that does not exist; what cannot be checked without a running client is
+whether the game acts on each call.
+
+- [ ] **Fast travels** opens from the Grimlite menu and with Alt+Shift+T, and **Show Fast Travels** in the Hotkeys window runs the same action
+- [ ] Every button in **Fast travels** moves the character: a destination in the map you are standing in walks to its cell without re-joining, and one in another map joins it
+- [ ] The tercess destinations walk to tercess's own entry cell (`m22`/`Left`) first when you are elsewhere, and do not when you are already in tercess
+- [ ] **Private** checked numbers the room (the map joins as `<map>-<number>`); unchecked joins the bare map, and the box's range is the reference's own (100000 opens it, 1000000 is the maximum)
+- [ ] **Binky (doomvault)** fakes quest 20's progress before it joins - without it the room refuses entry
+- [ ] **Awe Shop (museum)** opens the shop of the ticked enchantment type: Lucky 639, Thief 637, Hybrid 633, Healer 638, Fighter 635, Wizard 636
+- [ ] **Ultraboss & Daily** asks the game for the reference's own sixteen quest ids
+- [ ] **Bypass All** blanks the storyline fields the client has sent and says the reference's own message; a relog restores the original progression, which is what the message promises
+- [ ] **DoomvaultB** fakes quest 20, sends the achievement frame to the **server**, fakes quest 27 and then enters the room - the one button whose frame is written to the server rather than handed to the client
+- [ ] The four **Fast travels 2** buttons (Treetitanbattle, Ultradrakath, Tower of Doom 10, Necrodungeon) fake their quest's progress, wait, and then enter their room
+- [ ] **Unlock** with a quest id the client does not hold loads it and waits for it; with one the game never sends it reports the id and injects nothing
+- [ ] The generated packet is shown read-only, **Copy** puts the same text on the clipboard, and **Send** hands it to the client as a JSON frame
