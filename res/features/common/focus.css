@@ -6,15 +6,7 @@ textarea:focus-visible,
 a:focus-visible,
 summary:focus-visible,
 [role="button"]:focus-visible,
-[tabindex]:focus-visible,
-button:focus,
-input:focus,
-select:focus,
-textarea:focus,
-a:focus,
-summary:focus,
-[role="button"]:focus,
-[tabindex]:focus {
+[tabindex]:focus-visible {
   /* An inset shadow follows border-radius and adds no outside gap; an outline is rectangular in
      Chromium 87 and looked wrong on rounded buttons and tabs. */
   outline: none;
