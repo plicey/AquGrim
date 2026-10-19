@@ -523,6 +523,28 @@
   // ---------------------------------------------------------------- buttons
 
   function press(id, modifiers) {
+    // Add Skill Set writes a label into the Skills list, not the Commands list the page is
+    // usually showing. Say where it went so the reference's split workflow is not a silent click.
+    if (id === 'btnAddSkillSet' || id === 'btnUseSkillSet') {
+      var setName = value('txtSkillSet').trim();
+      if (!setName) {
+        setStatus('Type a skill set name first.', true);
+        return Promise.resolve(null);
+      }
+      if (id === 'btnAddSkillSet') {
+        return api.addList(id, valuesFromSheet(), modifiers).then(function (next) {
+          applyState(next);
+          setStatus('Added [' + setName.toUpperCase() +
+            '] to Skills. Add the skills below that label, then press Use Skill Set.', false);
+          return next;
+        });
+      }
+      return api.add(id, valuesFromSheet(), modifiers).then(function (next) {
+        applyState(next);
+        setStatus('Added Skill Set: ' + setName.toUpperCase() + ' to Commands.', false);
+        return next;
+      });
+    }
     if ((sheet.commandButtons || []).indexOf(id) !== -1) {
       return api.add(id, valuesFromSheet(), modifiers).then(applyState);
     }

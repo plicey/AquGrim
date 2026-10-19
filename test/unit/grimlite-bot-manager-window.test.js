@@ -161,6 +161,20 @@ test('a list button fills one of the other five lists, deduped where the referen
     'Skill.ToString with the index as the name until the bridge can read one');
 });
 
+test('Add Skill Set creates the label row, and Use Skill Set adds its command', async () => {
+  const o = await opened('plain.gbot');
+
+  const added = await o.feature.handle('botManagerAddList', null,
+    ['btnAddSkillSet', { txtSkillSet: 'Nuke' }, {}]);
+  assert.ok(added.lists.Skills.some(function (row) { return row.text === '[NUKE]'; }),
+    'the label row belongs in Skills: ' + JSON.stringify(added.lists.Skills));
+
+  const used = await o.feature.handle('botManagerAdd', null,
+    ['btnUseSkillSet', { txtSkillSet: 'Nuke' }, {}]);
+  assert.ok(used.lists.Commands.some(function (row) { return row.text === 'Skill Set: NUKE'; }),
+    'Use Skill Set writes CmdSkillSet into Commands: ' + JSON.stringify(used.lists.Commands));
+});
+
 test('the keymap reaches the same document the buttons do', async () => {
   const o = await opened('plain.gbot');
   await o.feature.handle('botManagerSelect', null, ['Commands', [0]]);
