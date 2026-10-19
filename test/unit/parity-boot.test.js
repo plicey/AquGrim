@@ -139,6 +139,8 @@ test('the bridge starts Artix Loader4 so it can initialize the current game', fu
   );
   assert.ok(/addChild\(gameLoader\)[\s\S]*?gameLoader\.load/.test(source),
     'Loader4 must be on stage when it starts');
+  assert.ok(/stage\.scaleMode\s*=\s*StageScaleMode\.SHOW_ALL/.test(source),
+    'the game must scale with the window instead of staying at its authored size');
   assert.ok(/new Timer\(1000\)/.test(source) && /TimerEvent\.TIMER/.test(source) &&
     !/TIMER_COMPLETE|onGameRootTimeout/.test(source),
     'the bridge must keep waiting for Game until the user signs in');
@@ -218,4 +220,6 @@ test('the built bridge asset carries the call surface the manifest declares', fu
   });
   assert.ok(text.indexOf('Loader4.swf?ver=b') !== -1 && text.indexOf('game root available') !== -1,
     'the built bridge must start Loader4 and wait for its initialized Game root');
+  assert.ok(text.indexOf('SHOW_ALL') !== -1,
+    'the built bridge must carry the window-following scale mode');
 });

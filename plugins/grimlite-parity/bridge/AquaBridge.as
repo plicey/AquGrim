@@ -52,7 +52,9 @@ package {
             Security.allowInsecureDomain('*');
 
             domain = ApplicationDomain.currentDomain;
-            stage.scaleMode = StageScaleMode.NO_SCALE;
+            // The reference's AxShockwaveFlash defaults to ShowAll, so the game follows the
+            // window's size instead of staying fixed at its authored stage size.
+            stage.scaleMode = StageScaleMode.SHOW_ALL;
             stage.align = StageAlign.TOP_LEFT;
 
             registerCallSurface();
