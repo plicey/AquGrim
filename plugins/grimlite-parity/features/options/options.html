@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Options</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
+  }
+  body { padding: 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; }
+  /* The reference's Options menu, as a list of checkboxes in its own order. */
+  .list { display: flex; flex-direction: column; gap: 7px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  label { user-select: none; cursor: pointer; }
+  input[type=checkbox] { margin: 0; }
+  #walkSpeed {
+    width: 64px; background: #1b1b1b; color: #e6e6e6; border: 1px solid #2c2c2c;
+    border-radius: 4px; padding: 4px 6px; font: inherit;
+  }
+  #walkSpeed:disabled { opacity: 0.5; }
+  .sep { border-top: 1px solid #2c2c2c; margin: 2px 0; }
+  .status { min-height: 16px; color: #9a9a9a; }
+  .status.err { color: #ff8a80; }
+  .status.ok { color: #7fd08a; }
+</style>
+</head>
+<body>
+  <div class="list" id="toggles"></div>
+
+  <div class="sep"></div>
+
+  <!-- Walkspeed: the tick, and the number field the reference keeps in its submenu. -->
+  <div class="row">
+    <input type="checkbox" id="walkspeed">
+    <label for="walkspeed" id="walkspeedLabel">Walkspeed</label>
+    <input type="number" id="walkSpeed" min="1" max="99" step="1">
+  </div>
+
+  <div class="status" id="status"></div>
+
+<script>
+(function () {
+  var api = window.aquastarOptions;
+  var toggles = document.getElementById('toggles');
+  var speedBox = document.getElementById('walkSpeed');
+  var speedTick = document.getElementById('walkspeed');
+  var speedLabel = document.getElementById('walkspeedLabel');
+  var status = document.getElementById('status');
+  var walkSpeedId = 'walkSpeed';
+
+  function setStatus(text, kind) {
+    status.textContent = text || '';
+    status.className = 'status' + (kind ? ' ' + kind : '');
+  }
+
+  // The first refusal among the toggles, so a tick that the game refused says so instead of
+  // looking like one that worked.
+  function firstRefusal(view) {
+    var ids = Object.keys(view.results || {});
+    for (var i = 0; i < ids.length; i++) {
+      var result = view.results[ids[i]];
+      if (result && result.ok === false && result.error) return result.error;
+    }
+    return '';
+  }
+
+  function putToggles(view) {
+    // Walkspeed is drawn in its own row below, with the number box its tick owns, so the list is
+    // built from the rest and the walkspeed row is filled from its own entry.
+    var labels = (view.toggles || []).filter(function (toggle) { return !toggle.field; });
+    if (toggles.childNodes.length !== labels.length) {
+      toggles.innerHTML = '';
+      labels.forEach(function (toggle) {
+        var row = document.createElement('div');
+        row.className = 'row';
+        var box = document.createElement('input');
+        box.type = 'checkbox';
+        box.id = 't-' + toggle.id;
+        box.dataset.toggle = toggle.id;
+        var label = document.createElement('label');
+        label.htmlFor = box.id;
+        label.textContent = toggle.label;
+        row.appendChild(box);
+        row.appendChild(label);
+        toggles.appendChild(row);
+        box.addEventListener('change', function () { move(toggle.id, box.checked); });
+      });
+    }
+    (view.toggles || []).forEach(function (toggle) {
+      var box = document.getElementById('t-' + toggle.id);
+      if (box) box.checked = toggle.on;
+    });
+    // The label text and the box's own state come from the plugin, so the page cannot drift.
+    var speed = (view.toggles || []).filter(function (toggle) { return toggle.field; })[0];
+    if (speed) speedLabel.textContent = speed.label;
+  }
+
+  function putWalkSpeed(view) {
+    speedTick.checked = view.walkSpeedOn === true;
+    // The tick owns the field: the reference disables its own box while the tick is on.
+    speedBox.disabled = view.walkSpeedOn === true;
+    speedBox.min = String(view.walkSpeedMin);
+    speedBox.max = String(view.walkSpeedMax);
+    if (document.activeElement !== speedBox) speedBox.value = String(view.walkSpeed);
+  }
+
+  function apply(view) {
+    putToggles(view);
+    putWalkSpeed(view);
+    setStatus(firstRefusal(view), firstRefusal(view) ? 'err' : '');
+  }
+
+  function move(id, on) {
+    setStatus('');
+    api.set(id, on).then(function (answer) {
+      apply(answer.view);
+      if (answer.ok === false) setStatus(answer.error || '', 'err');
+    });
+  }
+
+  speedBox.addEventListener('change', function () {
+    api.setWalkSpeed(speedBox.value).then(function (answer) {
+      apply(answer.view);
+    });
+  });
+
+  speedTick.addEventListener('change', function () {
+    move(walkSpeedId, speedTick.checked);
+  });
+
+  api.view().then(apply);
+})();
+</script>
+</body>
+</html>

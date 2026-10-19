@@ -1,0 +1,108 @@
+/* The Bot Manager window: dark, dense, and laid out like the reference's form - the six lists on
+   the left with their counters, the eleven tabs on the right. */
+:root { color-scheme: dark; }
+html, body {
+  margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+  font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 12px;
+}
+body { display: flex; flex-direction: column; }
+
+#bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-bottom: 1px solid #232323;
+}
+#path { color: #9a9a9a; flex: 1; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#path.bad { color: #ff8a80; }
+.grow { flex: 1; }
+
+main { flex: 1; display: flex; min-height: 0; }
+#left { width: 42%; min-width: 260px; display: flex; flex-direction: column; border-right: 1px solid #232323; }
+#right { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#right[hidden] { display: none; }
+
+.selector { display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-wrap: wrap; }
+.selector select { flex: 1; }
+
+#list {
+  flex: 1; margin: 0; padding: 4px; list-style: none; overflow: auto;
+  background: #161616; border: 1px solid #242424; outline: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px;
+  line-height: 1.45;
+}
+#list.multiline .row { white-space: pre-wrap; }
+#list .row { padding: 1px 4px; cursor: default; white-space: pre; }
+#list .row.centered { text-align: center; }
+#list .row.picked { background: #2b3a55; outline: 1px solid #3a7fe0; }
+#list .row.current { background: #3a3020; }
+#list .empty { color: #7d7d7d; padding: 8px; white-space: normal; }
+
+#tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 6px 8px 0; }
+.tab {
+  background: #1d1d1d; color: #cfcfcf; border: 1px solid #2c2c2c; border-bottom: none;
+  border-radius: 4px 4px 0 0; padding: 4px 10px; cursor: pointer;
+}
+.tab.active { background: #2a2a2a; color: #fff; border-color: #3a3a3a; }
+
+#tabHost { flex: 1; overflow: auto; padding: 8px; border-top: 1px solid #2c2c2c; }
+.tabpage { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+
+fieldset.group {
+  border: 1px solid #2c2c2c; border-radius: 5px; padding: 6px 8px; margin: 0;
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
+fieldset.group > legend { color: #9f9f9f; padding: 0 4px; font-size: 11px; }
+.sheet-button { min-width: 24px; }
+.sheet-number { width: 62px; }
+.sheet-text { width: 130px; }
+.sheet-list { min-width: 120px; }
+.sheet-label { color: #9a9a9a; }
+/* lblCommands' own "Number of\r\nCommands:" keeps its line break (treeBots_AfterSelect). */
+.sheet-label.counter-label { white-space: pre-line; }
+.tick { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.sheet-tree { list-style: none; margin: 0; padding-left: 10px; overflow: auto; max-height: 240px; width: 100%; }
+.sheet-tree li { padding: 1px 2px; }
+.sheet-tree li span { cursor: pointer; }
+.sheet-tree li.folder > span { color: #f0d08a; }
+.sheet-tree li.bot > span { color: #a8d8a8; }
+.sheet-tree .loading { color: #6d6d6d; font-style: italic; }
+.sheet-rtf { width: 100%; min-height: 80px; white-space: pre-wrap; color: #d6d6d6; background: #161616; border: 1px solid #242424; padding: 6px; }
+
+input[type=text], input[type=number], select, textarea {
+  background: #1b1b1b; color: #e6e6e6; border: 1px solid #2c2c2c; border-radius: 4px;
+  padding: 4px 6px; font-size: 12px; font-family: inherit;
+}
+button {
+  background: #262626; color: #e6e6e6; border: 1px solid #383838; border-radius: 4px;
+  padding: 5px 9px; cursor: pointer; font-family: inherit; font-size: 12px;
+}
+button:hover { background: #303030; }
+
+#counters {
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+  padding: 6px 10px; border-top: 1px solid #232323; color: #9a9a9a; white-space: pre-line;
+}
+.counter { cursor: pointer; }
+.counter.active { color: #fff; }
+
+.popup {
+  position: absolute; top: 40px; right: 10px; z-index: 5; display: flex; flex-direction: column;
+  background: #1e1e1e; border: 1px solid #333; border-radius: 5px; padding: 4px; min-width: 170px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+.popup .menu-item { background: none; border: none; text-align: left; padding: 6px 8px; border-radius: 3px; }
+.popup .menu-item:hover { background: #2f2f2f; }
+
+.modal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); display: flex; align-items: center; justify-content: center; z-index: 10; }
+.modal[hidden] { display: none; }
+.modal .sheet {
+  background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 14px;
+  min-width: 340px; max-width: 560px; max-height: 80vh; overflow: auto;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.modal h2 { margin: 0 0 4px; font-size: 14px; }
+.modal .field { display: flex; align-items: center; gap: 8px; }
+.modal .field label { width: 120px; color: #b5b5b5; text-align: right; }
+.modal .field input { flex: 1; }
+.modal .buttons { display: flex; gap: 8px; align-items: center; }
+.modal textarea { width: 100%; height: 240px; font-family: ui-monospace, Consolas, monospace; font-size: 11px; resize: vertical; }
+.size-slider { width: 100%; }

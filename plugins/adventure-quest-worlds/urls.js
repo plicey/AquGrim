@@ -40,6 +40,9 @@ function buildCharLookupUrl(playerCharacter) {
 // the built-in default; liveLoader holds a validated value learned from that page.
 const LOADER_URL_RE = /^https:\/\/game\.aq\.com\/game\/gamefiles\/Loader[A-Za-z0-9_]*\.swf(\?[A-Za-z0-9_=&.-]*)?$/;
 const LOADER_PATH_RE = /^https:\/\/game\.aq\.com\/game\/gamefiles\/Loader\d*\.swf(\?|$)/;
+// The same loader path when the platform serves it from its loopback origin. Only loopback:
+// a Loader*.swf path on any other host is somebody else's file.
+const LOCAL_LOADER_PATH_RE = /^http:\/\/127\.0\.0\.1:\d+\/game\/gamefiles\/Loader[A-Za-z0-9_]*\.swf(\?|$)/;
 let liveLoader = null;
 
 function isValidLoaderUrl(candidate) {
@@ -64,9 +67,12 @@ function resetLoaderUrl() {
 /**
  * True for the main AQW loader. Any numbered Loader<N>.swf counts, so a window opened
  * before the loader moved, or a customUrl pointing at an older one, is still the game.
+ * The loopback origin serves the same path, so the local-origin URL counts as well.
  */
 function isLoaderUrl(target) {
-    return typeof target === 'string' && (target === loaderUrl() || LOADER_PATH_RE.test(target));
+    if (typeof target !== 'string') return false;
+    if (target === loaderUrl() || LOADER_PATH_RE.test(target)) return true;
+    return LOCAL_LOADER_PATH_RE.test(target);
 }
 
 module.exports = {

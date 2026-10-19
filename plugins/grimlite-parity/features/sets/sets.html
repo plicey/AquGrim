@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Set</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
+  }
+  body { padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; }
+  select, button, input[type=text] {
+    font: inherit; color: #eee; background: #2a2a2a; border: 1px solid #444;
+    border-radius: 4px; padding: 5px 8px;
+  }
+  button { cursor: pointer; }
+  input[type=text] { box-sizing: border-box; flex: 1; }
+  .line { display: flex; gap: 8px; align-items: center; }
+  select#item { flex: 1; }
+  main { flex: 1; display: flex; gap: 8px; min-height: 0; }
+  .lists { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
+  .panel { flex: 1; display: flex; flex-direction: column; gap: 4px; min-height: 0; }
+  .panel h2 { margin: 0; font-size: 12px; font-weight: 600; color: #b9b9b9; }
+  ul {
+    margin: 0; padding: 4px; list-style: none; overflow: auto; flex: 1;
+    background: #151515; border: 1px solid #333; border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;
+  }
+  li { padding: 3px 6px; border-radius: 3px; cursor: default; white-space: nowrap; }
+  #status { min-height: 17px; color: #9a9a9a; }
+  #status.err { color: #ff8e8e; }
+  #status.ok { color: #7fd08a; }
+</style>
+</head>
+<body>
+  <div class="line">
+    <button id="refresh">R</button>
+    <select id="item"></select>
+    <button id="add">Add</button>
+    <button id="clear">Clear</button>
+  </div>
+  <main>
+    <div class="lists">
+      <div class="panel">
+        <h2 id="setHeading">Set</h2>
+        <ul id="setList"></ul>
+      </div>
+    </div>
+    <div class="lists">
+      <div class="panel">
+        <h2 id="savedHeading">Saved sets</h2>
+        <ul id="savedList"></ul>
+      </div>
+    </div>
+  </main>
+  <div class="line">
+    <button id="save">Save</button>
+    <button id="open">Load</button>
+  </div>
+  <div id="status"></div>
+<script>
+(function () {
+  var api = window.aquastarSets;
+  var itemSelect = document.getElementById('item');
+  var setList = document.getElementById('setList');
+  var savedList = document.getElementById('savedList');
+  var status = document.getElementById('status');
+  var strings = {};
+  var entries = [];
+  var saved = [];
+  var rows = [];
+
+  function setStatus(text, kind) {
+    status.textContent = text || '';
+    status.className = kind || '';
+  }
+
+  function fail(error) {
+    setStatus(String((error && error.message) || error), 'err');
+  }
+
+  function renderSet() {
+    setList.innerHTML = '';
+    entries.forEach(function (entry) {
+      var row = document.createElement('li');
+      row.textContent = '[' + entry.type + '] : ' + entry.name;
+      setList.appendChild(row);
+    });
+    document.getElementById('save').disabled = entries.length === 0;
+  }
+
+  function renderSaved() {
+    savedList.innerHTML = '';
+    saved.forEach(function (set) {
+      var row = document.createElement('li');
+      row.textContent = set.name;
+      row.title = set.path;
+      row.addEventListener('click', function () {
+        openSet(set.path);
+      });
+      savedList.appendChild(row);
+    });
+  }
+
+  function renderItems(list) {
+    itemSelect.innerHTML = '';
+    rows = list || [];
+    rows.forEach(function (row, index) {
+      var option = document.createElement('option');
+      option.value = index;
+      option.textContent = row.label;
+      option.disabled = row.entry === null;
+      itemSelect.appendChild(option);
+    });
+  }
+
+  function refreshItems() {
+    return api.inventoryRows().then(function (result) {
+      if (result.error) { setStatus(result.error, 'err'); return; }
+      renderItems(result.rows);
+    });
+  }
+
+  function refreshSaved() {
+    return api.list().then(function (result) {
+      saved = (result && result.sets) || [];
+      renderSaved();
+    });
+  }
+
+  function applyOpened(result) {
+    if (!result || result.canceled) return;
+    if (result.error) { setStatus(result.error, 'err'); return; }
+    entries = result.entries || [];
+    renderSet();
+    renderSaved();
+    setStatus(strings.loaded, 'ok');
+  }
+
+  function openSet(path) {
+    api.open(path).then(applyOpened).catch(fail);
+  }
+
+  function main() {
+    return api.getMessages().then(function (loaded) {
+      strings = loaded || {};
+      var chrome = strings.window || {};
+      document.getElementById('refresh').textContent = chrome.refresh;
+      document.getElementById('add').textContent = chrome.add;
+      document.getElementById('clear').textContent = chrome.clear;
+      document.getElementById('save').textContent = chrome.save;
+      document.getElementById('open').textContent = chrome.load;
+      document.getElementById('setHeading').textContent = chrome.setHeading;
+      document.getElementById('savedHeading').textContent = chrome.savedHeading;
+      document.title = chrome.title;
+    }).then(function () {
+      document.getElementById('refresh').addEventListener('click', function () {
+        refreshItems().catch(fail);
+      });
+      document.getElementById('add').addEventListener('click', function () {
+        var row = rows[Number(itemSelect.value)];
+        if (!row || !row.entry) return;
+        entries.push(row.entry);
+        renderSet();
+        setStatus(strings.added, 'ok');
+      });
+      document.getElementById('clear').addEventListener('click', function () {
+        entries = [];
+        renderSet();
+        setStatus(strings.cleared, '');
+      });
+      document.getElementById('save').addEventListener('click', function () {
+        api.save(entries).then(function (result) {
+          if (!result || result.canceled) return;
+          if (result.error) { setStatus(result.error, 'err'); return; }
+          setStatus(strings.saved, 'ok');
+          return refreshSaved();
+        }).catch(fail);
+      });
+      document.getElementById('open').addEventListener('click', function () {
+        openSet(null);
+      });
+    }).then(function () {
+      renderSet();
+      return Promise.all([refreshItems(), refreshSaved()]);
+    }).catch(fail);
+  }
+
+  main();
+})();
+</script>
+</body>
+</html>

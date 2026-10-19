@@ -28,6 +28,10 @@ const flash         = require('./res/flash.js');
 const keyb          = require('./res/keybindings.js');
 // Platform IPC (always registered from main — never by plugins).
 const ipcRecording  = require('./res/ipc/recording.js');
+// The game window's chrome strip IPC (ticket #45): the platform's own wrapper page asks for the
+// strip it must draw and reports the controls the user pressed. Bare, like this module: it
+// registers its handlers on require and nothing here calls it afterwards.
+require('./res/ipc/game-chrome.js');
 const inst          = require('./res/instances.js');
 const windowsMenu   = require('./res/windows/menu.js');
 const socketProxy   = require('./res/socketProxy.js');
@@ -35,6 +39,7 @@ const ruffleUpdate  = require('./res/ruffleUpdate.js');
 const constant = require('./res/const.js');
 const locale  = require('./res/locale.js');
 const platform = require('./res/platform');
+const packetLayer = require('./res/platform/packet-layer.js');
 
 const bootPluginDisk = platform.readPluginFlagsFromDisk(
     constant.appDataDirectory,
@@ -43,6 +48,12 @@ const bootPluginDisk = platform.readPluginFlagsFromDisk(
 const bootFlags = bootPluginDisk.flags;
 
 let activePluginRuntime = null;
+let packetLayerState = null;
+// One tap per app session: the relay hands it every frame it carries, and plugins holding
+// packet-tap subscribe to it (res/platform/packet-tap.js). The listener is the platform's.
+const packetTap = platform.createPacketTap({
+    onError: function (line) { console.log('[AquaStar:packets] ' + line); }
+});
 
 // pluginSystem:false / AQUASTAR_DISABLE_PLUGINS=1 is the emergency "safe mode": only the
 // bundled default plugin (the one whose manifest says bundledDefault) is activated, with no
@@ -53,7 +64,14 @@ function activatePlugins() {
     platform.pluginRuntime.setDependencies({
         instances: inst,
         constant: constant,
-        BrowserWindow: BrowserWindow
+        BrowserWindow: BrowserWindow,
+        packetTap: packetTap,
+        // Read live, not captured: the packet layer is composed later, on the way to the first
+        // window, so a sender captured here would be null forever. Null means steering is off or
+        // did not come up, which is what packets.send reports rather than swallowing the frame.
+        packetSender: function () {
+            return packetLayerState ? packetLayerState.send : null;
+        }
     });
 
     const safeMode = !bootFlags.pluginSystem;
@@ -95,6 +113,8 @@ function activatePlugins() {
             platform.pluginRuntime.adopt(runtime.host, pluginInfo);
             // Older local SWF file names this plugin used to read (manifest customSwfAliases).
             constant.setCustomSwfAliases(runtime.plugin.manifest.customSwfAliases);
+            // The plugin declared its loopback origin during activate() (host.declareGameOrigin
+            // starts it there, before this adopt); the trust list must carry the origin URL.
             platform.pluginRuntime.applyFlashTrust(flash);
 
             platform.menuRegistry.adoptHostState(state, state.menuProviders || null);
@@ -125,7 +145,7 @@ function activatePlugins() {
 // No game URL is trusted yet: the plugin's trust list is applied right after activation.
 flash.flashManager(app, __dirname, null, constant.appName);
 
-function createWindow () {
+async function createWindow () {
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
         // Screen capture is needed only by AquaStar's own game windows.  Normal
         // browser windows load remote account/wiki pages and must not inherit it.
@@ -179,8 +199,9 @@ function createWindow () {
         return;
     }
 
-    // webRequest rules go in before the first window loads anything.
-    applySessionRules();
+    // webRequest rules go in before the first window loads anything. Steering may bind a loopback
+    // listener, so it finishes before the window opens.
+    await applySessionRules();
 
     let win = inst.newBrowserWindow(bootGameUrl, true);
     // Re-apply after setApplicationMenu so the first window keeps plugin menu entries.
@@ -199,7 +220,7 @@ function createWindow () {
 // Platform rules (ad blocking) and the active plugin's rules share one applicator: Electron
 // keeps a single listener per webRequest event, so separate registrations would replace
 // each other. The platform only supplies the browser's own UA; any UA policy is the plugin's.
-function applySessionRules() {
+async function applySessionRules() {
     let swfLogStream = null;
     if (constant.isSwfLogEnabled) {
         var t = new Date();
@@ -216,12 +237,45 @@ function applySessionRules() {
         ? (activePluginRuntime.host._getState().sessionRules || [])
         : [];
 
+    // Packet steering (res/platform/packet-layer.js): a plugin declares where its client takes its
+    // server list, and the layer returns rules plus the loopback body service those rules route to.
+    // Its rules join this single registration; a relay that cannot steer never comes up.
+    const packetDeclarations = activePluginRuntime && activePluginRuntime.host
+        ? (activePluginRuntime.host._getState().packetSteering || [])
+        : [];
+    let packetRules = [];
+    let responseBody = null;
+    if (packetDeclarations.length) {
+        try {
+            packetLayerState = await packetLayer.createPacketLayer({
+                declarations: packetDeclarations,
+                // The relay's frames reach plugins only through the tap below, which is what
+                // keeps one listener in the app and every subscriber read-only.
+                onFrame: function (frame) { packetTap.emit(frame); },
+                ctx: {
+                    defaultUserAgent: session.defaultSession.getUserAgent(),
+                    settings: { swfLog: constant.isSwfLogEnabled, packetSteering: keyb.keybinds.packetSteering },
+                    logLine: function (line) { console.log('[AquaStar:packets] ' + line); }
+                }
+            }).start();
+            packetRules = packetLayerState.rules;
+            responseBody = packetLayerState.responseBody;
+        } catch (error) {
+            // The client's HTTP-polling fallback is not steered, so a half-working layer must not
+            // pretend: report it and carry on with the platform's own rules only.
+            console.log('[AquaStar:packets] packet steering unavailable: ' +
+                (error && error.message ? error.message : error));
+            packetLayerState = null;
+        }
+    }
+
     platform.applySessionRules(
         session.defaultSession,
-        platform.createPlatformSessionRules().concat(pluginRules),
+        platform.createPlatformSessionRules().concat(pluginRules).concat(packetRules),
         {
             defaultUserAgent: session.defaultSession.getUserAgent(),
             settings: { swfLog: constant.isSwfLogEnabled },
+            responseBody: responseBody,
             logLine: function (line) {
                 if (swfLogStream) swfLogStream.write(line + '\n');
             }

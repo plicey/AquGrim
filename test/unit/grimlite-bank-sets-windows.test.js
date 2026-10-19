@@ -1,0 +1,241 @@
+// The Bank window as the app hands it out (ticket #29): a registered feature window in the
+// plugin's own conventions (sandboxed, no Flash, dark local page), a menu entry, and main-process
+// channels that reach the logic and the dialogs. Everything that needs live
+// game state is reported as unwired here rather than faked; the manual side is on
+// docs/FLASH_CHECKLIST.md.
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const url = require('url');
+
+const platform = require('../../res/platform');
+const {
+  createBankWindow,
+  createFromHost: createBankWindowFromHost
+} = require('../../plugins/grimlite-parity/features/bank/bank-window.js');
+const { createSetsWindow } = require('../../plugins/grimlite-parity/features/sets/sets-window.js');
+const bridge = require('../../plugins/grimlite-parity/bridge.js');
+
+const repoRoot = path.join(__dirname, '../..');
+const pluginRoot = path.join(repoRoot, 'plugins/grimlite-parity');
+const appVersion = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')).version;
+
+const WINDOW_IDS = ['grimlite-parity-bank'];
+
+function activateParity(deps) {
+  return platform.activatePlugin({
+    source: 'bundled',
+    root: pluginRoot,
+    manifest: JSON.parse(fs.readFileSync(path.join(pluginRoot, 'plugin.json'), 'utf8'))
+  }, {
+    appVersion: appVersion,
+    appDataDirectory: path.join(__dirname, '../tmp-plugin-data'),
+    clearRequireCache: true,
+    log: function () {},
+    deps: deps || {}
+  });
+}
+
+test('the Bank window is registered in the app\'s window conventions', async () => {
+  const activated = await activateParity();
+  const windows = activated.host._getState().featureWindows;
+
+  WINDOW_IDS.forEach(function (id) {
+    const found = windows.filter(function (w) { return w.id === id; });
+    assert.strictEqual(found.length, 1, 'missing feature window ' + id);
+    const config = found[0].config;
+    assert.strictEqual(config.webPreferences.sandbox, true, id + ' must be sandboxed');
+    assert.strictEqual(config.webPreferences.plugins, false, id + ' must not load Flash');
+    assert.strictEqual(config.webPreferences.contextIsolation, true, id + ' must isolate contexts');
+    assert.strictEqual(config.webPreferences.nodeIntegration, false, id + ' must not expose Node');
+    assert.strictEqual(config.useContentSize, true, id + ' sizes its content');
+    assert.ok(/^file:\/\//.test(found[0].url), id + ' must be a local page');
+    const page = url.fileURLToPath(found[0].url);
+    assert.ok(page.indexOf(pluginRoot) === 0, id + ' page must live in the plugin');
+    assert.ok(fs.existsSync(page), 'missing page file: ' + page);
+    const preload = url.fileURLToPath('file://' + found[0].config.webPreferences.preload);
+    assert.ok(fs.existsSync(preload), 'missing preload: ' + preload);
+    // A sandboxed preload may only require electron.
+    const source = fs.readFileSync(preload, 'utf8');
+    assert.ok(source.indexOf("require('electron')") !== -1, id + ' preload needs electron');
+    assert.strictEqual(source.indexOf("require('../"), -1, id + ' preload must stay self-contained');
+  });
+  assert.strictEqual(windows.some(function (w) { return w.id === 'grimlite-parity-sets'; }), false,
+    'Sets has no shell surface and must not be registered');
+});
+
+test('the Grimlite menu keeps Bank visible and hides Sets', async () => {
+  const opened = [];
+  const activated = await activateParity({
+    openFeatureWindow: function (id) {
+      opened.push(id);
+      return {};
+    }
+  });
+
+  const state = activated.host._getState();
+  // This plugin contributes more than one top-level menu (Packets joined in #26), so the
+  // Grimlite one is found by its label rather than by position.
+  const menus = state.menus
+    .map(function (contributor) {
+      return contributor({ labels: { grimliteMenu: 'Grimlite' }, keybinds: {} });
+    })
+    .reduce(function (all, group) { return all.concat(group); }, []);
+  const submenu = menus.filter(function (menu) {
+    return menu.label === 'Grimlite';
+  })[0].submenu;
+  const labels = submenu.map(function (item) { return item.label; });
+  // Bank is reachable from Grimlite; Sets has no shell surface.
+  assert.ok(labels.indexOf('Bank') !== -1, 'no Bank entry: ' + labels.join(', '));
+  assert.strictEqual(labels.indexOf('Sets'), -1, 'Sets must not have a visible menu entry');
+
+  submenu.filter(function (item) { return item.label === 'Bank'; })[0].click();
+  assert.deepStrictEqual(opened, [WINDOW_IDS[0]]);
+});
+
+test('the reference\'s Show Bank hotkey action is bindable, and defaults to a key of its own', async () => {
+  const fired = [];
+  const activated = await activateParity({
+    openFeatureWindow: function (id) {
+      fired.push(id);
+      return {};
+    }
+  });
+  const state = activated.host._getState();
+
+  const bank = state.keybinds.filter(function (binding) {
+    return binding.id === 'grimliteBank';
+  });
+  assert.strictEqual(bank.length, 1, "the reference's Show Bank action must be bindable");
+  assert.strictEqual(state.keybindDefaults.grimliteBank, undefined,
+    'Grimlite ships no default hotkeys');
+  bank[0].action();
+  assert.deepStrictEqual(fired, ['grimlite-parity-bank']);
+
+  // The reference does not provide a Sets hotkey (the form is hidden upstream), so none here.
+  assert.strictEqual(state.keybindDefaults.grimliteSets, undefined);
+});
+
+test('the Bank window reaches its logic through the window\'s own channels', async () => {
+  const calls = [];
+  const game = {
+    readInventory: function () {
+      calls.push('readInventory');
+      return Promise.resolve([
+        { id: 1, name: 'Sword of Awe', category: 'Sword', isAcItem: false, isEquipped: false }
+      ]);
+    },
+    readBankSlots: function () { return Promise.resolve({ total: 10, used: 0 }); },
+    transferToBank: function (name) {
+      calls.push('transfer:' + name);
+      return Promise.resolve();
+    },
+    sleep: function () { return Promise.resolve(); }
+  };
+  const window = createBankWindow({ game: game });
+
+  assert.deepStrictEqual(await window.handle('bankCategories'), {
+    categories: require(path.join(pluginRoot, 'features/bank/bank.js')).CATEGORIES,
+    acChoices: require(path.join(pluginRoot, 'features/bank/bank.js')).AC_CHOICES
+  });
+
+  const result = await window.handle('bankCategory', null, [
+    { category: 'Sword', ac: false, allExcept: false }
+  ]);
+  assert.deepStrictEqual(result, { transferred: 1, total: 1, error: null });
+  assert.deepStrictEqual(calls, ['readInventory', 'transfer:Sword of Awe']);
+});
+
+test('the Bank window reads plugin messages after activation has merged its locale', async () => {
+  let messages = {};
+  const window = createBankWindowFromHost({
+    getLocaleStrings: function (namespace) {
+      assert.strictEqual(namespace, 'bankMessages');
+      return messages;
+    }
+  }, { game: {} });
+
+  messages = require('../../plugins/grimlite-parity/locales/en-US.js').bankMessages;
+  const loaded = await window.handle('bankMessages');
+
+  assert.strictEqual(loaded.title, 'Bank');
+  assert.strictEqual(loaded.bankAll, 'Bank All');
+});
+
+test('a Bank window with no game access reports that, instead of pretending to transfer', async () => {
+  // An app with no bridge channel (an older build, or the platform's channel not
+  // wired): the window must report that, not report a transfer it never made.
+  const game = bridge.createGameAccess({ log: function () {} });
+  const window = createBankWindow({ game: game });
+
+  const result = await window.handle('bankCategory', null, [
+    { category: 'Sword', ac: false, allExcept: false }
+  ]);
+  assert.strictEqual(result.transferred, 0);
+  assert.strictEqual(result.error, bridge.ERRORS.unchannelled);
+});
+
+test('the Sets window lists, adds, saves, opens, clears and equips through its channels', async () => {
+  const appData = fs.mkdtempSync(path.join(require('os').tmpdir(), 'aquastar-setswin-'));
+  const setsDir = path.join(appData, 'Sets');
+  fs.mkdirSync(setsDir, { recursive: true });
+  fs.copyFileSync(
+    path.join(__dirname, '../fixtures/grimlite-sets/reference-set.gset'),
+    path.join(setsDir, 'mine.gset')
+  );
+
+  const game = {
+    readInventory: function () {
+      return Promise.resolve([
+        { id: 1, name: 'Blinding Light of Destiny', category: 'Sword', isAcItem: false, isEquipped: false },
+        { id: 2, name: 'ArchPaladin', category: 'Class', isAcItem: false, isEquipped: true },
+        { id: 3, name: "Sepulchure's Armor", category: 'Armor', isAcItem: false, isEquipped: false }
+      ]);
+    }
+  };
+  const saved = [];
+  const window = createSetsWindow({
+    game: game,
+    dialogs: {
+      list: function () { return Promise.resolve([{ name: 'mine.gset', path: 'mine.gset' }]); },
+      open: function () { return Promise.resolve({ canceled: true }); },
+      openByPath: function (relative) {
+        const file = path.join(setsDir, relative);
+        return Promise.resolve({
+          canceled: false, path: file,
+          entries: require(path.join(pluginRoot, 'features/sets/sets.js'))
+            .parseSet(fs.readFileSync(file, 'utf8')).entries,
+          error: null
+        });
+      },
+      save: function (entries) {
+        saved.push(entries);
+        return Promise.resolve({ canceled: false, path: path.join(setsDir, 'set.gset'), error: null });
+      }
+    }
+  });
+
+  assert.deepStrictEqual(await window.handle('listSets'), {
+    sets: [{ name: 'mine.gset', path: 'mine.gset' }]
+  });
+
+  const added = await window.handle('setInventoryRows');
+  assert.strictEqual(added.rows.filter(function (row) { return row.entry !== null; }).length, 3);
+
+  const opened = await window.handle('openSet', null, ['mine.gset']);
+  assert.strictEqual(opened.error, null);
+  assert.deepStrictEqual(opened.entries.map(function (e) { return e.name; }), [
+    'Blinding Light of Destiny', 'ArchPaladin', "Sepulchure's Armor"
+  ]);
+
+  // The extra equip path is gone: the channel is refused like any other unknown one.
+  assert.throws(function () { window.handle('equipSet', null, [opened.entries]); },
+    /unknown sets channel/);
+
+  const saveResult = await window.handle('saveSet', null, [opened.entries]);
+  assert.strictEqual(saveResult.error, null);
+  assert.strictEqual(saved.length, 1);
+
+  // An unknown channel is refused rather than answered with something plausible.
+  assert.throws(function () { window.handle('nonsense'); }, /unknown sets channel/);
+});

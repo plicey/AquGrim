@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Grimlite Parity - Eye Dropper</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
+  }
+  body { display: flex; flex-direction: column; box-sizing: border-box; padding: 10px; gap: 8px; }
+  #pick { padding: 10px; font-size: 14px; cursor: crosshair; }
+  /* The readout: the reference paints textBox1 with the captured colour and switches the text
+     between black and white on Color.GetBrightness(). */
+  #readout {
+    min-height: 44px; padding: 10px 12px; border: 1px solid #383838; border-radius: 4px;
+    font-family: "Consolas", "Courier New", monospace; font-size: 12px; white-space: pre-wrap;
+    background: #1b1b1b;
+  }
+  #preview { width: 150px; height: 150px; align-self: center; background: #1b1b1b;
+    border: 1px solid #383838; border-radius: 4px; image-rendering: pixelated; }
+  #history { list-style: none; margin: 0; flex: 1 1 auto; overflow-y: auto; background: #1b1b1b;
+    border: 1px solid #2c2c2c; border-radius: 4px; padding: 8px 10px;
+    font-family: "Consolas", "Courier New", monospace; font-size: 12px; }
+  #history li { white-space: pre-wrap; }
+  button { background: #232323; color: #e6e6e6; border: 1px solid #383838; border-radius: 4px; padding: 6px 10px; font-size: 12px; }
+  button:hover { background: #2c2c2c; }
+</style>
+</head>
+<body>
+  <button id="pick" type="button">Pick</button>
+  <canvas id="preview" width="150" height="150" aria-label="Magnified preview"></canvas>
+  <div id="readout"></div>
+  <ul id="history" aria-label="Picked colours"></ul>
+
+  <script>
+    (function () {
+      var bridge = window.aquastarEyedropper || null;
+      var readout = document.getElementById('readout');
+      var history = document.getElementById('history');
+      var preview = document.getElementById('preview');
+      var context = preview.getContext('2d');
+      var messages = {};
+
+      function append(text) {
+        var item = document.createElement('li');
+        item.textContent = text;
+        history.appendChild(item);
+      }
+
+      // The reference's own zoom control: each source pixel becomes a PREVIEW_ZOOM-sized square,
+      // with the picked pixel's row and column marked across the middle.
+      function drawPreview(previewData) {
+        if (!previewData || !previewData.data) return;
+        var span = previewData.width;
+        var zoom = Math.floor(preview.width / span);
+        context.clearRect(0, 0, preview.width, preview.height);
+        for (var y = 0; y < span; y++) {
+          for (var x = 0; x < span; x++) {
+            var at = (y * span + x) * 4;
+            context.fillStyle = 'rgb(' + previewData.data[at] + ',' + previewData.data[at + 1] +
+              ',' + previewData.data[at + 2] + ')';
+            context.fillRect(x * zoom, y * zoom, zoom, zoom);
+          }
+        }
+        var middle = Math.floor(span / 2) * zoom;
+        context.strokeStyle = '#ffffff';
+        context.beginPath();
+        context.moveTo(middle + zoom / 2, 0);
+        context.lineTo(middle + zoom / 2, preview.height);
+        context.moveTo(0, middle + zoom / 2);
+        context.lineTo(preview.width, middle + zoom / 2);
+        context.stroke();
+      }
+
+      // Capture while the mouse is held down, like the reference's eyedropper control: press on
+      // the button and release over the pixel. MouseEvent.screenX/screenY are DIP against the
+      // display's own origin, which is the coordinate space the main process reads too.
+      var pickButton = document.getElementById('pick');
+      pickButton.addEventListener('pointerdown', function (event) {
+        if (!bridge) return;
+        event.preventDefault();
+        pickButton.setPointerCapture(event.pointerId);
+        readout.textContent = messages.capturing || 'Reading the screen…';
+        var released = false;
+        pickButton.addEventListener('pointerup', function onUp(upEvent) {
+          if (released) return;
+          released = true;
+          pickButton.removeEventListener('pointerup', onUp);
+          pick({ x: upEvent.screenX, y: upEvent.screenY });
+        });
+      });
+
+      function pick(point) {
+        bridge.pick(point).then(function (result) {
+          if (!result || !result.colour) {
+            readout.textContent = (result && result.error) || (messages.captureFailed || 'Could not read the screen.');
+            return;
+          }
+          readout.textContent = result.text;
+          readout.style.background = result.cssColour;
+          readout.style.color = result.textColour;
+          drawPreview(result.preview);
+          append(result.text);
+        });
+      }
+
+      if (bridge) {
+        bridge.getMessages().then(function (list) { messages = list || {}; });
+      }
+    })();
+  </script>
+</body>
+</html>

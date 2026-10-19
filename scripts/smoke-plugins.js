@@ -24,6 +24,10 @@ function ok(cond, msg) {
 
 const aqw = path.join(root, 'plugins', 'adventure-quest-worlds');
 const example = path.join(root, 'plugins', 'example-companion');
+const parity = path.join(root, 'plugins', 'grimlite-parity');
+// The real app version: a bundled plugin that declares a newer apiVersion or a higher
+// minAppVersion must be discoverable by the build it ships in.
+const appVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
 
 ok(fs.existsSync(path.join(aqw, 'plugin.json')), 'AQW plugin.json');
 ok(fs.existsSync(path.join(example, 'plugin.json')), 'example plugin.json');
@@ -33,20 +37,134 @@ ok(fs.existsSync(path.join(example, 'assets', 'rectangle.swf')), 'example rectan
 ok(fs.statSync(path.join(example, 'assets', 'rectangle.swf')).size > 500, 'rectangle.swf size');
 ok(fs.existsSync(path.join(example, 'flash', 'BoxMover.as')), 'BoxMover.as source');
 ok(fs.existsSync(path.join(example, 'flash', 'StaticRect.as')), 'StaticRect.as source');
+ok(fs.existsSync(path.join(parity, 'plugin.json')), 'parity plugin.json');
+ok(
+  fs.existsSync(path.join(parity, 'features', 'placeholder', 'placeholder.html')),
+  'parity placeholder page'
+);
+ok(
+  fs.existsSync(path.join(parity, 'features', 'bot-file', 'bot-file.html')),
+  'parity bot file page'
+);
+ok(fs.existsSync(path.join(parity, 'bot', 'bots.js')), 'parity bot file reader/writer');
+
+// The packet spammer and tamperer (ticket #27): a page and a sandboxed preload each, plus the
+// file the spammer round-trips.
+['spammer', 'tamperer'].forEach(function (tool) {
+  ok(fs.existsSync(path.join(parity, 'features', 'packets', tool + '.html')),
+    'parity ' + tool + ' page');
+  const source = fs.readFileSync(
+    path.join(parity, 'features', 'packets', 'preload_' + tool + '.js'), 'utf8');
+  ok(source.indexOf("require('electron')") !== -1, tool + ' preload requires electron');
+  ok(source.indexOf("require('../../") === -1, tool + ' preload requires nothing project-local');
+});
+const spammerXml = require(path.join(parity, 'features', 'packets', 'spammer.js'));
+const spammerFile = spammerXml.parseFile(
+  fs.readFileSync(path.join(root, 'test', 'fixtures', 'grimlite-spammer', 'elsewhere.xml'), 'utf8'));
+ok(spammerFile.ok && spammerFile.packets.length === 3,
+  'a spammer file authored elsewhere loads its packet list');
+ok(spammerXml.parseFile(spammerXml.serializeFile({ packets: spammerFile.packets,
+  delay: spammerFile.delay })).delay === spammerFile.delay,
+  'a spammer file round-trips its list and delay');
+ok(
+  fs.existsSync(path.join(parity, 'features', 'bank', 'bank.html')),
+  'parity bank page'
+);
+ok(fs.existsSync(path.join(parity, 'features', 'sets', 'sets.html')), 'parity sets page');
+ok(fs.existsSync(path.join(parity, 'bridge.js')), 'parity game access interface');
+
+// The drop list (ticket #33): a page and a sandboxed preload, and the frame parser the fixtures
+// drive. The fixture is the reference's own shape, so this asserts the wire is still read.
+['drops'].forEach(function (tool) {
+  ok(fs.existsSync(path.join(parity, 'features', tool, tool + '.html')), 'parity ' + tool + ' page');
+  const preloadSource = fs.readFileSync(
+    path.join(parity, 'features', tool, 'preload_' + tool + '.js'), 'utf8');
+  ok(preloadSource.indexOf("require('electron')") !== -1, tool + ' preload requires electron');
+  ok(preloadSource.indexOf("require('../") === -1, tool + ' preload requires nothing project-local');
+});
+const dropLogic = require(path.join(parity, 'features', 'drops', 'drops.js'));
+const dropFixture = require(path.join(root, 'test', 'fixtures', 'grimlite-drops', 'reference.json'));
+const dropsRead = dropFixture.frames.filter(function (entry) {
+  return !!entry.item;
+}).every(function (entry) {
+  const parsed = dropLogic.parseDropFrame(entry.frame);
+  return parsed !== null && parsed.name === entry.item.name && parsed.quantity === entry.item.quantity;
+});
+ok(dropsRead, 'a dropItem frame from the fixture reads as its item');
+// Every other frame in the fixture is not a drop: a different cmd, an XT frame, or the answer to
+// a take. None of them may become a row.
+ok(dropFixture.frames.filter(function (entry) { return !entry.item; })
+  .every(function (entry) { return dropLogic.parseDropFrame(entry.frame) === null; }),
+  'a frame that is not a drop is not read as one');
+ok(dropFixture.frames.filter(function (entry) { return entry.taken; }).every(function (entry) {
+  const parsed = dropLogic.parseGetDropFrame(entry.frame);
+  return parsed !== null && parsed.id === entry.taken.id && parsed.success === entry.taken.success;
+}), 'a getDrop answer from the fixture reads as its verdict');
+
+// A set this app writes must stay readable by the reference client: round-trip a fixture.
+const sets = require(path.join(parity, 'features', 'sets', 'sets.js'));
+const setPath = path.join(root, 'test', 'fixtures', 'grimlite-sets', 'reference-set.gset');
+const setText = fs.readFileSync(setPath, 'utf8');
+const parsedSet = sets.parseSet(setText);
+ok(parsedSet.ok, 'a bundled .gset fixture parses: ' + parsedSet.error);
+ok(sets.serializeSet(parsedSet.entries) === setText, '.gset fixture re-serialises byte-exact');
+
+// The bot file window's preload is sandboxed, so it may only require('electron').
+const botPreload = fs.readFileSync(
+  path.join(parity, 'features', 'bot-file', 'preload_bot_file.js'),
+  'utf8'
+);
+ok(botPreload.indexOf("require('electron')") !== -1, 'bot file preload requires electron');
+ok(botPreload.indexOf("require('../../") === -1, 'bot file preload requires nothing project-local');
+
+// The Bot Manager (ticket #36) is the same shape: a plugin page and a sandboxed preload.
+ok(
+  fs.existsSync(path.join(parity, 'features', 'bot-manager', 'bot-manager.html')),
+  'parity bot manager page'
+);
+ok(
+  fs.existsSync(path.join(parity, 'bot', 'command-catalog.js')),
+  'parity command catalog present'
+);
+const managerPreload = fs.readFileSync(
+  path.join(parity, 'features', 'bot-manager', 'preload_bot_manager.js'),
+  'utf8'
+);
+ok(managerPreload.indexOf("require('electron')") !== -1, 'bot manager preload requires electron');
+ok(
+  managerPreload.indexOf("require('../..") === -1,
+  'bot manager preload requires nothing project-local'
+);
+
+// A bot file the app writes must stay readable by the reference client: round-trip a fixture.
+const bots = require(path.join(parity, 'bot', 'bots.js'));
+const samplePath = path.join(root, 'test', 'fixtures', 'grimlite-bots', 'plain.gbot');
+const sampleText = fs.readFileSync(samplePath, 'utf8');
+const sampleBot = bots.parseBot(sampleText);
+ok(sampleBot.ok, 'a bundled .gbot fixture parses: ' + sampleBot.error);
+ok(bots.serializeBot(sampleBot.bot) === sampleText, '.gbot fixture re-serialises byte-exact');
 
 const discovered = platform.discoverPlugins({
   bundledDir: path.join(root, 'plugins'),
-  appVersion: '1.12.2',
+  appVersion: appVersion,
   log: function () {}
 });
 const ids = discovered.plugins.map(function (p) { return p.manifest.id; });
 ok(ids.indexOf('adventure-quest-worlds') !== -1, 'discover AQW');
 ok(ids.indexOf('example-companion') !== -1, 'discover example-companion');
+ok(ids.indexOf('grimlite-parity') !== -1, 'discover grimlite-parity');
 ok(ids.indexOf('my-flash-game') === -1, 'skip _template');
 
 const exManifest = JSON.parse(fs.readFileSync(path.join(example, 'plugin.json'), 'utf8'));
-const validated = platform.manifestSchema.validateManifest(exManifest, { appVersion: '1.12.2' });
+const validated = platform.manifestSchema.validateManifest(exManifest, { appVersion: appVersion });
 ok(validated.ok, 'example manifest validates: ' + ((validated.errors || []).join('; ')));
+
+// The app must be able to run the apiVersion the newer bundled plugin declares.
+const parityManifest = JSON.parse(fs.readFileSync(path.join(parity, 'plugin.json'), 'utf8'));
+const parityValidated = platform.manifestSchema.validateManifest(parityManifest, {
+  appVersion: appVersion
+});
+ok(parityValidated.ok, 'parity manifest validates: ' + ((parityValidated.errors || []).join('; ')));
 
 const preload = fs.readFileSync(
   path.join(example, 'features', 'dashboard', 'preload_dashboard.js'),

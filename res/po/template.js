@@ -88,6 +88,7 @@ exports.settingsMessages = {
     optionLabels: {
         appLanguage: "",
         customUrl: "",
+        localOrigin: "",
         recordingFormat: "",
         renderMode: "",
         ruffleUpdateChannel: "",
@@ -98,6 +99,7 @@ exports.settingsMessages = {
     optionHints: {
         appLanguage: "",
         customUrl: "",
+        localOrigin: "",
         recordingFormat: "",
         renderMode: "",
         ruffleUpdateChannel: "",

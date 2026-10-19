@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Loaders and grabbers</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #2e2e38; color: #dcdcdc;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 12px;
+  }
+  body { padding: 6px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; }
+  select, input[type=text], input[type=number] {
+    background: #1b1b1b; color: #dcdcdc; border: 1px solid #3a3a45; border-radius: 3px;
+    padding: 2px 4px; font: inherit; min-width: 0; box-sizing: border-box;
+  }
+  button {
+    background: #3a3a45; color: #dcdcdc; border: 1px solid #4a4a58; border-radius: 3px;
+    padding: 3px 6px; cursor: pointer; font: inherit;
+  }
+  button:hover:not(:disabled) { background: #4a4a58; }
+  button:disabled { opacity: .45; cursor: default; }
+  /* The reference's own layout: a stacked panel above and below the tree. */
+  .panel { display: grid; grid-template-columns: 1fr 62px; gap: 3px; align-items: center; }
+  .panel .wide { grid-column: 1 / span 2; }
+  #treeWrap {
+    flex: 1 1 auto; min-height: 90px; background: #2e2e38; border: 1px solid #3a3a45;
+    overflow: auto; padding: 2px;
+  }
+  #tree { list-style: none; margin: 0; padding: 0; white-space: nowrap; }
+  #tree .row { cursor: default; padding: 1px 2px; border-radius: 2px; }
+  #tree .row:hover { background: #3a3a45; }
+  #tree .row.sel { background: #2d4a6b; }
+  #tree .kids { list-style: none; margin: 0; padding-left: 14px; }
+  #tree .collapsed > .kids { display: none; }
+  #tree .twisty { display: inline-block; width: 10px; color: #9a9a9a; cursor: pointer; }
+  #status { min-height: 15px; color: #9a9a9a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #status.err { color: #ff8a80; }
+  #menu {
+    position: absolute; z-index: 10; display: none; background: #242430; color: #dcdcdc;
+    border: 1px solid #4a4a58; border-radius: 3px; padding: 3px 0; min-width: 170px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.5);
+  }
+  #menu .item { padding: 3px 12px; cursor: pointer; }
+  #menu .item:hover { background: #3a3a45; }
+  .check { display: flex; align-items: center; gap: 3px; }
+</style>
+</head>
+<body>
+  <!--
+    Loaders.cs's own controls, in the designer's order: txtLoaders and its count box, cbLoad
+    ("Hair shop", "Shop", "Quest", "Armor customizer"), btnLoad ("Load"), btnForceAccept
+    ("F Accept") and cbGhost ("Ghost"), then the tree, then the grab half: txtSearchGrab
+    ("Search"), btnSearchGrab ("Search"), cbGrab (the eight grabbers), cbOrderBy ("Name", "Id"),
+    btnSave ("Save") and btnGrab ("Grab").
+  -->
+  <div class="panel">
+    <input id="loaderValue" type="text" title="The id, or a comma separated list of quest ids">
+    <input id="questCount" type="number" min="1" max="30" value="1" title="numTQuests">
+    <select id="loadTarget" class="wide"></select>
+    <button id="load" class="wide">Load</button>
+    <button id="forceAccept" class="wide" title="Ghost accept the quest">F Accept</button>
+    <label class="check wide"><input id="ghost" type="checkbox" checked>Ghost</label>
+  </div>
+
+  <div id="treeWrap">
+    <ul id="tree"></ul>
+  </div>
+
+  <div class="panel">
+    <input id="search" type="text" placeholder="Search">
+    <button id="searchButton">Search</button>
+    <select id="grabTarget" class="wide"></select>
+    <select id="orderBy" class="wide">
+      <option value="Name">Name</option>
+      <option value="Id">Id</option>
+    </select>
+    <button id="save">Save</button>
+    <button id="open">Open</button>
+    <button id="grab">Grab</button>
+  </div>
+
+  <div id="status"></div>
+  <div id="menu"></div>
+
+<script>
+(function () {
+  var bridge = window.aquastarLoaders || null;
+  var rows = [];
+  var flat = [];
+  var matches = [];
+  var matchIndex = -1;
+  var keyword = '';
+  var selected = null;
+
+  var el = function (id) { return document.getElementById(id); };
+  var tree = el('tree');
+  var status = el('status');
+  var menu = el('menu');
+
+  function say(text, isError) {
+    status.textContent = text == null ? '' : String(text);
+    status.className = isError ? 'err' : '';
+  }
+
+  function fill(select, labels) {
+    select.innerHTML = '';
+    (labels || []).forEach(function (entry) {
+      var option = document.createElement('option');
+      var isObject = entry && typeof entry === 'object';
+      option.value = isObject ? entry.id : entry;
+      option.textContent = isObject ? entry.label : entry;
+      select.appendChild(option);
+    });
+  }
+
+  function flatten(list) {
+    var out = [];
+    (function walk(items) {
+      (items || []).forEach(function (item) {
+        out.push(item);
+        if (item.children) walk(item.children);
+      });
+    })(list);
+    return out;
+  }
+
+  // The combos, their entries and the selection the window opens on, all from the window's own
+  // sheet: cbLoad.SelectedIndex = 2 is what makes the reference open on "Quest".
+  function sheets() {
+    return Promise.resolve(bridge && bridge.sheets ? bridge.sheets() : null).then(function (sheet) {
+      if (!sheet) return;
+      fill(el('loadTarget'), sheet.loadTargets);
+      fill(el('grabTarget'), sheet.grabTargets);
+      el('loadTarget').selectedIndex = sheet.defaultLoadIndex;
+      // cbGrab has no SelectedIndex set in the reference's constructor: the window opens with no
+      // grabber chosen, and Grab does nothing until one is.
+      el('grabTarget').selectedIndex = -1;
+      onChange();
+    });
+  }
+
+  // cbLoad_SelectedIndexChanged: the count box and F Accept belong to the Quest target alone.
+  function onChange() {
+    var isQuest = el('loadTarget').value === 'quest';
+    el('questCount').disabled = !isQuest;
+    el('forceAccept').disabled = !isQuest;
+    // cbGrab_SelectedIndexChanged: the order combo lights up only on a quest or monster grabber.
+    var option = el('grabTarget').options[el('grabTarget').selectedIndex];
+    el('orderBy').disabled = !/quest|monster/i.test(option ? option.textContent : '');
+  }
+
+  // ------------------------------------------------------------------ the tree
+
+  function drawNode(row, parent) {
+    var li = document.createElement('li');
+    li.className = 'collapsed';
+    row.container = li;
+    row.parent = parent || null;
+    var line = document.createElement('div');
+    line.className = 'row';
+    var kids = (row.children || []).length;
+    var twisty = document.createElement('span');
+    twisty.className = 'twisty';
+    twisty.textContent = kids ? '+' : '';
+    if (kids) {
+      twisty.addEventListener('click', function (event) {
+        event.stopPropagation();
+        li.classList.toggle('collapsed');
+        twisty.textContent = li.classList.contains('collapsed') ? '+' : '-';
+      });
+    }
+    line.appendChild(twisty);
+    // TreeView.LabelEdit: the node's text is editable in place; Enter or a click elsewhere ends
+    // the edit, and the saved tree is the edited text.
+    var label = document.createElement('span');
+    label.className = 'label';
+    label.contentEditable = 'true';
+    label.textContent = row.text;
+    label.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') { event.preventDefault(); label.blur(); }
+    });
+    label.addEventListener('blur', function () {
+      row.text = label.textContent;
+      say(row.text);
+    });
+    line.appendChild(label);
+    li.appendChild(line);
+    if (kids) {
+      var ul = document.createElement('ul');
+      ul.className = 'kids';
+      row.children.forEach(function (child) { ul.appendChild(drawNode(child, row)); });
+      li.appendChild(ul);
+    }
+    line.addEventListener('contextmenu', function (event) {
+      event.preventDefault();
+      if (row.menu) openMenu(row, event.clientX, event.clientY);
+    });
+    line.addEventListener('click', function () {
+      if (selected) selected.classList.remove('sel');
+      selected = line;
+      line.classList.add('sel');
+    });
+    row.element = line;
+    return li;
+  }
+
+  function draw() {
+    tree.innerHTML = '';
+    rows.forEach(function (row) { tree.appendChild(drawNode(row, null)); });
+    flat = flatten(rows);
+  }
+
+  // ------------------------------------------------------------------ the context menus
+
+  function closeMenu() { menu.style.display = 'none'; menu.innerHTML = ''; }
+
+  function openMenu(row, x, y) {
+    menu.innerHTML = '';
+    // The menu comes from the window's own module, exactly as the reference builds it from the
+    // row's data, so the page never invents a menu entry of its own.
+    Promise.resolve(bridge.menu(row.menu, row.context || {})).then(function (items) {
+      (items || []).forEach(function (item) {
+        var entry = document.createElement('div');
+        entry.className = 'item';
+        entry.textContent = item.label;
+        entry.addEventListener('click', function () {
+          closeMenu();
+          Promise.resolve(bridge.act(item.action, item.payload)).then(function (result) {
+            if (result && result.error) say(result.error, true);
+            else say(item.label + ' done.');
+          });
+        });
+        menu.appendChild(entry);
+      });
+      menu.style.display = 'block';
+      menu.style.left = Math.min(x, window.innerWidth - menu.offsetWidth - 4) + 'px';
+      menu.style.top = Math.min(y, window.innerHeight - menu.offsetHeight - 4) + 'px';
+    });
+  }
+
+  document.addEventListener('click', closeMenu);
+
+  // ------------------------------------------------------------------ the actions
+
+  function load(forceAccept) {
+    say('Loading...');
+    Promise.resolve(bridge.load(
+      el('loadTarget').value,
+      el('loaderValue').value,
+      Number(el('questCount').value),
+      forceAccept === true,
+      el('ghost').checked
+    )).then(function (result) {
+      if (result && result.ok) say('Loaded through ' + (result.via || 'the game') + '.');
+      else say((result && result.error) || 'the game did not answer', true);
+    });
+  }
+
+  function grab() {
+    // The reference clears the search state with the tree at the start of every grab.
+    matches = [];
+    matchIndex = -1;
+    keyword = '';
+    if (!el('grabTarget').value) {
+      // btnGrab_Click clears the tree and its search state before it looks at the combo.
+      rows = [];
+      draw();
+      say('');
+      return;
+    }
+    say('Grabbing...');
+    Promise.resolve(bridge.grab(el('grabTarget').value, el('orderBy').value))
+      .then(function (result) {
+        if (!result || !result.ok) {
+          // A refused grab still shows the cleared tree it left behind.
+          rows = (result && result.rows) || [];
+          draw();
+          say((result && result.error) || 'the grab was refused', true);
+          return;
+        }
+        rows = result.rows;
+        draw();
+        say(rows.length + ' row(s).');
+      });
+  }
+
+  function save() {
+    Promise.resolve(bridge.save()).then(function (result) {
+      if (result && result.canceled) { say(''); return; }
+      if (result && result.ok) { say('Saved to ' + result.path + '.'); return; }
+      say((result && result.error) || 'the save was refused', true);
+    });
+  }
+
+  function open() {
+    Promise.resolve(bridge.open()).then(function (result) {
+      if (result && result.canceled) { say(''); return; }
+      if (!result || !result.ok) {
+        say((result && result.error) || 'the file was refused', true);
+        return;
+      }
+      rows = result.rows;
+      draw();
+      say(rows.length + ' row(s) from ' + result.path + '.');
+    });
+  }
+
+  // btnSearchGrab_Click: the matches are collected once per keyword, then each press steps to the
+  // next one and wraps past the last.
+  function search() {
+    var wanted = el('search').value;
+    if (!wanted.replace(/\s/g, '')) return;
+    if (wanted !== keyword) {
+      keyword = wanted;
+      matchIndex = -1;
+      matches = flat.filter(function (row) {
+        return String(row.text).toLowerCase().indexOf(wanted.toLowerCase()) !== -1;
+      });
+    }
+    if (!matches.length) { say('No match.', true); return; }
+    matchIndex = matchIndex + 1 >= matches.length ? 0 : matchIndex + 1;
+    var row = matches[matchIndex];
+    // EnsureVisible expands a collapsed ancestor before it scrolls the match into view.
+    var ancestor = row.parent;
+    while (ancestor) {
+      if (ancestor.container && ancestor.container.classList) {
+        ancestor.container.classList.remove('collapsed');
+        var twisty = ancestor.container.querySelector ? ancestor.container.querySelector('.twisty') : null;
+        if (twisty) twisty.textContent = '-';
+      }
+      ancestor = ancestor.parent;
+    }
+    if (selected) selected.classList.remove('sel');
+    selected = row.element;
+    selected.classList.add('sel');
+    selected.scrollIntoView({ block: 'nearest' });
+    say(row.text);
+  }
+
+  el('loadTarget').addEventListener('change', onChange);
+  el('grabTarget').addEventListener('change', onChange);
+  el('load').addEventListener('click', function () { load(false); });
+  // F Accept is the reference's own second loader button (btnForceAccept): it loads the batch
+  // and then accepts whatever the game does not already have in progress. Its own flag is
+  // passed per click, so a plain Load is never an accept batch.
+  el('forceAccept').addEventListener('click', function () { load(true); });
+  el('grab').addEventListener('click', grab);
+  el('save').addEventListener('click', save);
+  el('open').addEventListener('click', open);
+  el('searchButton').addEventListener('click', search);
+  el('search').addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') search();
+  });
+  sheets().then(function () { say('Ready.'); });
+})();
+</script>
+</body>
+</html>

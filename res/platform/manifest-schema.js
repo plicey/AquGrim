@@ -8,7 +8,13 @@ const KNOWN_PERMISSIONS = {
     'inject-scripts': true,
     'persistent-store': true,
     'spawn-helper-process': true,
-    'unsafe-renderer': true
+    'game-origin': true,
+    'unsafe-renderer': true,
+    // Game access (apiVersion 2). Read and write are separate so a read-only tool does not
+    // need write access: the bridge channel, the packet tap, and frame injection.
+    'game-bridge': true,
+    'packet-tap': true,
+    'packet-send': true
 };
 
 const KNOWN_CAPABILITIES = {
@@ -33,6 +39,19 @@ function isStringArray(value) {
         return typeof item === 'string';
     });
 }
+
+// A bridge callback name is a plain JS identifier: the platform interpolates it into the page
+// expression it injects, so anything else would be a hole rather than a name.
+const CALLBACK_NAME_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+function isCallbackName(name) {
+    return typeof name === 'string' && CALLBACK_NAME_RE.test(name);
+}
+
+// Manifest api versions this platform can run. Additive versions keep older plugins
+// loading unchanged; a version that is not in this list is refused by name at discovery,
+// so a newer plugin never activates and fails later at its first guarded call.
+const SUPPORTED_API_VERSIONS = [1, 2];
 
 function parseSemver(version) {
     if (!isNonEmptyString(version)) return null;
@@ -88,8 +107,13 @@ function validateManifest(manifest, opts) {
     if (!isNonEmptyString(manifest.version)) {
         errors.push('version is required');
     }
-    if (manifest.apiVersion !== 1) {
-        errors.push('apiVersion must be 1');
+    if (manifest.apiVersion == null) {
+        errors.push('apiVersion is required');
+    } else if (SUPPORTED_API_VERSIONS.indexOf(manifest.apiVersion) === -1) {
+        errors.push(
+            'apiVersion ' + manifest.apiVersion + ' is not supported (this app supports ' +
+            SUPPORTED_API_VERSIONS.join(' and ') + ')'
+        );
     }
     if (!isNonEmptyString(manifest.main) || hasPathEscape(manifest.main)) {
         errors.push('main must be a relative path without ".."');
@@ -179,6 +203,15 @@ function validateManifest(manifest, opts) {
             errors.push('customSwfAliases must be an array of plain .swf file names');
         }
     }
+    // The game bridge's call surface: the callback names the bridge SWF registers. The platform
+    // injects a page side that waits for these names and allows calls to them; declaring them in
+    // the manifest keeps every game-specific name in the plugin.
+    if (manifest.bridgeCallbacks != null) {
+        if (!isStringArray(manifest.bridgeCallbacks) || !manifest.bridgeCallbacks.length ||
+            !manifest.bridgeCallbacks.every(isCallbackName)) {
+            errors.push('bridgeCallbacks must be a non-empty array of plain callback names');
+        }
+    }
     if (manifest.storeAliases != null) {
         const aliases = manifest.storeAliases;
         if (typeof aliases !== 'object' || Array.isArray(aliases) || !Object.keys(aliases).every(function (ns) {
@@ -195,7 +228,9 @@ function validateManifest(manifest, opts) {
 module.exports = {
     KNOWN_PERMISSIONS: KNOWN_PERMISSIONS,
     KNOWN_CAPABILITIES: KNOWN_CAPABILITIES,
+    SUPPORTED_API_VERSIONS: SUPPORTED_API_VERSIONS,
     validateManifest: validateManifest,
+    isCallbackName: isCallbackName,
     parseSemver: parseSemver,
     compareSemver: compareSemver,
     hasPathEscape: hasPathEscape

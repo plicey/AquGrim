@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Fast travels</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
+  }
+  body { padding: 12px; box-sizing: border-box; display: flex; gap: 12px; align-items: flex-start; }
+  /* The reference splits its form into a left column of fast travels and a right column of the
+     Awe shop and the bypasser, which is the layout this follows. */
+  .column { display: flex; flex-direction: column; gap: 12px; }
+  .column.left { flex: 0 0 190px; }
+  .column.right { flex: 0 0 190px; }
+  fieldset { border: 1px solid #383838; border-radius: 4px; padding: 8px; margin: 0; }
+  legend { color: #cfcfcf; padding: 0 4px; }
+  button {
+    display: block; width: 100%; text-align: left; font: inherit; color: #eee;
+    background: #2a2a2a; border: 1px solid #444; border-radius: 4px; padding: 5px 8px;
+    margin-bottom: 4px; cursor: pointer;
+  }
+  button:hover { background: #333; }
+  button:disabled { color: #6f6f6f; cursor: default; }
+  .row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .row label { color: #dcdcdc; }
+  input[type="number"], input[type="text"] {
+    font: inherit; color: #eee; background: #2a2a2a; border: 1px solid #444;
+    border-radius: 4px; padding: 4px 6px; width: 100%; box-sizing: border-box;
+  }
+  #privateNumber { width: 80px; }
+  #packet[readonly] { color: #9a9a9a; }
+  .radios { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; margin-bottom: 8px; }
+  .radios label { display: flex; align-items: center; gap: 5px; color: #dcdcdc; }
+  .pairs { display: flex; gap: 6px; align-items: flex-start; margin-bottom: 6px; }
+  #status { margin-top: 10px; min-height: 17px; color: #9a9a9a; }
+  #status.err { color: #ff8e8e; }
+  #status.ok { color: #7fd08a; }
+  .hint { color: #8f8f8f; font-size: 12px; }
+</style>
+</head>
+<body>
+  <div class="column left">
+    <div class="row">
+      <label for="privateToggle" id="privateLabel">Private</label>
+      <input type="checkbox" id="privateToggle">
+      <input type="number" id="privateNumber" min="0" disabled>
+    </div>
+    <div id="groupsLeft"></div>
+    <div id="status"></div>
+  </div>
+  <div class="column right">
+    <div id="groupsRight"></div>
+    <fieldset id="bypassBox">
+      <legend id="bypassLegend">Map Bypasser</legend>
+      <div class="hint" id="bypassHint"></div>
+      <div class="pairs">
+        <input type="number" id="questId" min="0" max="1000000">
+        <button id="unlock"></button>
+      </div>
+      <div class="hint" id="packetLabel"></div>
+      <div class="pairs">
+        <input type="text" id="packet" readonly>
+        <button id="copy"></button>
+      </div>
+    </fieldset>
+    <fieldset id="aweBox">
+      <legend id="aweLegend">Awe Enchantment Shop</legend>
+      <div id="aweButtons"></div>
+      <div class="radios" id="aweTypes"></div>
+    </fieldset>
+  </div>
+
+<script>
+(function () {
+  var api = window.aquastarTravel;
+  var status = document.getElementById('status');
+  var questId = document.getElementById('questId');
+  var packetBox = document.getElementById('packet');
+  var privateToggle = document.getElementById('privateToggle');
+  var privateNumber = document.getElementById('privateNumber');
+  var strings = {};
+  var selectedAwe = null;
+  var groupBoxes = [];
+  var groupButtons = [];
+  var busy = false;
+
+  function setStatus(text, kind) {
+    status.textContent = text || '';
+    status.className = kind || '';
+  }
+
+  function label(key, fallback) {
+    return strings[key] || fallback;
+  }
+
+  // chkPriv_CheckedChanged: numPriv is enabled only while the private box is ticked.
+  privateToggle.addEventListener('change', function () {
+    privateNumber.disabled = busy || !privateToggle.checked;
+  });
+  privateNumber.disabled = !privateToggle.checked;
+
+  // What the private box and the chosen enchantment type add to a click.
+  function options() {
+    return {
+      isPrivate: privateToggle.checked,
+      privateNumber: Number(privateNumber.value),
+      aweType: selectedAwe
+    };
+  }
+
+  function report(result) {
+    if (!result) { setStatus(label('failed', 'That did not run.'), 'err'); return; }
+    // What the run did, when it did something: a button that travelled and could not write its one
+    // frame has both to say, and the travel is the half the user is waiting for.
+    var done = '';
+    if (result.action === 'join') {
+      done = label('joining', 'Joining {map}').replace('{map}', result.map);
+    } else if (result.action === 'move') {
+      done = label('walking', 'Walking to {cell} in {map}')
+        .replace('{cell}', result.cell).replace('{map}', result.map);
+    } else if (result.loaded) {
+      done = label('questsLoaded', 'Asked the game for {n} quest(s).').replace('{n}', result.loaded.length);
+    } else if (result.blanked) {
+      done = result.message || label('bypassed', 'Storyline bypassed.');
+    } else if (result.shopId) {
+      done = label('shopOpened', 'Opened shop {id}.').replace('{id}', result.shopId);
+    }
+    if (result.error) {
+      setStatus(done ? done + ' ' + result.error : result.error, 'err');
+      return;
+    }
+    setStatus(done || label('done', 'Done.'), 'ok');
+  }
+
+  function run(id) {
+    if (busy) return;
+    // ExecuteTravel disables the travel groups while a run is in flight, and the skip buttons and
+    // Ultraboss disable themselves; the page does the whole of that with one switch.
+    setBusy(id !== 'unlock');
+    setStatus(label('working', 'Working...'), '');
+    return api.run(id, options()).then(report).catch(function (error) {
+      setStatus(String(error.message || error), 'err');
+    }).then(function () {
+      setBusy(false);
+    });
+  }
+
+  function setBusy(on) {
+    busy = on === true;
+    groupButtons.forEach(function (button) { button.disabled = busy; });
+    groupBoxes.forEach(function (box) { box.disabled = busy; });
+    privateToggle.disabled = busy;
+    privateNumber.disabled = busy || !privateToggle.checked;
+  }
+
+  function button(spec) {
+    var el = document.createElement('button');
+    el.id = 'btn_' + spec.id;
+    el.textContent = spec.label;
+    // A button that opens a shop is offered only once a type is chosen, which the reference's own
+    // radio defaults make true from the start.
+    el.disabled = !!spec.awe && !selectedAwe;
+    el.addEventListener('click', function () { run(spec.id); });
+    groupButtons.push(el);
+    return el;
+  }
+
+  function drawGroups(groups, buttons) {
+    var left = document.getElementById('groupsLeft');
+    var right = document.getElementById('groupsRight');
+    groups.forEach(function (group) {
+      var host = group.column === 'right' ? right : left;
+      var box = document.createElement('fieldset');
+      groupBoxes.push(box);
+      var legend = document.createElement('legend');
+      legend.textContent = group.label;
+      box.appendChild(legend);
+      var own = buttons.filter(function (spec) { return spec.groupId === group.id; });
+      // The awe group's radio grid and its own shop button share one box, which the page's markup
+      // draws: the designer keeps them in aweGroup together (Travel.cs:454-469).
+      if (group.awe) {
+        own.forEach(function (spec) { document.getElementById('aweButtons').appendChild(button(spec)); });
+        return;
+      }
+      own.forEach(function (spec) { box.appendChild(button(spec)); });
+      host.appendChild(box);
+    });
+  }
+
+  function drawAwe(types) {
+    var box = document.getElementById('aweTypes');
+    types.forEach(function (type) {
+      var wrap = document.createElement('label');
+      var radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'awe';
+      radio.id = 'awe_' + type.id;
+      radio.value = type.id;
+      radio.checked = !!type.checked;
+      radio.addEventListener('change', function () { selectedAwe = type.id; });
+      var text = document.createElement('span');
+      text.textContent = type.label;
+      wrap.appendChild(radio);
+      wrap.appendChild(text);
+      box.appendChild(wrap);
+      if (type.checked) selectedAwe = type.id;
+    });
+  }
+
+  function main() {
+    return api.getMessages().then(function (loaded) {
+      strings = loaded || {};
+      document.title = label('title', 'Fast travels');
+      document.getElementById('privateLabel').textContent = label('private', 'Private');
+      document.getElementById('bypassLegend').textContent = label('bypasser', 'Map Bypasser');
+      document.getElementById('bypassHint').textContent = label('bypassHint',
+        'Story Quest ID that required to unlock the map');
+      document.getElementById('packetLabel').textContent = label('generatedPacket', 'Generated packet');
+      document.getElementById('unlock').textContent = label('unlock', 'Unlock');
+      document.getElementById('copy').textContent = label('copy', 'Copy');
+      document.getElementById('aweLegend').textContent = label('aweGroup', 'Awe Enchantment Shop');
+    }).then(api.getGroups).then(function (lists) {
+      privateNumber.value = lists.private.value;
+      privateNumber.max = lists.private.max;
+      drawAwe(lists.aweTypes);
+      drawGroups(lists.groups, lists.buttons);
+
+      document.getElementById('unlock').addEventListener('click', function () {
+        if (busy) return;
+        document.getElementById('unlock').disabled = true;
+        setStatus(label('working', 'Working...'), '');
+        api.unlock(Number(questId.value)).then(function (result) {
+          if (result.packet) packetBox.value = result.packet;
+          report(result);
+        }).catch(function (error) {
+          setStatus(String(error.message || error), 'err');
+        }).then(function () {
+          document.getElementById('unlock').disabled = false;
+        });
+      });
+      document.getElementById('copy').addEventListener('click', function () {
+        api.copy(packetBox.value);
+        setStatus(label('copied', 'Copied.'), 'ok');
+      });
+    }).catch(function (error) {
+      setStatus(String(error.message || error), 'err');
+    });
+  }
+
+  main();
+})();
+</script>
+</body>
+</html>

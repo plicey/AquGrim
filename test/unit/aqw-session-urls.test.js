@@ -4,6 +4,55 @@ const urls = require('../../plugins/adventure-quest-worlds/urls.js');
 const session = require('../../plugins/adventure-quest-worlds/session.js');
 const { applySessionRules } = require('../../res/platform/session-rules.js');
 
+test('the loader is recognised on whichever origin serves it', () => {
+  // In local-origin mode the same loader arrives as http://127.0.0.1:<port>/game/... .
+  // Window classification, the Ruffle path and the capture permission all key off this.
+  assert.strictEqual(urls.isLoaderUrl('http://127.0.0.1:40000/game/gamefiles/Loader4.swf?ver=b'), true);
+  assert.strictEqual(urls.isLoaderUrl('http://127.0.0.1:40000/game/gamefiles/Loader_Spider.swf?ver=1'), true);
+  assert.strictEqual(urls.isLoaderUrl('https://game.aq.com/game/gamefiles/Loader4.swf?ver=b'), true);
+  assert.strictEqual(urls.isLoaderUrl('http://127.0.0.1:40000/game/not-a-loader.png'), false);
+  assert.strictEqual(urls.isLoaderUrl('http://evil.example/game/gamefiles/Loader4.swf'), false,
+    'a loose match inside a foreign path is not the game');
+});
+
+test('the AQW plugin mirrors its game hosts on loopback and routes its URLs through them', () => {
+  const host = require('../../plugins/adventure-quest-worlds/game-origin.js');
+  // The routes are the plugin's own business: the game host mirrored as-is ("/" preserves
+  // the path, which is how game.aq.com/game/... keeps working), the two asset hosts mounted
+  // under their own prefixes. Nothing here is the platform's to know.
+  assert.deepStrictEqual(host.routes(), [
+    { prefix: '/proxy/content/', origin: 'https://content.aq.com' },
+    { prefix: '/proxy/account/', origin: 'https://account.aq.com' },
+    { prefix: '/', origin: 'https://game.aq.com' }
+  ]);
+
+  assert.strictEqual(
+    host.toServeFromOrigin('https://game.aq.com/game/gamefiles/Loader4.swf?ver=b', 'http://127.0.0.1:41000'),
+    'http://127.0.0.1:41000/game/gamefiles/Loader4.swf?ver=b'
+  );
+  assert.strictEqual(
+    host.toServeFromOrigin('https://content.aq.com/ui/hero.png', 'http://127.0.0.1:41000'),
+    'http://127.0.0.1:41000/proxy/content/ui/hero.png'
+  );
+  assert.strictEqual(
+    host.toServeFromOrigin('https://account.aq.com/Login', 'http://127.0.0.1:41000'),
+    'http://127.0.0.1:41000/proxy/account/Login'
+  );
+  // Hosts the plugin does not mirror are left alone, not silently rewritten.
+  assert.strictEqual(
+    host.toServeFromOrigin('https://play.dragonfable.com/game/DFLoader.swf', 'http://127.0.0.1:41000'),
+    'https://play.dragonfable.com/game/DFLoader.swf'
+  );
+  assert.strictEqual(host.toServeFromOrigin('file:///C:/custom.swf', 'http://127.0.0.1:41000'), 'file:///C:/custom.swf');
+  assert.strictEqual(host.toServeFromOrigin('https://game.aq.com/x', ''), 'https://game.aq.com/x');
+  // The Artix WAF answers 403 to a browser-shaped UA that is not the launcher's, so the
+  // origin sends what the plugin's own UA policy says the launcher sends.
+  assert.strictEqual(
+    host.userAgent('Mozilla/5.0 (X11) AquaStar/2.0.0 Chrome/87.0.4280.141 Electron/11.5.0 Safari/537.36'),
+    'Mozilla/5.0 (X11) Safari/537.36'
+  );
+});
+
 test('AQW url catalog exposes loader, DF, and testing helpers', () => {
   assert.ok(urls.URLS.loader4.indexOf('Loader4.swf') !== -1);
   assert.ok(urls.URLS.dfLoader.indexOf('dragonfable.com') !== -1);

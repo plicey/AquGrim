@@ -40,8 +40,11 @@ function createPluginHost(options) {
 
     const state = {
         primaryGame: null,
+        gameChrome: null,
+        gameOrigin: null,
         launches: [],
         sessionRules: [],
+        packetSteering: [],
         navigationHooks: null,
         featureWindows: [],
         browserPreload: null,
@@ -57,11 +60,27 @@ function createPluginHost(options) {
         ipcListeners: [],
         stores: {}
     };
-
     const deps = Object.assign({}, options.deps || {});
     const log = typeof options.log === 'function'
         ? options.log
         : function (msg) { console.log('[AquaStar:plugins] ' + msg); };
+
+    const bridgeChannel = require('./bridge-channel.js').createBridgeChannel({
+        // The window the platform opened for this plugin's own game: the only page whose
+        // <object> is the bridge's. Resolved per call, so a window that reopened is picked up.
+        getGameWindow: function () {
+            if (typeof deps.getGameWindow === 'function') return deps.getGameWindow();
+            return null;
+        },
+        executeJavaScript: function (webContents, source, label) {
+            if (typeof deps.executeJavaScript !== 'function') {
+                return Promise.resolve(null);
+            }
+            return deps.executeJavaScript(webContents, source, label);
+        },
+        probeNames: Array.isArray(manifest.bridgeCallbacks) ? manifest.bridgeCallbacks : [],
+        log: function (msg) { log('bridge: ' + msg); }
+    });
 
     // Auto-wire main-process IPC + namespaced JSON stores when running under Electron.
     try {
@@ -198,6 +217,15 @@ function createPluginHost(options) {
         pluginRoot: options.pluginRoot,
         pluginDataDirectory: options.pluginDataDirectory ||
             path.join(options.appDataDirectory || '', 'plugins', pluginId),
+
+        /**
+         * Gate a Host method on a manifest permission, naming the missing one. Every
+         * guarded Host method goes through this, so a plugin without the permission gets
+         * the same message wherever it calls from.
+         */
+        requirePermission: function (method, permission) {
+            requirePermission(method, permission);
+        },
 
         getStore: function (ns) {
             requirePermission('getStore', 'persistent-store');
@@ -340,6 +368,37 @@ function createPluginHost(options) {
             });
         },
 
+        /**
+         * Declare where this plugin's client takes its server list and how the rows are shaped, so
+         * the platform can steer the client onto the local relay (res/platform/packet-layer.js).
+         * The platform owns the mechanism and knows no game: every game-specific fact (URL, row
+         * field names, reachable hosts, policy domain) is the declaration's. Reading game traffic
+         * needs packet-tap; writing it needs packet-send.
+         */
+        registerPacketSteering: function (declaration) {
+            requirePermission('registerPacketSteering', 'packet-tap');
+            if (!declaration || typeof declaration !== 'object' || Array.isArray(declaration)) {
+                throw new Error('[AquaStar:plugins] registerPacketSteering expects a declaration object');
+            }
+            if (typeof declaration.id !== 'string' || !declaration.id) {
+                throw new Error('[AquaStar:plugins] packet steering declaration requires id');
+            }
+            if (!Array.isArray(declaration.urls) || !declaration.urls.length) {
+                throw new Error('[AquaStar:plugins] packet steering declaration requires urls');
+            }
+            if (typeof declaration.hostField !== 'string' || typeof declaration.portField !== 'string') {
+                throw new Error('[AquaStar:plugins] packet steering declaration requires hostField and portField');
+            }
+            if (typeof declaration.policyDomain !== 'string' || !declaration.policyDomain) {
+                throw new Error('[AquaStar:plugins] packet steering declaration requires policyDomain');
+            }
+            if (!Array.isArray(declaration.allowedHosts) || !declaration.allowedHosts.length) {
+                throw new Error('[AquaStar:plugins] packet steering declaration requires allowedHosts');
+            }
+            assertUniqueIds(state.packetSteering, declaration, 'packet steering declaration');
+            state.packetSteering.push(declaration);
+        },
+
         registerNavigationHooks: function (hooks) {
             hooks = hooks || {};
             if (typeof hooks.onDidFinishLoad === 'function') {
@@ -378,6 +437,124 @@ function createPluginHost(options) {
             state.primaryGame = cfg;
         },
 
+        /**
+         * Declare the controls the game window's chrome strip carries (ticket #45). The platform
+         * owns the strip: its height, the window geometry it implies, and the page that draws it.
+         * What is declared here is the game-specific half - the controls, their labels, and what
+         * each one does - because the platform names no game.
+         *
+         * @param {{height: number, controls: Function, state: Function, action: Function,
+         *          menuLabel?: Function}} declaration
+         */
+        registerGameChrome: function (declaration) {
+            if (!declaration || typeof declaration !== 'object' || Array.isArray(declaration)) {
+                throw new Error('[AquaStar:plugins] registerGameChrome expects a declaration object');
+            }
+            if (!(Number(declaration.height) > 0)) {
+                throw new Error('[AquaStar:plugins] registerGameChrome needs a positive height: ' +
+                    'the strip is what the game surface gives up');
+            }
+            if (typeof declaration.controls !== 'function') {
+                throw new Error('[AquaStar:plugins] registerGameChrome expects controls()');
+            }
+            if (typeof declaration.state !== 'function') {
+                throw new Error('[AquaStar:plugins] registerGameChrome expects state()');
+            }
+            if (typeof declaration.action !== 'function') {
+                throw new Error('[AquaStar:plugins] registerGameChrome expects action(id, args)');
+            }
+            if (declaration.menuLabel != null && typeof declaration.menuLabel !== 'function') {
+                throw new Error('[AquaStar:plugins] registerGameChrome menuLabel must be a function');
+            }
+            const controls = declaration.controls();
+            if (!Array.isArray(controls) || !controls.length) {
+                throw new Error('[AquaStar:plugins] registerGameChrome needs at least one control');
+            }
+            const seen = {};
+            controls.forEach(function (control) {
+                if (!control || typeof control.id !== 'string' || !control.id) {
+                    throw new Error('[AquaStar:plugins] registerGameChrome control needs an id');
+                }
+                // A picker may carry no text of its own - the reference's two list boxes have
+                // none, and their options are their labels. A button or a tick is its caption,
+                // so one of those with no label is a control that cannot be used and is refused.
+                if (typeof control.label !== 'string') {
+                    throw new Error('[AquaStar:plugins] registerGameChrome control "' + control.id +
+                        '" needs a label (an empty string is allowed for a picker)');
+                }
+                if (!control.label && control.kind !== 'select') {
+                    throw new Error('[AquaStar:plugins] registerGameChrome control "' + control.id +
+                        '" needs a label');
+                }
+                if (seen[control.id]) {
+                    throw new Error('[AquaStar:plugins] Duplicate chrome control id "' +
+                        control.id + '" in plugin "' + pluginId + '"');
+                }
+                seen[control.id] = true;
+            });
+            state.gameChrome = declaration;
+        },
+
+        /**
+         * Serve this plugin's game paths from a loopback origin and answer with its base URL.
+         * routes: [{ prefix, origin }] - longest matching prefix wins, path preserved.
+         * files: optional { "/path": absoluteFile } - local files the origin answers itself, which
+         * is how a plugin serves the page and SWF that must share the game's origin.
+         * userAgent: optional (received) => sent policy for the plugin's own hosts, which the
+         * loopback URLs it sees would otherwise never match.
+         */
+        declareGameOrigin: function (declaration) {
+            requirePermission('declareGameOrigin', 'game-origin');
+            declaration = declaration || {};
+            const routes = declaration && declaration.routes;
+            if (!Array.isArray(routes) || !routes.length || !routes.every(function (route) {
+                if (!route || typeof route.prefix !== 'string' || !route.prefix) return false;
+                if (typeof route.origin !== 'string') return false;
+                try {
+                    const protocol = new URL(route.origin).protocol;
+                    return protocol === 'http:' || protocol === 'https:';
+                } catch (e) { return false; }
+            })) {
+                throw new Error(
+                    '[AquaStar:plugins] declareGameOrigin expects routes: [{ prefix, origin }]'
+                );
+            }
+            if (state.gameOrigin) {
+                throw new Error(
+                    '[AquaStar:plugins] game origin already declared by plugin "' + pluginId + '"'
+                );
+            }
+            let files = {};
+            if (declaration.files != null) {
+                if (typeof declaration.files !== 'object' || Array.isArray(declaration.files)) {
+                    throw new Error('[AquaStar:plugins] declareGameOrigin files must be an object');
+                }
+                Object.keys(declaration.files).forEach(function (servedPath) {
+                    const target = declaration.files[servedPath];
+                    if (servedPath.charAt(0) !== '/' || typeof target !== 'string' || !target) {
+                        throw new Error(
+                            '[AquaStar:plugins] declareGameOrigin files must map "/path" to an absolute file'
+                        );
+                    }
+                    files[servedPath] = target;
+                });
+            }
+            if (typeof deps.startGameOrigin !== 'function') {
+                throw new Error('[AquaStar:plugins] game origin not wired');
+            }
+            state.gameOrigin = { routes: routes, files: files };
+            return Promise.resolve(deps.startGameOrigin({
+                routes: routes,
+                files: files,
+                userAgent: typeof declaration.userAgent === 'function' ? declaration.userAgent : null,
+                pluginId: pluginId
+            }))
+                .then(function (baseUrl) {
+                    state.gameOrigin.baseUrl = baseUrl;
+                    return baseUrl;
+                });
+        },
+
         trustFlashUrls: function (urls) {
             requirePermission('trustFlashUrls', 'flash-trust');
             if (!Array.isArray(urls)) {
@@ -396,6 +573,34 @@ function createPluginHost(options) {
             Object.keys(catalog).forEach(function (localeId) {
                 state.locales[localeId] = catalog[localeId];
             });
+        },
+
+        /**
+         * The game bridge: the plugin's own call surface on the game window's movie, driven from
+         * the page side (res/platform/bridge-channel.js). Gated on `game-bridge`: a plugin that has
+         * not declared it cannot attach, and cannot call.
+         *
+         * `call` never throws for a bridge that is absent or slow - it reports why, so a feature
+         * window can show the reason instead of dying.
+         */
+        bridge: {
+            attach: function () {
+                requirePermission('host.bridge.attach', 'game-bridge');
+                return bridgeChannel.attach();
+            },
+            call: function (name, args) {
+                requirePermission('host.bridge.call', 'game-bridge');
+                return bridgeChannel.call(name, args);
+            },
+            attachedWindow: function () {
+                requirePermission('host.bridge.attachedWindow', 'game-bridge');
+                return bridgeChannel.attachedWindow();
+            },
+            /** The callback names this plugin's bridge registers (its manifest's declaration). */
+            callbacks: function () {
+                requirePermission('host.bridge.callbacks', 'game-bridge');
+                return Array.isArray(manifest.bridgeCallbacks) ? manifest.bridgeCallbacks.slice() : [];
+            }
         },
 
         getPlatformSettings: function () {
@@ -509,6 +714,67 @@ function createPluginHost(options) {
                     return deps.fetchText(url, fetchOpts);
                 }
                 return Promise.resolve({ ok: false, error: 'net.fetchText not wired' });
+            }
+        },
+
+        /**
+         * Game traffic (apiVersion 2). Reading it is a permission of its own, separate from
+         * writing, because a read-only tool must not need write access: a plugin that only wants
+         * the logger holds packet-tap and never touches packet-send.
+         *
+         * The listener is the platform's (res/platform/packet-tap.js): the relay hands its frames
+         * to one tap and this subscribes to it, so subscribing twice, from two windows or from
+         * two plugins, cannot produce a second listener or a doubled frame.
+         */
+        packets: {
+            /**
+             * Subscribe to every relayed frame in both directions. Only 'frame' is an event, and
+             * it carries {id, direction, data} with the frame's NUL terminator already stripped.
+             * Returns the release, so a window that closes - or a plugin that stops watching -
+             * gives its subscription back.
+             */
+            on: function (event, listener) {
+                requirePermission('packets.on', 'packet-tap');
+                if (event !== 'frame') {
+                    throw new Error('[AquaStar:plugins] packets.on knows one event, "frame" (got "' +
+                        event + '")');
+                }
+                if (typeof listener !== 'function') {
+                    throw new Error('[AquaStar:plugins] packets.on expects a listener function');
+                }
+                const tap = typeof deps.getPacketTap === 'function' ? deps.getPacketTap() : null;
+                if (!tap || typeof tap.subscribe !== 'function') {
+                    throw new Error('[AquaStar:plugins] the packet tap is not available in this app ' +
+                        'session: game traffic is not being steered');
+                }
+                return tap.subscribe(listener);
+            },
+
+            /**
+             * Write one frame back through the relay: {direction: 'toServer' | 'toClient',
+             * text}. Needs packet-send, which is a different permission from packet-tap on
+             * purpose - the logger reads and never writes.
+             *
+             * Returns whether the frame was written. False means there is no live connection to
+             * write on (nothing steered yet, or the client is between connections); the frame is
+             * neither queued nor invented, so a caller that must send says so to the user.
+             */
+            send: function (frame) {
+                requirePermission('packets.send', 'packet-send');
+                const candidate = frame || {};
+                if (candidate.direction !== 'toServer' && candidate.direction !== 'toClient') {
+                    throw new Error('[AquaStar:plugins] packets.send writes one of two directions, ' +
+                        '"toServer" or "toClient" (got "' + candidate.direction + '")');
+                }
+                if (typeof candidate.text !== 'string' || !candidate.text.length) {
+                    throw new Error('[AquaStar:plugins] packets.send expects the frame text');
+                }
+                const send = typeof deps.getPacketSender === 'function' ? deps.getPacketSender() : null;
+                if (typeof send !== 'function') {
+                    throw new Error('[AquaStar:plugins] this app session is not steering game ' +
+                        'traffic, so there is no relay to write a frame through');
+                }
+                return send(candidate.direction, candidate.text) === true;
             }
         },
 

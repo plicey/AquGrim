@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hotkeys</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
+  }
+  body { padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; }
+  .top { display: flex; gap: 8px; }
+  select {
+    background: #1b1b1b; color: #e6e6e6; border: 1px solid #2c2c2c; border-radius: 4px;
+    padding: 5px 7px; font: inherit; min-width: 0;
+  }
+  #key { flex: 0 0 106px; }
+  #action { flex: 1 1 auto; }
+  /* lstKeys: the reference's own list, one binding per line. */
+  #list {
+    flex: 1 1 auto; min-height: 120px; overflow-y: auto; background: #1b1b1b; color: #e6e6e6;
+    border: 1px solid #2c2c2c; border-radius: 4px; margin: 0; padding: 0; list-style: none;
+  }
+  #list li { padding: 4px 8px; cursor: default; }
+  #list li.sel { background: #2d4a6b; }
+  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  button {
+    background: #262626; color: #e6e6e6; border: 1px solid #383838; border-radius: 4px;
+    padding: 6px 10px; cursor: pointer; font: inherit;
+  }
+  button:hover { background: #303030; }
+  #save { grid-column: span 2; }
+  .status { min-height: 16px; color: #9a9a9a; }
+  .status.err { color: #ff8a80; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <select id="key"></select>
+    <select id="action"></select>
+  </div>
+
+  <ul id="list"></ul>
+
+  <div class="buttons">
+    <button id="add">Add</button>
+    <button id="remove">Remove</button>
+    <button id="save">Save</button>
+  </div>
+  <div class="status" id="status"></div>
+
+<script>
+(function () {
+  var api = window.aquastarHotkeys;
+  var keyBox = document.getElementById('key');
+  var actionBox = document.getElementById('action');
+  var list = document.getElementById('list');
+  var status = document.getElementById('status');
+  var selected = null;
+  var model = { bindings: [], rows: [] };
+  var addButton = document.getElementById('add');
+  var removeButton = document.getElementById('remove');
+  var saveButton = document.getElementById('save');
+
+  function setStatus(text, isError) {
+    status.textContent = text || '';
+    status.className = 'status' + (isError ? ' err' : '');
+  }
+
+  function words() {
+    return (model && model.messages) || {};
+  }
+
+  function fill(select, values, selectedIndex) {
+    select.innerHTML = '';
+    values.forEach(function (value, index) {
+      var option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = value;
+      select.appendChild(option);
+    });
+    if (values.length && selectedIndex != null) select.selectedIndex = selectedIndex;
+  }
+
+  function paint() {
+    var keys = (model && model.keys) || [];
+    var actions = (model && model.actions) || [];
+    if (!keyBox.childNodes.length) fill(keyBox, keys, 0);
+    if (!actionBox.childNodes.length) fill(actionBox, actions, 0);
+    // The reference's own button words, from the same strings the menu uses.
+    if (words().add) addButton.textContent = words().add;
+    if (words().remove) removeButton.textContent = words().remove;
+    if (words().save) saveButton.textContent = words().save;
+
+    var previous = selected;
+    list.innerHTML = '';
+    (model.rows || []).forEach(function (row, index) {
+      var item = document.createElement('li');
+      item.textContent = row.Text;
+      item.dataset.index = String(index);
+      if (previous === index) item.className = 'sel';
+      item.addEventListener('click', function () {
+        selected = index;
+        paint();
+      });
+      list.appendChild(item);
+    });
+    if (model.rows && model.rows.length <= selected) selected = null;
+  }
+
+  function apply(answer) {
+    if (answer && answer.view) model = answer.view;
+    paint();
+    if (answer && answer.ok === false) setStatus(answer.error || '', true);
+  }
+
+  addButton.addEventListener('click', function () {
+    setStatus('');
+    api.bind(keyBox.value ? keyBox.options[keyBox.selectedIndex].textContent : '', Number(actionBox.value))
+      .then(apply);
+  });
+
+  removeButton.addEventListener('click', function () {
+    if (selected == null) return;
+    setStatus('');
+    var key = model.rows[selected].Key;
+    api.clear(key).then(function (answer) {
+      selected = null;
+      apply(answer);
+    });
+  });
+
+  // Save is the only action that writes the list to storage.
+  saveButton.addEventListener('click', function () {
+    api.save().then(function (answer) {
+      apply(answer);
+    });
+  });
+
+  api.view().then(apply);
+})();
+</script>
+</body>
+</html>

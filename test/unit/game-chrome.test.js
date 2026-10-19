@@ -1,0 +1,297 @@
+// The game window's chrome strip (ticket #45), platform half: the layout the active plugin asks
+// for. The strip's controls belong to the plugin that declares them and are tested with it
+// (grimlite-chrome.test.js); what is the platform's own is the geometry - how tall the strip is,
+// what size the window is with it up and without it, and what the screenshot path excludes.
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+
+const { createGameChrome, captureRect } = require('../../res/windows/game-chrome.js');
+const { createPluginHost } = require('../../res/platform/plugin-host.js');
+
+const PLAIN = { width: 960, height: 530 };
+const REPO = path.join(__dirname, '../..');
+
+const DECLARATION = {
+  height: 27,
+  menuLabel: function () { return 'Game chrome'; },
+  controls: function () { return [{ id: 'bank', kind: 'button', label: 'Bank' }]; },
+  state: function () { return { values: {} }; },
+  action: function () { return { ok: true, error: null }; }
+};
+
+/**
+ * The chrome instance with its two side effects recorded, over a window that keeps its own
+ * content size so a toggle's arithmetic can be read back the way a user would see it.
+ */
+function harness(declaration) {
+  const resized = [];
+  const notified = [];
+  // A game window opens with the strip already up when the plugin declares one, so that is the
+  // size the harness starts its window at (res/windows/config.js adds the strip to the config).
+  const opening = declaration
+    ? { width: PLAIN.width, height: PLAIN.height + Number(declaration.height) }
+    : { width: PLAIN.width, height: PLAIN.height };
+  const win = {
+    id: 7,
+    _size: opening,
+    // What res/instances.js sets: this page is the wrapper the strip is drawn in.
+    aquaStarChromeHost: true,
+    isDestroyed: function () { return false; },
+    getContentSize: function () { return [this._size.width, this._size.height]; }
+  };
+  const chrome = createGameChrome({
+    declaration: function () { return declaration; },
+    plain: function () { return PLAIN; },
+    resize: function (target, size) {
+      resized.push({ id: target.id, size: size });
+      target._size = { width: size.width, height: size.height };
+    },
+    notify: function (target, view) { notified.push({ id: target.id, view: view }); }
+  });
+  return { chrome: chrome, win: win, resized: resized, notified: notified };
+}
+
+test('a plugin that declares no chrome leaves the game window at the size the screenshot path assumes', () => {
+  const plain = harness(null);
+  assert.strictEqual(plain.chrome.available(), false);
+  assert.strictEqual(plain.chrome.height(), 0);
+  // No window, no layout to describe: a caller that has not named one is not told "enabled".
+  assert.strictEqual(plain.chrome.isEnabled(), false);
+  assert.strictEqual(plain.chrome.isEnabled(plain.win), false);
+  assert.deepStrictEqual(plain.chrome.contentSize(plain.win), PLAIN);
+  assert.strictEqual(plain.chrome.stripHeight(plain.win), 0);
+  // Nothing to show means nothing to toggle: no resize, no page message.
+  assert.deepStrictEqual(plain.chrome.setEnabled(plain.win, true), { enabled: false, height: 0 });
+  assert.deepStrictEqual(plain.resized, []);
+  assert.deepStrictEqual(plain.notified, []);
+  assert.strictEqual(plain.chrome.menuItem({ label: 'Game chrome', win: plain.win }), null);
+});
+
+test('the strip takes its height from the plugin and the game surface keeps its own', () => {
+  const on = harness(DECLARATION);
+  assert.strictEqual(on.chrome.available(), true);
+  assert.strictEqual(on.chrome.height(), 27);
+  // The surface is plain-sized whether the strip is up or not; the window is what grows.
+  assert.deepStrictEqual(on.chrome.contentSize(on.win), { width: 960, height: 557 });
+  assert.strictEqual(on.chrome.stripHeight(on.win), 27);
+  const rect = captureRect({ width: 960, height: 557 }, on.chrome.stripHeight(on.win));
+  assert.deepStrictEqual(rect, { x: 0, y: 27, width: 960, height: 530 },
+    'the default capture region is the surface, not the window');
+});
+
+test('toggling returns the window to exactly the plain size and back, and says so on the page', async () => {
+  const on = harness(DECLARATION);
+  assert.deepStrictEqual(on.chrome.setEnabled(on.win, false), { enabled: false, height: 27 });
+  assert.deepStrictEqual(on.win._size, PLAIN, 'chrome off is the plain size the checklist expects');
+  assert.strictEqual(on.chrome.stripHeight(on.win), 0);
+  assert.strictEqual(on.chrome.isEnabled(on.win), false);
+  // The page is told when the dispatch has finished, so it can draw the strip's own status.
+  await new Promise(function (resolve) { setImmediate(resolve); });
+  assert.strictEqual(on.notified[0].view.enabled, false);
+  assert.strictEqual(on.notified[0].view.height, 27);
+  assert.deepStrictEqual(on.notified[0].view.controls, DECLARATION.controls());
+
+  assert.deepStrictEqual(on.chrome.setEnabled(on.win, true), { enabled: true, height: 27 });
+  assert.deepStrictEqual(on.win._size, { width: 960, height: 557 }, 'and back to the striped size');
+  await new Promise(function (resolve) { setImmediate(resolve); });
+  assert.strictEqual(on.notified[1].view.enabled, true);
+  assert.deepStrictEqual(on.resized.map(function (one) { return one.size; }),
+    [PLAIN, { width: 960, height: 557 }]);
+});
+
+test('a size the user dragged while the strip was up comes back with it', () => {
+  const on = harness(DECLARATION);
+  on.win._size = { width: 1200, height: 700 };
+  on.chrome.setEnabled(on.win, false);
+  assert.deepStrictEqual(on.win._size, PLAIN);
+  on.chrome.setEnabled(on.win, true);
+  assert.deepStrictEqual(on.win._size, { width: 1200, height: 700 });
+});
+
+test('the menu entry is a checkbox whose tick is the layout itself', () => {
+  const on = harness(DECLARATION);
+  const entry = on.chrome.menuItem({ win: on.win });
+  assert.strictEqual(entry.type, 'checkbox');
+  assert.strictEqual(entry.label, 'Game chrome');
+  assert.strictEqual(entry.checked, true);
+  // Electron flips a checkbox item before it calls click; the layout follows the item. The window
+  // it moves is the one the entry was built for, not whichever window Electron says has focus -
+  // a second game window would otherwise take the resize meant for this one.
+  const other = { id: 31, _size: { width: 960, height: 557 }, aquaStarChromeHost: true,
+    isDestroyed: function () { return false; },
+    getContentSize: function () { return [this._size.width, this._size.height]; } };
+  entry.click({ checked: false }, other);
+  assert.strictEqual(on.chrome.isEnabled(on.win), false);
+  assert.strictEqual(on.chrome.menuItem({ win: on.win }).checked, false);
+  assert.strictEqual(on.chrome.isEnabled(other), true, 'the focused window was not moved');
+  entry.click({ checked: true }, on.win);
+  assert.strictEqual(on.chrome.menuItem({ win: on.win }).checked, true);
+});
+
+test('one window\'s strip does not move another\'s', () => {
+  const on = harness(DECLARATION);
+  const other = { id: 8, _size: { width: 960, height: 557 }, aquaStarChromeHost: true,
+    isDestroyed: function () { return false; },
+    getContentSize: function () { return [this._size.width, this._size.height]; } };
+  on.chrome.setEnabled(on.win, false);
+  assert.strictEqual(on.chrome.isEnabled(on.win), false);
+  assert.strictEqual(on.chrome.isEnabled(other), true);
+  assert.deepStrictEqual(on.chrome.contentSize(other), { width: 960, height: 557 });
+  // The state lives on the window itself, so a window that goes away takes its own layout with
+  // it and a new one starts striped.
+  assert.strictEqual(on.chrome.isEnabled({ id: 9, aquaStarChromeHost: true,
+    isDestroyed: function () { return false; } }), true);
+});
+
+test('the capture region is the whole window when no strip is up', () => {
+  assert.deepStrictEqual(captureRect({ width: 960, height: 530 }, 0),
+    { x: 0, y: 0, width: 960, height: 530 });
+});
+
+test('the game menu places the strip entry the plugin asked for, in the window it was asked for', () => {
+  const src = fs.readFileSync(path.join(REPO, 'res', 'windows', 'menu.js'), 'utf8');
+  // menu.js may not build the entry itself - the label and the checked state are the plugin's -
+  // and it must hand the window down, because the layout is per window (two game windows can
+  // disagree about which one is showing the strip).
+  assert.ok(/gameChrome\(\)\.menuItem\(\{ win: win \}\)/.test(src),
+    'the entry comes from the chrome module, with this window');
+  assert.ok(/\.getGameMenu = \(keybinds, win\)/.test(src), 'and the window is passed in');
+  const instances = fs.readFileSync(path.join(REPO, 'res', 'instances.js'), 'utf8');
+  assert.ok(/getGameMenu\(keybinds\.keybinds \|\| \{\}, win\)/.test(instances),
+    'instances.js hands the window it is building the menu for');
+});
+
+test('a game window whose page cannot draw a strip keeps the plain size, strip or not', () => {
+  const on = harness(DECLARATION);
+  // res/instances.js marks each window with whether it loaded the wrapper page. A Ruffle page or
+  // a bare SWF has no strip element, so a strip there would push the surface down with nothing
+  // above it: the window keeps the game's own size exactly, which is what the screenshot and
+  // recording paths assume, and the menu offers no toggle for it.
+  const bare = { id: 11, _size: PLAIN, aquaStarChromeHost: false,
+    isDestroyed: function () { return false; },
+    getContentSize: function () { return [this._size.width, this._size.height]; } };
+  assert.strictEqual(on.chrome.isEnabled(bare), false);
+  assert.strictEqual(on.chrome.stripHeight(bare), 0);
+  assert.deepStrictEqual(on.chrome.contentSize(bare), PLAIN);
+  assert.deepStrictEqual(on.chrome.setEnabled(bare, true), { enabled: false, height: 0 });
+  assert.deepStrictEqual(bare._size, PLAIN, 'and it is not resized by a toggle it cannot honour');
+  // The same plugin, the same time: the window that did load the wrapper still carries it.
+  assert.strictEqual(on.chrome.stripHeight(on.win), 27);
+});
+
+test('a window nothing marked as a strip host is not captured 27 px short', () => {
+  const on = harness(DECLARATION);
+  // A plugin's own feature windows (res/windows/feature-window-controller.js) are built straight
+  // from BrowserWindow and never pass through res/instances.js, so they carry no marker at all.
+  // The screenshot path runs on whatever window is focused, so an unmarked window has to read as
+  // "no strip" rather than as "a strip until told otherwise": its capture region must stay the
+  // whole content area, exactly as it was before this ticket.
+  const feature = { id: 21, isDestroyed: function () { return false; },
+    getContentSize: function () { return [480, 700]; } };
+  assert.strictEqual(on.chrome.isEnabled(feature), false);
+  assert.strictEqual(on.chrome.stripHeight(feature), 0);
+  assert.deepStrictEqual(captureRect(feature.getContentSize(), on.chrome.stripHeight(feature)),
+    { x: 0, y: 0, width: 480, height: 700 });
+  assert.strictEqual(on.chrome.menuItem({ win: feature }), null,
+    'and it is not offered a toggle for a layout it cannot have');
+  // The game window that did load the wrapper is unaffected by that default.
+  assert.strictEqual(on.chrome.stripHeight(on.win), 27);
+});
+
+test('the window that loads the wrapper opens tall enough for the strip; the other one does not', () => {
+  const src = fs.readFileSync(path.join(REPO, 'res', 'instances.js'), 'utf8');
+  const config = fs.readFileSync(path.join(REPO, 'res', 'windows', 'config.js'), 'utf8');
+  // The only page that can draw a strip is the wrapper, so the window that loads it is the one
+  // that opens taller. The decision is made where the embed branch is already known.
+  assert.ok(/aquaStarChromeHost/.test(src), 'a window says whether its page can carry a strip');
+  assert.ok(/gameChrome\(\)\.height\(\)/.test(src), 'the strip height comes from the plugin');
+  assert.ok(/wrappedForChrome/.test(src), 'and only a wrapped page counts');
+  // The plain size stays one number in one place, and the window config itself never adds a
+  // strip: a config that did would make every game window taller, wrapper or not.
+  assert.ok(/gameContentSize/.test(config));
+  const configSrc = config.slice(config.indexOf('function _getWinConfig'),
+    config.indexOf('Lazy getters'));
+  assert.strictEqual(/gameChrome/.test(configSrc), false,
+    'the config knows no strip; res/instances.js adds it to the window that can carry one');
+});
+
+test('the host takes a chrome strip only when it can actually be drawn', () => {
+  function declare(declaration) {
+    const host = createPluginHost({
+      manifest: {
+        id: 'chrome-fixture',
+        name: 'Chrome fixture',
+        version: '1.0.0',
+        apiVersion: 2,
+        main: 'main.js',
+        permissions: []
+      },
+      pluginRoot: REPO,
+      deps: {}
+    });
+    return function () { return host.registerGameChrome(declaration); };
+  }
+  const good = declare(DECLARATION);
+  assert.doesNotThrow(good);
+  assert.throws(declare(null), /registerGameChrome expects a declaration/);
+  assert.throws(declare({ height: 0, controls: DECLARATION.controls, state: DECLARATION.state, action: DECLARATION.action }),
+    /positive height/);
+  assert.throws(declare({ height: 27, controls: function () { return []; },
+    state: DECLARATION.state, action: DECLARATION.action }),
+    /at least one control/);
+  assert.throws(declare({ height: 27, controls: function () { return [{ kind: 'button', label: 'X' }]; },
+    state: DECLARATION.state, action: DECLARATION.action }),
+    /control needs an id/);
+  assert.throws(declare({ height: 27, controls: function () { return [{ id: 'x' }]; },
+    state: DECLARATION.state, action: DECLARATION.action }),
+    /needs a label/);
+  assert.throws(declare({ height: 27, controls: DECLARATION.controls, state: DECLARATION.state }),
+    /action/);
+});
+
+test('a picker the reference draws without text is a control with no label, and still a control', () => {
+  function declare(declaration) {
+    const host = createPluginHost({
+      manifest: {
+        id: 'chrome-fixture', name: 'Chrome fixture', version: '1.0.0', apiVersion: 2,
+        main: 'main.js', permissions: []
+      },
+      pluginRoot: REPO,
+      deps: {}
+    });
+    return function () { return host.registerGameChrome(declaration); };
+  }
+  // cbPads and cbCells carry no text of their own in Root.cs (Root.cs:673-706): their options are
+  // their labels. A button with no text is a dead control, so that one is still refused.
+  const picker = {
+    height: 27,
+    controls: function () { return [{ id: 'pad', kind: 'select', label: '' }]; },
+    state: DECLARATION.state,
+    action: DECLARATION.action
+  };
+  assert.doesNotThrow(declare(picker));
+  assert.throws(declare({
+    height: 27,
+    controls: function () { return [{ id: 'bank', kind: 'button', label: '' }]; },
+    state: DECLARATION.state,
+    action: DECLARATION.action
+  }), /needs a label/);
+  assert.throws(declare({
+    height: 27,
+    controls: function () { return [{ id: 'a', kind: 'select', label: '' }, { id: 'a', kind: 'select', label: '' }]; },
+    state: DECLARATION.state,
+    action: DECLARATION.action
+  }), /Duplicate chrome control/);
+});
+
+test('the wrapper page carries the strip above the surface and asks the platform for it', () => {
+  const page = fs.readFileSync(path.join(REPO, 'res', 'swf_wrapper.html'), 'utf8');
+  assert.ok(page.indexOf('id="chrome"') !== -1, 'the strip is a box of its own');
+  assert.ok(page.indexOf('id="stage"') !== -1, 'and the surface is its sibling, not its parent page');
+  assert.ok(page.indexOf("getElementById('stage')") !== -1 || page.indexOf('getElementById("stage")') !== -1,
+    'the movie is created inside the surface box');
+  assert.ok(page.indexOf('aquastarChrome') !== -1, 'the page reads the platform API, not a game');
+  // A page with no strip in it must not ask for one: the same wrapper serves plugins that want none.
+  assert.ok(page.indexOf('view.enabled') !== -1 || page.indexOf('view && view.enabled') !== -1);
+});

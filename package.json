@@ -18,7 +18,7 @@
     "lint": "eslint main.js res scripts test \"plugins/*/web/**/*.js\" --ext .js",
     "format": "prettier --write package.json .github .eslintrc.cjs .prettierrc.json \"plugins/*/web/**/*\" scripts/build-web.js scripts/serve-web.js test",
     "format:check": "prettier --check package.json .github .eslintrc.cjs .prettierrc.json \"plugins/*/web/**/*\" scripts/build-web.js scripts/serve-web.js test",
-    "test": "node test/run.js",
+    "test": "node scripts/run-tests-safe.js",
     "smoke:plugins": "node scripts/smoke-plugins.js",
     "test:ci": "npm run test && npm run smoke:plugins && npm run pack"
   },

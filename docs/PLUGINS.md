@@ -347,7 +347,80 @@ Rules that keep it safe:
 - Cache the last good value in `host.getStore(...)`. Apply it synchronously at `activate()`; only wait (with a short timeout) when there is no fresh cache, and refresh in the background otherwise.
 - Offer an option to turn it off (AQW: `liveLoaderUrl`).
 
-### 4.9 Helper Electron processes (advanced)
+### 4.9 Serve the game from a loopback origin
+
+Permission: `game-origin`. Method: `await host.declareGameOrigin({ routes })`.
+
+Serves the plugin's game paths from `http://127.0.0.1:<port>` and forwards everything else to the
+route's upstream origin, following upstream 3xx server-side so the client never leaves loopback.
+Returns the origin's base URL, or rejects when no origin could be started.
+
+`routes` is `[{ prefix, origin }]`: the longest matching prefix decides the upstream, and the
+path is preserved. `{ prefix: '/', origin: 'https://game.example' }` mirrors that host as-is, so
+`https://game.example/game/x.swf` is served as `http://127.0.0.1:<port>/game/x.swf`. A mount
+like `{ prefix: '/assets/', origin: 'https://cdn.example' }` serves
+`https://cdn.example/ui/x.png` as `/assets/ui/x.png`.
+
+The window opens on whatever `getPrimaryUrl()` reports, so point the plugin's own primary at the
+origin: give the primary game a `toServeFromOrigin(url, baseUrl)` that returns the loopback URL
+for the paths the origin mirrors, and `isGameUrl` must recognise the loopback form too (window
+classification, the Flash trust list and the capture permission all key off it). A `file://`
+primary, `customUrl` and the platform's local SWF override keep working unchanged and win over
+the origin.
+
+A failure to start is the plugin's to catch: a plugin that cannot get an origin stays on its live
+URLs.
+
+Pass `userAgent` when the plugin has a session rule that rewrites `User-Agent` for its own
+hosts. Those rules match URL patterns, so they never see a loopback URL: the origin applies the
+plugin's policy to the upstream request instead, and the upstream keeps seeing what it saw before.
+
+`files` is `{ "/served/path": absoluteFile }`, for local files the origin answers itself. The
+platform already serves its own game wrapper page at `/wrapper.html`; a plugin adds its own when a
+page or a movie of its own has to share the game's origin (see 4.11). The content type follows the
+file extension, and a plugin's entry wins over the platform's for the same path.
+
+### 4.11 Drive the game from the app (the bridge)
+
+Permission: `game-bridge`. Manifest field: `bridgeCallbacks`. Methods: `host.bridge.attach()`,
+`host.bridge.call(name, args)`, `host.bridge.callbacks()`, `host.bridge.attachedWindow()`.
+
+Reading and writing live game state needs a movie of the plugin's own that loads the game SWF into
+**its own `ApplicationDomain`** and registers `ExternalInterface` callbacks. The platform cannot
+put callbacks on a movie it does not control, and the stock game registers none for game state:
+the bridge SWF is what creates the call surface. Full mechanism, measurements and failure modes:
+[`docs/research/grimlite-bridge.md`](research/grimlite-bridge.md).
+
+**Same-origin is a hard requirement.** PPAPI Flash inside Chromium grants no local-trusted
+sandbox, so a bridge SWF that loads the game SWF from another origin is denied every domain access
+(`#2119`/`#2121`), and `Security.allowDomain('*')` on the bridge does not help - the failing check
+belongs to the loaded content's own policy. Serve the page, the bridge and the game from one
+origin (4.9 is how) or there is no bridge.
+
+The plugin declares the callback names its bridge registers; the platform validates them as plain
+identifiers and injects a page side that waits for them:
+
+```json
+"bridgeCallbacks": ["getGameObject", "setGameObject", "callGameFunction", "isNull"]
+```
+
+```js
+const attached = await host.bridge.attach();       // { ok } or { ok: false, error }
+if (attached.ok) {
+  const read = await host.bridge.call('getGameObject', ['world.myAvatar.dataLeaf.intHP']);
+  // { ok: true, value } or { ok: false, error } - never throws for an absent or slow bridge
+}
+```
+
+`attach()` is idempotent per window and waits (20 s) for the movie to register its callbacks, so
+calling it when the game is still loading is safe. `call()` reports why a call could not be made
+("no game window", "the game is not loaded yet") instead of throwing, which is what a feature
+window wants to show. A plugin without `game-bridge` cannot attach and cannot call: the platform
+refuses with `Plugin "<id>" called host.bridge.attach without permission "game-bridge"`.
+
+The bridge SWF itself is built from source with the Flex SDK; the recipe (including the two
+environment variables the SDK does not set for you) is in
+`plugins/grimlite-parity/bridge/build.sh`.
 
 Permission: `spawn-helper-process`. Script path must stay **inside the plugin directory** (no `..`).
 
@@ -368,7 +441,7 @@ See `plugins/adventure-quest-worlds/web/contribute.js` for the full contribution
 | `id` | yes | kebab-case id |
 | `name` | yes | Shown in Settings |
 | `version` | yes | Your plugin version |
-| `apiVersion` | yes | Must be `1` |
+| `apiVersion` | yes | `1` or `2` (see below). Any other value → **load failure** |
 | `main` | yes | Relative path to CJS entry, no `..` |
 | `minAppVersion` | yes | AquaStar semver floor (e.g. `1.12.2`) |
 | `permissions` | no | Unknown entries → **load failure** |
@@ -380,6 +453,7 @@ See `plugins/adventure-quest-worlds/web/contribute.js` for the full contribution
 | `unprefixedIpc` | no | Bundled plugins only: keep IPC channel names unprefixed (back-compat). Everyone else is namespaced `plugin:<id>:<channel>` |
 | `customSwfAliases` | no | Older file names for the platform's custom SWF override that this plugin used to read (plain `*.swf` names) |
 | `storeAliases` | no | `{ "<store name>": "<legacy file>.json" }` to keep permanent filenames for `getStore(name)` |
+| `bridgeCallbacks` | no | Plain callback names the plugin's bridge SWF registers (4.11). Required only to use `host.bridge`; names must be plain identifiers |
 
 ### Permissions → Host methods
 
@@ -392,8 +466,79 @@ See `plugins/adventure-quest-worlds/web/contribute.js` for the full contribution
 | `persistent-store` | `getStore` |
 | `spawn-helper-process` | `windows.spawnHelperProcess` |
 | `unsafe-renderer` | Feature windows with Flash plugins / `webSecurity: false` |
+| `game-origin` | `host.declareGameOrigin` |
+| `game-bridge` | `host.bridge.attach()` / `call()` / `callbacks()` / `attachedWindow()` - the SWF bridge channel (4.11) *(apiVersion 2)* |
+| `packet-tap` | `packets.on('frame', fn)` - reading relayed game frames *(apiVersion 2)* |
+| `packet-send` | `packets.send({ direction, text })` - writing a frame back through the relay *(apiVersion 2)* |
 
-Missing permission → throw during `activate` → activation fails.
+Missing permission → throw, and during `activate` that fails the activation.
+
+`packets.on('frame', listener)` subscribes to the game traffic the relay carries, in both
+directions, and returns the release:
+
+```js
+const off = host.packets.on('frame', function (frame) {
+    // frame.direction: 'toServer' (the client sent it) | 'toClient' (the server sent it)
+    // frame.text:      the frame, NUL terminator stripped, decoded as UTF-8
+    // frame.id:        the relay connection it belongs to
+});
+off();   // give the subscription back
+```
+
+The listener is the platform's, not yours: the relay feeds one tap and every subscriber reads
+from it, so subscribing twice, or from two windows, cannot add a second listener or double a
+frame. Frames arrive only while the client's traffic is steered through the relay, which is
+the plugin's own opt-in, so a tool that shows nothing should say so rather than look broken.
+Reading game traffic needs `packet-tap`; writing it needs `packet-send`, which the packet
+logger does not hold.
+
+`packets.send({ direction, text })` writes one frame back through the relay and answers whether it
+went out:
+
+```js
+const written = host.packets.send({ direction: 'toServer', text: '%xt%zm%gar%1%2%w%' });
+// direction: 'toServer' (to the game) | 'toClient' (to the game's own client, i.e. a frame the
+//            server would have sent)
+// written:   true when the frame went out; false when there is no live connection to write on
+```
+
+A frame written this way is reported to the tap like any other traffic, on the side it was written
+to, so a tool that is watching sees what was injected. `false` is not a queue: nothing is held for
+later, because the usual reason is that the client is not connected (steering is off, or the
+session is between connections), and a caller that must send says so to the user instead of
+looking broken. A frame with no text, or a direction that is neither of the two, throws.
+
+The two permissions are deliberately separate: the packet logger reads and holds `packet-tap`
+only, a spammer writes and holds `packet-send` only, and a tamperer needs both because it shows
+one side while editing the other.
+
+The game access permissions above are `game-bridge` (the bridge channel, 4.11) and `packet-tap` /
+`packet-send` (the packet layer, `res/platform/packet-layer.js`).
+
+`host.requirePermission(method, permission)` is the single gate every guarded method goes through
+- `packets.on` included - and it reports a missing one as
+`Plugin "<id>" called <method> without permission "<permission>"`. It is platform wiring, not a
+plugin API: a plugin never calls it.
+
+### apiVersion
+
+`apiVersion` is the platform contract your plugin was written against, not your plugin's own
+version. `1` is the original contract; `2` adds the game access permissions above (bridge, packet
+tap, packet send) and nothing else. The list of versions this app can run lives in
+`res/platform/manifest-schema.js` (`SUPPORTED_API_VERSIONS`).
+
+- A `1` plugin keeps loading, with the same permissions, meanings and messages it had before,
+  and sees nothing new.
+- A `2` plugin may declare the game access permissions. A `2` plugin does **not** inherit
+  `unprefixedIpc` (that back-compat affordance is version 1's alone).
+- A plugin declaring a version this app does not support is refused at discovery with
+  `apiVersion N is not supported (this app supports 1 and 2)`, so it never activates and fails
+  later at its first guarded call. `minAppVersion` is the second half of the gate: set it to the
+  app release that first shipped the capabilities you use, and the same older app refuses your
+  plugin with `minAppVersion X requires a newer AquaStar (have Y)`.
+
+Both refusals are logged as `Discovery: Invalid manifest in <dir>: …` and the rest of the plugins
+still load.
 
 ---
 
@@ -405,9 +550,14 @@ Available on `host` inside `activate(host)`:
 
 **Game:** `setPrimaryGame(cfg)`, `registerLaunches([...])`, `trustFlashUrls([...])`
 
+**Game access:** `declareGameOrigin({ routes, files, userAgent })` (4.9), `bridge.attach()` / `bridge.call(name, args)` (4.11), `registerPacketSteering(declaration)` (the packet layer)
+
 **Chrome:** `registerBrowserPreload(relativePath)`, `registerKeybindDefaults(obj)`, `registerKeybinds([...])`, `registerMenus(fn)`, `registerMenuPages({ appUsefulPages, gameMenuPages })`, `registerFeatureWindows([...])`, `registerSettingsSection(section)`, `registerLocales(catalog)`
 
 **Network / pages:** `registerSessionRules([...])`, `registerNavigationHooks(hooks)`, `net.fetchText(url)`
+
+**Game access (apiVersion 2):** `packets.on('frame', listener)` (needs `packet-tap`),
+`packets.send({ direction, text })` (needs `packet-send`)
 
 **IPC / storage:** `ipc.handle` / `ipc.on` / `ipc.removeHandler`, `getStore(ns)`
 
@@ -507,7 +657,7 @@ Ship it: commit under `plugins/`, bump AquaStar if needed, tag a release. Portab
 
 Checklist:
 
-- [ ] Valid `plugin.json` (`apiVersion: 1`, permissions match Host calls)
+- [ ] Valid `plugin.json` (`apiVersion` supported by the app, permissions match Host calls)
 - [ ] `setPrimaryGame` + `isGameUrl` + `trustFlashUrls`
 - [ ] At least one way to open a new game window (keybind and/or menu)
 - [ ] No use of platform-reserved keybind ids
