@@ -969,6 +969,27 @@ call, so that is what this section is for.
 - [ ] Dying sends the character to its spawn point and the loop picks up again
 - [ ] **Skill Preset** fills the skill list, the heal list, its percentage, the buff list and the two boxes; **AI** and **AM** leave the heal list and its percentage alone, and the SafeSkill box follows the preset's own carried flag
 
+### Per-boss handlers, Auto Zone and taunt cycles (ticket #44)
+
+- [ ] **UltraBossExtra** selects each reference mode; changing a boss mode fills its SpecialMsg,
+      SpecialAct and AttackPriority fields, and Save/Load preserves the choices
+- [ ] **Auto Potion** uses the first equipped, stocked potion and waits for that potion's aura to
+      expire before forcing skill 5
+- [ ] On Ultra Gramiel, Maid balances the two Grace Crystals at the reference's 150 HP and 50 HP
+      gates, and its forced-skill pass returns to the priority target
+- [ ] Each of the 15 **Auto Zone** entries in Misc 2 starts, switches and stops independently; the
+      matching boss animation drives its movement, position, taunt or crystal action
+- [ ] Ultra Speaker DPS, LR, LOO and AP respond to their role's animation, maintain their zone
+      positions, perform role-specific heals, and resume after death/respawn
+- [ ] Maid `SpecialMsg` beginning `tc;` cycles with the configured **SpecialAct** and yields when
+      the bot has a command in flight
+- [ ] Bot Manager **Tauntcycle** uses skill 5, pauses/resumes only that window's bot, restores its
+      previous target, and stops without stopping Maid's separate `tc;` cycle
+
+The Speaker and Gramiel reference loops run at their own intervals; this port services their
+health, position and taunt work from the existing Maid scheduler instead of starting another
+timer. Packet-driven animation reactions still run directly from each server frame.
+
 ### Beside the bot engine
 
 - [ ] With a bot running in the Bot Manager, the Maid does not cast while the engine has a command in flight; the log says so once per command and the window's state line reads `the bot engine has the current command`
@@ -992,9 +1013,9 @@ call, so that is what this section is for.
   logged-in character, so it is the box above rather than a claim here. What *is* verifiable
   offline, and is tested, is that each callback takes the primitive the reference's own signature
   takes and that the surface asks for it by the reference's own name.
-- **Boss behaviour and the auto-zone handlers** (`UltraBossExtra`, `SpecialMsg`, `SpecialAct`,
-  `AntiCounter`, `CopyWalk`): the reference's per-boss handlers are ticket #44's; the four config
-  keys are carried through the file and shown, and no handler reads them yet.
+- **Boss calls landing in the live game**: the per-boss and auto-zone handlers are implemented,
+  but only a logged-in character can confirm the game accepts each target and cast; use the checks
+  above.
 
 ## Grimlite Parity - the miscellaneous commands (ticket #40) - needs a real game and an account
 
@@ -1027,8 +1048,8 @@ two shell seams do when a user is watching: Electron's alert sound and the relay
 - [ ] A path that is not there, a file that will not parse and a build with no reader each say which of the three it was
 - [ ] **Return** goes back to the configuration and index the last **Load bot** pushed, and with nothing pushed it does nothing rather than failing
 - [ ] **Set FPS** reports that the frame rate belongs to the reference's own stage, which this bridge cannot reach
-- [ ] **Special handler** with a zone reports that the auto-zone handlers are ticket #44's, and with no zone it returns silently, as the reference does
-- [ ] **Tauntcycle** reports the call its rotation needs and cannot make (the taunt re-target is `AttackMonster`, which hands the game a live monster object)
+- [ ] **Special handler** with a zone starts, stops or switches the matching auto-zone handler; with no zone it returns silently
+- [ ] **Tauntcycle** pauses the selected bot engine, attacks the requested target, uses skill 5 when ready, then restores the prior target and pause state
 - [ ] **Bank item list** does nothing at all, which is what its own `Execute` is
 ---
 

@@ -109,7 +109,8 @@ global.test = function (name, fn) {
   './unit/grimlite-drops-page.test.js',
   './unit/grimlite-maid.test.js',
   './unit/grimlite-maid-scheduler.test.js',
-  './unit/grimlite-maid-window.test.js'
+  './unit/grimlite-maid-window.test.js',
+  './unit/grimlite-maid-zones.test.js'
 ].forEach((file) => require(path.join(__dirname, file)));
 
 (async () => {

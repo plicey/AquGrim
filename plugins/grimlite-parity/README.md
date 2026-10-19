@@ -277,7 +277,8 @@ in-domain (ticket #49). The Maid, the bot engine and the surface all ask for the
 reference's own name and pass the primitive - the name, the MonMapID, the skill index - with no
 change to any of them.
 
-Boss behaviour and the auto-zone handlers are ticket #44's and are deliberately absent here.
+Boss behaviour and auto-zone handlers are wired through the Maid and Misc 2 panels (ticket #44).
+The manual Flash checklist covers the remaining live-game validation.
 
 
 ## Fast travels and the map bypasser (#32)

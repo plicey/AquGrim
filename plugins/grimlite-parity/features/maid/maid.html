@@ -95,6 +95,24 @@
   </fieldset>
 
   <fieldset>
+    <legend id="specialLegend">Special Anims</legend>
+    <div class="row">
+      <label for="UltraBossExtra" id="ultraBossExtraLabel">Ultra Boss w/ Extra:</label>
+      <select id="UltraBossExtra"></select>
+    </div>
+    <div class="row">
+      <label for="SpecialMsg" id="specialMsgLabel">msg:</label>
+      <input type="text" id="SpecialMsg" autocomplete="off">
+    </div>
+    <div class="row">
+      <input type="checkbox" id="cbSpecialAnims">
+      <label for="cbSpecialAnims" id="specialAnimsLabel">Special animation actions</label>
+      <label for="SpecialAct" id="specialActLabel">Skill:</label>
+      <input type="number" id="SpecialAct" min="1" max="5">
+    </div>
+  </fieldset>
+
+  <fieldset>
     <legend id="keysLegend">Keys</legend>
     <div class="row">
       <input type="checkbox" id="unfollow">
@@ -161,8 +179,8 @@
   // The reference's own text boxes and number boxes: every one of them is a config key, so one
   // list drives both the drawing and the reading.
   var TEXT_FIELDS = ['Target', 'SkillList', 'SafeSkillList', 'BuffStopAttackList',
-    'AttackPriorityMonster', 'LockedZoneHandlerMaps', 'WhitelistMapMaps'];
-  var NUMBER_FIELDS = ['RelogDelay', 'SkillDelay', 'SafeSkillHP'];
+    'AttackPriorityMonster', 'LockedZoneHandlerMaps', 'WhitelistMapMaps', 'SpecialMsg'];
+  var NUMBER_FIELDS = ['RelogDelay', 'SkillDelay', 'SafeSkillHP', 'SpecialAct', 'UltraBossExtra'];
   var BOX_FIELDS = ['SafeSkill', 'BuffStopAttack', 'AttackPriority', 'LockedZoneHandler',
     'WhitelistMap', 'GlobalHotkey'];
   var CONTROLS = TEXT_FIELDS.concat(NUMBER_FIELDS, BOX_FIELDS);
@@ -206,6 +224,12 @@
     el('enabled').checked = state.enabled === true;
     el('unfollow').checked = state.unfollow === true;
     el('stopAttack').checked = state.stopAttack === true;
+    var specialAnims = state.specialAnims !== false;
+    el('cbSpecialAnims').checked = specialAnims;
+    el('cbSpecialAnims').disabled = state.enabled === true;
+    el('UltraBossExtra').disabled = state.enabled === true;
+    el('SpecialMsg').disabled = state.enabled === true || !specialAnims;
+    el('SpecialAct').disabled = state.enabled === true || !specialAnims;
     if (state.target && document.activeElement !== el('Target')) el('Target').value = state.target;
     if (view && view.fields) {
       fields = view.fields;
@@ -227,7 +251,7 @@
       // Target and driving the scheduler at once, so the scheduler's master wins while it has one.
       if (key === 'Target' && master) { box.value = master; return; }
       if (fields.booleans.indexOf(key) !== -1) box.checked = settings[key] === true;
-      else box.value = settings[key] === null || settings[key] === undefined ? '' : settings[key];
+      else box.value = settings[key] === null || settings[key] === undefined ? '' : String(settings[key]);
     });
   }
 
@@ -268,6 +292,12 @@
       one.textContent = name;
       el('preset').appendChild(one);
     });
+    (view.modes || []).forEach(function (name, index) {
+      var one = document.createElement('option');
+      one.value = String(index);
+      one.textContent = name;
+      el('UltraBossExtra').appendChild(one);
+    });
   }
 
   function wire() {
@@ -279,6 +309,9 @@
     });
     el('stopAttack').addEventListener('change', function () {
       send({ stopAttack: el('stopAttack').checked });
+    });
+    el('cbSpecialAnims').addEventListener('change', function () {
+      send({ specialAnims: el('cbSpecialAnims').checked });
     });
     // The Target box is both the config's own key and the scheduler's master, so it writes both:
     // the reference keeps them as one box (`cmbGotoUsername`) and its saveConfig reads that box.
@@ -349,6 +382,11 @@
     el('keyHint').textContent = label('keyHint',
       'Unfollow and StopAttack work whichever window has focus while Global Hotkey is ticked.');
     el('optionsLegend').textContent = label('options', 'Options');
+    el('specialLegend').textContent = label('specials', 'Special Anims');
+    el('specialAnimsLabel').textContent = label('specialAnims', 'Special animation actions');
+    el('ultraBossExtraLabel').textContent = label('ultraBossExtra', 'Ultra Boss w/ Extra:');
+    el('specialMsgLabel').textContent = label('specialMsg', 'msg:');
+    el('specialActLabel').textContent = label('specialAct', 'Skill:');
     el('mapsLegend').textContent = label('maps', 'Maps');
     el('lockedLabel').textContent = label('lockedZoneHandler', 'Locked Zone Handler');
     el('whitelistLabel').textContent = label('whitelistMap', 'Whitelist Map');

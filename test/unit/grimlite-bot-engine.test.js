@@ -108,6 +108,21 @@ test('a bot already running is refused rather than started twice', async () => {
   assert.ok(/already running/i.test(again.error), 'the refusal says why: ' + again.error);
 });
 
+test('an external cycle pause holds the bot index until it restores the prior pause state', async () => {
+  const made = engine();
+  await made.start(bot([command('CmdBlank', {}), command('CmdStop', {})]));
+  assert.strictEqual(made.setPaused(true), false, 'the cycle records that the engine was not paused');
+  const before = made.index();
+  const held = await made.tick();
+  assert.strictEqual(held.paused, true);
+  assert.strictEqual(made.index(), before, 'a paused engine does not dispatch its next command');
+  assert.strictEqual(made.paused(), true);
+  assert.strictEqual(made.setPaused(false), true);
+  await made.tick();
+  assert.strictEqual(made.index(), before + 1, 'resuming lets the bot continue');
+  made.stop();
+});
+
 test('the list is walked by index, in order, one command per pass', async () => {
   const made = engine();
   const order = [];

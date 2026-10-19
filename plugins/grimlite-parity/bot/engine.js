@@ -166,6 +166,7 @@ function createEngine(deps) {
 
     let running = false;
     let paused = false;
+    let externallyPaused = false;
     let index = 0;
     let document = null;      // the parsed .gbot, mutated the way the editor mutates it
     let config = null;        // the Configuration view: the document plus the C# defaults
@@ -218,7 +219,7 @@ function createEngine(deps) {
 
     /** Bot.GetVar: the key inside the brackets, with quotes stripped. */
     function getVar(value) {
-        return String(value).replace(/[\[\]']+/g, '');
+        return String(value).split('[').join('').split(']').join('').split("'").join('');
     }
 
     /**
@@ -1183,7 +1184,7 @@ function createEngine(deps) {
             return undefined;
         },
 
-        CmdYulgar: async function (ctx, command) {
+        CmdYulgar: async function (_ctx, _command) {
             // CmdYulgar.cs: wait for the transfer lock, leave combat, join yulgar's Enter/Spawn if
             // that is not where the player is, walk somewhere random, and stop the bot.
             await waitUntil(async function () {
@@ -1417,6 +1418,10 @@ function createEngine(deps) {
         beep: deps.beep,
         spammer: deps.spammer,
         timers: deps.timers,
+        // The auto-zone panel (#44): CmdSpecialHandler drives the Misc 2 combo through this, the
+        // same way SetSpecialHandlerFromScript does. Absent in a build without the Maid's panel,
+        // in which case the command reports that rather than appearing to switch a handler.
+        specialHandler: deps.specialHandler,
         sleep: sleep,
         log: log,
         logDebug: deps.logDebug,
@@ -1569,6 +1574,7 @@ function createEngine(deps) {
     // ---------------------------------------------------------------- the loop
 
     function stop() {
+        externallyPaused = false;
         if (!running) return;
         running = false;
         paused = false;
@@ -1645,6 +1651,10 @@ function createEngine(deps) {
 
     async function tick() {
         if (!running) return { ok: false, error: ERRORS.stopped };
+        if (externallyPaused) {
+            await sleep(PAUSE_POLL_MS);
+            return { ok: true, paused: true };
+        }
 
         const signed = await read('signedIn');
         const alive = await read('alive');
@@ -1737,6 +1747,7 @@ function createEngine(deps) {
         index = 0;
         running = true;
         paused = false;
+        externallyPaused = false;
         lastCommand = null;
         dispatched = [];
         return { ok: true };
@@ -1751,7 +1762,12 @@ function createEngine(deps) {
         /** The injected session, so a caller can hand its own reads back to the window. */
         session: session,
         running: function () { return running; },
-        paused: function () { return paused; },
+        paused: function () { return paused || externallyPaused; },
+        setPaused: function (on) {
+            const previous = externallyPaused;
+            externallyPaused = on === true;
+            return previous;
+        },
         index: function () { return index; },
         setIndex: setIndex,
         /** The commands the loop has run, in order: the reference keeps only the last. */

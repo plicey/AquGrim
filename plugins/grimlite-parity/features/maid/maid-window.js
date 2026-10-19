@@ -19,6 +19,7 @@ const config = require('./config.js');
 const maidModel = require('./maid.js');
 const presets = require('./presets.js');
 const partyModel = require('./party.js');
+const zonesModel = require('./zones.js');
 
 // The channels this window's own handle() answers. The state push and the watch channel are
 // attached separately, because they are about a window being open rather than about one call.
@@ -61,15 +62,43 @@ function createMaidWindow(deps) {
     const game = deps.game || null;
     let state = config.stateFrom(config.defaults());
     let loadedFrom = null;
+    let specialAnims = true;
     let carriedHeal = true;      // ClassPreset.cs's own static `heal`, carried across presets
     const onChange = [];
+
+    function fillBossMode(index) {
+        const mode = zonesModel.MODES[Number(index)];
+        const fill = zonesModel.MODE_FILLS[mode];
+        if (fill) Object.assign(state, fill);
+    }
+
+    /** Apply the reference's selector event in the order its ApplyConfig assigns controls. */
+    function applyFileConfig(patch) {
+        const beforeMode = Number(state.UltraBossExtra) || 0;
+        state = config.apply(patch, state);
+        if (!Object.prototype.hasOwnProperty.call(patch, 'UltraBossExtra')) return;
+        const nextMode = Number(state.UltraBossExtra) || 0;
+        if (beforeMode === nextMode) return;
+        const later = {};
+        ['SpecialAct', 'AttackPriority'].forEach(function (key) {
+            if (Object.prototype.hasOwnProperty.call(patch, key) && patch[key] !== null &&
+                patch[key] !== undefined) later[key] = state[key];
+        });
+        fillBossMode(nextMode);
+        Object.assign(state, later);
+    }
 
     /** Everything the page draws, from the scheduler's own state. */
     function view() {
         const live = maid.state();
         return {
-            state: Object.assign({}, live, { config: Object.assign({}, state), loadedFrom: loadedFrom }),
+            state: Object.assign({}, live, {
+                config: Object.assign({}, zonesModel.DESIGNER, state),
+                loadedFrom: loadedFrom,
+                specialAnims: specialAnims
+            }),
             presets: presets.names(),
+            modes: zonesModel.MODES.slice(),
             messages: messages,
             fields: { all: config.FIELDS, numbers: config.NUMBERS, booleans: config.BOOLEANS },
             parties: { enabled: party !== null, commands: partyModel.COMMANDS }
@@ -104,7 +133,12 @@ function createMaidWindow(deps) {
                 }
                 if (config.NUMBERS.indexOf(key) !== -1) {
                     const number = Number(value);
-                    if (isFinite(number)) state[key] = number;
+                    if (isFinite(number)) {
+                        const beforeMode = key === 'UltraBossExtra'
+                            ? (Number(state.UltraBossExtra) || 0) : null;
+                        state[key] = number;
+                        if (key === 'UltraBossExtra' && beforeMode !== number) fillBossMode(number);
+                    }
                     return;
                 }
                 if (config.BOOLEANS.indexOf(key) !== -1) {
@@ -113,6 +147,9 @@ function createMaidWindow(deps) {
                 }
                 state[key] = String(value);
             });
+        }
+        if (Object.prototype.hasOwnProperty.call(change, 'specialAnims')) {
+            specialAnims = change.specialAnims === true;
         }
         if (Object.prototype.hasOwnProperty.call(change, 'target')) {
             const name = String(change.target === null || change.target === undefined ? '' : change.target);
@@ -163,7 +200,7 @@ function createMaidWindow(deps) {
             log('maid: ' + file + ' was not applied: ' + parsed.error);
             return { ok: false, applied: false, path: file, error: parsed.error };
         }
-        state = config.apply(parsed.config, state);
+        applyFileConfig(parsed.config);
         loadedFrom = path.basename(file);
         announce({ config: parsed.config }, {});
         log('maid: autoloaded ' + file);
@@ -186,7 +223,7 @@ function createMaidWindow(deps) {
     function load(text, name) {
         const parsed = config.parse(text);
         if (!parsed.ok) return { ok: false, error: parsed.error };
-        state = config.apply(parsed.config, state);
+        applyFileConfig(parsed.config);
         loadedFrom = name || null;
         announce({ config: parsed.config }, {});
         return { ok: true, view: view() };
@@ -433,6 +470,7 @@ function createFromHost(host, deps) {
     // The scheduler is made first, but its `config` reads the window's live state, which is why
     // the window is built before the scheduler runs anything: the arrow closes over `window`.
     let window = null;
+    let zones = null;
     const maid = deps.maid || maidModel.createMaid({
         game: bridge,
         config: function () { return window ? window.config() : {}; },
@@ -440,6 +478,24 @@ function createFromHost(host, deps) {
         engineActivity: deps.engineActivity,
         engineRunning: deps.engineRunning,
         send: function (frame) { return bridge.sendServerFrame(frame); },
+        // doPriorityAttack's own first line (#44): while a per-boss handler holds the target -
+        // Gramiel's drain, a counter-attack warning - the walk must not run. The flags belong to
+        // the handler half, so the scheduler reads them across this seam. The closure is safe to
+        // define before `zones` exists: it is only read from a tick, long afterwards.
+        specialsHolding: function () { return zones.holding(); },
+        specialCombo: function () { return zones.autoPotionNeeded(); },
+        specialBalance: function (forceSkill) { return zones.balanceCrystals(forceSkill); },
+        // taunt()'s own door: the reference calls it once per fighting pass while no rotation is
+        // running (MaidRemake.cs:295-296), and the cycle it starts reads the SpecialMsg box the
+        // handler half owns. Read lazily for the same reason as the seam above.
+        taunt: function () { return zones.tauntCycle(); },
+        auxiliaryActive: function () {
+            return !!zones && typeof zones.schedulerActive === 'function' && zones.schedulerActive();
+        },
+        auxiliaryTick: function (context) {
+            return zones && typeof zones.schedulerTick === 'function'
+                ? zones.schedulerTick(context) : null;
+        },
         onTick: deps.onTick
     });
     const party = deps.party === null ? null : (deps.party || partyModel.createParty({
@@ -455,6 +511,31 @@ function createFromHost(host, deps) {
         },
         log: log
     }));
+
+    // The per-boss and auto-zone handlers (#44), which are the Maid form's own two packet
+    // subscriptions (AnimsMsgHandler and AntiCounterHandler) plus the Bot Manager's auto-zone
+    // combo. They read the same tap the party half does and are handed the same live scheduler and
+    // config, so a handler and the loop cannot disagree about the target, the mode or the boxes.
+    zones = deps.zones || zonesModel.createZoneHandlers({
+        game: bridge,
+        log: log,
+        sleep: bridge.sleep,
+        config: function () { return window ? window.config() : {}; },
+        maid: maid,
+        pauseBotEngine: deps.pauseBotEngine,
+        // The aura store is the party half's own when there is one: auras is a per-consumer
+        // subscription in this port (#42), and both halves read the same traffic.
+        auras: deps.auras,
+        // A switch changes whether the tap is needed at all, so the panel tells this half. The
+        // hop through the closure exists because the window's own followTap is defined below.
+        onChange: function () {
+            if (typeof maid.wake === 'function') maid.wake();
+            if (zonesChanged) zonesChanged();
+        }
+    });
+    // Set once followTap exists: a panel switch with no window open has to take the subscription
+    // itself, because a handler reading no frames is a handler that does nothing.
+    let zonesChanged = null;
 
     let watchers = [];
     let release = null;
@@ -488,13 +569,22 @@ function createFromHost(host, deps) {
      * party commands whether or not anybody has its form in front of them.
      */
     function followTap() {
-        const want = party !== null && (watchers.length > 0 || maid.running());
+        // The zone handlers are watched for on their own: the combo can be switched on from a bot
+        // command (CmdSpecialHandler) with no window open, which is exactly when a run's own
+        // packets have to keep arriving.
+        const want = (party !== null || zones.active() !== null) &&
+            (watchers.length > 0 || maid.running() || zones.active() !== null);
         if (want && !release) {
             release = host.packets.on('frame', function (frame) {
                 try {
-                    party.handleFrame(frame);
+                    if (party) party.handleFrame(frame);
                 } catch (error) {
                     log('maid: a party frame could not be read: ' + message(error));
+                }
+                try {
+                    zones.handleFrame(frame);
+                } catch (error) {
+                    log('maid: an auto-zone frame could not be read: ' + message(error));
                 }
             });
         } else if (!want && release) {
@@ -536,6 +626,26 @@ function createFromHost(host, deps) {
     });
     // Enable starts the loop and the tap together; the scheduler's own stop ends both.
     window.onConfigChange(function () { followTap(); });
+    // cbEnablePlugin_CheckedChanged's own first two lines are the Maid form's subscriptions
+    // (MaidRemake.cs:99 and :161, `Flash.FlashCall2 +=`) and stopMaid (:971-996) takes them back
+    // out. Ticking Enable is what arms the Maid's own handlers - the phrase list behind
+    // `chkSpecialAnims`, AntiCounter, the whitelist pair, the cell jumper and the warning reader -
+    // so the two boxes move together or none of them ever reads a frame.
+    window.onConfigChange(function (patch) {
+        if (patch && Object.prototype.hasOwnProperty.call(patch, 'enabled')) {
+            zones.setMaid(maid.state().enabled === true);
+        }
+        if (patch && Object.prototype.hasOwnProperty.call(patch, 'specialAnims')) {
+            zones.setSpecialAnims(patch.specialAnims === true);
+        }
+    });
+    // Enable is the form's own box, not a config field (MaidConfig.cs has no such key), so the arm
+    // starts from the scheduler's own state rather than from anything the file could carry.
+    zones.setMaid(maid.state().enabled === true);
+    zones.setSpecialAnims(window.view().state.specialAnims);
+    // And a switch of the auto-zone combo takes or gives up the same subscription: a handler that
+    // is registered has to be reading frames, and one that is off must not be.
+    zonesChanged = followTap;
     // The reference's own state is shown and it changes on its own: the loop repaints its form for
     // the same reason, and a key pressed in another window has to move this one's boxes too. The
     // same pass is what lets the tap follow the Maid's running flag.
@@ -546,10 +656,17 @@ function createFromHost(host, deps) {
         });
     }
 
+    function unwatch(watcher) {
+        const at = watchers.indexOf(watcher);
+        if (at !== -1) watchers.splice(at, 1);
+        followTap();
+    }
+
     return {
         window: window,
         maid: maid,
         party: party,
+        zones: zones,
         keys: keys,
         attach: function () {
             window.attach();
@@ -571,11 +688,7 @@ function createFromHost(host, deps) {
             return this;
         },
         /** A window that went away is not a reason to keep reading traffic. */
-        unwatch: function (watcher) {
-            const at = watchers.indexOf(watcher);
-            if (at !== -1) watchers.splice(at, 1);
-            followTap();
-        },
+        unwatch: unwatch,
         /** Whether the party half is reading the tap right now. */
         following: function () { return !!release; },
         followTap: followTap,

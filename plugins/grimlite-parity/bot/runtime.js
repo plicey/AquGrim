@@ -42,7 +42,7 @@ function createRuntimeManager(deps) {
     // Everything but the three the manager itself owns. A seam is passed through as it was given,
     // so an engine built here has exactly the reach the caller handed the manager - no more.
     const SEAMS = ['packets', 'beep', 'readFile', 'exists', 'botsDirectory', 'spammer', 'timers',
-        'logDebug', 'logClear', 'options', 'relogin'];
+        'logDebug', 'logClear', 'options', 'relogin', 'specialHandler'];
     function seams() {
         const out = {};
         SEAMS.forEach(function (name) {
@@ -155,6 +155,11 @@ function createRuntimeManager(deps) {
         };
     }
 
+    function setPaused(key, on) {
+        const entry = entries.get(keyOf(key));
+        return entry ? entry.engine.setPaused(on === true) : false;
+    }
+
     /** Await the window's loop ending; a test's way to let a bot finish. */
     function idle(key) {
         const entry = entries.get(keyOf(key));
@@ -167,6 +172,7 @@ function createRuntimeManager(deps) {
         stop: stop,
         windowClosed: windowClosed,
         state: state,
+        setPaused: setPaused,
         idle: idle,
         /** The windows that have a bot entry, for a caller reporting on them. */
         windows: function () { return Array.from(entries.keys()); }

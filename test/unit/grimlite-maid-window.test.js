@@ -10,6 +10,7 @@ const vm = require('vm');
 const platform = require('../../res/platform');
 const maidWindow = require('../../plugins/grimlite-parity/features/maid/maid-window.js');
 const maidModel = require('../../plugins/grimlite-parity/features/maid/maid.js');
+const maidZones = require('../../plugins/grimlite-parity/features/maid/zones.js');
 const config = require('../../plugins/grimlite-parity/features/maid/config.js');
 
 const repoRoot = path.join(__dirname, '../..');
@@ -232,6 +233,230 @@ function maidFixture(deps) {
   return { game: game, maid: maid, window: window };
 }
 
+// ------------------------------------------------------------------ the handler panel (#44)
+
+/**
+ * The slice of the plugin Host this half needs: somewhere to log, an IPC registry, and a tap whose
+ * subscription is counted - the subscription itself is asserted below, because taking one at
+ * activation is the thing this app forbids (test/unit/packet-logger.test.js).
+ */
+function fakeZoneHost(deps) {
+  const opts = deps || {};
+  const handlers = [];
+  const listeners = [];
+  return {
+    pluginId: 'grimlite-parity',
+    appDataDirectory: path.join(__dirname, '../tmp-plugin-data'),
+    log: function () {},
+    getLocaleStrings: function () { return {}; },
+    getStore: function () { return { get: function () {}, set: function () {} }; },
+    ipc: {
+      handle: function (channel, listener) { handlers.push({ channel: channel, listener: listener }); },
+      handlers: handlers
+    },
+    packets: {
+      on: function (event, listener) {
+        listeners.push(listener);
+        return function () {
+          const at = listeners.indexOf(listener);
+          if (at !== -1) listeners.splice(at, 1);
+        };
+      },
+      emit: function (frame) { listeners.slice().forEach(function (one) { one(frame); }); },
+      subscribed: function () { return listeners.length; }
+    },
+    // The game access this half is handed when none is injected: a read that answers nothing and a
+    // frame write that always takes, which is enough for a panel that makes no calls of its own.
+    bridge: {
+      attach: function () { return Promise.resolve({ ok: true }); },
+      call: function () { return Promise.resolve({ ok: true, value: null }); }
+    },
+    opts: opts
+  };
+}
+
+test('the panel carries the reference\'s own combo and its two-part switch', async () => {
+  // cmbSpecials.SelectedItem + chkSpecial.Checked, which UpdateSpecialHandler reads as a pair. The
+  // two are kept apart because SetSpecialHandlerFromScript's Switch mode sets the selection and
+  // deliberately leaves the box alone.
+  const made = maidWindow.createFromHost(fakeZoneHost());
+  const zones = made.zones;
+  assert.deepStrictEqual(zones.names(),
+    require('../../plugins/grimlite-parity/features/maid/zones.js').NAMES);
+  assert.strictEqual(zones.active(), null, 'nothing is registered until the box is ticked');
+  assert.strictEqual(zones.checked(), false);
+
+  // Selecting alone registers nothing, which is the reference's own guard on the tick.
+  zones.select('Auto Zone - Ultradage');
+  assert.strictEqual(zones.selected(), 'Auto Zone - Ultradage');
+  assert.strictEqual(zones.active(), null);
+  // Ticking registers the selection; unticking unregisters it and leaves the selection where it is
+  // (the reference's Stop path clears the box, not the combo).
+  zones.enable(true);
+  assert.strictEqual(zones.active(), 'Auto Zone - Ultradage');
+  zones.enable(false);
+  assert.strictEqual(zones.active(), null);
+  assert.strictEqual(zones.selected(), 'Auto Zone - Ultradage');
+  zones.enable(true);
+
+  // The script door: Start (true), Stop (false), Switch (null = leave the box as it is).
+  assert.strictEqual(zones.set('Gramiel P1', null), 'Gramiel P1', 'Switch keeps the box ticked');
+  assert.strictEqual(zones.checked(), true, 'which is what "as it is" means here');
+  assert.strictEqual(zones.set('Gramiel P2', false), null, 'Stop unregisters');
+  assert.strictEqual(zones.set('Gramiel P2', true), 'Gramiel P2', 'Start registers');
+  // A name the combo does not hold is the reference's own FindStringExact -1: nothing moves.
+  assert.strictEqual(zones.set('Auto Zone - Utgarde', true), 'Gramiel P2');
+  assert.strictEqual(zones.selected(), 'Gramiel P2');
+  zones.enable(false);
+  await made.maid.idle();
+});
+
+test('the panel is the one CmdSpecialHandler reaches, so a bot file can start a run', async () => {
+  // The seam the engine is handed (main.js) is this object. What matters here is that the command's
+  // own call shape - set(name, wanted) - is the one the panel answers, because that is what makes
+  // SetSpecialHandlerFromScript real rather than a log line.
+  const made = maidWindow.createFromHost(fakeZoneHost());
+  const panel = made.zones;
+  assert.strictEqual(typeof panel.set, 'function');
+  assert.strictEqual(typeof panel.names, 'function');
+  assert.deepStrictEqual(panel.set('Ultra Speaker DPS', true), 'Ultra Speaker DPS');
+  const state = panel.state();
+  assert.strictEqual(state.active, 'Ultra Speaker DPS');
+  assert.strictEqual(state.checked, true);
+  assert.strictEqual(state.selected, 'Ultra Speaker DPS');
+  panel.set('Ultra Speaker DPS', false);
+  await made.maid.idle();
+});
+
+test('a selected Speaker role uses the shared scheduler while Maid mode stays off', async () => {
+  const host = fakeZoneHost();
+  const calls = [];
+  const values = {
+    IsLoggedIn: true, Health: 100, Map: 'ultraspeaker', Cell: 'Boss',
+    Position: ['100', '321'], HasTarget: false, IsMonsterAvailable: true,
+    PlayersInMap: ['injured'], AttackMonster: true, UseSkill: true
+  };
+  let made = null;
+  const game = {
+    loaderCall: function (name, args) {
+      calls.push({ name: name, args: args || [] });
+      if (name === 'GetPlayerHealthPercentage') {
+        if (made) made.zones.enable(false);
+        return Promise.resolve(69);
+      }
+      return Promise.resolve(values[name]);
+    },
+    read: function () { return Promise.resolve({ value: null }); },
+    sendServerFrame: function () { return true; },
+    sleep: function () { return Promise.resolve(); }
+  };
+  made = maidWindow.createFromHost(host, { game: game, party: null });
+  made.attach();
+  made.zones.set('Ultra Speaker LOO', true);
+  await made.maid.idle();
+
+  assert.strictEqual(made.maid.state().enabled, false,
+    'the scheduler services the role without enabling Maid follow/combat');
+  assert.ok(calls.some(function (one) { return one.name === 'AttackMonster' && one.args[0] === '*'; }),
+    'the role acquires a target when none is set');
+  assert.ok(calls.some(function (one) { return one.name === 'UseSkill' && one.args[0] === '2'; }),
+    'LOO heals an injured party member with skill 2');
+  assert.strictEqual(host.packets.subscribed(), 0,
+    'stopping the selected handler releases its frame subscription and scheduler work');
+});
+
+test('the Auto Potion mode reaches waitSkill through the wired Maid scheduler', async () => {
+  const calls = [];
+  let skillReads = 0;
+  const values = {
+    IsLoggedIn: true, Map: 'yulgar', Cell: 'Enter', Health: 100, HealthMax: 100,
+    PlayersInMap: ['master'], GetCellPlayers: true, HasTarget: true,
+    GetInventoryItems: [{ sName: 'Felicitous Philtre', bEquip: 1, iQty: 1 }],
+    UserID: 7, ForceUseSkill: true, UseSkill: true,
+    SkillAvailable: function () { return ++skillReads === 1 ? 0 : 1; }
+  };
+  const game = {
+    loaderCall: function (name, args) {
+      calls.push({ name: name, args: args || [] });
+      const value = values[name];
+      return Promise.resolve(typeof value === 'function' ? value(args) : value);
+    },
+    read: function () { return Promise.resolve({ value: null }); },
+    sendServerFrame: function () { return true; },
+    sleep: function () { return Promise.resolve(); }
+  };
+  const made = maidWindow.createFromHost(fakeZoneHost(), { game: game, party: null });
+  made.window.set({ config: {
+    UltraBossExtra: maidZones.MODES.indexOf('Auto Potion'), RelogDelay: 0, SkillDelay: 1
+  } });
+  made.maid.setTarget('master');
+  made.maid.setEnabled(true);
+  await made.maid.tick();
+  await made.maid.tick();
+  assert.ok(calls.some(function (one) { return one.name === 'GetInventoryItems'; }));
+  assert.ok(calls.some(function (one) { return one.name === 'ForceUseSkill' && one.args[0] === '5'; }),
+    'an equipped, stocked potion without its aura forces skill 5');
+  await made.maid.stop();
+});
+
+test('the Maid view exposes per-boss modes and applies their reference defaults', async () => {
+  const made = maidWindow.createFromHost(fakeZoneHost());
+  assert.deepStrictEqual(made.window.view().modes, maidZones.MODES,
+    'the page gets the reference\'s mode names and order');
+
+  const selected = made.window.set({ config: { UltraBossExtra: 2 } }).state.config;
+  assert.strictEqual(selected.AttackPriority, true);
+  assert.strictEqual(selected.AttackPriorityMonster, 'Ascended Solstice');
+  assert.strictEqual(selected.SpecialMsg, 'sun converges');
+  assert.strictEqual(selected.SpecialAct, 5);
+  await made.maid.idle();
+});
+
+test('loading a boss mode applies its selector effects in the reference config order', () => {
+  const made = maidWindow.createFromHost(fakeZoneHost());
+  const loaded = made.window.load(JSON.stringify({
+    UltraBossExtra: 2,
+    AttackPriority: false,
+    AttackPriorityMonster: 'file target',
+    SpecialMsg: 'file phrase',
+    SpecialAct: 4
+  }));
+  assert.strictEqual(loaded.ok, true);
+  const state = made.window.config();
+  assert.strictEqual(state.AttackPriority, false, 'the later config checkbox wins');
+  assert.strictEqual(state.AttackPriorityMonster, 'Ascended Solstice',
+    'the selector event runs after the target text is loaded');
+  assert.strictEqual(state.SpecialMsg, 'sun converges',
+    'the selector event runs after the phrase text is loaded');
+  assert.strictEqual(state.SpecialAct, 4, 'the later skill value wins');
+});
+
+test('switching a handler on takes the tap with no window open, and off gives it back', () => {
+  // The acceptance criterion is that a handler is driven by live frames. A panel switched on from a
+  // bot command (CmdSpecialHandler) has nobody watching its form, so this half has to take the
+  // subscription itself - which is also what makes the cleanup real rather than theoretical.
+  const host = fakeZoneHost();
+  const made = maidWindow.createFromHost(host);
+  made.attach();
+  assert.strictEqual(host.packets.subscribed(), 0,
+    'activation subscribes nothing, which is this app\'s own rule for the tap');
+
+  made.zones.set('Auto Zone - Ultradage', true);
+  assert.strictEqual(host.packets.subscribed(), 1, 'a registered handler reads frames');
+
+  // And it really is this half\'s frame that reaches the handler: the Ultradage walker answers an
+  // event frame by walking, which needs the fake game behind the window.
+  made.zones.set('Auto Zone - Ultradage', false);
+  assert.strictEqual(host.packets.subscribed(), 0, 'switching it off gives the subscription back');
+  made.zones.set('Gramiel P1', true);
+  assert.strictEqual(host.packets.subscribed(), 1);
+  made.unwatch(null);
+  assert.strictEqual(host.packets.subscribed(), 1,
+    'a registration outlives an unwatch that was never watching');
+  made.zones.set('Gramiel P1', false);
+  assert.strictEqual(host.packets.subscribed(), 0);
+});
+
 test('the window\'s own state is what the acceptance criteria name', () => {
   const fixture = maidFixture();
   const view = fixture.window.view();
@@ -391,9 +616,11 @@ function plain(value) {
 const PAGE_IDS = ['enabled', 'state', 'note', 'loadedFrom', 'preset', 'Target', 'SkillList',
   'RelogDelay', 'SkillDelay', 'SafeSkill', 'SafeSkillList', 'SafeSkillHP', 'BuffStopAttack',
   'BuffStopAttackList', 'AttackPriority', 'AttackPriorityMonster', 'unfollow', 'stopAttack',
+  'UltraBossExtra', 'SpecialMsg', 'SpecialAct', 'cbSpecialAnims',
   'GlobalHotkey', 'LockedZoneHandler', 'WhitelistMap', 'LockedZoneHandlerMaps',
   'WhitelistMapMaps', 'options', 'save', 'load', 'autoload', 'party', 'me', 'enableLabel',
   'targetLegend', 'combatLegend', 'keysLegend', 'optionsLegend', 'mapsLegend', 'configLegend',
+  'specialLegend', 'ultraBossExtraLabel', 'specialMsgLabel', 'specialActLabel', 'specialAnimsLabel',
   'unfollowLabel', 'stopAttackLabel', 'globalLabel', 'keyHint', 'relogLabel', 'skillDelayLabel',
   'presetLabel', 'skillListLabel', 'safeSkillLabel', 'safeSkillHpLabel', 'buffLabel',
   'priorityLabel', 'lockedLabel', 'whitelistLabel', 'lockedMapsLabel', 'whitelistMapsLabel',
@@ -422,9 +649,11 @@ test('the Maid page parses, draws the state line and only calls what its preload
   const api = {
     getView: function () {
       return Promise.resolve({
-        state: { enabled: false, status: 'off', unfollow: false, stopAttack: false, target: '',
-          config: config.defaults(), loadedFrom: null, missing: [] },
+        state: { enabled: false, status: 'off', unfollow: false, stopAttack: false,
+          specialAnims: true, target: '',
+          config: Object.assign({}, maidZones.DESIGNER, config.defaults()), loadedFrom: null, missing: [] },
         presets: ['EC', 'LC'],
+        modes: maidZones.MODES,
         messages: { title: 'Maid Remake', enable: 'Enable', unfollow: 'Unfollow (R)' },
         fields: { all: config.FIELDS, numbers: config.NUMBERS, booleans: config.BOOLEANS },
         parties: { enabled: true, commands: ['\u002etp', '\u002ejoin'] }
@@ -449,16 +678,24 @@ test('the Maid page parses, draws the state line and only calls what its preload
   assert.strictEqual(byId.state.className, 'off');
   // The state push repaints the line, which is what makes a key pressed elsewhere visible.
   pushed({ state: { enabled: true, status: 'stop attack is on', unfollow: true, stopAttack: true,
-    target: 'kirin', config: config.defaults(), missing: [] }, fields: { all: config.FIELDS,
+    specialAnims: true, target: 'kirin', config: Object.assign({}, maidZones.DESIGNER, config.defaults()),
+    missing: [] }, fields: { all: config.FIELDS,
     numbers: config.NUMBERS, booleans: config.BOOLEANS }, messages: {}, presets: [] });
   assert.strictEqual(byId.state.textContent, 'stop attack is on');
   assert.strictEqual(byId.unfollow.checked, true, 'the Unfollow box follows the state');
   assert.strictEqual(byId.stopAttack.checked, true);
+  assert.strictEqual(byId.cbSpecialAnims.checked, true);
+  assert.deepStrictEqual(plain(byId.UltraBossExtra.children.map(function (option) { return option.textContent; })),
+    maidZones.MODES);
+  assert.strictEqual(byId.UltraBossExtra.value, '0');
+  assert.strictEqual(byId.SpecialMsg.value, maidZones.DESIGNER.SpecialMsg);
+  assert.strictEqual(byId.SpecialAct.value, String(maidZones.DESIGNER.SpecialAct));
   assert.strictEqual(byId.Target.value, 'kirin');
   // One change from the page reaches the window with the field it is about.
   const view = {
-    state: { enabled: true, status: 'unfollowed', unfollow: true, stopAttack: true, target: 'kirin',
-      config: config.defaults(), missing: [] },
+    state: { enabled: true, status: 'unfollowed', unfollow: true, stopAttack: true,
+      specialAnims: true, target: 'kirin',
+      config: Object.assign({}, maidZones.DESIGNER, config.defaults()), missing: [] },
     fields: { all: config.FIELDS, numbers: config.NUMBERS, booleans: config.BOOLEANS },
     messages: {}, presets: [], parties: { enabled: false, commands: [] }
   };
@@ -476,6 +713,12 @@ test('the Maid page parses, draws the state line and only calls what its preload
   byId.enabled.checked = true;
   (byId.enabled.listeners.change || []).forEach(function (fn) { fn({}); });
   assert.deepStrictEqual(plain(drawn[drawn.length - 1]), { enabled: true });
+  byId.UltraBossExtra.value = '2';
+  (byId.UltraBossExtra.listeners.change || []).forEach(function (fn) { fn({}); });
+  assert.deepStrictEqual(plain(drawn[drawn.length - 1]), { config: { UltraBossExtra: '2' } });
+  byId.cbSpecialAnims.checked = false;
+  (byId.cbSpecialAnims.listeners.change || []).forEach(function (fn) { fn({}); });
+  assert.deepStrictEqual(plain(drawn[drawn.length - 1]), { specialAnims: false });
   await new Promise(function (resolve) { setTimeout(resolve, 0); });
   // The party vocabulary the reference's own tooltip lists.
   assert.ok(byId.party.children.length > 0, 'the page lists the party commands');
@@ -494,7 +737,8 @@ test('every control the Maid page draws has its own id in the page', async () =>
   const words = require('../../plugins/grimlite-parity/locales/en-US.js').maidMessages;
   ['title', 'enable', 'unfollow', 'stopAttack', 'globalHotkey', 'save', 'load', 'autoload',
     'loadTitle', 'saveTitle', 'filterName', 'optionAntiCounter', 'optionCopyWalk',
-    'optionStopFailedGoto', 'optionWaitSkill', 'partyCommands'].forEach(function (key) {
+    'optionStopFailedGoto', 'optionWaitSkill', 'partyCommands', 'specials', 'specialAnims',
+    'ultraBossExtra', 'specialMsg', 'specialAct'].forEach(function (key) {
     assert.strictEqual(typeof words[key], 'string', 'maidMessages.' + key + ' is missing');
   });
   assert.strictEqual(words.unfollow, 'Unfollow (R)', 'the reference\'s own control text');
@@ -517,4 +761,25 @@ test('the plugin\'s locale catalog and its template stay in step', () => {
     assert.strictEqual(typeof en.maidMessages[key], 'string', 'maidMessages.' + key + ' must be text');
     assert.ok(en.maidMessages[key].length > 0, 'maidMessages.' + key + ' must not be empty');
   });
+});
+test('enabling the Maid arms its own handlers, which is what makes them live', () => {
+  // The Maid form's own two subscriptions (MaidRemake.cs:99 and :161, `Flash.FlashCall2 +=`,
+  // inside cbEnablePlugin_CheckedChanged) are taken when the plugin's Enable box is ticked and
+  // given back by stopMaid (:971-996). A handler that is never armed reads no frames, so this is
+  // the difference between a ported handler and a dead one.
+  const host = fakeZoneHost();
+  const made = maidWindow.createFromHost(host);
+  made.attach();
+  assert.strictEqual(made.zones.maid(), false, 'the Maid is off until its box is ticked');
+
+  made.zones.set('Gramiel P1', true);
+  assert.strictEqual(made.zones.maid(), false,
+    'an auto-zone handler is the Bot Manager\'s, not the Maid form\'s: it arms nothing of its own');
+
+  made.window.set({ enabled: true });
+  assert.strictEqual(made.zones.maid(), true, 'ticking Enable arms the Maid\'s own handlers');
+  made.window.set({ enabled: false });
+  assert.strictEqual(made.zones.maid(), false, 'and stopMaid disarms them again');
+  made.zones.set('Gramiel P1', false);
+  return made.maid.idle();
 });
