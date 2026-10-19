@@ -1,6 +1,6 @@
 # Grimlite parity: remaining work
 
-This is the draft follow-up to the merged integration PR #47. PR #47 cannot be reopened; this branch tracks the remaining 1:1 work while the alpha stays usable.
+This is the open work-in-progress tracker for the remaining 1:1 work after the merged integration PR #47. Only the spec (#19) stays open.
 
 ## Known user-facing gaps
 
