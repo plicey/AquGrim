@@ -86,6 +86,41 @@ test('a bot runs to the end of its list and stops, and the window reports it sto
   assert.strictEqual(state.commands, 3, 'the window reports its own command count');
 });
 
+test('a Maid taunt pauses only the matching window\'s bot engine', () => {
+  const r = runtime();
+  r.manager.forWindow('win-a');
+  r.manager.forWindow('win-b');
+  assert.strictEqual(r.manager.setPaused('win-a', true), false);
+  assert.strictEqual(r.manager.state('win-a').paused, true);
+  assert.strictEqual(r.manager.state('win-b').paused, false);
+  assert.strictEqual(r.manager.setPaused('win-a', false), true);
+  assert.strictEqual(r.manager.state('win-a').paused, false);
+});
+
+test('runtime forwards the auto-zone panel to both Misc 2 commands', async () => {
+  const calls = [];
+  const panel = {
+    names: function () { return ['Gramiel P1']; },
+    set: function (zone, on) { calls.push(['set', zone, on]); return zone; },
+    startTaunt: function (cycle, target, second, order) {
+      calls.push(['start', cycle, target, second, order]);
+      return { ok: true, running: true };
+    },
+    stopTaunt: function () { calls.push(['stop']); return { ok: true, stopped: true }; }
+  };
+  const r = runtime({ specialHandler: function () { return panel; } });
+  await r.manager.start('win-a', { Commands: [
+    command('CmdSpecialHandler', { Zone: 'Gramiel P1', Mode: 0 }),
+    command('CmdTauntcycle', { type: 0, cycle: 2, target: 'Gramiel', second: 12, order: 1 }),
+    command('CmdTauntcycle', { type: 1 }),
+    command('CmdStop', {})
+  ] });
+  await r.manager.idle('win-a');
+  assert.deepStrictEqual(calls, [
+    ['set', 'Gramiel P1', true], ['start', 2, 'Gramiel', 12, 0], ['stop']
+  ]);
+});
+
 test('each window gets its own session: two windows never share one', async () => {
   const r = runtime();
   await r.manager.start('win-a', shortBot());

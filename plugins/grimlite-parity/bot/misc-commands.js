@@ -503,17 +503,15 @@ function createHandlers(deps) {
 
         CmdTauntcycle: function (ctx, command) {
             // TauntCycle.cs:22-60, one rotation per process (`TauntCycle.Instance`). StartTaunt
-            // runs it in the background - every `second / cycle` seconds: pause the engine,
-            // AttackMonster(target), wait skill 5 out, use it, restore the previous target - and
-            // Stop cancels it. Its own two calls answer since #49 lifted the JSON-boundary
-            // refusals, so the rotation is real; it belongs to the maid half (#44), which owns the
-            // SpecialMsg box and the cycle's token, and is reached through the same accessor seam
-            // CmdSpecialHandler uses for the auto-zone panel.
+            // runs it in the background - every `second / cycle` seconds: pause this window's bot
+            // engine, AttackMonster(target), wait skill 5 out, use it, restore the prior pause and
+            // target - and Stop cancels it. This is separate from Maid's `tc;`/SpecialAct cycle:
+            // both use the #44 handler seam, but own independent cycle keys and stop paths.
             const start = number(command.type, 0) === 0;
             const panel = typeof deps.specialHandler === "function" ? deps.specialHandler() : null;
             if (!panel || typeof panel.startTaunt !== "function") {
                 log("CmdTauntcycle: " + (start ? "start" : "stop") +
-                    " - this window has no maid rotation wired");
+                    " - this window has no taunt-cycle handler wired");
                 return;
             }
             if (!start) {

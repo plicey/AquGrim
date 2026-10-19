@@ -702,8 +702,8 @@ test('a command whose own call this build cannot make says so and names the owne
     'CmdSetFPS carries the surface own reason: ' + fps.records.join('|'));
 
   const taunt = await run(engine(), 'CmdTauntcycle', { type: 0 });
-  assert.ok(taunt.records.some(function (l) { return /taunt/i.test(l) && /maid rotation/.test(l); }),
-    'CmdTauntcycle reports a window with no maid rotation to start: ' + taunt.records.join('|'));
+  assert.ok(taunt.records.some(function (l) { return /taunt/i.test(l) && /handler wired/.test(l); }),
+    'CmdTauntcycle reports a window with no taunt-cycle handler: ' + taunt.records.join('|'));
 });
 
 test('CmdTauntcycle starts and stops the rotation the reference starts there', async () => {

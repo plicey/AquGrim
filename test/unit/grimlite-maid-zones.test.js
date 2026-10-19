@@ -95,6 +95,7 @@ function runtime(game, options) {
     clearTimeout: opts.clearTimeout,
     config: opts.config,
     maid: opts.maid,
+    pauseBotEngine: opts.pauseBotEngine,
     auras: opts.auras
   });
   return { zones: made, logs: logs, slept: slept, game: game };
@@ -322,9 +323,11 @@ test('a tc; line parses with the reference\'s defaults and its own error sentenc
   assert.strictEqual(zones.parseTauntCycle('converge,truth').ok, false);
 });
 
-test('a tc; SpecialMsg starts the reference\'s own paced cycle', async () => {
+test('a Maid tc; cycle arms SpecialAct through its scheduler instead of casting skill 5', async () => {
   const timers = controlledTimers();
-  const made = maidRuntime({ IsMonsterAvailable: true }, { SpecialMsg: 'tc;2;Gramiel;12;1' }, timers);
+  const made = maidRuntime({ IsMonsterAvailable: true }, {
+    SpecialMsg: 'tc;2;Gramiel;12;1', SpecialAct: 4
+  }, timers);
   const answer = made.zones.tauntCycle();
   assert.strictEqual(answer.ok, true);
   assert.deepStrictEqual(answer.spec, { cycle: 2, mon: 'Gramiel', second: 12, order: 1 });
@@ -334,18 +337,96 @@ test('a tc; SpecialMsg starts the reference\'s own paced cycle', async () => {
   assert.strictEqual(timers.pending()[0].ms, 6000, 'the initial order waits one cycle interval');
   timers.runNext();
   await nextTurn();
-  // The cycle\'s own body: the first pass forces the taunt, and every pass attacks the monster
-  // before stepping the count down (MaidRemake.cs:655-668).
+  // MaidRemake.cs sets forceSkill then attacks; the scheduler casts configured SpecialAct.
   assert.ok(made.game.count('IsMonsterAvailable') >= 1, 'the loop\'s own while condition is read');
   assert.deepStrictEqual(made.game.payload('AttackMonster'), ['Gramiel']);
-  assert.deepStrictEqual(made.game.payload('UseSkill'), ['5'],
-    'skill 5, which is the index the cycle hard-codes');
+  assert.deepStrictEqual(made.maid.armed, ['4']);
+  assert.strictEqual(made.game.count('UseSkill'), 0,
+    'the cycle arms SpecialAct for the shared Maid scheduler');
   assert.strictEqual(timers.pending()[0].ms, 6000, 'and the pace is the reference\'s own second/cycle');
   made.zones.stopCycle(answer.key);
   assert.strictEqual(timers.pending().length, 0, 'stopping clears the pending timer');
   // A line that is not one is refused with the parse\'s own words rather than started.
   const plain = maidRuntime({}, { SpecialMsg: 'sun converges' });
   assert.strictEqual(plain.zones.tauntCycle().ok, false);
+});
+
+test('the bot Tauntcycle pauses only for skill 5, then restores the previous target', async () => {
+  const timers = controlledTimers();
+  const paused = [];
+  let wasPaused = false;
+  const made = maidRuntime({ IsMonsterAvailable: true, strMonName: 'OldTarget' }, {}, {
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+    pauseBotEngine: function (on) {
+      paused.push(on);
+      const previous = wasPaused;
+      wasPaused = on === true;
+      return previous;
+    }
+  });
+  assert.strictEqual(made.zones.startTaunt(2, 'Gramiel', 12, 0).ok, true);
+  await nextTurn();
+  assert.deepStrictEqual(paused, [true, false], 'the engine is resumed before the old target is restored');
+  assert.strictEqual(wasPaused, false);
+  assert.deepStrictEqual(made.game.calls.filter(function (call) {
+    return call.name === 'AttackMonster';
+  }).map(function (call) { return call.args[0]; }), ['Gramiel', 'OldTarget']);
+  assert.deepStrictEqual(made.game.payload('UseSkill'), ['5']);
+  made.zones.stopTaunt();
+  assert.strictEqual(timers.pending().length, 0);
+});
+
+test('stopping the bot Tauntcycle during skill cooldown restores the prior pause and target', async () => {
+  const timers = controlledTimers();
+  let paused = false;
+  const made = maidRuntime({
+    IsMonsterAvailable: true, strMonName: 'OldTarget', SkillAvailable: 5000
+  }, {}, {
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+    pauseBotEngine: function (on) {
+      const previous = paused;
+      paused = on === true;
+      return previous;
+    }
+  });
+  made.zones.startTaunt(2, 'Gramiel', 12, 0);
+  await nextTurn();
+  assert.strictEqual(paused, true, 'the bot remains paused while skill 5 cools down');
+  made.zones.stopTaunt();
+  await nextTurn();
+  assert.strictEqual(paused, false, 'cancellation resumes the previously running bot');
+  assert.deepStrictEqual(made.game.calls.filter(function (call) {
+    return call.name === 'AttackMonster';
+  }).map(function (call) { return call.args[0]; }), ['Gramiel', 'OldTarget']);
+  assert.strictEqual(made.game.count('UseSkill'), 0, 'cancellation skips the pending cast');
+  assert.strictEqual(timers.pending().length, 0, 'cancellation releases the cooldown timer');
+});
+
+test('the bot Tauntcycle restores * when the target read succeeds with no target', async () => {
+  const timers = controlledTimers();
+  const made = maidRuntime({ IsMonsterAvailable: true }, {}, timers);
+  made.zones.startTaunt(2, 'Gramiel', 12, 0);
+  await nextTurn();
+  assert.deepStrictEqual(made.game.calls.filter(function (call) {
+    return call.name === 'AttackMonster';
+  }).map(function (call) { return call.args[0]; }), ['Gramiel', '*']);
+  made.zones.stopTaunt();
+  assert.strictEqual(timers.pending().length, 0);
+});
+
+test('the bot Tauntcycle does not retarget when the prior target read fails', async () => {
+  const timers = controlledTimers();
+  const made = maidRuntime({ IsMonsterAvailable: true }, {}, timers);
+  made.game.read = function () { return Promise.reject(new Error('target read failed')); };
+  made.zones.startTaunt(2, 'Gramiel', 12, 0);
+  await nextTurn();
+  assert.deepStrictEqual(made.game.calls.filter(function (call) {
+    return call.name === 'AttackMonster';
+  }).map(function (call) { return call.args[0]; }), ['Gramiel']);
+  made.zones.stopTaunt();
+  assert.strictEqual(timers.pending().length, 0);
 });
 
 test('a tc; cycle stops when the monster is gone, and on its own ask', async () => {
@@ -897,6 +978,33 @@ test('the Ultra Speaker rotation is walked by the role each row names', async ()
   assert.ok(dpsRow.slept.indexOf(30) !== -1, 'the taunt pair\'s own 30 ms');
 });
 
+test('an Ultra Speaker skill-5 taunt pauses and restores the bot engine around its spam', async () => {
+  let paused = false;
+  const pauseCalls = [];
+  const game = fakeGame({
+    UserID: 7, IsLoggedIn: true, Health: 100, SkillAvailable: 0,
+    UseSkill: function (args) {
+      if (args[0] === '5') assert.strictEqual(paused, true, 'skill 5 runs while the engine is paused');
+      else assert.strictEqual(paused, false, 'the role rotation resumes after the taunt');
+      return true;
+    }
+  });
+  const made = runtime(game, {
+    pauseBotEngine: function (on) {
+      const previous = paused;
+      paused = on;
+      pauseCalls.push(on);
+      return previous;
+    }
+  });
+  made.zones.setActive('Ultra Speaker LR');
+  await made.zones.handleFrame(animFrame('truth'));
+  assert.deepStrictEqual(pauseCalls, [true, false]);
+  assert.strictEqual(paused, false);
+  assert.strictEqual(game.count('UseSkill'), zones.SPEAKER_TAUNT_PAIRS * 2 + 2,
+    'the taunt spam and LR\'s two role casts both complete');
+});
+
 test('the Ultra Speaker counter wraps where the reference wraps it, on the same row', async () => {
   const game = fakeGame({ UserID: 7 });
   const made = runtime(game);
@@ -1106,7 +1214,7 @@ test('the Gramiel scheduler attacks the remaining crystal and taunts until Vende
 // ------------------------------------------------------------------ the Maid's own handlers
 
 /** The Maid's two arms, as the window hands them over. */
-function fakeMaid() {
+function fakeMaid(game) {
   const state = { unfollow: false, paused: false, stopAttack: false };
   const armed = [];
   return {
@@ -1114,22 +1222,29 @@ function fakeMaid() {
     armed: armed,
     setPaused: function (on) { state.paused = on === true; },
     setStopAttack: function (on) { state.stopAttack = on === true; },
-    armSkill: function (slot) { armed.push(slot); }
+    armSkill: function (slot) { armed.push(slot); },
+    tauntCycleAttack: function (monster, slot) {
+      armed.push(String(slot));
+      return Promise.resolve(game.loaderCall('AttackMonster', [monster])).then(function () {
+        return { ok: true };
+      });
+    }
   };
 }
 
 function maidRuntime(answers, config, options) {
-  const maid = fakeMaid();
+  const game = fakeGame(Object.assign({
+    UserID: 7, IsLoggedIn: true, SkillAvailable: 0,
+    AttackMonster: true, AttackMonsterByMonMapId: true, UseSkill: true, ForceUseSkill: true
+  }, answers || {}));
+  const maid = fakeMaid(game);
   // IsLoggedIn and Map answer by their own loader names, which is what the surface looks the game
   // up for; the fake in this file serves name-keyed answers, so the two are named rather than
   // spelled as the dot-paths their rows read.
   // The six cast-and-attack calls are answered too, because in the real build they are: #49 put
   // them on the movie's side of the boundary, so a Maid handler that forces a skill calls one that
   // answers rather than one that refuses.
-  const made = runtime(fakeGame(Object.assign({
-    UserID: 7, IsLoggedIn: true, SkillAvailable: 0,
-    AttackMonster: true, AttackMonsterByMonMapId: true, UseSkill: true, ForceUseSkill: true
-  }, answers || {})), Object.assign({
+  const made = runtime(game, Object.assign({
     config: function () { return config || {}; },
     maid: maid
   }, options || {}));
@@ -1151,9 +1266,9 @@ test('the Maid\'s own phrase list arms the skill the mode names', async () => {
   assert.deepStrictEqual(made.maid.armed, ['5']);
 });
 
-test('a boss result does not suppress later boss or Maid animation records in its packet', async () => {
+test('independent subscriptions run on one frame with each handler\'s own record semantics', async () => {
   const made = maidRuntime({ IsMonsterAvailable: true }, {
-    AntiCounter: true, UltraBossExtra: 0,
+    AntiCounter: true, UltraBossExtra: 8,
     SpecialMsg: 'defense shattering,prepares a counter attack', SpecialAct: 4
   });
   made.zones.setActive('Gramiel P1');
@@ -1165,16 +1280,40 @@ test('a boss result does not suppress later boss or Maid animation records in it
     ]
   }));
   assert.strictEqual(made.zones.counters().crystal, 2,
-    'the active boss handler sees both matching records after its first successful result');
-  assert.deepStrictEqual(made.maid.armed, ['4', '4', '4'],
-    'the Maid listener handles every matching animation record');
+    'Gramiel scans both shattering records in the same packet');
+  assert.strictEqual(made.zones.counters().maidCrystal, 1,
+    'the Maid listener returns after the first shattering it acts on');
+  assert.deepStrictEqual(made.maid.armed, ['4']);
   assert.deepStrictEqual(made.slept.slice().sort(function (a, b) { return a - b; }),
     [300, 300, 300, 500, 500, 500, 1500, 6000],
-    'boss and AntiCounter subscriptions both finish their own waits');
+    'the Gramiel handler and independent AntiCounter subscription both finish their waits');
   assert.ok(Array.isArray(answer), 'all non-null handler results are preserved');
   assert.ok(answer.some(function (one) { return one && one.crystal === 1; }));
   assert.ok(answer.some(function (one) { return one && one.crystal === 2; }));
-  assert.strictEqual(answer.filter(function (one) { return one && one.arm === '4'; }).length, 3);
+  assert.strictEqual(answer.filter(function (one) { return one && one.arm === '4'; }).length, 1);
+});
+
+test('Ultra Speaker reads only the first animation in a packet', async () => {
+  const made = runtime(fakeGame({ UserID: 7 }));
+  made.zones.setActive('Ultra Speaker AP');
+  const answer = await made.zones.handleFrame(jsonFrame({
+    cmd: 'ct', anims: [{ msg: 'ordinary hit' }, { msg: 'truth' }, { msg: 'listen' }]
+  }));
+  assert.strictEqual(answer, null, 'later animation entries do not drive the Speaker');
+  assert.strictEqual(made.zones.counters().speaker, -1);
+});
+
+test('Astral counts one matching Starfire per packet, even when several records match', async () => {
+  const game = tauntableGame();
+  const made = runtime(game);
+  made.zones.setActive('Auto Zone - Astral Empyrean P1');
+  const answer = await made.zones.handleFrame(jsonFrame({
+    cmd: 'ct', anims: [{ msg: 'Behold our starfire!' }, { msg: 'behold our starfire again' }]
+  }));
+  assert.strictEqual(answer.acted, true);
+  assert.strictEqual(answer.starfire, 1);
+  assert.strictEqual(made.zones.counters().starfire, 1);
+  assert.strictEqual(game.count('AttackMonster'), 1);
 });
 
 test('the Special Anims tick gates the Maid\'s per-boss animation handler', async () => {
@@ -1240,6 +1379,54 @@ test('the crystal modes act on their own crystal id and count only their own sid
   });
   await righty.zones.handleFrame(animFrame('defense shattering', 'id:3'));
   assert.deepStrictEqual(righty.game.payload('AttackMonsterByMonMapId'), ['3']);
+});
+
+test('Maid balances Grace Crystal HP at the reference\'s 150 and 50 thresholds', async () => {
+  const leftAt150 = runtime(fakeGame({
+    Map: 'ultragramiel', Cell: 'Boss', strMonName: 'Grace Crystal', MonMapID: 2,
+    AttackMonsterByMonMapId: true,
+    GetMonstersInCell: [
+      { MonMapID: 2, intHP: 150 }, { MonMapID: 3, intHP: 151 }
+    ]
+  }));
+  const first = await leftAt150.zones.balanceCrystals(false);
+  assert.deepStrictEqual(leftAt150.game.payload('AttackMonsterByMonMapId'), ['3']);
+  assert.strictEqual(first.balance, true);
+  assert.strictEqual(leftAt150.zones.holding(), true,
+    'priority remains held while the crystal target is being switched');
+
+  const rightAt50 = runtime(fakeGame({
+    Map: 'ultragramiel', Cell: 'Boss', strMonName: 'Grace Crystal', MonMapID: 3,
+    AttackMonsterByMonMapId: true,
+    GetMonstersInCell: [
+      { MonMapID: 2, intHP: 51 }, { MonMapID: 3, intHP: 50 }
+    ]
+  }));
+  const second = await rightAt50.zones.balanceCrystals(false);
+  assert.deepStrictEqual(rightAt50.game.payload('AttackMonsterByMonMapId'), ['2']);
+  assert.strictEqual(second.balance, true);
+
+  const even = runtime(fakeGame({
+    Map: 'ultragramiel', Cell: 'Boss', strMonName: 'Grace Crystal', MonMapID: 2,
+    GetMonstersInCell: [
+      { MonMapID: 2, intHP: 50 }, { MonMapID: 3, intHP: 50 }
+    ]
+  }));
+  const unchanged = await even.zones.balanceCrystals(false);
+  assert.strictEqual(unchanged.balance, false);
+  assert.strictEqual(even.game.count('AttackMonsterByMonMapId'), 0);
+  assert.strictEqual(even.zones.holding(), false);
+
+  const refused = runtime(fakeGame({
+    Map: 'ultragramiel', Cell: 'Boss', strMonName: 'Grace Crystal', MonMapID: 2,
+    GetMonstersInCell: [
+      { MonMapID: 2, intHP: 150 }, { MonMapID: 3, intHP: 151 }
+    ]
+  }));
+  const failed = await refused.zones.balanceCrystals(false);
+  assert.strictEqual(failed.ok, false);
+  assert.strictEqual(refused.zones.holding(), false,
+    'a refused retarget cannot leave priority attacks held');
 });
 
 test('the Maid\'s AntiCounter stops the attack on the warning and starts it again after it', async () => {
@@ -1455,6 +1642,24 @@ test('resetSpecials clears the counter of the part a character has left', async 
   game.set('Cell', 'r2');
   await made.zones.handleFrame(uotlsFrame('someone', 'strFrame:r2'));
   assert.strictEqual(made.zones.counters().crystal, 0);
+});
+
+test('resetSpecials clears Maid-owned Starfire and crystal parity on room exit', async () => {
+  const config = { UltraBossExtra: 6, SpecialMsg: 'behold our starfire', SpecialAct: 4 };
+  const made = maidRuntime({ Map: 'astralshrine', Cell: 'r1' }, config);
+  await made.zones.handleFrame(animFrame('behold our starfire'));
+  assert.strictEqual(made.zones.counters().maidStarfire, 1);
+  await made.zones.resetSpecials();
+  assert.strictEqual(made.zones.counters().maidStarfire, 0);
+
+  config.UltraBossExtra = 8;
+  config.SpecialMsg = 'defense shattering';
+  made.game.set('Map', 'ultragramiel');
+  made.game.set('Cell', 'r1');
+  await made.zones.handleFrame(animFrame('defense shattering', 'id:2'));
+  assert.strictEqual(made.zones.counters().maidCrystal, 1);
+  await made.zones.resetSpecials();
+  assert.strictEqual(made.zones.counters().maidCrystal, 0);
 });
 
 // ------------------------------------------------------------------ the calls, and what a refusal says

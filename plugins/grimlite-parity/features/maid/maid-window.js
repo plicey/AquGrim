@@ -484,6 +484,7 @@ function createFromHost(host, deps) {
         // define before `zones` exists: it is only read from a tick, long afterwards.
         specialsHolding: function () { return zones.holding(); },
         specialCombo: function () { return zones.autoPotionNeeded(); },
+        specialBalance: function (forceSkill) { return zones.balanceCrystals(forceSkill); },
         // taunt()'s own door: the reference calls it once per fighting pass while no rotation is
         // running (MaidRemake.cs:295-296), and the cycle it starts reads the SpecialMsg box the
         // handler half owns. Read lazily for the same reason as the seam above.
@@ -521,6 +522,7 @@ function createFromHost(host, deps) {
         sleep: bridge.sleep,
         config: function () { return window ? window.config() : {}; },
         maid: maid,
+        pauseBotEngine: deps.pauseBotEngine,
         // The aura store is the party half's own when there is one: auras is a per-consumer
         // subscription in this port (#42), and both halves read the same traffic.
         auras: deps.auras,

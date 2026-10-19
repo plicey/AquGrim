@@ -419,7 +419,8 @@ async function activate(host) {
         engineActivity: function () {
             const state = runtime.state(gameWindowKey()) || {};
             return { count: state.commands, command: state.lastCommand };
-        }
+        },
+        pauseBotEngine: function (on) { return runtime.setPaused(gameWindowKey(), on); }
     });
     maid.attach();
     // The handlers the auto-zone combo switches on, handed to CmdSpecialHandler through the seam

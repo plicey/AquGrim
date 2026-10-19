@@ -166,6 +166,7 @@ function createEngine(deps) {
 
     let running = false;
     let paused = false;
+    let externallyPaused = false;
     let index = 0;
     let document = null;      // the parsed .gbot, mutated the way the editor mutates it
     let config = null;        // the Configuration view: the document plus the C# defaults
@@ -1573,6 +1574,7 @@ function createEngine(deps) {
     // ---------------------------------------------------------------- the loop
 
     function stop() {
+        externallyPaused = false;
         if (!running) return;
         running = false;
         paused = false;
@@ -1649,6 +1651,10 @@ function createEngine(deps) {
 
     async function tick() {
         if (!running) return { ok: false, error: ERRORS.stopped };
+        if (externallyPaused) {
+            await sleep(PAUSE_POLL_MS);
+            return { ok: true, paused: true };
+        }
 
         const signed = await read('signedIn');
         const alive = await read('alive');
@@ -1741,6 +1747,7 @@ function createEngine(deps) {
         index = 0;
         running = true;
         paused = false;
+        externallyPaused = false;
         lastCommand = null;
         dispatched = [];
         return { ok: true };
@@ -1755,7 +1762,12 @@ function createEngine(deps) {
         /** The injected session, so a caller can hand its own reads back to the window. */
         session: session,
         running: function () { return running; },
-        paused: function () { return paused; },
+        paused: function () { return paused || externallyPaused; },
+        setPaused: function (on) {
+            const previous = externallyPaused;
+            externallyPaused = on === true;
+            return previous;
+        },
         index: function () { return index; },
         setIndex: setIndex,
         /** The commands the loop has run, in order: the reference keeps only the last. */

@@ -139,6 +139,7 @@ function createMaid(deps) {
     // for the same reason the two run locks are: the scheduler does not own that state.
     const taunt = typeof deps.taunt === 'function' ? deps.taunt : function () { return null; };
     const specialCombo = typeof deps.specialCombo === 'function' ? deps.specialCombo : function () { return false; };
+    const specialBalance = typeof deps.specialBalance === 'function' ? deps.specialBalance : function () { return null; };
     // Called once per loop pass, so the window can show a state that changes on its own (the
     // reference's own window is repainted by its loop for the same reason). Settable after the
     // fact, because the window that watches it is built around this scheduler.
@@ -361,6 +362,8 @@ function createMaid(deps) {
         // MaidRemake.cs:294-296 awaits SpecialCombo before asking taunt() inside HasTarget.
         if (hasTarget) {
             if (await specialCombo()) await waitSkill('5');
+            const balance = await specialBalance(forcedSkill !== null);
+            if (balance && balance.priorityAttack && config.AttackPriority === true) await priorityTarget();
             taunt();
         }
 
@@ -729,6 +732,21 @@ function createMaid(deps) {
             forcedSkill = slot === null || slot === undefined || slot === '' ? null : String(slot);
             return forcedSkill;
         },
+        /** The Maid's own taunt cycle: yield to a new bot command, arm SpecialAct, then attack. */
+        tauntCycleAttack: async function (monster, slot) {
+            if (!enabled || paused || stopAttack) return { ok: false, deferred: true };
+            const collision = engineCollision();
+            if (collision) {
+                log('maid: ' + collision);
+                status = STATUS.collision;
+                return { ok: false, deferred: true, collision: collision };
+            }
+            forcedSkill = String(slot);
+            status = STATUS.fighting;
+            const answer = await attack(monster);
+            if (!answer.ok) forcedSkill = null;
+            return answer;
+        },
         /** The pass-by-pass watcher, for the window: see `onTick` above. */
         setOnTick: function (watcher) {
             onTick = typeof watcher === 'function' ? watcher : null;
@@ -751,6 +769,7 @@ function createMaid(deps) {
         enabled = false;
         status = STATUS.off;
         firstJoinDone = false;
+        forcedSkill = null;
         if (why) log('maid: ' + why);
     }
 }

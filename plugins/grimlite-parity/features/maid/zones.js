@@ -22,9 +22,9 @@
 //   * HandlerTaunterChampionDrakath.cs declares HandlerAutoZoneUltraDage (the reference
 //     copy-pasted the file and renamed nothing) and is not in Grimoire.csproj, so Champion Drakath
 //     has no handler of its own and nothing here invents one;
-//   * the Maid form's own handlers, behind the five config keys ticket #43 carried and did not
-//     read: UltraBossExtra/SpecialMsg/SpecialAct (the per-boss mode, its phrase list and the skill
-//     it forces), AntiCounter, CopyWalk, and the whitelist and locked-zone map lists.
+//   * the Maid form's own handlers, behind its config keys: UltraBossExtra/SpecialMsg/SpecialAct
+//     (the per-boss mode, phrase list and forced skill), AntiCounter, CopyWalk, and the whitelist
+//     and locked-zone map lists.
 //
 // THE CAST WALL IS DOWN (#38's finding, corrected by #49). #38 refused AttackMonster, UseSkill and
 // ForceUseSkill on the finding that each hands the game a live ActionScript object a JSON bridge
@@ -43,9 +43,8 @@
 // guard is inverted, so its unattended effects run in Ultra Gramiel maps where the preset is
 // useful. The source loops' cadence is replaced by the existing Maid scheduler's cadence.
 //
-// The reference's BotManager.Instance.ActiveBotEngine.paused = true around a taunt: the port
-// settles engine-vs-Maid by yielding the tick (ticket #43's own rule), so no handler here reaches
-// into the engine.
+// Maid-owned cycles yield to an in-flight bot command through ticket #43's scheduler rule. The
+// separate bot CmdTauntcycle uses the window-scoped pause callback and restores its prior target.
 
 const auras = require('../../bot/auras.js');
 
@@ -330,6 +329,7 @@ const MAP_LOADING_PATH = 'world.mapLoadInProgress';
 // The field an attack by MonMapID is confirmed against, and the target's own name - the two the
 // reference's doPriorityAttack reads off objData.
 const TARGET_ID_PATH = 'world.myAvatar.target.objData.MonMapID';
+const TARGET_NAME_PATH = 'world.myAvatar.target.objData.strMonName';
 const PLAYER_USERNAME_PATH = 'world.myAvatar.objData.strUsername';
 
 function message(error) {
@@ -455,6 +455,8 @@ function createZoneHandlers(deps) {
     const store = deps.auras || auras.createAuraStore();
     const configOf = typeof deps.config === 'function' ? deps.config : function () { return {}; };
     const maid = deps.maid || null;
+    const pauseBotEngine = typeof deps.pauseBotEngine === 'function'
+        ? deps.pauseBotEngine : function () { return false; };
     // Said when the panel moves, so a caller that owns a tap can take or give up its subscription:
     // a handler that is registering reads frames, and one that is off reads none.
     const onChange = typeof deps.onChange === 'function' ? deps.onChange : function () {};
@@ -476,6 +478,7 @@ function createZoneHandlers(deps) {
     let lockedIndex = 0;        // AlternativeMap's own round-robin cursor
     let countering = false;     // the reference's own four-second counter warning
     let locktarget = false;     // Gramiel's drain, which holds the target for four seconds
+    let balance = false;        // Maid's crystal HP walk; doPriorityAttack yields while it is set
     let currentMap = '';
     let scheduledName = null;
     let speakerConstructed = false;
@@ -485,6 +488,7 @@ function createZoneHandlers(deps) {
     let gramielRunGeneration = 0;
     const reported = {};        // a refusal is said once, not once per frame
     const cycles = new Map();   // the tc; rotations, by the key their caller filed them under
+    const speakerTaunts = new Set();
 
     /** A loader helper by the reference's own name. The refusal carries the surface's words. */
     function call(name, args) {
@@ -496,10 +500,14 @@ function createZoneHandlers(deps) {
 
     /** One dot-path read, for the map-load flag the surface only carries a reason row for. */
     function readPath(path) {
-        if (!game || typeof game.read !== 'function') return Promise.resolve({ value: null });
+        if (!game || typeof game.read !== 'function') return Promise.resolve({ ok: false, value: null });
         return Promise.resolve(game.read(path)).then(function (answer) {
-            return answer && typeof answer === 'object' ? answer : { value: answer };
-        }, function () { return { value: null }; });
+            if (answer && typeof answer === 'object' && (answer.ok === false || answer.error)) {
+                return { ok: false, value: null, error: answer.error };
+            }
+            return { ok: true, value: answer && typeof answer === 'object' &&
+                Object.prototype.hasOwnProperty.call(answer, 'value') ? answer.value : answer };
+        }, function (error) { return { ok: false, value: null, error: error }; });
     }
 
     /**
@@ -592,6 +600,60 @@ function createZoneHandlers(deps) {
             const aura = name.indexOf('potent') !== -1 ? 'Potent Honor Malice' : 'Felicitous Philtre';
             return selfStacks(aura).then(function (stacks) { return stacks === 0; });
         });
+    }
+
+    /** MaidRemake.CheckCrystalHealthBalance: switch crystals at the reference's 150/50 HP gates. */
+    async function balanceCrystals(forceSkill) {
+        const map = await attempt('Map');
+        if (!map.ok || String(map.value || '').toLowerCase() !== 'ultragramiel') {
+            balance = false;
+            return null;
+        }
+        const target = await readPath(TARGET_NAME_PATH);
+        const onGrace = target.ok && String(target.value || '').toLowerCase() === 'grace crystal';
+        if (!onGrace && !(await monsterThere('grace crystal'))) {
+            balance = false;
+            return null;
+        }
+        if (forceSkill) {
+            balance = false;
+            return { priorityAttack: true };
+        }
+        const cell = await attempt('Cell');
+        if (!cell.ok) {
+            balance = false;
+            return null;
+        }
+        const monsters = await attempt('GetMonstersInCell', [String(cell.value || '')]);
+        const list = listValue(monsters.ok ? monsters.value : null);
+        const left = list.filter(function (one) { return Number(one && one.MonMapID) === 2; })[0];
+        const right = list.filter(function (one) { return Number(one && one.MonMapID) === 3; })[0];
+        const targetId = await readPath(TARGET_ID_PATH);
+        if (!cell.ok || !monsters.ok || !left || !right || !targetId.ok) {
+            balance = false;
+            return null;
+        }
+        const leftHp = Number(left.intHP);
+        const rightHp = Number(right.intHP);
+        const currentId = Number(targetId.value);
+        for (const threshold of [150, 50]) {
+            if (currentId === 2 && leftHp <= threshold && rightHp > threshold) {
+                balance = true;
+                return attackMonster('id.3').then(function (answer) {
+                    balance = answer.ok;
+                    return Object.assign({ balance: balance, target: 'id.3' }, answer);
+                });
+            }
+            if (currentId === 3 && rightHp <= threshold && leftHp > threshold) {
+                balance = true;
+                return attackMonster('id.2').then(function (answer) {
+                    balance = answer.ok;
+                    return Object.assign({ balance: balance, target: 'id.2' }, answer);
+                });
+            }
+        }
+        balance = false;
+        return { ok: true, balance: false };
     }
 
     // ---------------------------------------------------------------- movement and attacks
@@ -1007,8 +1069,24 @@ function createZoneHandlers(deps) {
      * fails; the same two reads are asked for here, and a read the bridge cannot answer is not
      * fatal to the taunt - the pass is still sent, because the reference sends it.
      */
-    function speakerTaunt(spec, refused) {
-        let chain = Promise.resolve();
+    function speakerTaunt(name, spec, refused, delay) {
+        if (speakerTaunts.has(name)) return Promise.resolve({ ok: true, skipped: true });
+        speakerTaunts.add(name);
+        let previousPause = false;
+        try {
+            previousPause = pauseBotEngine(true) === true;
+        } catch (error) {
+            speakerTaunts.delete(name);
+            return Promise.reject(error);
+        }
+        let chain = Promise.resolve().then(function () {
+            return delay > 0 ? sleep(delay) : null;
+        });
+        chain = chain.then(function () { return attempt('SkillAvailable', [spec.skill]); })
+            .then(function (wait) {
+                const cooldown = wait.ok ? Number(wait.value) : 0;
+                return cooldown > 0 ? sleep(cooldown) : null;
+            });
         for (let pass = 0; pass < SPEAKER_TAUNT_PAIRS; pass++) {
             chain = chain.then(function (done) {
                 if (done === 'done') return done;
@@ -1026,7 +1104,17 @@ function createZoneHandlers(deps) {
                 });
             });
         }
-        return chain.then(function (done) { return { ok: true, focused: done === 'done' }; });
+        return chain.then(function (done) {
+            return { ok: true, focused: done === 'done' };
+        }).then(function (answer) {
+            speakerTaunts.delete(name);
+            pauseBotEngine(previousPause);
+            return answer;
+        }, function (error) {
+            speakerTaunts.delete(name);
+            pauseBotEngine(previousPause);
+            throw error;
+        });
     }
 
     /** Player.IsLoggedIn && Player.IsAlive, the gate the Speaker's taunt loop opens with. */
@@ -1074,21 +1162,7 @@ function createZoneHandlers(deps) {
         // (:305-360) waits the row's delay, waits out SkillAvailable('5'), then spams UseSkill('5')
         // thirty milliseconds apart until Focus lands or 50 pairs are spent.
         if (row.taunt === spec.role) {
-            chain = chain.then(function () {
-                const waited = row.delay > 0 ? sleep(row.delay) : Promise.resolve();
-                return waited.then(function () {
-                    return targetStacks('Focus').then(function (stacks) {
-                        if (stacks > 0) return { ok: true, already: true };
-                        return attempt('SkillAvailable', [spec.skill]).then(function (wait) {
-                            const cooldown = wait.ok ? Number(wait.value) : 0;
-                            const paused = cooldown > 0 ? sleep(cooldown) : Promise.resolve();
-                            return paused.then(function () {
-                                return speakerTaunt(spec, refused);
-                            });
-                        });
-                    });
-                });
-            });
+            chain = chain.then(function () { return speakerTaunt(name, spec, refused, row.delay); });
         }
         // LR fires skill 1 twice on every truth or listen, whichever row the table is on.
         if (spec.role === 'LR') {
@@ -1134,6 +1208,7 @@ function createZoneHandlers(deps) {
             const slot = String(configured('SpecialAct'));
             if (maid && typeof maid.armSkill === 'function') maid.armSkill(slot);
             results.push({ ok: true, mode: mode, phrase: hit, arm: slot });
+            return frameResults(results);
         }
         return frameResults(results);
     }
@@ -1269,7 +1344,7 @@ function createZoneHandlers(deps) {
     function onUotls(args, base) {
         const movement = movementOf(args[base + 3]);
         const who = String(args[base + 2] === undefined ? '' : args[base + 2]).trim().toLowerCase();
-            return resetSpecials().then(function () {
+        return resetSpecials().then(function () {
             return mapLoading();
         }).then(function (loading) {
             if (loading || who === '') return null;
@@ -1396,16 +1471,20 @@ function createZoneHandlers(deps) {
                 sunCount = 0;
                 moonCount = 0;
             }
-            if (currentMap === 'astralshrine' && cell !== 'r2') starfireCount = 0;
-            if (currentMap === 'ultragramiel' && cell !== 'r2') crystalCount = 0;
+            if (currentMap === 'astralshrine' && cell !== 'r2') {
+                starfireCount = 0;
+                maidStarfireCount = 0;
+            }
+            if (currentMap === 'ultragramiel' && cell !== 'r2') {
+                crystalCount = 0;
+                maidCrystalCount = 0;
+            }
             return counters();
         });
     }
 
     /**
-     * The reference's taunt() (MaidRemake.cs:409-462), which its loop calls whenever it has a
-     * target: a tc; line starts a cycle that pauses the engine, attacks, waits for skill 5 and
-     * fires it, then puts the previous target back.
+     * The Maid's own taunt() (MaidRemake.cs:409-462), which arms SpecialAct through the Maid loop.
      *
      * `key` is what the caller files the run under, so a second tc; line can stop the first: the
      * reference builds one cycle per Maid and keeps its own CancellationToken for it. A line this
@@ -1489,15 +1568,21 @@ function createZoneHandlers(deps) {
                     return;
                 }
                 if (count <= 0) {
-                    count = cycle;
                     run.log.push('forcing to taunt');
-                    return attackMonster(spec.mon).then(function (attacked) {
-                        if (!attacked.ok) return null;
-                        return attempt('SkillAvailable', ['5']).then(function (wait) {
-                            const cooldown = wait.ok ? Number(wait.value) : 0;
-                            return cooldown > 0 ? sleep(cooldown) : Promise.resolve();
-                        }).then(function () { return attempt('UseSkill', ['5']); });
-                    });
+                    if (key === 'bot') {
+                        return botTaunt(run).then(function (answer) {
+                            if (!answer || answer.deferred !== true) count = cycle;
+                            return answer;
+                        });
+                    }
+                    if (maid && typeof maid.tauntCycleAttack === 'function') {
+                        return Promise.resolve(maid.tauntCycleAttack(spec.mon, configured('SpecialAct')))
+                            .then(function (answer) {
+                                if (!answer || answer.deferred !== true) count = cycle;
+                                return answer;
+                            });
+                    }
+                    return null;
                 }
                 run.log.push('count = ' + count);
                 return null;
@@ -1511,6 +1596,30 @@ function createZoneHandlers(deps) {
                 finishCycle(run);
                 log('maid: the taunt cycle stopped: ' + message(error));
             });
+        }
+        async function botTaunt(activeRun) {
+            const target = await readPath(TARGET_NAME_PATH);
+            if (activeRun.stopped || cycles.get(key) !== activeRun) return { deferred: true };
+            const previousTarget = !target.ok ? null
+                : (target.value === null || target.value === undefined || target.value === ''
+                    ? '*' : String(target.value));
+            let previousPause = false;
+            let paused = false;
+            try {
+                previousPause = pauseBotEngine(true) === true;
+                paused = true;
+                const attacked = await attackMonster(spec.mon);
+                if (activeRun.stopped || cycles.get(key) !== activeRun || !attacked.ok) return attacked;
+                const wait = await attempt('SkillAvailable', ['5']);
+                if (activeRun.stopped || cycles.get(key) !== activeRun) return { deferred: true };
+                const cooldown = wait.ok ? Number(wait.value) : 0;
+                if (cooldown > 0) await waitCycle(cooldown);
+                if (activeRun.stopped || cycles.get(key) !== activeRun) return { deferred: true };
+                return await attempt('UseSkill', ['5']);
+            } finally {
+                if (paused) pauseBotEngine(previousPause);
+                if (previousTarget !== null) await attackMonster(previousTarget);
+            }
         }
         function begin(order) {
             if (run.stopped || cycles.get(key) !== run) return;
@@ -1589,19 +1698,23 @@ function createZoneHandlers(deps) {
             work.push(onZone(active, zone));
         }
         if (spec && anims.length && spec.triggers.indexOf(trigger) !== -1) {
-            work.push(anims.reduce(function (chain, anim) {
-                return chain.then(function (results) {
-                    let reaction;
-                    if (spec.monId) reaction = onGramiel(active, anim);
-                    else if (spec.role) reaction = onSpeaker(active, anim);
-                    else if (spec.phrase) reaction = onStarfire(active, anim);
-                    else reaction = null;
-                    return Promise.resolve(reaction).then(function (answer) {
-                        if (answer !== null && answer !== undefined) results.push(answer);
-                        return results;
+            if (spec.role) {
+                work.push(onSpeaker(active, anims[0]));
+            } else if (spec.monId) {
+                work.push(anims.reduce(function (chain, anim) {
+                    return chain.then(function (results) {
+                        return Promise.resolve(onGramiel(active, anim)).then(function (answer) {
+                            if (answer !== null && answer !== undefined) results.push(answer);
+                            return results;
+                        });
                     });
-                });
-            }, Promise.resolve([])));
+                }, Promise.resolve([])));
+            } else if (spec.phrase) {
+                const matching = anims.filter(function (anim) {
+                    return contains(anim.lower, spec.phrase);
+                })[0];
+                if (matching) work.push(onStarfire(active, matching));
+            }
         }
         // The Maid's own two subscriptions (Flash.FlashCall2, MaidRemake.cs:98-99 and :160-161) see
         // every frame from the server rather than only the animation ones, which is why the counter
@@ -1725,7 +1838,10 @@ function createZoneHandlers(deps) {
         /** The Maid's own boxes: the per-boss mode and the handlers behind its config keys. */
         setMaid: function (on) {
             maidOn = on === true;
-            if (!maidOn) stopCycle('special');
+            if (!maidOn) {
+                balance = false;
+                stopCycle('special');
+            }
             return maidOn;
         },
         maid: function () { return maidOn; },
@@ -1736,8 +1852,9 @@ function createZoneHandlers(deps) {
         counters: counters,
         resetSpecials: resetSpecials,
         /** The two run-lock flags doPriorityAttack steps aside on (MaidRemake.cs:838-840). */
-        holding: function () { return countering || locktarget; },
+        holding: function () { return countering || locktarget || balance; },
         autoPotionNeeded: autoPotionNeeded,
+        balanceCrystals: balanceCrystals,
         tauntCycle: tauntCycle,
         stopCycle: stopCycle,
         /**
