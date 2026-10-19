@@ -55,6 +55,8 @@ main { flex: 1; display: flex; min-height: 0; }
 .tabpage.fixed-layout, .tabpage.fixed-layout * { box-sizing: border-box; }
 .tabpage.fixed-layout fieldset.group { display: block; }
 .tabpage.fixed-layout .sheet-button { padding: 1px 3px; }
+.tabpage.fixed-layout .sheet-tree { max-height: none; }
+.tabpage.fixed-layout .tick, .tabpage.fixed-layout .sheet-label { white-space: pre-line; }
 .tabpage.fixed-layout input[type=text], .tabpage.fixed-layout input[type=number],
 .tabpage.fixed-layout select { padding: 1px 3px; }
 
