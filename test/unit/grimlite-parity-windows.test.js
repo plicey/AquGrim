@@ -11,6 +11,7 @@ const notepadSource = require('../../plugins/grimlite-parity/features/notepad/ga
 const eyedropper = require('../../plugins/grimlite-parity/features/eyedropper/colour.js');
 const about = require('../../plugins/grimlite-parity/features/about/credits.js');
 const reload = require('../../plugins/grimlite-parity/features/about/reload.js');
+const { createAbout } = require('../../plugins/grimlite-parity/features/about/about.js');
 
 const pluginRoot = path.join(__dirname, '../../plugins/grimlite-parity');
 const appVersion = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf8')).version;
@@ -81,6 +82,7 @@ test('the grimlite menu opens each of the three windows', async () => {
   const items = [];
   state.menus.forEach(function (contributor) {
     contributor({ labels: {}, keybinds: {} }).forEach(function (top) {
+      items.push(top);
       (top.submenu || []).forEach(function (item) {
         items.push(item);
       });
@@ -94,8 +96,10 @@ test('the grimlite menu opens each of the three windows', async () => {
     assert.ok(labels.indexOf(label) !== -1, 'menu is missing ' + label + ' (has ' + labels.join(', ') + ')');
   });
 
-  items.forEach(function (item) {
-    if (['Eye Dropper', 'Notepad', 'About'].indexOf(item.label) !== -1) item.click();
+  ['Eye Dropper', 'Notepad', 'About'].forEach(function (label) {
+    items.filter(function (item) { return item.label === label; }).forEach(function (item) {
+      item.click();
+    });
   });
   assert.deepStrictEqual(opened, WINDOW_IDS);
 });
@@ -299,12 +303,60 @@ test('the eye dropper reads a BGRA pixel out of a raw bitmap buffer', () => {
   assert.deepStrictEqual(eyedropper.readPixel(bitmap, 2, 1, 0), { r: 0, g: 0, b: 255, a: 128 });
 });
 
-// AboutForm.cs sets lblVersion to `Version {Program.Version} ({Program.ReleaseDate})`; this
-// port shows its own app version in the same shape, with the reference named alongside.
-test('the about window builds its version line from the running app version', () => {
-  assert.strictEqual(about.versionLine('2.0.0'), 'Version 2.0.0');
-  assert.strictEqual(about.versionLine(''), 'Version');
-  assert.strictEqual(about.referenceLine(), 'Grimlite-Li parity (reference Li 1.9.3b)');
+// The reference's eyedropper control draws a 150x150 magnified preview at 15x, which is the
+// 10x10 block around the cursor; the page scales each returned pixel back up.
+test("the eye dropper preview is the reference's 10x10 block at 15x", () => {
+  assert.strictEqual(eyedropper.PREVIEW_SIZE, 150);
+  assert.strictEqual(eyedropper.PREVIEW_ZOOM, 15);
+  assert.strictEqual(eyedropper.PREVIEW_SOURCE, 10);
+
+  // Four pixels, 2x2: the read is clamped at the image edges.
+  const bitmap = Buffer.from([
+    0x00, 0x00, 0xff, 0xff, 0xff, 0x00, 0x00, 0xff,
+    0x00, 0xff, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff
+  ]);
+  const preview = eyedropper.previewPixels(bitmap, { width: 2, height: 2 }, { x: 1, y: 1 }, 2);
+  assert.deepStrictEqual(preview, {
+    width: 2,
+    height: 2,
+    data: [255, 0, 0, 255, 0, 0, 255, 255, 0, 255, 0, 255, 255, 255, 255, 255]
+  });
+});
+
+// The reference's form is the picker, a swatch readout and the history box, with no caption text
+// of this port's own and no placeholder.
+test('the eye dropper page drops its extra labels and carries the preview canvas', () => {
+  const page = fs.readFileSync(path.join(pluginRoot, 'features/eyedropper/eyedropper.html'), 'utf8');
+  assert.ok(/id="preview"/.test(page), 'the magnified preview canvas must be there');
+  assert.strictEqual(/id="hint"/.test(page), false, 'the extra hint is gone');
+  assert.strictEqual(page.indexOf('No colour picked yet.'), -1, 'the readout starts empty');
+  assert.ok(/<ul id="history"/.test(page), 'the history is a list');
+});
+
+// AboutForm.cs sets lblVersion to `Version {Program.Version} ({Program.ReleaseDate})`; Program.cs
+// carries "Li 1.9.3b" and "10-10-2026". The port shows that reference line and its own version
+// beside it.
+test('the about window carries the reference version line', () => {
+  assert.strictEqual(about.versionLine(), 'Version Li 1.9.3b (10-10-2026)');
+  assert.strictEqual(about.portLine('2.0.0'), 'AquaStar 2.0.0');
+  assert.strictEqual(about.portLine(null), 'AquaStar');
+});
+
+// AboutForm.Designer.cs's three team headings, in its own order, and rtbCredits.Text.
+test('the about window carries the three team headings and the credits prose', () => {
+  assert.deepStrictEqual(about.teams().map(function (team) { return team.heading; }), [
+    'The Grimlite Li Team', 'The Grimlite Team', 'The Previous Grimoire Team'
+  ]);
+  assert.deepStrictEqual(about.teams()[0].links.map(function (link) { return link.label; }), [
+    'Froztt13', 'Kuzyph', 'Zee', 'Dropbox link'
+  ]);
+  assert.ok(about.CREDITS_PROSE.indexOf('133spider https://github.com/133spider/') !== -1);
+  assert.ok(about.CREDITS_PROSE.indexOf('\u2937 AQLite https://github.com/133spider/AQLite') !== -1);
+  assert.ok(about.CREDITS_PROSE.indexOf('\u2937 for wanting to be credited') !== -1);
+  // The logo beside the heading is the reference's own big icon, shipped in this feature folder.
+  const page = fs.readFileSync(path.join(pluginRoot, 'features/about/about.html'), 'utf8');
+  assert.ok(/id="logo"/.test(page));
+  assert.ok(fs.existsSync(path.join(pluginRoot, 'features/about/grimoire-icon.png')));
 });
 
 // The clickable credits of AboutForm.cs, in the order the form stacks them (the control
@@ -332,6 +384,43 @@ test('the about window invents no credit the reference does not reach', () => {
   urls.forEach(function (url) { assert.ok(/^https:\/\//.test(url), 'not a link: ' + url); });
   assert.ok(urls.indexOf('https://github.com/Vicinity4519/Grimlite-Li') === -1);
   assert.ok(urls.indexOf('https://github.com/jib-akbr/Grimlite-Li') === -1);
+});
+
+// AboutForm.btnLoadSWF_Click checks the file, logs out and re-initialises the movie. The port's
+// only accepted path is the platform's custom-game.swf, so the field cannot read an arbitrary file.
+test('Load Game SWF checks the managed path, logs out and reloads the game', async () => {
+  const os = require('os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aquastar-about-'));
+  const managed = path.join(dir, 'custom-game.swf');
+  fs.writeFileSync(managed, 'swf');
+  const handlers = {};
+  const calls = [];
+  const reloaded = [];
+  const feature = createAbout({
+    appVersion: '9.9.9',
+    customSwfPath: managed,
+    getMessages: function () { return {}; },
+    getWindows: function () {
+      return [{ id: 1, webContents: { getURL: function () { return 'http://game/'; },
+        reload: function () { reloaded.push(1); } } }];
+    },
+    isGameUrl: function () { return true; },
+    game: { loaderCall: function (name, args) { calls.push([name, args]); return Promise.resolve(); } }
+  });
+  feature.register({ appDataDirectory: dir, ipc: { handle: function (channel, fn) {
+    handlers[channel] = fn;
+  } }, log: function () {} });
+
+  const loaded = await handlers.aboutLoadSwf({}, managed);
+  assert.deepStrictEqual(loaded, { loaded: 1, status: '' });
+  assert.deepStrictEqual(calls, [['Logout', []]]);
+  assert.strictEqual(reloaded.length, 1);
+
+  const missing = await handlers.aboutLoadSwf({}, path.join(dir, 'missing.swf'));
+  assert.strictEqual(missing.status, 'Use Settings - Custom SWF File to choose a different game SWF.');
+  fs.unlinkSync(managed);
+  const gone = await handlers.aboutLoadSwf({}, managed);
+  assert.deepStrictEqual(gone, { loaded: 0, status: 'File not found.' });
 });
 
 // AboutForm.cs's btnLoadSWF_Click re-initialises the game movie. This port reloads every window
@@ -404,6 +493,8 @@ test('the notepad save dialog writes the text it was given, with the reference f
     dialogs[0].filters.map(function (f) { return [f.name, f.extensions]; }),
     [['txt files', ['txt']], ['gbot files', ['gbot']], ['All files', ['*']]]
   );
+  // SaveFileDialog's own default title: the reference never sets one.
+  assert.strictEqual(dialogs[0].title, 'Save As');
   assert.ok(result.saved.indexOf('/tmp/notes.txt') !== -1);
 });
 
@@ -433,6 +524,20 @@ test('a failed notepad save reports the reason instead of throwing at the window
   window.register({ ipc: { handle: function (c, l) { handlers[c] = l; } } });
   const result = await handlers['notepadSave']({}, 'hello');
   assert.ok(/EACCES/.test(result.error), JSON.stringify(result));
+});
+
+// Notepad.cs is a plain text box with Font/Color on its right-click menu, an appending drag-drop
+// and a Backspace guard; the page carries those and no permanent formatting toolbar.
+test('the notepad page formats through the right-click menu, not a toolbar', () => {
+  const page = fs.readFileSync(path.join(pluginRoot, 'features/notepad/notepad.html'), 'utf8');
+  assert.ok(page.indexOf('id="menu"') !== -1 && page.indexOf('id="menuFont"') !== -1 &&
+    page.indexOf('id="menuColor"') !== -1, 'the right-click menu must offer Font and Color');
+  assert.ok(page.indexOf('contextmenu') !== -1, 'the menu must open on a right-click');
+  assert.strictEqual(page.indexOf('id="bar"'), -1, 'the permanent toolbar is gone');
+  assert.strictEqual(/id="save"/.test(page), false, 'saving is Ctrl+S only');
+  assert.ok(page.indexOf("'\\r\\n' + String(reader.result) + '\\r\\n'") !== -1,
+    'a dropped file is appended with CRLF');
+  assert.ok(/Backspace/.test(page), 'an empty box must swallow Backspace');
 });
 
 // EyeDropper.cs reads the pixel under the pointer when the capture finishes. In Electron the

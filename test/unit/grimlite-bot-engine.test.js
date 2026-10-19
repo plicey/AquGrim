@@ -372,7 +372,7 @@ test('CmdBotDelay sets the delay the following commands are paced with', async (
   assert.deepStrictEqual(made.waited, [40, 40], 'and every tick after it, until it is changed');
 });
 
-test('a map reload pauses the bot and it resumes where it was', async () => {
+test('the loop continues during a map reload and commands wait for the map themselves', async () => {
   const session = fakeSession();
   const made = engine({ session: session });
   await made.start(bot([
@@ -384,18 +384,20 @@ test('a map reload pauses the bot and it resumes where it was', async () => {
   const before = made.index();
   assert.strictEqual(before, 1);
 
-  // A reload is the bridge detaching while the movie comes back: the engine holds the index.
+  // A reload does not pause the list: commands that need the map are the ones that wait.
   session.state.attached = false;
   await made.tick();
-  assert.strictEqual(made.paused(), true, 'a reload pauses rather than restarting');
-  assert.strictEqual(made.index(), before, 'the index is held, not reset');
-  assert.strictEqual(made.running(), true, 'the bot is still running while it waits');
+  assert.strictEqual(made.paused(), false, 'a reload is not the bot pause');
+  assert.strictEqual(made.index(), before + 1, 'the list moved on while the map reloaded');
+  assert.strictEqual(made.running(), true, 'the bot keeps running');
+  assert.ok(made.records.some(function (line) { return /map is reloading/.test(line); }),
+    'the reload is reported once: ' + made.records.join(' | '));
 
   session.state.attached = true;
   await made.tick();
-  assert.strictEqual(made.paused(), false, 'it resumes when the game is back');
-  const resumedAt = made.dispatched()[made.dispatched().length - 1].index;
-  assert.strictEqual(resumedAt, before, 'and it resumes the command it stopped before, not the first');
+  assert.strictEqual(made.paused(), false);
+  const continuedAt = made.dispatched()[made.dispatched().length - 1].index;
+  assert.strictEqual(continuedAt, before + 1, 'and it runs the next command, not the reloaded one');
 });
 
 test('death waits for the respawn, then follows the bot own restart-on-death setting', async () => {

@@ -1,10 +1,12 @@
 // The packet spammer (spec #19 / ticket #27). Reference: Grimoire/UI/PacketSpammer.cs and
 // Grimoire/Tools/Spammer.cs at 816d9cd.
 //
-// The file shape is the reference's own: an <autoer> root whose <packet> children are the list,
-// beside <author> and <spamspeed>. Its writer (XmlWriter.Create(path)) writes one line, no XML
-// declaration, and the whole document; its reader (XElement.Load(...).Nodes()) walks the root's
-// own children only, which is why an element nested deeper is not a list entry here either.
+// The file shape it writes is the reference's own: an <autoer> root whose <packet> children are
+// the list, beside <author> and <spamspeed>. Its writer (XmlWriter.Create(path)) writes one line,
+// no XML declaration, and the whole document; its reader (XElement.Load(...).Nodes()) walks the
+// root's own children only, which is why an element nested deeper is not a list entry here either.
+// Reading does not require that root's name: XElement.Load accepts any well-formed document, and
+// the list is whatever that root's own <packet> children say (a list authored elsewhere loads).
 //
 // One reference defect is not ported: its LoadConfig assigns `item.Name` - the literal string
 // "spamspeed" - to a temporary and then tests THAT for digits, so every load resets the delay
@@ -59,10 +61,10 @@ function clampDelay(value) {
     return Math.min(DELAY_MAX_MS, Math.max(DELAY_MIN_MS, Math.round(number)));
 }
 
-/** The reference's own reader, over the text of a file. */
+/** The reference's own reader, over the text of a file: any well-formed root, its own children. */
 function parseFile(text) {
     const document = xml.parse(text);
-    const root = xml.child(document, ROOT);
+    const root = document && document.children.length ? document.children[0] : null;
     if (!root) {
         return { ok: false, error: ERRORS.parse, packets: [], delay: FALLBACK_DELAY_MS };
     }
@@ -96,7 +98,9 @@ function serializeFile(config) {
  * order from its first entry, wrapping forever, one frame then one wait; IndexChanged is raised
  * with the entry about to go out, before the frame does.
  *
- * options: { send(frame) -> bool, sleep(ms) -> Promise, onIndex(index) }
+ * options: { send(frame) -> bool, sleep(ms) -> Promise, onIndex(index), minDelay, maxDelay }
+ * The bounds default to PacketSpammer's own numDelay (100..61000); the sniffer's embedded block
+ * names its own (PacketLogger.numSpamDelay is 0..2000), so the two spinners pace their own loop.
  */
 function createSpammer(options) {
     const settings = options || {};
@@ -105,6 +109,14 @@ function createSpammer(options) {
         return new Promise(function (resolve) { setTimeout(resolve, ms); });
     };
     const onIndex = typeof settings.onIndex === 'function' ? settings.onIndex : function () {};
+    const minDelay = settings.minDelay == null ? DELAY_MIN_MS : Number(settings.minDelay);
+    const maxDelay = settings.maxDelay == null ? DELAY_MAX_MS : Number(settings.maxDelay);
+
+    function paceDelay(value) {
+        const number = Number(value);
+        const usable = isFinite(number) ? Math.round(number) : FALLBACK_DELAY_MS;
+        return Math.min(maxDelay, Math.max(minDelay, usable));
+    }
 
     let running = false;
     let sent = 0;
@@ -125,7 +137,7 @@ function createSpammer(options) {
             if (!list.length) return false;
             this.stop();
             running = true;
-            const wait = clampDelay(delay == null ? DELAY_DEFAULT_MS : delay);
+            const wait = paceDelay(delay == null ? DELAY_DEFAULT_MS : delay);
 
             (async function loop() {
                 let index = 0;

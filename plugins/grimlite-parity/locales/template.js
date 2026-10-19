@@ -10,7 +10,7 @@ exports.dialogMessages = {
             return keyb || '';
         }
         return '' +
-            expand(k.grimliteBotFile) + '' +
+            '' +
             expand(k.grimliteBank) + '' +
             expand(k.grimliteLoaders) + '' +
             '' +
@@ -21,33 +21,42 @@ exports.dialogMessages = {
             '' +
             '' +
             '' +
-            expand(k.grimliteParityPlaceholder) + '' +
             expand(k.grimliteParityDevTest) + '' +
+            '' +
             expand(k.grimliteOptions) + '' +
             expand(k.grimliteHotkeys) + '' +
             expand(k.grimliteDrop) + '' +
             expand(k.grimliteFastTravels) + '' +
-            expand(k.grimliteMaid) + '';
+            expand(k.grimliteMaid) + '' +
+            '' +
+            '' +
+            '' +
+            '';
     }
+};
+
+exports.logsMessages = {
+    title: "",
+    clear: ""
 };
 
 exports.menuMessages = {
     grimliteMenu: "",
-    grimliteBotFile: "",
+    grimliteBot: "",
     grimliteBotManager: "",
     grimliteEyedropper: "",
     grimliteNotepad: "",
     grimliteAbout: "",
     grimliteCharSelect: "",
+    grimliteCharSelectManage: "",
     grimliteBank: "",
     grimliteLoaders: "",
-    grimliteSets: "",
     grimliteCosmetics: "",
     grimliteOptions: "",
     grimliteHotkeys: "",
+    grimliteLogs: "",
     grimliteDrop: "",
     grimliteTravels: "",
-    grimlitePlaceholder: "",
     grimliteDevTest: "",
     packetsMenu: "",
     packetsSniffer: "",
@@ -84,6 +93,7 @@ exports.windowTitles = {
     cosmetics: "",
     options: "",
     hotkeys: "",
+    logs: "",
     drop: "",
     travels: "",
     maid: "",
@@ -212,10 +222,7 @@ exports.hotkeysMessages = {
     title: "",
     add: "",
     remove: "",
-    save: "",
-    saved: "",
-    empty: "",
-    selectFirst: ""
+    save: ""
 };
 
 exports.dropsMessages = {

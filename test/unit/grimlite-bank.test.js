@@ -124,19 +124,21 @@ test('Bank picks the chosen category, in the AC-ness and equipped state the refe
   );
 });
 
-test('bank all except selected moves everything outside the selection', () => {
+test('bank all except selected moves everything outside the selection, weapons included', () => {
   assert.deepStrictEqual(
     bank.selectCategory(INVENTORY, { category: 'Sword', ac: false, allExcept: true }),
     ['Broad Axe', 'ArchPaladin', 'Moglin Cape']
   );
-  // Outside the weapon categories, with the treasure potion still excluded.
+  // The reference's Weapons branch is unreachable: a weapon's own category is never the literal
+  // "Weapons", so its second test banks the weapon too - the whole matching inventory moves,
+  // with the treasure potion still excluded from the category transfer.
   assert.deepStrictEqual(
     bank.selectCategory(INVENTORY, { category: 'Weapons', ac: false, allExcept: true }),
-    ['ArchPaladin', 'Moglin Cape']
+    ['Sword of Awe', 'Broad Axe', 'ArchPaladin', 'Moglin Cape']
   );
   assert.deepStrictEqual(
     bank.selectCategory(INVENTORY, { category: 'Weapons', ac: true, allExcept: true }),
-    ['Battle Potion']
+    ['Blinding Light of Destiny', 'Battle Potion']
   );
 });
 

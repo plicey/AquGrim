@@ -66,8 +66,18 @@ function skillName(index) {
     return text(index);
 }
 
+// CmdBuy.Qty's own initialiser is 1, so a file that omits the key still reads [1x]; only an
+// explicit zero or negative quantity is the reference's "Ma" (what the alt-click writes).
 function qtyOfBuy(qty) {
+    if (qty === undefined || qty === null) return '1';
     return qty > 0 ? String(qty) : 'Ma';
+}
+
+// CmdShortHunt.Shorten: a map name longer than five characters is cut with an ellipsis.
+function shorten(value, max) {
+    const source = text(value);
+    if (!source) return source;
+    return source.length > max ? source.slice(0, max) + '...' : source;
 }
 
 // Port of each class's ToString. A missing class falls back to its name minus "Cmd", so an
@@ -85,8 +95,11 @@ const DISPLAY = {
     },
     CmdRest: (c) => (c.Full ? 'Rest fully' : 'Rest'),
     CmdSkillSet: (c) => 'Skill Set: ' + text(c.Name),
-    CmdUseSkill: (c) => 'Skill [' + text(c.Monster) + '] ' + (c.Wait ? '[Wait] ' : ' ') +
-        (c.Force ? '[Force] ' : ' ') + text(c.Index) + ': ' + skillName(c.Index),
+    // Monster's own initialiser is "*": a file that omits the key still reads [*], not []
+    // (CmdUseSkill.cs:10).
+    CmdUseSkill: (c) => 'Skill [' + text(c.Monster === undefined ? '*' : c.Monster) + '] ' +
+        (c.Wait ? '[Wait] ' : ' ') + (c.Force ? '[Force] ' : ' ') + text(c.Index) + ': ' +
+        skillName(c.Index),
     CmdBankSwap: (c) => 'Bank swap {' + text(c.BankItemName) + ', ' + text(c.InventoryItemName) + '}',
     CmdBankTransfer: (c) => (c.TransferFromBank ? 'Bank -> Inv: ' : 'Inv -> Bank: ') + text(c.ItemName),
     CmdBuy: function (c) {
@@ -100,7 +113,9 @@ const DISPLAY = {
     CmdEquipSet: (c) => 'Equip Set: ' + text(c.ItemName),
     CmdGetDrop: (c) => 'Get drop: ' + text(c.ItemName),
     CmdLoad: (c) => 'Load Shop: ' + text(c.ShopId),
-    CmdLoadTravel: (c) => 'Load Shop: ' + text(c.ShopId),
+    // CmdLoadTravel declares no ToString, so the reference's list shows what object.ToString
+    // gives it: the type's own name (CmdLoadTravel.cs).
+    CmdLoadTravel: () => 'Grimoire.Botting.Commands.Item.CmdLoadTravel',
     CmdMapItem: (c) => 'Get map item: ' + text(c.ItemId),
     CmdSell: function (c) {
         const qty = text(c.Qty);
@@ -114,8 +129,9 @@ const DISPLAY = {
         const withItem = state === 'Add' || state === 'Remove';
         return 'Whitelist ' + (withItem ? state + ': ' + text(c.ItemName) : state);
     },
-    CmdJoin: (c) => 'Join: [' + text(c.Try) + 'x] ' + (text(c.MapSwf) ? '[SWF] ' : '') +
-        text(c.Map) + ', ' + text(c.Cell) + ', ' + text(c.Pad),
+    // Try's own initialiser is 1 (CmdJoin.cs:17), so an omitted key reads [1x].
+    CmdJoin: (c) => 'Join: [' + text(c.Try === undefined ? 1 : c.Try) + 'x] ' +
+        (text(c.MapSwf) ? '[SWF] ' : '') + text(c.Map) + ', ' + text(c.Cell) + ', ' + text(c.Pad),
     CmdMoveToCell: (c) => 'Move to cell: ' + text(c.Cell) + ', ' + text(c.Pad),
     CmdMoveToCell2: function (c) {
         if (c.stop) return 'Stop Cell Jump';
@@ -123,12 +139,14 @@ const DISPLAY = {
         return 'Start Jump between : ' + text(c.Cell).split(',').join('|');
     },
     CmdSetSpawn: () => 'Set Spawnpoint',
-    CmdTravel: (c) => 'Join: ' + text(c.Map) + ', ' + text(c.Cell) + ', ' + text(c.Pad),
+    // CmdTravel declares no ToString either: the row is the type's own name (CmdTravel.cs).
+    CmdTravel: () => 'Grimoire.Botting.Commands.Map.CmdTravel',
     CmdWalk: (c) => (c.Type === 'Random' ? 'Walk Randomly' : 'Walk to: ' + text(c.X) + ', ' + text(c.Y)),
     CmdYulgar: () => 'Join yulgar',
     CmdBackgroundPacket: (c) => (c.ActionW === 1 ? 'Spammer [STOP]: ' : 'Spammer [ADD]: ') + text(c.Label),
     CmdBankList: () => 'Bank Item list',
-    CmdBeep: (c) => 'Beep ' + text(c.Times) + ' Times ',
+    // Times' own initialiser is 10, so an omitted key reads "Beep 10 Times ".
+    CmdBeep: (c) => 'Beep ' + text(c.Times === undefined ? 10 : c.Times) + ' Times ',
     // CmdBlank, CmdBlank2 and CmdBlank3 share one file; CmdBlank2 prints its Text.
     CmdBlank: () => '',
     CmdBlank2: (c) => text(c.Text),
@@ -153,7 +171,9 @@ const DISPLAY = {
         if (c.type === 2) return 'Decrease ' + text(c.Int) + ' by 1';
         return 'Set ' + text(c.Int) + ': ' + text(c.Value);
     },
-    CmdInt2: (c) => 'Set Int [' + text(c.IntKey) + '] : ' + text(c.Value),
+    // The C# appends the value the engine last resolved (`currentvalue`), when it has one.
+    CmdInt2: (c) => 'Set Int [' + text(c.IntKey) + '] : ' + text(c.Value) +
+        (text(c.currentvalue) ? ' => ' + text(c.currentvalue) : ''),
     CmdLabel: (c) => '[' + upper(c.Name) + ']',
     CmdLoadBot: (c) => 'Load bot: ' + text(c.BotFileName),
     CmdLog: (c) => (text(c.Text).indexOf('{CLEAR}') !== -1 ? 'Clear ' : 'Log ') +
@@ -181,8 +201,11 @@ const DISPLAY = {
     CmdTauntcycle: function (c) {
         const type = c.type === 0 ? 'Start' : 'Stop';
         if (c.type !== 0) return type + ' Tauntcycle';
-        return type + ' Tauntcycle : ' + text(c.cycle) + 'T [' + text(c.target) + '] every ' +
-            text(c.second) + 's ' + (c.order <= 0 || c.order === undefined ? 'Dynamic' : c.order);
+        // cycle, target and second carry their own initialisers (CmdTauntcycle.cs:15-17).
+        return type + ' Tauntcycle : ' + text(c.cycle === undefined ? 2 : c.cycle) + 'T [' +
+            text(c.target === undefined ? '*' : c.target) + '] every ' +
+            text(c.second === undefined ? 14 : c.second) + 's ' +
+            (c.order <= 0 || c.order === undefined ? 'Dynamic' : c.order);
     },
     CmdToggleProvoke: (c) => (c.Type === 0 ? 'Provoke Off' : c.Type === 1 ? 'Provoke On' : 'Provoke Toggle'),
     CmdAcceptQuest: (c) => (c.ghostAccept ? 'Ghost Accept: ' : 'Accept Quest: ') + questId(c.Quest),
@@ -190,7 +213,9 @@ const DISPLAY = {
         (c.ItemId === undefined || c.ItemId === null ? '' : ' ' + c.ItemId) +
         (c.SafeRelogin ? ' [SafeRelogin]' : ''),
     CmdCompleteQuest: function (c) {
-        const quant = c.CompleteTry <= -1 ? 'Ma' : text(c.CompleteTry);
+        // CompleteTry's own initialiser is 1 (CmdCompleteQuest.cs:14).
+        const tries = c.CompleteTry === undefined ? 1 : c.CompleteTry;
+        const quant = tries <= -1 ? 'Ma' : text(tries);
         const id = text(c.Quest && c.Quest.ItemId) && text(c.Quest.ItemId) !== '0'
             ? questId(c.Quest) + '^' + c.Quest.ItemId
             : questId(c.Quest);
@@ -198,7 +223,41 @@ const DISPLAY = {
     },
     CmdRemoveQuestList: (c) => 'Remove Quest list : ' + text(c.Id) +
         (c.ItemId === undefined || c.ItemId === null ? '' : ' ' + c.ItemId) +
-        (c.SafeRelogin ? ' [SafeRelogin]' : '')
+        (c.SafeRelogin ? ' [SafeRelogin]' : ''),
+    // CmdShortHunt.ToString: five characters of the map, then "Hunt Items: map, 3x item"; a
+    // quest id switches it to the quest shape.
+    CmdShortHunt: function (c) {
+        const map = shorten(c.Map, 5);
+        if (/^-?\d+$/.test(text(c.QuestId))) {
+            return 'Quest [' + c.QuestId + ']: ' + map + ', [' + text(c.Monster) + ']';
+        }
+        return 'Hunt ' + (c.ItemType === 0 ? 'Items' : 'Temps') + ': ' + map + ', ' +
+            text(c.Quantity) + 'x ' + text(c.ItemName);
+    },
+    // CmdQuestHunt.ToString: the multi-item form joins its parts with " | "; with a QID the row
+    // is the quest shape instead.
+    CmdQuestHunt: function (c) {
+        const items = text(c.ItemName).split(',');
+        const quantities = text(c.Quantity).split(',');
+        const monsters = text(c.Monster).split(',');
+        const parts = [];
+        if (c.QID !== undefined && c.QID !== null && Number(c.QID) !== 0) {
+            const rounds = Math.max(items.length, monsters.length);
+            for (let i = 0; i < rounds; i++) {
+                const item = i < items.length ? items[i].trim() : '';
+                const mob = i < monsters.length ? monsters[i].trim() : '';
+                if (!item && !mob) { parts.push('Blank'); continue; }
+                if (item) parts.push(item); else parts.push(mob + '*');
+            }
+            return 'Quest-' + c.QID + ' items:' + parts.join(' | ');
+        }
+        for (let i = 0; i < items.length; i++) {
+            const mon = i < monsters.length ? monsters[i] : '1';
+            const qty = i < quantities.length ? quantities[i] : '*';
+            parts.push(items[i] + ' [' + mon + '] x' + qty);
+        }
+        return 'Hunt : ' + parts.join(' | ');
+    }
 };
 
 const WHITELIST_STATES = ['On', 'Off', 'Toggle', 'Add', 'Remove'];
@@ -391,8 +450,15 @@ const STATEMENT_DISPLAY = {
     CmdQuestNotAvailable: (c) => 'Quest is not available: ' + text(c.Value1),
     CmdQuestNotCompleted: (c) => 'Quest cannot be turned in: ' + text(c.Value1),
     CmdQuestNotInProgress: (c) => 'Quest is not in progress: ' + text(c.Value1),
-    CmdSetVar: (c) => 'Variable ' + text(c.Value1) + ': ' + text(c.Value2),
+    // CmdSetVar appends the resolved value (`RealVar`) after an arrow when the engine has one.
+    CmdSetVar: (c) => (text(c.RealVar)
+        ? 'Variable ' + text(c.Value1) + ':' + text(c.Value2) + ' => ' + text(c.RealVar)
+        : 'Variable ' + text(c.Value1) + ': ' + text(c.Value2)),
     CmdSpecialAnims: (c) => 'Special Anims: ' + text(c.Value1) + (text(c.Value2) ? ' | Skill: ' + c.Value2 : ''),
+    // CmdDelayedAnims.ToString: the delay it waits out, then the message and skill it watches.
+    CmdDelayedAnims: (c) => 'Delay ' + text(c.delayPreskill === undefined ? 0 : c.delayPreskill) +
+        'ms when msg: ' + text(c.Value1) + ' ' +
+        (text(c.Value2) ? '| Skill: ' + text(c.Value2) : ''),
     CmdTargetAuraDuration: function (c) {
         if (!c.targetId) return 'Monster (ID) Aura duration is less than ... ms';
         return "Aura '" + text(c.Value1) + "' on [id." + c.targetId + ']: < ' + text(c.Value2) + 'ms';
@@ -411,6 +477,17 @@ const STATEMENT_DISPLAY = {
 // A statement the shipped catalog lists but this build has no class for still displays its own
 // dropdown text (the reference reads Tag/Text straight out of the file), so the fallback is exact
 // for those rows too.
+// BotManager.lstCommands_DrawItem's own LabelLess list: a row of one of these classes prints no
+// [n] index in front of it (and a statement never does, whatever its class).
+const LABEL_LESS = ['Label', 'GotoLabel', 'Blank', 'Blank2', 'Index', 'SkillSet'];
+
+function showsIndex(command) {
+    const type = command && command.$type;
+    if (typeof type !== 'string') return false;
+    if (type.indexOf(ROOT + 'Misc.Statements.') !== -1) return false;
+    return LABEL_LESS.indexOf(classNameOf(command).replace(/^Cmd/, '')) === -1;
+}
+
 function display(command) {
     const className = classNameOf(command);
     const known = DISPLAY[className] || STATEMENT_DISPLAY[className];
@@ -489,6 +566,7 @@ module.exports = {
     classNameOf: classNameOf,
     fullType: fullType,
     display: display,
+    showsIndex: showsIndex,
     rowText: rowText,
     skillRow: skillRow,
     questRow: questRow,

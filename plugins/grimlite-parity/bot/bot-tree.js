@@ -74,11 +74,15 @@ function isBot(file) {
 
 /**
  * The ctrl-click branch: a CmdLoadBot pointing at the file, with the path relative to the bots
- * directory (the reference writes "Bots" + the part below the root, because its files sit in a
- * Bots/ folder beside the exe; here the relative path *is* the part below the root).
+ * directory. The reference prefixes it with "Bots" (treeBots_AfterSelect: "Bots" +
+ * path.Substring(txtSaved.Text.Length)), because its files sit in a Bots/ folder beside the exe;
+ * a bot copied out of that folder carries the same string here.
  */
 function loadCommand(root, file) {
-    const relative = path.relative(root, file);
+    const below = path.relative(root, file);
+    // The reference's root is the Bots folder itself, so its relative path lacks the prefix. A
+    // caller whose root is the folder above Bots already has that segment; do not add it twice.
+    const relative = below.split(path.sep)[0] === 'Bots' ? below : path.join('Bots', below);
     return { BotFileName: path.basename(file), BotFilePath: relative };
 }
 

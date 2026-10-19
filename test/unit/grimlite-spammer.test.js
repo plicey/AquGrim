@@ -80,6 +80,27 @@ test('the spammer file is the reference\'s own XML shape, and reads one authored
   assert.strictEqual(again.delay, 1000);
 });
 
+// LoadConfig reads with XElement.Load, which takes any well-formed document: the root's name is
+// not part of what it reads, and what it walks is that root's own children.
+test('any well-formed root loads: its own <packet> children are the list', () => {
+  const elsewhere = spammer.parseFile(
+    '<spammer><packet>%xt%zm%gar%1%2%w%</packet><rules>' +
+    '<packet>%xt%zm%nested%</packet></rules><spamspeed>250</spamspeed></spammer>');
+  assert.strictEqual(elsewhere.ok, true, elsewhere.error);
+  assert.deepStrictEqual(elsewhere.packets, ['%xt%zm%gar%1%2%w%'],
+    'a list under another root loads, and an element nested deeper is still not a list entry');
+  assert.strictEqual(elsewhere.delay, 250, 'and <spamspeed> is read wherever the root puts it');
+
+  // The writer's own root still reads back, and a root whose children are not packets is an empty
+  // list rather than an error - the reference adds nothing for an element it does not recognise.
+  const written = spammer.serializeFile({ packets: ['%xt%zm%one%'], delay: 1000 });
+  assert.deepStrictEqual(spammer.parseFile(written).packets, ['%xt%zm%one%']);
+  const nothing = spammer.parseFile('<anything><other>text</other></anything>');
+  assert.strictEqual(nothing.ok, true, nothing.error);
+  assert.deepStrictEqual(nothing.packets, []);
+  assert.strictEqual(nothing.delay, spammer.FALLBACK_DELAY_MS);
+});
+
 test('the spammer file reports a file it cannot read instead of an empty list', () => {
   const notXml = spammer.parseFile('<autoer><packet>unterminated');
   assert.strictEqual(notXml.ok, false);
@@ -111,6 +132,21 @@ test('the spinner keeps the reference\'s own bounds, and the file keeps them too
   assert.strictEqual(spammer.clampDelay('250'), 250);
   // LoadConfig's own fallback for a spamspeed that is not all digits: 2000.
   assert.strictEqual(spammer.clampDelay('nothing'), spammer.FALLBACK_DELAY_MS);
+
+  // The sniffer's embedded block has its own spinner (PacketLogger.numSpamDelay: 0..2000), so a
+  // loop built for it paces with those bounds, not the Spammer window's 100..61000.
+  const waits = [];
+  const sniffer = spammer.createSpammer({
+    send: function () { return true; },
+    sleep: function (ms) { waits.push(ms); return new Promise(function () {}); },
+    minDelay: 0,
+    maxDelay: 2000
+  });
+  sniffer.start(['a'], 0);
+  assert.deepStrictEqual(waits, [0], '0 ms is a real delay for the sniffer block');
+  sniffer.start(['a'], 99999);
+  assert.deepStrictEqual(waits, [0, 2000], 'and its own maximum holds');
+  sniffer.stop();
 });
 
 test('the spammer sends chosen packets in order, at the delay, and stops on demand', async () => {

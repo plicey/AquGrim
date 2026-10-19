@@ -10,8 +10,8 @@
 //   the app       "Minimize to tray" and "Toggle Options" act on the app, not on a game or a
 //                 window.
 //
-// An action with no entry here is one this port cannot do yet (the bot engine's Start/Stop, the
-// Maid's, auto-attack, the launcher skin, the logs); pressing its key answers with that reason.
+// Every action in the reference's list now has an entry: the four stateful ones and the launcher
+// skin are APP_ACTIONS, and Logs is the feature window this port adds.
 
 // Hotkeys.cs:408 has a "Show Bank" action and no action for any later window, so the Bank window
 // is reachable from here and, say, Sets is not - that is the reference's own vocabulary.
@@ -33,8 +33,12 @@ const WINDOW_BY_ACTION = {
 
 // Actions that are the app's own business rather than a window's.
 const APP_ACTIONS = {
-    'Minimize to tray': 'showMainWindow',
-    'Toggle Options': 'toggleOptions'
+    'Start/Stop Bot': 'toggleBot',
+    'Start/Stop Maid': 'toggleMaid',
+    'Change Launcher Skin': 'toggleLauncherSkin',
+    'Minimize to tray': 'toggleMainWindow',
+    'Toggle Options': 'toggleOptions',
+    'Start/Stop AutoAttack': 'toggleAutoAttack'
 };
 
 // The two shops and the target cancel: the reference calls Flash (Player.cs:328,

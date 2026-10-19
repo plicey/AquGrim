@@ -351,6 +351,12 @@ test('ExitCombatBeforeRest refreshes the cell while the player is in combat', as
     // CmdRest.cs: `while (Player.CurrentState == Player.State.InCombat) { Player.MoveToCell(Player.Cell,
     // Player.Pad); await Task.Delay(1250); }` - State.InCombat is 2 in the reference's own enum.
     const session = fakeSession({ state: 2, cell: 'Right', pad: 'Left' });
+    // The reference's loop is unbounded; the test makes the game answer the jump by leaving combat.
+    session.jump = function (cell, pad) {
+        session.calls.push({ name: 'jump', args: [cell, pad] });
+        session.snapshot.state = 1;
+        return Promise.resolve();
+    };
     const made = engine({ session: session });
     await made.start({ Commands: [command('CmdRest', {})], ExitCombatBeforeRest: true });
     await made.tick();
@@ -1129,16 +1135,17 @@ test('a kill-for that cannot finish says so rather than looping all night', asyn
     assert.strictEqual(made.running(), true, 'and the bot is still running');
 });
 
-test('a kill-for whose quest half is not wired says which ticket has it', async () => {
-    // CmdKillFor's QuestId branch reads the quest (accept, in progress, complete), which is the
-    // quest surface #39/#41 owns. The kill half is wired; the half that is not is named.
+test('a kill-for whose quest half has no game access says so', async () => {
+    // CmdKillFor's QuestId branch needs the injected quest access: accept, in progress, complete.
+    // Without it the command reports that and does not half-run the fight.
     const session = fakeSession({});
     const made = engine({ session: session });
     await made.start({
         Commands: [command('CmdKillFor', { Monster: 'Dragon', QuestId: '1234' })]
     });
     await made.tick();
-    assert.ok(made.records.some(function (line) { return /#39/.test(line); }), made.records.join(' | '));
+    assert.ok(made.records.some(function (line) { return /quest access/.test(line); }),
+        made.records.join(' | '));
     assert.deepStrictEqual(session.asked('attackMonster'), [], 'and it does not half-run the fight');
 });
 
@@ -1167,7 +1174,10 @@ test('CmdShortHunt joins its map before it fights in it', async () => {
         session.snapshot.map = map.split('-')[0];
         return Promise.resolve();
     };
-    session.attackMonster = function () { return Promise.reject(new Error('no live Avatar')); };
+    session.attackMonster = function (name) {
+        session.calls.push({ name: 'attackMonster', args: [name] });
+        return Promise.reject(new Error('no live Avatar'));
+    };
     const made = engine({ session: session });
     await made.start({
         Commands: [command('CmdShortHunt', {
@@ -1203,9 +1213,9 @@ test('CmdQuestHunt without a quest id is the item hunt its own non-quest branch 
     assert.deepStrictEqual(session.asked('join')[0].args, ['necrodungeon', 'r22', 'Down']);
 });
 
-test('a quest hunt names the ticket that owns the required-item reads', async () => {
-    // CmdQuestHunt.cs reads quest.RequiredItems - the quest surface (#39). Everything around it is
-    // wired, so the report has to be specific about what is not.
+test('a quest hunt without game access says what it cannot read', async () => {
+    // CmdQuestHunt.cs reads quest.RequiredItems from the quest tree; without the injected quest
+    // access the row reports that rather than inventing required items.
     const session = fakeSession({});
     session.items = function () { return Promise.resolve([]); };
     const made = engine({ session: session });
@@ -1213,22 +1223,41 @@ test('a quest hunt names the ticket that owns the required-item reads', async ()
         Commands: [command('CmdQuestHunt', { Map: 'necrodungeon', Cell: 'r22', Pad: 'Down', QID: 4321, ItemName: '', Quantity: '' })]
     });
     await made.tick();
-    assert.ok(made.records.some(function (line) { return /#39/.test(line) && /4321/.test(line); }),
-        made.records.join(' | '));
+    assert.ok(made.records.some(function (line) {
+        return /quest access/.test(line) && /4321/.test(line);
+    }), made.records.join(' | '));
 });
 
 test('CmdFollow walks to the player it follows, then fights what is there', async () => {
     // CmdFollow.cs: Player.GoToPlayer(name) then a CmdKill over "*". Its cell-following packet tap
     // is not available here, which the log has to say rather than the bot appearing to follow.
-    const session = fakeSession({ hasTarget: false });
-    session.attackMonster = function () { return Promise.reject(new Error('no live Avatar')); };
+    const session = fakeSession({ hasTarget: false, state: 1 });
+    let looks = 0;
+    session.playersInMap = function () {
+        session.calls.push({ name: 'playersInMap', args: [] });
+        // First pass: the followed player is there, so the kill runs. Then they leave and the
+        // GoTo refusal ends the loop, which is the reference's own exit for a failed walk.
+        looks++;
+        return Promise.resolve(looks === 1 ? ['Arthas'] : []);
+    };
+    session.attackMonster = function (name) {
+        session.calls.push({ name: 'attackMonster', args: [name] });
+        return Promise.resolve();
+    };
+    session.goTo = function (name) {
+        session.calls.push({ name: 'goTo', args: [name] });
+        return Promise.reject(new Error('GoTo was refused'));
+    };
     const made = engine({ session: session });
     await made.start({ Commands: [command('CmdFollow', { PlayerName: 'Arthas' })] });
     await made.tick();
     assert.deepStrictEqual(session.asked('goTo')[0].args, ['arthas'], 'the name is lower-cased');
+    assert.deepStrictEqual(session.asked('attackMonster')[0].args, ['*'], 'the follow kills there');
     assert.strictEqual(session.asked('setSpawnPointHere').length, 1, 'the reference sets the spawn');
     assert.ok(made.records.some(function (line) { return /uotls/.test(line); }),
         'the tap it cannot use is named: ' + made.records.join(' | '));
+    assert.ok(made.records.some(function (line) { return /could not goto/.test(line); }),
+        'the failed walk is reported: ' + made.records.join(' | '));
 });
 
 test('a follow that cannot goto its player reports the refusal', async () => {

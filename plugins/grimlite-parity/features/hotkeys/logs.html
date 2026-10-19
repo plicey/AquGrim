@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Debug Log</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 12px;
+  }
+  body { padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; }
+  #log {
+    flex: 1 1 auto; margin: 0; min-height: 0; overflow: auto; white-space: pre-wrap;
+    background: #1b1b1b; border: 1px solid #2c2c2c; border-radius: 4px; padding: 8px;
+  }
+  button {
+    align-self: flex-start; background: #262626; color: #e6e6e6; border: 1px solid #383838;
+    border-radius: 4px; padding: 5px 12px; cursor: pointer; font: inherit;
+  }
+  button:hover { background: #303030; }
+</style>
+</head>
+<body>
+  <pre id="log"></pre>
+  <button id="clear" type="button">Clear</button>
+<script>
+(function () {
+  var api = window.aquastarLogs;
+  if (!api) return;
+  var box = document.getElementById('log');
+  var clear = document.getElementById('clear');
+  var atBottom = true;
+
+  function draw(view) {
+    var text = ((view && view.lines) || []).join('\n');
+    if (box.textContent === text) return;
+    box.textContent = text;
+    if (atBottom) box.scrollTop = box.scrollHeight;
+  }
+
+  box.addEventListener('scroll', function () {
+    atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+  });
+  clear.addEventListener('click', function () {
+    api.clear().then(draw);
+  });
+
+  api.view().then(draw);
+  setInterval(function () { api.view().then(draw); }, 500);
+})();
+</script>
+</body>
+</html>

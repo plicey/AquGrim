@@ -94,6 +94,7 @@ function runtime(game, options) {
     setTimeout: opts.setTimeout,
     clearTimeout: opts.clearTimeout,
     config: opts.config,
+    preset: opts.preset,
     maid: opts.maid,
     pauseBotEngine: opts.pauseBotEngine,
     auras: opts.auras
@@ -1465,8 +1466,8 @@ test('the Maid\'s AntiCounter stops the attack on the warning and starts it agai
   assert.strictEqual(maid.state.stopAttack, true, 'the attack is stopped after the 1500 ms');
   assert.strictEqual(made2.holding(), true, 'the counter warning holds the priority target');
   await made2.resetSpecials();
-  assert.strictEqual(made2.holding(), true,
-    'an unrelated movement-triggered counter reset does not clear the warning lock');
+  assert.strictEqual(made2.holding(), false,
+    'resetSpecials clears counterAttack, as MaidRemake.cs:1018 does');
   assert.deepStrictEqual(held[1], { ms: 6000, stopped: true },
     'and the 6000 ms wait runs with it stopped');
   pending.shift()(undefined);
@@ -1738,4 +1739,110 @@ test('disabling the Maid stops its own taunt cycle but leaves the bot cycle alon
   assert.strictEqual(maidCycle.ok, false, 'the Maid disable already canceled its own cycle');
   assert.strictEqual(botCycle.ok, true, 'CmdTauntcycle owns a separate stop path');
   assert.strictEqual(timers.pending().length, 0, 'both cancellation paths release their timer handles');
+});
+
+// ------------------------------------------------------------------ the class rotations
+
+/** Player.GetAuras for the rotations: a name-keyed store, and a target aura's remaining time. */
+function fakeAura(values, remaining) {
+  return {
+    setSelf: function () {},
+    observe: function () {},
+    value: function (key, name) {
+      const value = values[name];
+      return (typeof value === 'function' ? value() : value) || 0;
+    },
+    remaining: function (key, name) { return (remaining || {})[name] || 0; }
+  };
+}
+
+function rotationRuntime(className, preset, values, extra) {
+  const game = fakeGame(Object.assign({
+    UserID: 7, Class: className, HasTarget: true, AttackMonster: true,
+    SkillAvailable: 1, ForceUseSkill: true, UseSkill: true
+  }, extra || {}));
+  const made = runtime(game, {
+    config: function () { return { UltraBossExtra: 0, AttackPriority: false }; },
+    preset: function () { return preset; },
+    auras: fakeAura(values || {}, (extra || {}).remaining)
+  });
+  return made;
+}
+
+test('the CSH preset AA-spams skill 0 after Temporal Rift 4 and the Gunslinger window', async () => {
+  // The rotation's own while condition reads the live aura each pass, so the stand-in lets the
+  // Gunslinger window close after its first few reads instead of spinning forever.
+  let gunslinger = 0;
+  const made = rotationRuntime('CHRONO SHADOW', 'CSH', {
+    'Temporal Rift': 4,
+    'Gunslinger Stance': function () { return ++gunslinger <= 3 ? 1 : 0; },
+    'Bang': 4
+  });
+  await made.zones.specialCombo();
+  assert.deepStrictEqual(made.game.payload('ForceUseSkill'), ['1'],
+    'Temporal Rift >= 4 forces skill 1 first');
+  assert.deepStrictEqual(made.game.payload('UseSkill'), ['0'], 'then the rotation spams skill 0');
+  // Below four stacks the rotation does not start.
+  const quiet = rotationRuntime('CHRONO SHADOW', 'CSH', {
+    'Temporal Rift': 3, 'Gunslinger Stance': 1, 'Bang': 4
+  });
+  await quiet.zones.specialCombo();
+  assert.strictEqual(quiet.game.count('UseSkill'), 0);
+});
+
+test('Arcana Invoker, ArchMage and ArchPaladin use their own reference conditions', async () => {
+  const arcana = rotationRuntime('ARCANA INVOKER', 'AI', {
+    '0 - The Fool': 0, 'XXI - The World': 0
+  });
+  await arcana.zones.specialCombo();
+  assert.deepStrictEqual(arcana.game.payload('ForceUseSkill'), ['1'],
+    'Arcana Invoker forces skill 1 when the card cycle restarts');
+
+  const archMage = rotationRuntime('ARCHMAGE', 'AM', {
+    'Corporeal Ascension': 0, 'Arcane Sigil': 3
+  });
+  await archMage.zones.specialCombo();
+  assert.deepStrictEqual(archMage.game.calls.filter(function (one) {
+    return one.name === 'ForceUseSkill';
+  }).map(function (one) { return one.args[0]; }), ['2', '4'],
+    'ArchMage refreshes both sigils, in the reference\'s order');
+
+  const archPaladin = rotationRuntime('ARCHPALADIN', '', {
+    'Righteous Seal': 0
+  }, {
+    remaining: { 'Righteous Seal': 300 }, MonMapID: '4'
+  });
+  await archPaladin.zones.specialCombo();
+  assert.deepStrictEqual(archPaladin.game.payload('ForceUseSkill'), ['4'],
+    'ArchPaladin refreshes a Righteous Seal below 600 ms');
+});
+
+test('AntiCounter is live from its own tick, with the Enable box off', async () => {
+  const game = fakeGame({ UserID: 7 });
+  const made = runtime(game, { config: function () { return { AntiCounter: true }; } });
+  assert.strictEqual(made.zones.maid(), false, 'Enable is off');
+  await made.zones.handleFrame(animFrame('the boss prepares a counter attack'));
+  assert.deepStrictEqual(made.slept, [1500, 6000],
+    'the independent anti-counter subscription still sees the warning');
+});
+
+test('resetSpecials clears counterAttack and reads the live ascendedeclipse map name', async () => {
+  const made = maidRuntime({ Map: 'ascendedeclipse', Cell: 'r2' }, {
+    UltraBossExtra: 2, SpecialMsg: 'sun converges', SpecialAct: 5
+  });
+  await made.zones.handleFrame(animFrame('the sun converges', 'id:1'));
+  assert.strictEqual(made.zones.counters().sun, 1);
+  // The reference spells the map 'ascendeclipse' in resetSpecials and 'ascendedeclipse' in the
+  // anti-counter branch; the live player map is the latter.
+  made.game.set('Map', 'ascendedeclipse');
+  made.game.set('Cell', 'r1');
+  await made.zones.resetSpecials();
+  assert.strictEqual(made.zones.counters().sun, 0);
+  assert.strictEqual(made.zones.counters().moon, 0);
+});
+
+test('AlternativeMap.Init starts the locked-map round-robin at the first entry', () => {
+  const made = maidRuntime({}, { LockedZoneHandler: true, LockedZoneHandlerMaps: 'a;Enter;Spawn\r\nb' });
+  assert.strictEqual(made.zones.initLocked(), 0);
+  assert.strictEqual(made.zones.lockedIndex(), 0);
 });

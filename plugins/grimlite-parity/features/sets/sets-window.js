@@ -29,9 +29,6 @@ function createSetsWindow(deps) {
             return Promise.resolve(dialogs.save((args && args[0]) || []))
                 .catch(function (error) { return { canceled: false, path: null, error: message(error) }; });
         }
-        if (channel === 'equipSet') {
-            return guard(function () { return sets.equipSet(game, (args && args[0]) || []); });
-        }
         if (channel === 'setMessages') {
             return Promise.resolve(deps.messages || {});
         }
@@ -62,9 +59,6 @@ function createSetsWindow(deps) {
         });
         deps.host.ipc.handle('saveSet', function (event, entries) {
             return handle('saveSet', event, [entries]);
-        });
-        deps.host.ipc.handle('equipSet', function (event, entries) {
-            return handle('equipSet', event, [entries]);
         });
         deps.host.ipc.handle('setMessages', function (event) {
             return handle('setMessages', event, []);

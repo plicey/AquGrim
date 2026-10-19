@@ -38,7 +38,8 @@ function fakeGame(answers) {
       if (!Object.prototype.hasOwnProperty.call(table, path)) {
         return Promise.resolve({ value: null, error: null });
       }
-      return Promise.resolve({ value: table[path], error: null });
+      const value = table[path];
+      return Promise.resolve({ value: typeof value === 'function' ? value() : value, error: null });
     }
   };
 }
@@ -274,7 +275,7 @@ test('AttackPriority walks its own list before the wildcard', async () => {
   assert.strictEqual(game.calls.filter(function (one) { return one.name === 'AttackMonster'; }).length,
     0, 'the wildcard is not sent when the priority target took');
   // Nothing in the priority list answers: the fallback below is the wildcard's own test.
-  const empty = fakeGame(standing({ HasTarget: false, AttackMonster: true }));
+  const empty = fakeGame(standing({ HasTarget: false, AttackMonster: true, IsMonsterAvailable: true }));
   const fallback = fakeMaid(empty, {
     config: config.stateFrom({
       RelogDelay: 0, AttackPriority: true, AttackPriorityMonster: 'id.3,Boss', SkillDelay: 0
@@ -316,6 +317,7 @@ test('the wildcard attack is the last resort and a target that did not change is
   const game = fakeGame(standing({
     HasTarget: false,
     AttackMonster: true,
+    IsMonsterAvailable: true,
     'world.myAvatar.target.objData.strMonName': 'Slime'
   }));
   const fake = fakeMaid(game, { config: config.stateFrom({ RelogDelay: 0, SkillDelay: 0 }) });
@@ -325,24 +327,63 @@ test('the wildcard attack is the last resort and a target that did not change is
   assert.deepStrictEqual(game.payload('AttackMonster'), ['*']);
   assert.ok(fake.maid.note() === null || !/not /.test(fake.maid.note()),
     'the wildcard does not compare names');
-  assert.deepStrictEqual(game.calls.filter(function (one) { return one.name === 'read'; })[0].args,
-    [maidModel.TARGET_NAME_PATH], 'the read-back is the one documented path read');
+  // The wildcard is only asked for when World.IsMonsterAvailable("*") says there is one: with
+  // the cell empty, no attack is sent at all (MaidRemake.cs:246).
+  const quiet = fakeGame(standing({ HasTarget: false, AttackMonster: true, IsMonsterAvailable: false }));
+  const empty = fakeMaid(quiet, { config: config.stateFrom({ RelogDelay: 0, SkillDelay: 0 }) });
+  empty.maid.setTarget('master');
+  empty.maid.setEnabled(true);
+  await settledTicks(empty);
+  assert.strictEqual(quiet.count('AttackMonster'), 0,
+    'no wildcard attack while World.IsMonsterAvailable("*") is false');
+  assert.ok(game.calls.some(function (one) {
+    return one.name === 'read' && one.args[0] === maidModel.TARGET_NAME_PATH;
+  }), 'the read-back is the one documented path read');
 });
 
-test('WaitSkill gates the next skill on the game\'s own cooldown answer', async () => {
-  const game = fakeGame(standing({ HasTarget: true, SkillAvailable: 250 }));
-  const fake = fakeMaid(game, { config: config.stateFrom({ RelogDelay: 0, WaitSkill: true }) });
+test('WaitSkill force-casts a self skill after its cooldown and advances the index', async () => {
+  // MaidRemake.cs:250-259: a skill whose `tgt` is not "h" is cooldown-waited, then FORCE-cast,
+  // then the index advances - so the next pass deals the next skill.
+  const game = fakeGame(standing({ HasTarget: true, SkillAvailable: 250, ForceUseSkill: true, UseSkill: true }));
+  game.set('world.actions.active.1.tgt', 'f');
+  game.set('world.actions.active.2.tgt', 'f');
+  const sleeps = [];
+  const fake = fakeMaid(game, {
+    config: config.stateFrom({ RelogDelay: 0, WaitSkill: true, SkillList: '1,2' }),
+    sleep: function (ms) { sleeps.push(ms); return Promise.resolve(); }
+  });
   fake.maid.setTarget('master');
   fake.maid.setEnabled(true);
   await settledTicks(fake);
-  const answer = await fake.maid.tick();
-  assert.strictEqual(answer.waiting, 'cooldown');
-  assert.strictEqual(game.count('UseSkill'), 0, 'a skill on cooldown is not cast');
-  // A ready skill is cast and the rotation moves on.
+  assert.deepStrictEqual(game.payload('ForceUseSkill'), ['1'], 'the self skill is forced, not-used');
+  assert.strictEqual(game.count('UseSkill'), 0, 'a self skill is not cast through UseSkill');
+  assert.ok(sleeps.indexOf(250) !== -1, 'the cooldown answer is waited out first');
+  assert.ok(sleeps.indexOf(150) !== -1, 'then the reference\'s own 150 ms step');
+  game.calls.length = 0;
+  await fake.maid.tick();
+  assert.deepStrictEqual(game.payload('ForceUseSkill'), ['2'], 'the index advanced to the next skill');
+});
+
+test('WaitSkill waits and skips a hostile skill until it is ready and there is a target', async () => {
+  // `selfskill == "h"` skips the force branch; the second guard holds the cast while the skill is
+  // on cooldown or no target stands (MaidRemake.cs:260-264).
+  const game = fakeGame(standing({ HasTarget: true, SkillAvailable: 250, UseSkill: true }));
+  game.set('world.actions.active.1.tgt', 'h');
+  const fake = fakeMaid(game, { config: config.stateFrom({ RelogDelay: 0, WaitSkill: true, SkillList: '1' }) });
+  fake.maid.setTarget('master');
+  fake.maid.setEnabled(true);
+  await settledTicks(fake);
+  assert.strictEqual(game.count('UseSkill'), 0, 'a hostile skill on cooldown is not cast');
   game.set('SkillAvailable', 0);
   game.calls.length = 0;
   await fake.maid.tick();
-  assert.deepStrictEqual(game.payload('UseSkill'), ['1']);
+  assert.deepStrictEqual(game.payload('UseSkill'), ['1'], 'a ready hostile skill is cast normally');
+  // No target: the next pass waits, and nothing is cast.
+  game.set('HasTarget', false);
+  game.set('IsMonsterAvailable', false);
+  game.calls.length = 0;
+  await fake.maid.tick();
+  assert.strictEqual(game.count('UseSkill'), 0, 'never cast without a target');
 });
 
 test('a dead character is sent to its spawn point and the maid carries on', async () => {
@@ -389,8 +430,9 @@ test('the maid yields to the bot engine and logs the collision once per command'
   fake.maid.setEnabled(true);
   const first = await fake.maid.tick();
   assert.strictEqual(first.status, maidModel.STATUS.collision);
-  assert.strictEqual(game.calls.length, 0,
-    'the engine holds the current command, so the maid touches nothing this tick');
+  assert.deepStrictEqual(game.calls.filter(function (one) {
+    return one.name !== 'SetLagKiller' && one.name !== 'SetInfiniteRange';
+  }), [], 'the engine holds the current command, so the maid touches nothing this tick');
   assert.ok(fake.logs.join('\n').indexOf('CmdKill') !== -1, 'the collision names the command');
   const again = await fake.maid.tick();
   assert.strictEqual(again.collision, undefined, 'the same command is logged once, not per tick');
@@ -848,4 +890,194 @@ test('the existing Maid scheduler services active Misc 2 handlers without enabli
   await maid.idle();
   assert.strictEqual(passes, 1, 'one existing-scheduler pass services the active handler');
   assert.strictEqual(maid.state().enabled, false, 'handler service does not start Maid follow/combat');
+});
+
+// ------------------------------------------------------------------ the loop's own side effects
+
+test('enabling turns on Lag Killer, applies Infinite Range once, and stopping reverses it', async () => {
+  const game = fakeGame(standing({ SetLagKiller: true, SetInfiniteRange: true }));
+  const fake = fakeMaid(game, { config: config.stateFrom({ RelogDelay: 0, UltraBossExtra: 0 }) });
+  fake.maid.setEnabled(true);
+  await fake.maid.settled();
+  assert.deepStrictEqual(game.payload('SetLagKiller'), ['True'], 'OptionsManager.SetLagKiller(true)');
+  assert.strictEqual(game.count('SetInfiniteRange'), 1, 'applied once per enable');
+  fake.maid.setEnabled(false);
+  await fake.maid.settled();
+  assert.deepStrictEqual(game.payload('SetLagKiller'), ['False'], 'and off again on stop');
+});
+
+test('a crystal or ultra mode equips the Scroll of Enrage and forces skill 5 a second later', async () => {
+  const waits = [];
+  const game = fakeGame(standing({
+    GetInventoryItems: [{ ItemID: 12, sName: 'Scroll of Enrage', sType: 'Item', bEquip: 0 }],
+    EquipPotion: true, ForceUseSkill: true
+  }));
+  const fake = fakeMaid(game, {
+    config: config.stateFrom({ RelogDelay: 0, UltraBossExtra: 8 }),
+    sleep: function (ms) { waits.push(ms); return Promise.resolve(); }
+  });
+  fake.maid.setEnabled(true);
+  await fake.maid.settled();
+  assert.deepStrictEqual(game.payload('EquipPotion'), ['12', undefined, undefined, 'Scroll of Enrage'],
+    'the item id and its own fields, as the reference passes them');
+  assert.deepStrictEqual(game.payload('ForceUseSkill'), ['5'], 'skill 5 is forced after the equip');
+  assert.ok(waits.indexOf(1000) !== -1, 'the reference waits 1000 ms before the forced cast');
+  // None (0) and Auto Potion (1) never equip it.
+  const none = fakeGame(standing({ GetInventoryItems: [], ForceUseSkill: true }));
+  const quiet = fakeMaid(none, { config: config.stateFrom({ RelogDelay: 0, UltraBossExtra: 0 }) });
+  quiet.maid.setEnabled(true);
+  await quiet.maid.settled();
+  assert.strictEqual(none.count('GetInventoryItems'), 0, 'no mode, no equipping');
+  quiet.maid.setEnabled(false);
+  await quiet.maid.settled();
+});
+
+test('stopping the Maid clears Unfollow and the whitelist pause, as stopMaid does', () => {
+  const fake = fakeMaid(fakeGame(standing({})), { config: config.stateFrom({ RelogDelay: 0 }) });
+  fake.maid.setTarget('master');
+  fake.maid.setEnabled(true);
+  fake.maid.setUnfollow(true);
+  fake.maid.setPaused(true);
+  assert.strictEqual(fake.maid.state().unfollow, true);
+  assert.strictEqual(fake.maid.state().paused, true);
+  fake.maid.setEnabled(false);
+  assert.strictEqual(fake.maid.state().unfollow, false, 'stopMaid unticks Unfollow');
+  assert.strictEqual(fake.maid.state().paused, false, 'and clears onPause');
+});
+
+test('a paused Maid still gotos and chases, because only combat is gated on the pause', async () => {
+  const game = fakeGame({
+    IsLoggedIn: true, Health: 100, HealthMax: 100,
+    Map: 'yulgar', Cell: 'Enter', PlayersInMap: [], GetCellPlayers: true
+  });
+  const fake = fakeMaid(game, { config: config.stateFrom({ RelogDelay: 0, SkillDelay: 0 }) });
+  fake.maid.setTarget('master');
+  fake.maid.setEnabled(true);
+  fake.maid.setPaused(true);
+  await settledTicks(fake);
+  assert.deepStrictEqual(fake.sent, ['%xt%zm%cmd%1%goto%master%'],
+    'the goto branch runs while onPause stands');
+  // In the map but not in the target's cell: the chase runs too, and no skill is cast.
+  const chase = fakeGame(standing({ GetCellPlayers: false, PlayerByName: { strFrame: 'Battleon', strPad: 'Left' } }));
+  const paused = fakeMaid(chase, { config: config.stateFrom({ RelogDelay: 0, SkillDelay: 0 }) });
+  paused.maid.setTarget('master');
+  paused.maid.setEnabled(true);
+  paused.maid.setPaused(true);
+  await settledTicks(paused);
+  assert.deepStrictEqual(chase.payload('Jump'), ['Battleon', 'Left']);
+  assert.strictEqual(chase.count('UseSkill'), 0, 'paused means no combat, only movement');
+});
+
+test('a dead character gets SetSpawnPoint, a 500 ms wait and a cleared force flag', async () => {
+  const waits = [];
+  const game = fakeGame(standing({ Health: 0 }));
+  const fake = fakeMaid(game, {
+    config: config.stateFrom({ RelogDelay: 0 }),
+    sleep: function (ms) { waits.push(ms); return Promise.resolve(); }
+  });
+  fake.maid.setTarget('master');
+  fake.maid.setEnabled(true);
+  fake.maid.armSkill('4');
+  await settledTicks(fake);
+  assert.strictEqual(game.count('SetSpawnPoint'), 1);
+  assert.ok(waits.indexOf(500) !== -1, 'the reference waits 500 ms on a death');
+  // The flag is spent by the death: the next fighting pass must not force skill 4.
+  game.set('Health', 100);
+  game.set('HasTarget', true);
+  game.calls.length = 0;
+  await fake.maid.tick();
+  assert.strictEqual(game.count('ForceUseSkill'), 0);
+  await fake.maid.stop();
+});
+
+test('the first join waits for the loading screen before RelogDelay', async () => {
+  const waits = [];
+  let loading = true;
+  const game = fakeGame(standing({ RelogDelay: 0 }));
+  game.set(maidModel.MAP_LOADING_PATH, function () {
+    const value = loading;
+    loading = false;
+    return value;
+  });
+  const fake = fakeMaid(game, {
+    config: config.stateFrom({ RelogDelay: 30 }),
+    sleep: function (ms) { waits.push(ms); return Promise.resolve(); }
+  });
+  fake.maid.setTarget('master');
+  fake.maid.setEnabled(true);
+  const answer = await fake.maid.tick();
+  assert.strictEqual(answer.status, maidModel.STATUS.waitingJoin);
+  assert.ok(waits.indexOf(2000) !== -1, 'the loading screen is polled at 2 s');
+  assert.ok(waits.indexOf(30) !== -1, 'and only then does the RelogDelay run');
+});
+
+test('a goto counts every failed follow pass, even when the frame was written', async () => {
+  const game = fakeGame({
+    IsLoggedIn: true, Map: 'yulgar', Cell: 'Enter', PlayersInMap: [],
+    Health: 100, HealthMax: 100
+  });
+  const fake = fakeMaid(game, {
+    config: config.stateFrom({ RelogDelay: 0, StopFailedGoto: true, SkillDelay: 0 })
+  });
+  fake.maid.setTarget('master');
+  fake.maid.setEnabled(true);
+  await settledTicks(fake, 5);
+  assert.strictEqual(fake.maid.running(), false,
+    'five passes that never reached the target stop the Maid, the frame being written or not');
+});
+
+test('a chase leaves combat before it walks, and a goto before it writes', async () => {
+  const waits = [];
+  const game = fakeGame(standing({
+    State: 2, GetCells: ['Enter'], Cell: 'Enter', Pad: 'Spawn',
+    GetCellPlayers: false, PlayerByName: { strFrame: 'Battleon', strPad: 'Left' }
+  }));
+  const fake = fakeMaid(game, {
+    config: config.stateFrom({ RelogDelay: 0 }),
+    sleep: function (ms) { waits.push(ms); return Promise.resolve(); }
+  });
+  fake.maid.setTarget('master');
+  fake.maid.setEnabled(true);
+  await settledTicks(fake);
+  assert.deepStrictEqual(game.payload('Jump'), ['Battleon', 'Left']);
+  assert.ok(waits.indexOf(100) !== -1, 'ExitCombat waits 100 ms before the refresh/walk');
+  // The goto path: in combat, not in the target's map, so it exits combat first and writes.
+  const far = fakeGame({
+    IsLoggedIn: true, Map: 'yulgar', Cell: 'Enter', PlayersInMap: [],
+    Health: 100, HealthMax: 100, State: 2, GetCells: ['Enter']
+  });
+  const goto = fakeMaid(far, { config: config.stateFrom({ RelogDelay: 0 }) });
+  goto.maid.setTarget('master');
+  goto.maid.setEnabled(true);
+  await settledTicks(goto);
+  assert.deepStrictEqual(goto.sent, ['%xt%zm%cmd%1%goto%master%']);
+});
+
+test('.acc always waits one second before the first Accept, one id or a list', async () => {
+  const waits = [];
+  const half = party.createParty({
+    game: { loaderCall: function () { return Promise.resolve(true); } },
+    send: function () { return true; },
+    state: function () { return {}; },
+    setState: function () {},
+    sleep: function (ms) { waits.push(ms); return Promise.resolve(); }
+  });
+  await half.run(party.parseLine('.acc 42'));
+  assert.deepStrictEqual(waits, [1000], 'a single id still waits the reference\'s 1000 ms');
+  waits.length = 0;
+  await half.run(party.parseLine('.acc 1,2'));
+  assert.deepStrictEqual(waits, [1000, 1000, 1000], 'the list waits between every Accept too');
+});
+
+test('Chrono Shadow forces every cast, as the reference\'s useSkill helper does', async () => {
+  const game = fakeGame(standing({
+    Class: 'CHRONO SHADOW', HasTarget: true, UseSkill: true, ForceUseSkill: true
+  }));
+  const fake = fakeMaid(game, { config: config.stateFrom({ RelogDelay: 0, SkillDelay: 0 }) });
+  fake.maid.setTarget('master');
+  fake.maid.setEnabled(true);
+  await settledTicks(fake);
+  assert.deepStrictEqual(game.payload('ForceUseSkill'), ['1'], 'the normal cast is forced');
+  assert.strictEqual(game.count('UseSkill'), 0, 'UseSkill is never the CSH path');
+  await fake.maid.stop();
 });

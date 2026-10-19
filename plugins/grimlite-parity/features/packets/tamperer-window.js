@@ -8,17 +8,29 @@
 // the last one goes off. The switches themselves sit in tamperer.js, which is what makes each of
 // them gate only its own direction.
 const tamperer = require('./tamperer.js');
+const steeringNotice = require('./steering-notice.js');
 
 function createTampererWindow(deps) {
     deps = deps || {};
     const packets = deps.packets;
     const labels = Object.assign({}, tamperer.LABELS, deps.messages || {});
+    // The banner the window shows while steering is off: with no relay there is nothing to read
+    // and nowhere to write. A caller that says nothing has nothing to say.
+    const steering = typeof deps.steering === 'function' ? deps.steering : function () { return ''; };
 
     let release = null;
     const watchers = [];
 
     const capture = tamperer.createCapture({
-        send: function (frame) { return packets.send(frame); }
+        // packets.send throws when this session is not steering traffic at all; the window reports
+        // that the same way as a relay with nobody connected: not written.
+        send: function (frame) {
+            try {
+                return packets.send(frame);
+            } catch (error) {
+                return false;
+            }
+        }
     });
 
     function watching() {
@@ -44,6 +56,7 @@ function createTampererWindow(deps) {
     function handle(channel, event, args) {
         void event;
         if (channel === 'tampererMessages') return Promise.resolve(labels);
+        if (channel === 'tampererSteering') return Promise.resolve({ notice: steering() });
         if (channel === 'tampererWatch') {
             const wanted = (args && args[0]) || {};
             if (event && event.sender && watchers.indexOf(event.sender) === -1) {
@@ -98,8 +111,8 @@ function createTampererWindow(deps) {
         if (!deps.host) return;
         const host = deps.host;
         [
-            'tampererMessages', 'tampererWatch', 'tampererUnwatch', 'tampererFilter',
-            'tampererClear', 'tampererSendToServer', 'tampererSendToClient'
+            'tampererMessages', 'tampererSteering', 'tampererWatch', 'tampererUnwatch',
+            'tampererFilter', 'tampererClear', 'tampererSendToServer', 'tampererSendToClient'
         ].forEach(function (name) {
             host.ipc.handle(name, function (event) {
                 return handle(name, event, Array.prototype.slice.call(arguments, 1));
@@ -125,6 +138,8 @@ function createFromHost(host, deps) {
         // the sniffer's callbacks and sends from the same box).
         packets: host.packets,
         channel: 'plugin:' + host.pluginId + ':tampererCapture',
+        // Off means the relay is not there, both to read through and to write through.
+        steering: function () { return steeringNotice.notice(host); },
         messages: (typeof host.getLocaleStrings === 'function' &&
             host.getLocaleStrings('tampererMessages')) || {}
     });

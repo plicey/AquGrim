@@ -57,7 +57,9 @@ const ERRORS = {
     loaderSurface: function (name) {
         return '"' + name + '" belongs to the reference client\'s own loader, not to the game, and the ' +
             'bridge does not implement that surface yet (ticket #48)';
-    }
+    },
+    /** A username kept from a previous session has no password until the user types one. */
+    noPassword: 'Enter the password again for this session.'
 };
 
 /**
@@ -179,6 +181,13 @@ function signIn(game, store, username) {
             signedIn: false,
             username: username,
             error: ERRORS.unknownCharacter(username)
+        });
+    }
+    if (!character.password) {
+        return Promise.resolve({
+            signedIn: false,
+            username: character.username,
+            error: ERRORS.noPassword
         });
     }
     return Promise.resolve()

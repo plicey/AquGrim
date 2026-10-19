@@ -12,7 +12,10 @@
   }
   body { display: flex; flex-direction: column; }
 
-  #toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #2c2c2c; flex: 0 0 auto; }
+  #banner { flex: 0 0 auto; padding: 8px 12px; background: #3a2a12; border-bottom: 1px solid #57401c; color: #f0c987; font-size: 12px; }
+  #banner.hidden { display: none; }
+
+  #toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid #2c2c2c; flex: 0 0 auto; }
   #toolbar button { background: #232323; color: #e6e6e6; border: 1px solid #383838; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px; }
   #toolbar button:hover { background: #2c2c2c; }
   #toolbar button:disabled { color: #6f6f6f; cursor: default; background: #1b1b1b; }
@@ -39,20 +42,59 @@
   }
   #empty { flex: 0 0 auto; padding: 18px 12px; color: #6f6f6f; }
   #empty.hidden { display: none; }
+
+  /* The reference's own Spammer block (PacketLogger.Designer.cs): its label, a box, then the
+     delay with "ms", the times with "x", and the Spam / Send Once pair on the right. */
+  #spammer { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 10px; border-top: 1px solid #2c2c2c; }
+  #spammerLabel { color: #dcdcdc; font-size: 12px; }
+  #textToSend {
+    font-family: Consolas, "Courier New", monospace; font-size: 12px; background: #1b1b1b;
+    border: 1px solid #333; border-radius: 4px; padding: 5px 8px; color: #dcdcdc;
+  }
+  #textToSend:focus { outline: none; border-color: #4da3ff; }
+  #spamRow { display: flex; align-items: center; gap: 8px; }
+  #spamRow input[type="number"] {
+    font-family: inherit; font-size: 12px; background: #1b1b1b; border: 1px solid #333;
+    border-radius: 4px; padding: 4px 6px; color: #dcdcdc; width: 68px; box-sizing: border-box;
+  }
+  #spamRow input[type="number"]:focus { outline: none; border-color: #4da3ff; }
+  #spamRow .unit { color: #9a9a9a; font-size: 12px; }
+  #spamRow .push { flex: 1 1 auto; }
+  #spamRow button {
+    font: inherit; font-size: 12px; color: #e6e6e6; background: #232323; border: 1px solid #383838;
+    border-radius: 4px; padding: 5px 12px; cursor: pointer;
+  }
+  #spamRow button:hover { background: #2c2c2c; }
+  #spamRow button:disabled { color: #6f6f6f; cursor: default; background: #1b1b1b; }
 </style>
 </head>
 <body>
+  <div id="banner" class="hidden"></div>
+  <ul id="frames"></ul>
+  <div id="empty"></div>
   <div id="toolbar">
-    <button id="start">Start</button>
-    <button id="stop">Stop</button>
-    <button id="copy">Copy</button>
     <button id="clear">Clear</button>
+    <button id="copy">Copy</button>
+    <button id="stop">Stop</button>
+    <button id="start">Start</button>
     <span id="spacer"></span>
     <input id="filter" type="text" placeholder="Filter">
   </div>
   <div id="status"></div>
-  <ul id="frames"></ul>
-  <div id="empty"></div>
+
+  <div id="spammer">
+    <label id="spammerLabel" for="textToSend">Spammer</label>
+    <input id="textToSend" type="text" spellcheck="false" placeholder="%xt%zm%...">
+    <div id="spamRow">
+      <input id="numSpamDelay" type="number" min="0" max="2000" step="1" value="1000" title="Delay">
+      <span id="ms" class="unit">ms</span>
+      <span class="push"></span>
+      <input id="numSpamTimes" type="number" min="0" max="2000" step="1" value="0" title="Times">
+      <span id="x" class="unit">x</span>
+      <button id="spam">Spam</button>
+      <button id="sendOnce">Send Once</button>
+    </div>
+  </div>
 
   <script src="frames.js"></script>
   <script src="logger_renderer.js"></script>

@@ -54,7 +54,8 @@ function createNotepad(deps) {
         ipc.handle('notepadSave', async function (event, text) {
             const owner = deps.getWindow ? deps.getWindow(event) : undefined;
             const result = await saveDialog(owner, {
-                title: getMessages().saveTitle || 'Save notepad',
+                // SaveFileDialog's own default title: the reference never sets one.
+                title: 'Save As',
                 filters: SAVE_FILTERS,
                 properties: ['createDirectory', 'showOverwriteConfirmation']
             });

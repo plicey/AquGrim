@@ -45,10 +45,9 @@ test('the maid config carries the reference\'s own 23 keys, in its own order', (
     'the 23 keys are the 5 numbers, the 10 booleans and the 8 strings');
 });
 
-test('the shipped default is the reference\'s own Resources/Plugins/Maid/Default.json', () => {
+test('the shipped default is the reference form\'s own designer state', () => {
   const mine = config.defaults();
-  // The template is a partial file on purpose: it omits these, which is why the overlay rule (a
-  // missing key leaves the box alone) is what makes it usable as a starting point.
+  // LockedMapForm.Designer.cs:61 and WhitelistMap.Designer.cs:128-131, verbatim.
   assert.strictEqual(mine.Target, 'username');
   assert.strictEqual(mine.SkillList, '1,2,3,4');
   assert.strictEqual(mine.SkillDelay, 150);
@@ -57,26 +56,34 @@ test('the shipped default is the reference\'s own Resources/Plugins/Maid/Default
   assert.strictEqual(mine.SafeSkillHP, 60);
   assert.strictEqual(mine.BuffStopAttackList, '2,3');
   assert.strictEqual(mine.AttackPriorityMonster, 'Defense Drone,Attack Drone');
-  // The two map lines are one string with a CRLF between them, the way the reference's own text
-  // box holds them.
-  assert.strictEqual(mine.LockedZoneHandlerMaps, 'citadel-6666;m22;Left\r\ntercessuinotlim-6666');
-  ['WhitelistMapMaps', 'AntiCounter', 'SpecialMsg', 'SpecialAct', 'UltraBossExtra'].forEach(function (key) {
-    assert.strictEqual(Object.prototype.hasOwnProperty.call(mine, key), false,
-      key + ' is not in the shipped template');
-  });
+  assert.strictEqual(mine.LockedZoneHandlerMaps,
+    'doomvault\r\ndoomvaultb\r\nicewing\r\nvoidflibbi\r\nvoidnightbane\r\nvoidxyfrag');
+  assert.strictEqual(mine.WhitelistMapMaps,
+    'newbie;all\r\nprison;all\r\nchaoscrypt;all\r\nbattleunderb;Enter;Spawn');
+  assert.strictEqual(mine.SpecialMsg, 'converge,truth,resist,bleee');
+  assert.strictEqual(mine.SpecialAct, 5);
+  assert.strictEqual(mine.UltraBossExtra, 0);
+  assert.strictEqual(mine.AntiCounter, true);
+  // Every one of the 23 keys is present, which is what makes a save whole with no nulls.
+  assert.deepStrictEqual(Object.keys(mine).sort(), config.FIELDS.slice().sort());
+});
 
-  const file = referenceRoot('Resources/Plugins/Maid/Default.json');
-  if (!file) return;
-  const shipped = JSON.parse(fs.readFileSync(file, 'utf8'));
-  Object.keys(shipped).forEach(function (key) {
-    assert.deepStrictEqual(mine[key], shipped[key], 'the default for ' + key + ' drifted');
-  });
+test('the four numeric controls clamp to the reference designer\'s own bounds', () => {
+  assert.strictEqual(config.clamp('SkillDelay', 10), 50, 'numSkillDelay.Minimum = 50');
+  assert.strictEqual(config.clamp('SkillDelay', 999999), 60000, 'numSkillDelay.Maximum = 60000');
+  assert.strictEqual(config.clamp('RelogDelay', 70000), 60000, 'numRelogDelay.Maximum = 60000');
+  assert.strictEqual(config.clamp('SafeSkillHP', 0), 1, 'numHealthPercent.Minimum = 1');
+  assert.strictEqual(config.clamp('SafeSkillHP', 150), 99, 'numHealthPercent.Maximum = 99');
+  assert.strictEqual(config.clamp('SpecialAct', 9), 5, 'numSkillAct.Maximum = 5');
+  assert.strictEqual(config.clamp('SkillDelay', 'not a number'), null, 'a non-number is refused');
+  // And the same bounds hold when a file is applied, the way ApplyConfig's control clamps.
+  const applied = config.apply({ SkillDelay: 10, SafeSkillHP: 150 }, config.defaults());
+  assert.strictEqual(applied.SkillDelay, 50);
+  assert.strictEqual(applied.SafeSkillHP, 99);
 });
 
 test('a config file round-trips: parse, serialise, parse again', () => {
-  const file = referenceRoot('Resources/Plugins/Maid/Default.json');
-  if (!file) return;
-  const first = config.parse(fs.readFileSync(file, 'utf8'));
+  const first = { ok: true, config: config.defaults() };
   assert.strictEqual(first.ok, true);
   const written = config.serialise(config.stateFrom(first.config));
   const second = config.parse(written);
@@ -85,6 +92,15 @@ test('a config file round-trips: parse, serialise, parse again', () => {
     'what was written back does not read back the same');
   // Every one of the 23 keys is written, the way JsonConvert writes the whole object.
   assert.deepStrictEqual(Object.keys(JSON.parse(written)), config.FIELDS);
+  const values = JSON.parse(written);
+  config.FIELDS.forEach(function (key) {
+    assert.notStrictEqual(values[key], null, 'a saved file must not carry a null ' + key);
+  });
+  // A partial state still saves all 23 with the form's own fallbacks, never a null.
+  const partial = JSON.parse(config.serialise({ SkillList: '9' }));
+  assert.strictEqual(partial.SkillList, '9');
+  assert.strictEqual(partial.SpecialMsg, config.DEFAULT_CONFIG.SpecialMsg);
+  assert.notStrictEqual(partial.WhitelistMapMaps, null);
 });
 
 test('the overlay leaves what a file omits and takes what it carries, false included', () => {

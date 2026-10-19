@@ -15,6 +15,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const url = require('url');
 const config = require('./config.js');
 const maidModel = require('./maid.js');
 const presets = require('./presets.js');
@@ -25,8 +26,24 @@ const zonesModel = require('./zones.js');
 // attached separately, because they are about a window being open rather than about one call.
 const CHANNELS = [
     'maidView', 'maidMessages', 'maidPresets', 'maidSet', 'maidPreset', 'maidMe',
-    'maidSave', 'maidLoad', 'maidAutoload'
+    'maidSave', 'maidLoad', 'maidAutoload', 'maidPlayers', 'maidMaps'
 ];
+
+// The two map sub-windows' own ids, pages and preload, registered from this module so the whole
+// Maid stays in its own files (the reference owns LockedMapForm and WhitelistMapForm beside the
+// Maid form's own project folder).
+const MAP_WINDOW_IDS = {
+    locked: 'grimlite-parity-maid-locked-maps',
+    whitelist: 'grimlite-parity-maid-whitelist-maps'
+};
+const MAP_PAGE = path.join(__dirname, 'maps.html');
+const MAP_PRELOAD = path.join(__dirname, 'preload_maps.js');
+
+/** LockedMapForm.Designer.cs:57-61 / WhitelistMap.Designer.cs:124-131, verbatim. */
+const MAP_TEXTS = {
+    locked: 'doomvault\r\ndoomvaultb\r\nicewing\r\nvoidflibbi\r\nvoidnightbane\r\nvoidxyfrag',
+    whitelist: 'newbie;all\r\nprison;all\r\nchaoscrypt;all\r\nbattleunderb;Enter;Spawn'
+};
 
 // The game's own name field, which is where the reference gets the character it is playing
 // (`btnMe` sets the target to `Player.Username`). The loader's own GetUsername holds the login it
@@ -63,6 +80,10 @@ function createMaidWindow(deps) {
     let state = config.stateFrom(config.defaults());
     let loadedFrom = null;
     let specialAnims = true;
+    // cbPartyCmd and cmbPreset are form state, not MaidConfig keys (MaidConfig.cs has neither), so
+    // they live beside the state the way the reference keeps them on the controls themselves.
+    let partyCmd = true;
+    let presetName = '';
     let carriedHeal = true;      // ClassPreset.cs's own static `heal`, carried across presets
     const onChange = [];
 
@@ -95,12 +116,15 @@ function createMaidWindow(deps) {
             state: Object.assign({}, live, {
                 config: Object.assign({}, zonesModel.DESIGNER, state),
                 loadedFrom: loadedFrom,
-                specialAnims: specialAnims
+                specialAnims: specialAnims,
+                partyCmd: partyCmd,
+                preset: presetName
             }),
             presets: presets.names(),
             modes: zonesModel.MODES.slice(),
             messages: messages,
             fields: { all: config.FIELDS, numbers: config.NUMBERS, booleans: config.BOOLEANS },
+            limits: config.LIMITS,
             parties: { enabled: party !== null, commands: partyModel.COMMANDS }
         };
     }
@@ -132,8 +156,10 @@ function createMaidWindow(deps) {
                     return;
                 }
                 if (config.NUMBERS.indexOf(key) !== -1) {
-                    const number = Number(value);
-                    if (isFinite(number)) {
+                    // The reference's own NumericUpDown bounds, which the browser's min/max does
+                    // not enforce for a typed value.
+                    const number = config.clamp(key, value);
+                    if (number !== null && isFinite(number)) {
                         const beforeMode = key === 'UltraBossExtra'
                             ? (Number(state.UltraBossExtra) || 0) : null;
                         state[key] = number;
@@ -150,6 +176,13 @@ function createMaidWindow(deps) {
         }
         if (Object.prototype.hasOwnProperty.call(change, 'specialAnims')) {
             specialAnims = change.specialAnims === true;
+        }
+        if (Object.prototype.hasOwnProperty.call(change, 'partyCmd')) {
+            partyCmd = change.partyCmd !== false;
+            if (party) party.setEnabled(partyCmd);
+        }
+        if (Object.prototype.hasOwnProperty.call(change, 'preset')) {
+            presetName = change.preset === null || change.preset === undefined ? '' : String(change.preset);
         }
         if (Object.prototype.hasOwnProperty.call(change, 'target')) {
             const name = String(change.target === null || change.target === undefined ? '' : change.target);
@@ -179,6 +212,7 @@ function createMaidWindow(deps) {
         const answer = presets.applyTo(chosen, state, carriedHeal);
         state = answer.config;
         carriedHeal = answer.heal;
+        presetName = chosen.name;
         announce({ config: { SkillList: chosen.skills } }, {});
         log('maid: preset ' + chosen.name + ' applied');
         return { ok: true, view: view() };
@@ -229,20 +263,135 @@ function createMaidWindow(deps) {
         return { ok: true, view: view() };
     }
 
-    /** The reference's own btnMe: the target becomes the character being played. */
+    /**
+     * The reference's own btnMe (:1585-1589): `if (Player.IsLoggedIn) cmbGotoUsername.Text =
+     * Player.Username;` - a logged-out click does nothing at all, silently.
+     */
     function me() {
-        if (!game || typeof game.read !== 'function') {
-            return Promise.resolve({ ok: false, error: 'this app has no game bridge channel' });
+        if (!game || typeof game.loaderCall !== 'function') {
+            return Promise.resolve({ ok: true, silent: true, view: view() });
         }
-        return Promise.resolve(game.read(PLAYERNAME_PATH)).then(function (answer) {
-            const name = answer && answer.value ? String(answer.value) : '';
-            if (!name) {
-                return { ok: false, error: (answer && answer.error) || 'no character is signed in' };
-            }
-            return Object.assign(set({ target: name }), { ok: true });
-        }, function (error) {
-            return { ok: false, error: message(error) };
+        return Promise.resolve(game.loaderCall('IsLoggedIn', [])).then(function (signedIn) {
+            if (!signedIn) return { ok: true, silent: true, view: view() };
+            return Promise.resolve(game.read(PLAYERNAME_PATH)).then(function (answer) {
+                const name = answer && answer.value ? String(answer.value) : '';
+                if (!name) return { ok: true, silent: true, view: view() };
+                return Object.assign(set({ target: name }), { ok: true });
+            });
+        }, function () {
+            return { ok: true, silent: true, view: view() };
         });
+    }
+
+    /** The reference's own constructor line: `if (Player.IsLoggedIn) cmbGotoUsername.Text = ...` */
+    function prefillTarget() {
+        if (!game || typeof game.loaderCall !== 'function') return Promise.resolve(false);
+        return Promise.resolve(game.loaderCall('IsLoggedIn', [])).then(function (signedIn) {
+            if (!signedIn) return false;
+            return Promise.resolve(game.read(PLAYERNAME_PATH)).then(function (answer) {
+                const name = answer && answer.value ? String(answer.value) : '';
+                // The constructor runs before AutoLoadConfig, so a target a config already set is
+                // the one the reference keeps; only the shipped placeholder is replaced.
+                if (!name || (state.Target && String(state.Target).trim().toLowerCase() !== 'username')) return false;
+                set({ target: name });
+                return true;
+            });
+        }, function () { return false; });
+    }
+
+    /** World.PlayersInMap, the combo's own list (cmbGotoUsername_Clicked, :1370-1376). */
+    function players() {
+        if (!game || typeof game.loaderCall !== 'function') return Promise.resolve([]);
+        return Promise.resolve(game.loaderCall('PlayersInMap', [])).then(function (value) {
+            const list = Array.isArray(value) ? value
+                : (value && typeof value === 'object'
+                    ? Object.keys(value).map(function (key) { return value[key]; })
+                    : []);
+            return list.map(function (one) {
+                return one && typeof one === 'object' ? (one.strUsername || one.uoName || '') : one;
+            }).filter(function (name) { return !!name; }).map(String);
+        }, function () { return []; });
+    }
+
+    /**
+     * One map sub-window's own calls (WhitelistMap.cs / LockedMapForm.cs). `get` answers the page's
+     * view; `set`, `clear`, `add`, `grab` and `check` are its five buttons.
+     */
+    function maps(request) {
+        const ask = request || {};
+        const kind = ask.kind === 'locked' ? 'locked' : 'whitelist';
+        const key = kind === 'locked' ? 'LockedZoneHandlerMaps' : 'WhitelistMapMaps';
+        const text = String(state[key] === undefined || state[key] === null ? '' : state[key]);
+        const entries = config.parseMapList(text, kind === 'locked' ? { locked: true } : {});
+        const answer = {
+            ok: true, kind: kind, action: ask.action || 'get', text: text, counter: entries.length,
+            result: ask.result === undefined ? '' : String(ask.result),
+            preview: ''
+        };
+        if (ask.action === 'grab') return mapsGrab(kind, answer);
+        if (ask.action === 'clear') {
+            state[key] = '';
+            answer.text = '';
+            answer.counter = 0;
+            announce({ config: { } }, {});
+            return answer;
+        }
+        if (ask.action === 'add') {
+            const piece = String(ask.piece || '');
+            if (piece !== '') {
+                state[key] = (text === '' ? '' : text + '\r\n') + piece;
+                answer.text = state[key];
+                answer.counter = config.parseMapList(state[key], kind === 'locked' ? { locked: true } : {}).length;
+            }
+            return answer;
+        }
+        if (ask.action === 'set') {
+            state[key] = String(ask.text === undefined || ask.text === null ? '' : ask.text);
+            answer.text = state[key];
+            answer.counter = config.parseMapList(state[key], kind === 'locked' ? { locked: true } : {}).length;
+            return answer;
+        }
+        if (ask.action === 'check') {
+            // Both lblCheck handlers refuse an empty list and otherwise build the same header.
+            if (entries.length === 0) return answer;
+            let out = 'Unspecified cell/pad will set to Spawn/Enter,\r\n'
+                + 'The empty line & space will be ignored, etc.\r\n'
+                + '(It will goto target when you\'re in the same map)\r\n\r\n';
+            entries.forEach(function (entry, index) {
+                const n = '(' + (index + 1) + ') map:' + entry.map;
+                if (kind === 'whitelist' && String(entry.cell).toLowerCase() === 'all') {
+                    out += n + ' in all cells\r\n';
+                } else {
+                    out += n + ', cell:' + entry.cell + ', pad:' + entry.pad + '\r\n';
+                }
+            });
+            answer.preview = out;
+            return answer;
+        }
+        return answer;
+    }
+
+    /** btnGrabMap (:93-103 / :81-91): the live map-room and cell, or nothing when logged out. */
+    function mapsGrab(kind, answer) {
+        if (!game || typeof game.loaderCall !== 'function') return Promise.resolve(answer);
+        return Promise.all([
+            Promise.resolve(game.loaderCall('IsLoggedIn', [])),
+            Promise.resolve(game.read('world.mapLoadInProgress')),
+            Promise.resolve(game.read('world.strMapName')),
+            Promise.resolve(game.loaderCall('RoomNumber', [])),
+            Promise.resolve(game.read('world.strFrame')),
+            Promise.resolve(game.read('world.strPad'))
+        ]).then(function (values) {
+            const loading = values[1] && (values[1].value === true || values[1].value === 'true');
+            const map = values[2] && values[2].value ? String(values[2].value) : '';
+            const cell = values[4] && values[4].value ? String(values[4].value) : '';
+            const pad = values[5] && values[5].value ? String(values[5].value) : '';
+            answer.result = values[0] === true && !loading && map && cell
+                ? map + '-' + (values[3] === undefined || values[3] === null ? '' : values[3])
+                    + ';' + cell + ';' + pad
+                : '';
+            return answer;
+        }, function () { return answer; });
     }
 
     function handle(channel, event, args) {
@@ -261,11 +410,16 @@ function createMaidWindow(deps) {
             return Promise.resolve(preset(first));
         case 'maidMe':
             return me();
+        case 'maidPlayers':
+            return players();
+        case 'maidMaps':
+            return Promise.resolve(maps(first)).then(function (answer) {
+                return Object.assign(answer, { view: view() });
+            });
         case 'maidSave':
             if (!dialogs || typeof dialogs.save !== 'function') return Promise.resolve(save(null));
             return Promise.resolve(dialogs.save(null, config.serialise(state), {
-                directory: directory,
-                name: 'autoload.json'
+                directory: directory
             })).then(function (answer) {
                 if (answer && answer.canceled) return { ok: true, canceled: true, view: view() };
                 if (answer && answer.error) return { ok: false, error: answer.error };
@@ -299,16 +453,25 @@ function createMaidWindow(deps) {
         });
     }
 
+    // The reference's own constructor runs AutoLoadConfig (:1497-1508) and, before it, fills the
+    // target combo from the signed-in character when there is one.
+    autoload();
+    prefillTarget();
+
     return {
         handle: handle,
         attach: attach,
         view: view,
         set: set,
         preset: preset,
+        presetName: function () { return presetName; },
         autoload: autoload,
         save: save,
         load: load,
         me: me,
+        players: players,
+        maps: maps,
+        prefillTarget: prefillTarget,
         config: function () { return Object.assign({}, state); },
         /** Watch the config, so a key can follow the Global Hotkey box. */
         onConfigChange: function (listener) {
@@ -352,7 +515,8 @@ function createDialogs(deps) {
             const directory = (options && options.directory) || undefined;
             return Promise.resolve(electron.dialog.showSaveDialog(owner, {
                 title: words.saveTitle || 'Save config',
-                defaultPath: directory && options.name ? path.join(directory, options.name) : directory,
+                // The reference pre-fills the folder, never a file name (btnSave_Click :1427-1435).
+                defaultPath: directory,
                 filters: [{ name: words.filterName || 'Maid config', extensions: ['json'] }]
             })).then(function (answer) {
                 if (!answer || answer.canceled || !answer.filePath) return { canceled: true };
@@ -417,6 +581,12 @@ function createKeys(deps) {
         const want = isGlobal === true ? 'global' : 'local';
         if (onLayer === want) return { ok: true, layer: want, registered: registered.length };
         release();
+        // cbEnableGlobalHotkey_CheckedChanged's own untick (:1041-1043): both boxes go off with
+        // the app-wide hook, whether the hook was taken or the box merely starts unticked.
+        if (want === 'local') {
+            if (typeof maid.setUnfollow === 'function') maid.setUnfollow(false);
+            if (typeof maid.setStopAttack === 'function') maid.setStopAttack(false);
+        }
         const layer = (want === 'global' ? global : local) || null;
         if (!layer || typeof layer.register !== 'function') {
             log('maid: this app session has no ' + want + ' shortcut layer to put the keys on');
@@ -483,7 +653,7 @@ function createFromHost(host, deps) {
         // the handler half, so the scheduler reads them across this seam. The closure is safe to
         // define before `zones` exists: it is only read from a tick, long afterwards.
         specialsHolding: function () { return zones.holding(); },
-        specialCombo: function () { return zones.autoPotionNeeded(); },
+        specialCombo: function () { return zones.specialCombo(); },
         specialBalance: function (forceSkill) { return zones.balanceCrystals(forceSkill); },
         // taunt()'s own door: the reference calls it once per fighting pass while no rotation is
         // running (MaidRemake.cs:295-296), and the cycle it starts reads the SpecialMsg box the
@@ -503,11 +673,11 @@ function createFromHost(host, deps) {
         send: function (frame) { return bridge.sendServerFrame(frame); },
         state: function () { return maid.state(); },
         setState: function (patch) {
-            if (patch.target !== undefined) maid.setTarget(patch.target);
-            if (patch.enabled !== undefined) {
-                maid.setEnabled(patch.enabled === true);
-                if (patch.enabled === true) maid.start();
-            }
+            // The party commands go through the window's own switch, not around it: `.start` and
+            // `.stop` have to run the same announce()/zones.setMaid() path the Enable box does
+            // (PartyChatHandler.cs:78-84 sets cbEnablePlugin.Checked, which is the whole handler).
+            if (patch.target !== undefined) window.set({ target: patch.target });
+            if (patch.enabled !== undefined) window.set({ enabled: patch.enabled === true });
         },
         log: log
     }));
@@ -521,6 +691,8 @@ function createFromHost(host, deps) {
         log: log,
         sleep: bridge.sleep,
         config: function () { return window ? window.config() : {}; },
+        // cmbPreset's own selection, which the four class rotations read (MaidRemake.cs:478-556).
+        preset: function () { return window ? window.presetName() : ''; },
         maid: maid,
         pauseBotEngine: deps.pauseBotEngine,
         // The aura store is the party half's own when there is one: auras is a per-consumer
@@ -562,31 +734,38 @@ function createFromHost(host, deps) {
     });
 
     /**
-     * The party half's one subscription. Nothing is subscribed at activation, which is this app's
-     * own rule for a tap (test/unit/packet-logger.test.js: opening or activating subscribes
-     * nothing); the Maid reads party chat while a window is looking or while it is running, which
-     * is the same shape the drop list uses, plus the running half because the reference answers
-     * party commands whether or not anybody has its form in front of them.
+     * The one tap subscription this half holds. The reference registers its party handlers in the
+     * form's constructor (`if (cbPartyCmd.Checked)`, MaidRemake.cs:100-105) and never disposes the
+     * form - hiding it is what closing does - so the handlers stay alive for the session, whether
+     * or not anybody is looking at the window. The zone handlers are the same story once a combo
+     * entry is armed; only unchecking PartyCmd and switching the last handler off release the tap.
      */
     function followTap() {
-        // The zone handlers are watched for on their own: the combo can be switched on from a bot
-        // command (CmdSpecialHandler) with no window open, which is exactly when a run's own
-        // packets have to keep arriving.
-        const want = (party !== null || zones.active() !== null) &&
-            (watchers.length > 0 || maid.running() || zones.active() !== null);
+        const partyOn = party !== null && window.view().state.partyCmd !== false;
+        // AntiCounterHandler is its own subscription (cbAntiCounter_CheckedChanged), so its box
+        // alone keeps the tap held even with PartyCmd off and no auto-zone handler armed.
+        const antiOn = window.config().AntiCounter !== false;
+        const want = partyOn || antiOn || zones.active() !== null;
         if (want && !release) {
-            release = host.packets.on('frame', function (frame) {
-                try {
-                    if (party) party.handleFrame(frame);
-                } catch (error) {
-                    log('maid: a party frame could not be read: ' + message(error));
-                }
-                try {
-                    zones.handleFrame(frame);
-                } catch (error) {
-                    log('maid: an auto-zone frame could not be read: ' + message(error));
-                }
-            });
+            try {
+                release = host.packets.on('frame', function (frame) {
+                    try {
+                        if (party && window.view().state.partyCmd !== false) party.handleFrame(frame);
+                    } catch (error) {
+                        log('maid: a party frame could not be read: ' + message(error));
+                    }
+                    try {
+                        zones.handleFrame(frame);
+                    } catch (error) {
+                        log('maid: an auto-zone frame could not be read: ' + message(error));
+                    }
+                });
+            } catch (error) {
+                // Steering off is the ordinary state: activation must still work, and the handlers
+                // simply see nothing until a tap exists.
+                log('maid: packet handlers are idle: ' + message(error));
+                release = null;
+            }
         } else if (!want && release) {
             release();
             release = null;
@@ -634,6 +813,12 @@ function createFromHost(host, deps) {
     window.onConfigChange(function (patch) {
         if (patch && Object.prototype.hasOwnProperty.call(patch, 'enabled')) {
             zones.setMaid(maid.state().enabled === true);
+            if (maid.state().enabled === true) prepareLockedZones();
+            followTap();
+        }
+        if (patch && Object.prototype.hasOwnProperty.call(patch, 'partyCmd')) followTap();
+        if (patch && patch.config && Object.prototype.hasOwnProperty.call(patch.config, 'AntiCounter')) {
+            followTap();
         }
         if (patch && Object.prototype.hasOwnProperty.call(patch, 'specialAnims')) {
             zones.setSpecialAnims(patch.specialAnims === true);
@@ -662,6 +847,74 @@ function createFromHost(host, deps) {
         followTap();
     }
 
+    /**
+     * MaidRemake.cs:230-233: enabling with the locked-zone box ticked either initialises the map
+     * round-robin when the list has entries, or unticks the box when it has none.
+     */
+    function prepareLockedZones() {
+        const state = window.config();
+        if (state.LockedZoneHandler !== true) return;
+        const entries = config.parseMapList(state.LockedZoneHandlerMaps, { locked: true });
+        if (entries.length === 0) {
+            window.set({ config: { LockedZoneHandler: false } });
+            log('maid: the locked-zone handler has no maps, so the box went off');
+            return;
+        }
+        if (zones && typeof zones.initLocked === 'function') zones.initLocked();
+    }
+
+    /** lblLockedMapSetting_LinkClicked / lblWhitelistMap_LinkClicked, as one door. */
+    function openMapsWindow(kind) {
+        const wanted = kind === 'locked' ? MAP_WINDOW_IDS.locked : MAP_WINDOW_IDS.whitelist;
+        try {
+            return host.windows.openFeatureWindow(wanted);
+        } catch (error) {
+            log('maid: could not open the map window: ' + message(error));
+            return null;
+        }
+    }
+
+    /**
+     * The reference owns two map forms beside the Maid form; here they are two feature windows of
+     * this plugin, registered from the Maid's own module so no other file has to know they exist.
+     */
+    let mapWindowsRegistered = false;
+    function registerMapWindows() {
+        if (mapWindowsRegistered || !host || typeof host.registerFeatureWindows !== 'function') return;
+        mapWindowsRegistered = true;
+        const configFor = function (kind) {
+            return {
+                width: 380,
+                height: 420,
+                useContentSize: true,
+                resizable: true,
+                icon: typeof host.getAppIconPath === 'function' ? host.getAppIconPath() : undefined,
+                webPreferences: {
+                    nodeIntegration: false,
+                    sandbox: true,
+                    webviewTag: false,
+                    preload: MAP_PRELOAD,
+                    plugins: false,
+                    contextIsolation: true
+                }
+            };
+        };
+        host.registerFeatureWindows([
+            {
+                id: MAP_WINDOW_IDS.locked,
+                title: function () { return 'Alternative Map(s)'; },
+                url: url.pathToFileURL(MAP_PAGE).href + '?kind=locked',
+                config: configFor()
+            },
+            {
+                id: MAP_WINDOW_IDS.whitelist,
+                title: function () { return 'Whitelist Map'; },
+                url: url.pathToFileURL(MAP_PAGE).href + '?kind=whitelist',
+                config: configFor()
+            }
+        ]);
+    }
+
     return {
         window: window,
         maid: maid,
@@ -669,6 +922,7 @@ function createFromHost(host, deps) {
         zones: zones,
         keys: keys,
         attach: function () {
+            registerMapWindows();
             window.attach();
             host.ipc.handle('maidWatch', function (event) {
                 const sender = event && event.sender;
@@ -681,9 +935,15 @@ function createFromHost(host, deps) {
                 followTap();
                 return window.view();
             });
-            // The autoload the reference applies in its own window's constructor.
-            window.autoload();
+            // The two map labels are links in the reference; this is that click (the window it
+            // opens is registered by registerMapWindows above).
+            host.ipc.handle('maidOpenMaps', function (event, kind) {
+                void event;
+                return openMapsWindow(kind) || { ok: true, opened: false };
+            });
+            // The autoload ran in the window's own constructor, where the reference applies it.
             keys.apply(window.config().GlobalHotkey === true);
+            prepareLockedZones();
             followTap();
             return this;
         },
@@ -692,6 +952,8 @@ function createFromHost(host, deps) {
         /** Whether the party half is reading the tap right now. */
         following: function () { return !!release; },
         followTap: followTap,
+        openMapsWindow: openMapsWindow,
+        prepareLockedZones: prepareLockedZones,
         broadcast: broadcast,
         /** One frame off the platform tap, for the party half. */
         handleFrame: function (frame) { return party ? party.handleFrame(frame) : null; }
@@ -705,5 +967,7 @@ module.exports = {
     createKeys: createKeys,
     configDirectory: configDirectory,
     CHANNELS: CHANNELS,
-    PLAYERNAME_PATH: PLAYERNAME_PATH
+    PLAYERNAME_PATH: PLAYERNAME_PATH,
+    MAP_WINDOW_IDS: MAP_WINDOW_IDS,
+    MAP_TEXTS: MAP_TEXTS
 };

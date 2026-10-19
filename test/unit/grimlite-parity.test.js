@@ -74,9 +74,9 @@ test('the parity plugin is discovered as a bundled plugin and activates', async 
   const windows = state.featureWindows.filter(function (w) {
     return w.id === PLACEHOLDER_ID;
   });
-  assert.strictEqual(windows.length, 1);
+  assert.strictEqual(windows.length, 0, 'the scaffold placeholder is not part of the reference');
   assert.ok(state.featureWindows.length >= 1);
-  const winConfig = windows[0].config;
+  const winConfig = state.featureWindows[0].config;
   assert.strictEqual(winConfig.webPreferences.sandbox, true);
   assert.strictEqual(winConfig.webPreferences.plugins, false);
   assert.strictEqual(winConfig.webPreferences.contextIsolation, true);
@@ -94,13 +94,17 @@ test('the parity plugin is discovered as a bundled plugin and activates', async 
   const registeredIds = state.featureWindows.map(function (w) { return w.id; });
   const entries = [];
   items.forEach(function (menu) {
-    assert.ok(Array.isArray(menu.submenu) && menu.submenu.length >= 1);
-    assert.ok(menu.submenu.every(function (item) { return typeof item.click === 'function'; }));
-    entries.push.apply(entries, menu.submenu);
+    if (menu.submenu) {
+      assert.ok(menu.submenu.every(function (item) { return typeof item.click === 'function'; }));
+      entries.push.apply(entries, menu.submenu);
+    } else {
+      assert.strictEqual(typeof menu.click, 'function', menu.label + ' must open a window');
+      entries.push(menu);
+    }
   });
   entries.forEach(function (entry) { entry.click(); });
 
-  assert.ok(opened.indexOf(PLACEHOLDER_ID) !== -1, 'the placeholder window must stay reachable');
+  assert.ok(opened.length > 0, 'the menu opens at least one registered window');
   opened.forEach(function (id) {
     assert.ok(registeredIds.indexOf(id) !== -1, 'menu opened an unregistered window: ' + id);
   });

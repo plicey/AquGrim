@@ -5,7 +5,7 @@ exports.dialogMessages = {
             return keyb || '';
         }
         return 'Grimlite Parity\n' +
-            expand(k.grimliteBotFile) + ' - Bot file: open and save a .gbot\n' +
+            'Bot - Bot Manager\n' +
             expand(k.grimliteBank) + ' - Bank window\n' +
             expand(k.grimliteLoaders) + ' - Loaders and grabbers: load a shop, a quest or\n' +
             '                the armour customizer, and grab live game data into a tree\n' +
@@ -16,33 +16,42 @@ exports.dialogMessages = {
             'Packets -> Sniffer - Packet logger (client and server traffic)\n' +
             'Packets -> Spammer - Packet spammer (repeat a saved list)\n' +
             'Packets -> Tamperer - Packet Tamperer (edit and inject a frame)\n' +
-            expand(k.grimliteParityPlaceholder) + ' - Parity placeholder window\n' +
             expand(k.grimliteParityDevTest) + ' - Dev Test (call a game function)\n' +
+            'Logs - Debug log (also a hotkey action)\n' +
             expand(k.grimliteOptions) + ' - Options: the reference\'s own option toggles\n' +
             expand(k.grimliteHotkeys) + ' - Hotkeys: bind one key to one action\n' +
             expand(k.grimliteDrop) + ' - Drop Ui: what has dropped, and taking it\n' +
             expand(k.grimliteFastTravels) + ' - Fast travels: the destination buttons and the map bypasser\n' +
-            expand(k.grimliteMaid) + ' - Maid Remake: the party assistant (Alt+Shift+U unfollow, Alt+Shift+X stop attack)';
+            expand(k.grimliteMaid) + ' - Maid Remake: the party assistant\n' +
+            'Auto Attack presets - SS.<CLASS>=1;2;3:SH>60;4 (or commas) in ClientConfig.cfg in the\n' +
+            '                   app data directory, or the autoAttackPresets object in\n' +
+            '                   aquastar.grimlite-parity.auto-attack.json. Add "wait" to wait for each\n' +
+            '                   skill cooldown. A class with no preset uses skills 1-4.';
     }
+};
+
+exports.logsMessages = {
+    title: 'Debug Log',
+    clear: 'Clear'
 };
 
 exports.menuMessages = {
     grimliteMenu: 'Grimlite',
-    grimliteBotFile: 'Bot file',
+    grimliteBot: 'Bot',
     grimliteBotManager: 'Bot Manager',
     grimliteEyedropper: 'Eye Dropper',
     grimliteNotepad: 'Notepad',
     grimliteAbout: 'About',
     grimliteCharSelect: 'Char Select',
+    grimliteCharSelectManage: 'Manage characters...',
     grimliteBank: 'Bank',
     grimliteLoaders: 'Loaders/grabbers',
-    grimliteSets: 'Sets',
     grimliteCosmetics: 'Cosmetics',
     grimliteOptions: 'Options',
     grimliteHotkeys: 'Hotkeys',
+    grimliteLogs: 'Logs',
     grimliteDrop: 'Drop Ui',
     grimliteTravels: 'Fast travels',
-    grimlitePlaceholder: 'Parity placeholder window',
     grimliteDevTest: 'Swf Dev Test',
     packetsMenu: 'Packets',
     packetsSniffer: 'Sniffer',
@@ -63,7 +72,7 @@ exports.botFileMessages = {
     notABot: 'That file is not a readable bot.',
     openTitle: 'Load bot',
     saveTitle: 'Save bot',
-    filterName: 'Grimlite bots'
+    filterName: 'Grimoire bots'
 };
 
 exports.windowTitles = {
@@ -81,6 +90,7 @@ exports.windowTitles = {
     cosmetics: 'SWF Cosmetics',
     options: 'Options',
     hotkeys: 'Hotkeys',
+    logs: 'Debug Log',
     drop: 'DropList',
     travels: 'Fast travels',
     maid: 'Maid Remake',
@@ -224,10 +234,7 @@ exports.hotkeysMessages = {
     title: 'Hotkeys',
     add: 'Add',
     remove: 'Remove',
-    save: 'Save',
-    saved: 'Saved $1 binding(s).',
-    empty: 'Nothing is bound yet.',
-    selectFirst: 'Select a binding first.'
+    save: 'Save'
 };
 
 // The drop list window (ticket #33). Every word is the reference's own control text from

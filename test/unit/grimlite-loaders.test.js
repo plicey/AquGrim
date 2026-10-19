@@ -814,6 +814,13 @@ test('the parity plugin registers the loaders window in the app\'s window conven
   ['grab', 'load', 'save', 'open', 'act', 'messages'].forEach(function (name) {
     assert.ok(exposed.indexOf(name) !== -1, 'the preload must expose ' + name);
   });
+  // cbGrab opens with no choice, the node text is editable (TreeView.LabelEdit), a search
+  // expands collapsed ancestors, and Open is a visible control rather than a hidden dblclick.
+  assert.ok(/grabTarget'\)\.selectedIndex = -1/.test(html), 'the grabber combo must open unselected');
+  assert.ok(html.indexOf('contentEditable') !== -1, 'a tree node text must be editable');
+  assert.ok(html.indexOf("classList.remove('collapsed')") !== -1,
+    'a search result must expand its collapsed ancestors');
+  assert.ok(/<button id="open"/.test(html), 'Open must be a visible control');
   (html.match(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g) || []).forEach(function (block) {
     const source = block.replace(/^<script[^>]*>/, '').replace(/<\/script>$/, '');
     assert.doesNotThrow(function () { new (require('vm').Script)(source); });
@@ -842,6 +849,10 @@ test('the grab channel hands back the rows the page draws, and refusals say why'
   const unknown = await instance.handle('loadersGrab', [null, 'nope', 'Name']);
   assert.strictEqual(unknown.ok, false);
   assert.ok(/nope/.test(unknown.error), unknown.error);
+
+  // A grab that fails clears the tree, as btnGrab_Click's own Nodes.Clear() does before the
+  // switch that threw: the rows a failed grab leaves behind are no rows.
+  assert.deepStrictEqual(instance.rows(), []);
 });
 
 test('the load channel drives each target, the quest count and the ghost variant', async () => {
@@ -923,10 +934,13 @@ test('save writes the XML through the reference\'s save dialog, and open reads i
     readText: function () { return written[0][1]; }
   });
 
-  // Save with nothing grabbed is refused, not written as an empty document.
+  // Save with nothing grabbed is the reference's own empty document, not a refusal: SaveNodes
+  // over an empty TreeView writes the declaration and an empty root.
   const empty = await instance.handle('loadersSave', [null]);
-  assert.strictEqual(empty.ok, false);
-  assert.strictEqual(written.length, 0);
+  assert.strictEqual(empty.ok, true);
+  assert.strictEqual(written.length, 1);
+  assert.ok(/<TreeView>\r\n<\/TreeView>/.test(written[0][1]), written[0][1]);
+  written.length = 0;
 
   await instance.handle('loadersGrab', [null, 'shopItems', 'Name']);
   const saved = await instance.handle('loadersSave', [null]);
@@ -955,7 +969,6 @@ test('a cancelled dialog reports cancelled and writes nothing', async () => {
     writeText: function () { throw new Error('must not write'); },
     readText: function () { throw new Error('must not read'); }
   });
-  await instance.handle('loadersGrab', [null, 'shopItems', 'Name']);
   assert.deepStrictEqual(await instance.handle('loadersSave', [null]), { ok: false, canceled: true });
   assert.deepStrictEqual(await instance.handle('loadersOpen', [null]), { ok: false, canceled: true });
 });

@@ -37,9 +37,12 @@
   #status { flex: 0 0 auto; min-height: 17px; color: #9a9a9a; font-size: 12px; }
   #status.err { color: #ff8e8e; }
   #status.ok { color: #7fd08a; }
+  #banner { flex: 0 0 auto; padding: 8px 10px; background: #3a2a12; border: 1px solid #57401c; border-radius: 4px; color: #f0c987; font-size: 12px; }
+  #banner.hidden { display: none; }
 </style>
 </head>
 <body>
+  <div id="banner" class="hidden"></div>
   <div id="toolbar">
     <label><input type="checkbox" id="fromServer"> <span id="fromServerLabel">Capture from server</span></label>
     <label><input type="checkbox" id="fromClient"> <span id="fromClientLabel">Capture from client</span></label>
@@ -67,6 +70,12 @@
     const status = document.getElementById('status');
     const fromClient = document.getElementById('fromClient');
     const fromServer = document.getElementById('fromServer');
+    const toServerButton = document.getElementById('toServer');
+    const toClientButton = document.getElementById('toClient');
+    const clearButton = document.getElementById('clear');
+    // btnToServer_Click / btnToClient_Click disable the button they are on while their frame is
+    // on its way, and only that one; the state lives here so a draw() cannot re-enable it early.
+    const pending = { toServer: false, toClient: false };
     let failure = '';
 
     function switches() {
@@ -74,9 +83,10 @@
     }
 
     function draw() {
-      document.getElementById('toServer').disabled = sendBox.value.length === 0;
-      document.getElementById('toClient').disabled = sendBox.value.length === 0;
-      document.getElementById('clear').disabled = receiveBox.value.length === 0;
+      toServerButton.disabled = pending.toServer;
+      toClientButton.disabled = pending.toClient;
+      // btnClear_Click has no guard: Clear is always live, and clearing an empty box is nothing.
+      clearButton.disabled = false;
       const watching = fromClient.checked || fromServer.checked;
       status.className = failure ? 'err' : (watching ? 'ok' : '');
       status.textContent = failure || (watching
@@ -114,30 +124,35 @@
       api.setFilter(filterBox.value);
     });
 
-    document.getElementById('clear').addEventListener('click', async function () {
+    clearButton.addEventListener('click', async function () {
       await api.clear();
       receiveBox.value = '';
       draw();
     });
 
-    document.getElementById('toServer').addEventListener('click', async function () {
-      const answer = await api.sendToServer(sendBox.value);
-      if (!answer.sent) {
-        failure = 'Nothing was written: the client is not connected to the relay.';
-      } else {
-        failure = '';
-      }
+    // "if (!string.IsNullOrEmpty(txtSend.Text))": an empty box sends nothing, on either side.
+    async function send(target, action) {
+      if (!sendBox.value.length) return;
+      pending[target] = true;
       draw();
+      let answer;
+      try {
+        answer = await action();
+      } catch (error) {
+        answer = null;
+      } finally {
+        pending[target] = false;
+      }
+      failure = answer && answer.sent ? '' : 'Nothing was written: the client is not connected to the relay.';
+      draw();
+    }
+
+    toServerButton.addEventListener('click', function () {
+      send('toServer', function () { return api.sendToServer(sendBox.value); });
     });
 
-    document.getElementById('toClient').addEventListener('click', async function () {
-      const answer = await api.sendToClient(sendBox.value);
-      if (!answer.sent) {
-        failure = 'Nothing was written: the client is not connected to the relay.';
-      } else {
-        failure = '';
-      }
-      draw();
+    toClientButton.addEventListener('click', function () {
+      send('toClient', function () { return api.sendToClient(sendBox.value); });
     });
 
     sendBox.addEventListener('input', draw);
@@ -152,6 +167,15 @@
       document.getElementById('clear').textContent = messages.clear;
       draw();
     });
+
+    // Steering is the player's opt-in (packets.js): with it off there is no relay, so the switches
+    // have nothing to read and the send buttons have nowhere to write. The window says so.
+    api.steering().then(function (answer) {
+      if (!answer || !answer.notice) return;
+      const banner = document.getElementById('banner');
+      banner.textContent = answer.notice;
+      banner.classList.remove('hidden');
+    }).catch(function () { /* the status line reports what went wrong */ });
 
     // Opening the window reads nothing: the reference hooks its callbacks when a switch is ticked.
     api.unwatch().catch(function () { /* nothing was watching yet */ });

@@ -27,6 +27,15 @@ contextBridge.exposeInMainWorld('aquastarMaid', {
     me: function () {
         return ipcRenderer.invoke(CH('maidMe'));
     },
+    players: function () {
+        return ipcRenderer.invoke(CH('maidPlayers'));
+    },
+    openMaps: function (kind) {
+        return ipcRenderer.invoke(CH('maidOpenMaps'), kind);
+    },
+    maps: function (request) {
+        return ipcRenderer.invoke(CH('maidMaps'), request);
+    },
     save: function () {
         return ipcRenderer.invoke(CH('maidSave'));
     },
@@ -47,4 +56,3 @@ contextBridge.exposeInMainWorld('aquastarMaid', {
         return function () { ipcRenderer.removeListener(CH('maidState'), handler); };
     }
 });
-

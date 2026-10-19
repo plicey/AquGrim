@@ -125,6 +125,9 @@ function createParty(deps) {
     const stateOf = typeof deps.state === 'function' ? deps.state : function () { return {}; };
     let invitationFrame = null;
     let answered = 0;
+    // cbPartyCmd's own tick. The reference registers both handlers in its constructor when the box
+    // ships ticked (:99-105), and its CheckedChanged registers/unregisters the pair (:1571-1583).
+    let enabled = true;
 
     /** One loader call by the reference's own name; a refusal carries its own words. */
     function call(name, args) {
@@ -170,7 +173,9 @@ function createParty(deps) {
             if (!ids.length) return { ok: false, error: '.acc needs a quest id' };
             const loaded = await call('GetQuests', [ids.join(',')]);
             if (!loaded.ok) return { ok: false, command: '.acc', error: loaded.error };
-            if (ids.length > 1) await sleep(QUEST_GAP_MS);
+            // PartyChatHandler.cs:37-53: the 1 s wait runs after GetQuests whether the request
+            // carries one id or a list; the list's own gap follows every Accept.
+            await sleep(QUEST_GAP_MS);
             const taken = [];
             for (let i = 0; i < ids.length; i++) {
                 const accepted = await call('Accept', [ids[i]]);
@@ -213,6 +218,7 @@ function createParty(deps) {
      * carries, written back as `%xt%zm%gp%1%pa%<pid>%`. A send that answers false is reported.
      */
     function acceptInvitation(pid) {
+        if (!enabled) return { ok: false, error: 'PartyCmd is off' };
         const id = String(pid === null || pid === undefined ? '' : pid);
         if (id === '') return { ok: false, error: 'the invitation carries no pid' };
         invitationFrame = '%xt%zm%gp%1%pa%' + id + '%';
@@ -231,6 +237,7 @@ function createParty(deps) {
      * saw both of these. Answers the result, or null when the frame says nothing to this half.
      */
     function handleFrame(frame) {
+        if (!enabled) return null;
         if (!frame || frame.direction !== 'toClient') return null;
         const text = frameText(frame.data);
         if (text === '') return null;
@@ -264,6 +271,9 @@ function createParty(deps) {
 
     return {
         handleFrame: handleFrame,
+        /** cbPartyCmd.Checked: both handlers answer only while it stands. */
+        setEnabled: function (on) { enabled = on !== false; return enabled; },
+        enabled: function () { return enabled; },
         run: run,
         acceptInvitation: acceptInvitation,
         parseLine: parseLine,
@@ -272,6 +282,7 @@ function createParty(deps) {
             return {
                 answers: answered,
                 invitationFrame: invitationFrame,
+                enabled: enabled,
                 target: (stateOf() || {}).target || ''
             };
         }

@@ -7,6 +7,7 @@
 const path = require('path');
 
 const spammer = require('./spammer.js');
+const steeringNotice = require('./steering-notice.js');
 
 const STORE_NAMESPACE = 'spammer';
 const STORE_KEY = 'lastDirectory';
@@ -23,6 +24,9 @@ function createSpammerWindow(deps) {
     const labels = Object.assign({}, spammer.LABELS, messages);
     const showOpenDialog = deps.showOpenDialog;
     const showSaveDialog = deps.showSaveDialog;
+    // The Banner the window shows while steering is off. A caller that says nothing has nothing
+    // to say: the plugin's own window passes the merged settings through here.
+    const steering = typeof deps.steering === 'function' ? deps.steering : function () { return ''; };
     const readText = deps.readText || function (file) { return require('fs').readFileSync(file, 'utf8'); };
     const writeText = deps.writeText || function (file, text) {
         // The reference writes with XmlWriter.Create(file), which is UTF-8 with its BOM: the
@@ -58,7 +62,15 @@ function createSpammerWindow(deps) {
     const watchers = [];
 
     const loop = spammer.createSpammer({
-        send: function (frame) { return packets.send(frame); },
+        // packets.send throws when this session is not steering traffic at all; the window reports
+        // that the same way as a relay with nobody connected: not written.
+        send: function (frame) {
+            try {
+                return packets.send(frame);
+            } catch (error) {
+                return false;
+            }
+        },
         // The reference raises IndexChanged before each send so its list highlights the row going
         // out (PacketSpammer.IndexChanged). The loop lives here, so the index is pushed to the
         // window on its own channel.
@@ -122,6 +134,7 @@ function createSpammerWindow(deps) {
         if (channel === 'spammerMessages') {
             return Promise.resolve(labels);
         }
+        if (channel === 'spammerSteering') return Promise.resolve({ notice: steering() });
         // No owner: the reference builds its dialogs ownerless (`new OpenFileDialog()` then
         // `ShowDialog()`), so they are not modal to the window that opened them.
         if (channel === 'spammerLoad') return open(undefined);
@@ -146,6 +159,9 @@ function createSpammerWindow(deps) {
         if (!deps.host) return;
         const host = deps.host;
         host.ipc.handle('spammerMessages', function (event) { return handle('spammerMessages', event, []); });
+        host.ipc.handle('spammerSteering', function (event) {
+            return handle('spammerSteering', event, []);
+        });
         host.ipc.handle('spammerLoad', function (event) {
             watch(event.sender);
             return handle('spammerLoad', event, []);
@@ -195,6 +211,8 @@ function createFromHost(host, deps) {
         // directory, beside the store the plugin already keeps there.
         defaultDirectory: path.join(host.appDataDirectory, 'Spammer'),
         indexChannel: 'plugin:' + host.pluginId + ':spammerIndex',
+        // Off means the relay is not there to write through (steering-notice.js says why).
+        steering: function () { return steeringNotice.notice(host); },
         messages: (typeof host.getLocaleStrings === 'function' &&
             host.getLocaleStrings('spammerMessages')) || {},
         showOpenDialog: function (owner, options) {

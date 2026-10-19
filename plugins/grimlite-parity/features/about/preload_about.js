@@ -14,5 +14,8 @@ contextBridge.exposeInMainWorld('aquastarAbout', {
     },
     reloadGame: function () {
         return ipcRenderer.invoke(CH('aboutReloadGame'));
+    },
+    loadSwf: function (path) {
+        return ipcRenderer.invoke(CH('aboutLoadSwf'), path);
     }
 });

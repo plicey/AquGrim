@@ -1,62 +1,17 @@
 const windows = require('./windows.js');
 
+// Grimlite ships no hotkeys of its own: Hotkeys.cs starts from an empty hotkeys.json and the
+// user's own file is the whole set. The platform still has its own defaults, and the menu and
+// keybind actions below stay registered so a user can assign them without this plugin taking a
+// key by default.
 const DEFAULTS = {
-    grimliteParityPlaceholder: 'Alt+Shift+G',
-    grimliteBotFile: 'Alt+Shift+B',
-    grimliteBotManager: 'Alt+Shift+M',
-    grimliteEyedropper: 'Alt+Shift+E',
-    grimliteNotepad: 'Alt+Shift+N',
-    grimliteAbout: 'Alt+Shift+A',
-    // The reference ships its hotkeys EMPTY (Grimoire/UI/Root.cs only loads them from a user
-    // config), so every default here is this port's own choice; H was already taken by the
-    // Hotkeys window (#34), so Char Select keeps the family's next free letter.
-    grimliteCharSelect: 'Alt+Shift+S',
-    grimliteParityDevTest: 'Alt+Shift+D',
-    grimliteBank: 'Alt+Shift+K',
-    // The reference's own action list carries "Show Loaders" (Hotkeys.cs:398); this port gives
-    // it a default on a key no other binding of the app's or the plugin's own uses.
-    grimliteLoaders: 'Alt+Shift+L',
-    // The reference's own action list carries "Show Cosmetics form" (Hotkeys.cs:409). Its
-    // bindings ship empty and its picker takes one key; this port gives the window a default on
-    // a key no binding of the app's or the game plugin's own uses.
-    grimliteCosmetics: 'Alt+Shift+C',
-    // The reference's Options menu and Hotkeys window are menu entries upstream with no shortcut
-    // of their own; this port gives each a key on the Alt+Shift family it already uses, so nothing
-    // the app or the game plugin holds is taken. Not K: that is this plugin's own Bank entry.
-    grimliteOptions: 'Alt+Shift+O',
-    grimliteHotkeys: 'Alt+Shift+H',
-    // The reference's own "Show DropUi" action (Hotkeys.cs:415). Not I: the platform already
-    // holds Alt+Shift+I (res/keybindings.js:187).
-    grimliteDrop: 'Alt+Shift+P',
-    // The reference's own action list carries "Show Fast Travels" (Hotkeys.cs:402). Alt+Shift+T
-    // takes nothing: the app holds no plain Alt+T and the game plugin's own reminders entry is
-    // Alt+T, which this family leaves alone.
-    grimliteFastTravels: 'Alt+Shift+T',
-    // The Maid's own two keys. The reference's form has them as plain R and T while it has focus,
-    // with a Global Hotkey box that moves the same two onto a low-level hook; that box is the
-    // Maid's own option, and these are the keys it moves. Not R or T on their own: the app's
-    // bindings are the Alt+Shift family and a bare letter would take the game's own chat keys.
-    //
-    // These two are the only ids here with no `registerKeybinds` entry beside this table. That is
-    // not an omission: a binding registered here is put on the app's local layer unconditionally,
-    // while the Maid's Global Hotkey box has to move its two keys between the local layer and the
-    // app-wide one. The Maid window registers them itself (features/maid/maid-window.js).
     grimliteMaidUnfollow: 'Alt+Shift+U',
-    grimliteMaidStopAttack: 'Alt+Shift+X',
-    // The reference's own action list carries "Show Maid" (Hotkeys.cs:411), between "Show DropUi"
-    // and "Show Logs"; its keys ship empty upstream. R takes nothing this family or the app holds.
-    grimliteMaid: 'Alt+Shift+R'
+    grimliteMaidStopAttack: 'Alt+Shift+X'
 };
 
 function register(host) {
     host.registerKeybindDefaults(DEFAULTS);
     host.registerKeybinds([
-        {
-            id: 'grimliteParityPlaceholder',
-            action: function () {
-                host.windows.openFeatureWindow(windows.PLACEHOLDER_WINDOW_ID);
-            }
-        },
         {
             id: 'grimliteEyedropper',
             action: function () {
@@ -73,21 +28,6 @@ function register(host) {
             id: 'grimliteAbout',
             action: function () {
                 host.windows.openFeatureWindow(windows.ABOUT_WINDOW_ID);
-            }
-        },
-        {
-            // The reference's own action list has no Char Select entry: its char list is a menu,
-            // not a hotkey (Hotkeys.cs has no Char Select action). This port gives the window a
-            // default on a key no binding of the app's or the game plugin's own uses.
-            id: 'grimliteCharSelect',
-            action: function () {
-                host.windows.openFeatureWindow(windows.LOGIN_WINDOW_ID);
-            }
-        },
-        {
-            id: 'grimliteBotFile',
-            action: function () {
-                host.windows.openFeatureWindow(windows.BOT_FILE_WINDOW_ID);
             }
         },
         {

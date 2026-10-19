@@ -25,8 +25,6 @@
   }
   #list li { padding: 4px 8px; cursor: default; }
   #list li.sel { background: #2d4a6b; }
-  #empty { color: #6f6f6f; padding: 8px; }
-  #empty.hidden { display: none; }
   .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   button {
     background: #262626; color: #e6e6e6; border: 1px solid #383838; border-radius: 4px;
@@ -45,7 +43,6 @@
   </div>
 
   <ul id="list"></ul>
-  <div id="empty"></div>
 
   <div class="buttons">
     <button id="add">Add</button>
@@ -60,7 +57,6 @@
   var keyBox = document.getElementById('key');
   var actionBox = document.getElementById('action');
   var list = document.getElementById('list');
-  var empty = document.getElementById('empty');
   var status = document.getElementById('status');
   var selected = null;
   var model = { bindings: [], rows: [] };
@@ -111,9 +107,6 @@
       });
       list.appendChild(item);
     });
-    empty.textContent = model.rows && model.rows.length
-      ? '' : (words().empty || 'Nothing is bound yet.');
-    empty.className = model.rows && model.rows.length ? 'hidden' : '';
     if (model.rows && model.rows.length <= selected) selected = null;
   }
 
@@ -130,7 +123,7 @@
   });
 
   removeButton.addEventListener('click', function () {
-    if (selected == null) { setStatus(words().selectFirst || 'Select a binding first.', true); return; }
+    if (selected == null) return;
     setStatus('');
     var key = model.rows[selected].Key;
     api.clear(key).then(function (answer) {
@@ -139,15 +132,10 @@
     });
   });
 
-  // Save writes the list back, the way the reference's own Save does. The list is persisted on
-  // every change here, so this reports what it wrote rather than being the only way to keep it.
+  // Save is the only action that writes the list to storage.
   saveButton.addEventListener('click', function () {
     api.save().then(function (answer) {
       apply(answer);
-      if (answer.ok) {
-        var saved = words().saved || 'Saved $1 binding(s).';
-        setStatus(saved.replace('$1', String(answer.saved)), false);
-      }
     });
   });
 

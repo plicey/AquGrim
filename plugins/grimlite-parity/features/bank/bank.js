@@ -3,11 +3,11 @@
 // it without a game: it never reaches Flash itself, it does the work through the injected
 // bridge (see ../bridge.js).
 //
-// One deliberate difference from the reference: its "bank all except selected" branch compares
-// `i.Category != "Weapons"` for the Weapons entry, and no item's category is ever the literal
-// "Weapons", so upstream that entry banks *everything* the AC choice matches, weapons
-// included. The ticket says the mode moves "everything outside the selection", so that is what
-// this does, and the reference defect stays recorded rather than reproduced.
+// The reference's "bank all except selected" weapon branch is unreachable: when the combo holds
+// "Weapons", a weapon's own category is never the literal "Weapons", so its second test
+// (`i.Category != category`) matches and the item is banked by the ordinary branch. The result is
+// that Weapons in except-mode means every matching item, weapons included, and that is what this
+// reproduces.
 
 const CATEGORIES = [
     'Weapons',
@@ -88,7 +88,10 @@ function selectCategory(inventory, selection) {
         const inCategory = isWeapons
             ? isWeaponCategory(item.category)
             : item.category === chosen.category;
-        return allExcept ? !inCategory : inCategory;
+        if (!allExcept) return inCategory;
+        // BankForm.cs: the "Weapons" special case tests `!wep.Contains`, which a weapon fails -
+        // and then the fall-through `i.Category != "Weapons"` banks it anyway.
+        return isWeapons ? true : !inCategory;
     }).map(function (item) {
         return item.name;
     });

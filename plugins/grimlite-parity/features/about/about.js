@@ -3,6 +3,8 @@
 // btnLoadSWF_Click re-initialising the game movie).
 const credits = require('./credits.js');
 const reload = require('./reload.js');
+const path = require('path');
+const fs = require('fs');
 
 // Reached at call time: outside the app process require('electron') is the npm shim.
 function electronApi() {
@@ -31,10 +33,21 @@ function createAbout(deps) {
     };
 
     function register(host) {
+        // The reference's tbGameSWF field holds a path relative to the executable and passes it to
+        // InitFlashMovie. This app's one game-SWF override is the platform's managed file in its
+        // data directory, so that is the only path this field accepts: the check below keeps the
+        // box from becoming an arbitrary-file read.
+        const managedSwf = deps.customSwfPath ||
+            path.join(host.appDataDirectory || '', 'custom-game.swf');
+        const game = deps.game || require('../../bridge.js').createGameAccess(host);
+
         host.ipc.handle('aboutInfo', function () {
             return {
-                version: credits.versionLine(deps.appVersion),
-                reference: credits.referenceLine(),
+                version: credits.versionLine(),
+                port: credits.portLine(deps.appVersion),
+                teams: credits.teams(),
+                prose: credits.CREDITS_PROSE,
+                swfPath: managedSwf,
                 links: credits.creditLinks(),
                 messages: getMessages()
             };
@@ -63,6 +76,41 @@ function createAbout(deps) {
                 }
             });
             return { reloaded: count, none: count === 0 };
+        });
+
+        // AboutForm.btnLoadSWF_Click: check the path, log out, then re-initialise the movie. The
+        // only path this accepts is the platform's own custom-game.swf, so a typed string cannot
+        // point the game at a file the user did not choose in Settings.
+        host.ipc.handle('aboutLoadSwf', function (event, candidate) {
+            void event;
+            const wanted = String(candidate == null ? '' : candidate).trim() || managedSwf;
+            if (path.resolve(wanted) !== path.resolve(managedSwf)) {
+                return { loaded: 0, status: 'Use Settings - Custom SWF File to choose a different game SWF.' };
+            }
+            if (!fs.existsSync(path.resolve(managedSwf))) {
+                return { loaded: 0, status: 'File not found.' };
+            }
+            const logout = typeof game.loaderCall === 'function'
+                ? Promise.resolve().then(function () { return game.loaderCall('Logout', []); })
+                    .catch(function (error) {
+                        // A session that cannot be logged out must not stop the reload; the reload
+                        // is what the button promises, and the game window goes back to the loader
+                        // either way.
+                        host.log('about: could not log out before the reload: ' +
+                            ((error && error.message) || error));
+                    })
+                : Promise.resolve();
+            return logout.then(function () {
+                const count = reload.gameMovie({
+                    windows: getWindows(),
+                    isGameUrl: deps.isGameUrl,
+                    onError: function (error, win) {
+                        host.log('could not reload a game window (' + (win && win.id) + '): ' +
+                            (error && error.message ? error.message : error));
+                    }
+                });
+                return { loaded: count, status: count ? '' : 'No game window is open.' };
+            });
         });
     }
 

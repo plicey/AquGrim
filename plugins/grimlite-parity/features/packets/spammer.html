@@ -38,9 +38,12 @@
   #status { flex: 0 0 auto; min-height: 17px; color: #9a9a9a; font-size: 12px; }
   #status.err { color: #ff8e8e; }
   #status.ok { color: #7fd08a; }
+  #banner { flex: 0 0 auto; padding: 8px 10px; background: #3a2a12; border: 1px solid #57401c; border-radius: 4px; color: #f0c987; font-size: 12px; }
+  #banner.hidden { display: none; }
 </style>
 </head>
 <body>
+  <div id="banner" class="hidden"></div>
   <ul id="packets"></ul>
   <input id="packet" type="text" placeholder="%xt%zm%..." spellcheck="false">
 
@@ -81,6 +84,9 @@
     let running = false;
     let sent = 0;
     let failed = 0;
+    // btnSend_Click disables the button while its frame is on its way; the page owns that state
+    // so a draw() in between cannot re-enable it early.
+    let pending = false;
 
     // PacketSpammer.SetButtonsEnabled: Start, Add, Clear and Load go dead while the spammer runs,
     // so the list cannot be edited out from under the loop.
@@ -102,7 +108,7 @@
       buttons.load.disabled = running;
       buttons.remove.disabled = running;
       buttons.save.disabled = false;
-      buttons.sendOnce.disabled = false;
+      buttons.sendOnce.disabled = pending;
       buttons.start.classList.toggle('active', running);
       status.className = failed ? 'err' : (running ? 'ok' : '');
       status.textContent = running
@@ -162,9 +168,17 @@
     buttons.start.addEventListener('click', start);
     buttons.stop.addEventListener('click', stop);
     buttons.sendOnce.addEventListener('click', async function () {
-      if (!packetBox.value.length) return;
-      buttons.sendOnce.disabled = true;
-      const answer = await api.sendOnce(packetBox.value);
+      if (!packetBox.value.length || pending) return;
+      pending = true;
+      draw();
+      let answer = { sent: false };
+      try {
+        answer = await api.sendOnce(packetBox.value);
+      } catch (error) {
+        answer = { sent: false };
+      } finally {
+        pending = false;
+      }
       sent = answer.sent ? sent + 1 : sent;
       failed = answer.sent ? failed : failed + 1;
       draw();
@@ -178,6 +192,11 @@
       status.textContent = answer.error || ('Saved to ' + answer.path + '.');
     });
     buttons.load.addEventListener('click', async function () {
+      // btnLoad_Click clears the list before LoadConfig opens its dialog, so a dialog the user
+      // cancels leaves an empty list - the reference's own order, and its own outcome.
+      packets.length = 0;
+      selected = -1;
+      draw();
       const answer = await api.load();
       if (answer.canceled) return;
       if (answer.error) {
@@ -185,7 +204,6 @@
         status.textContent = answer.error;
         return;
       }
-      packets.length = 0;
       answer.packets.forEach(function (text) { packets.push(text); });
       delayBox.value = answer.delay;
       selected = -1;
@@ -211,6 +229,16 @@
       buttons.start.textContent = messages.start || 'Start';
       draw();
     });
+
+    // Steering is the player's opt-in (packets.js): with it off there is no relay to write
+    // through, and the window says so rather than failing every send.
+    api.steering().then(function (answer) {
+      if (!answer || !answer.notice) return;
+      const banner = document.getElementById('banner');
+      banner.textContent = answer.notice;
+      banner.classList.remove('hidden');
+    }).catch(function () { /* the status line reports what went wrong */ });
+
     packetBox.addEventListener('input', draw);
     draw();
   })();

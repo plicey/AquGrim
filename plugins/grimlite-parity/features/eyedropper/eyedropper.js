@@ -69,6 +69,7 @@ function createEyedropper(deps) {
             text: colour.formatColour(pixel),
             textColour: colour.readoutTextColour(pixel),
             cssColour: colour.cssColour(pixel),
+            preview: colour.previewPixels(captured.bitmap, captured.size, at),
             error: null
         };
     }

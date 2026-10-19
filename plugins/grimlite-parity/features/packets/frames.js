@@ -40,11 +40,12 @@
         });
     }
 
-    // What Copy puts on the clipboard: the reference's own one-frame-per-line shape, with the
-    // direction it already shows per row kept on the line, and the current filter respected.
+    // What Copy puts on the clipboard: the reference's own shape, which is the box's text -
+    // `Clipboard.SetText(txtPackets.Text)` - so one frame per line, as it arrived, with no
+    // direction prefix, and the current filter respected (what the box is showing is copied).
     function copyText(frames, pattern) {
         return visibleFrames(frames, pattern).map(function (frame) {
-            return directionLabel(frame.direction) + ': ' + toFrameText(frame.text);
+            return toFrameText(frame.text);
         }).join('\n');
     }
 

@@ -120,7 +120,7 @@ test('the seven shipped toggles are the reference\'s, in its order, and every on
   assert.strictEqual(toggles.byId('infiniteRange').label, 'Infinite Range');
 });
 
-test('switching a toggle on sends the reference\'s own call for it', async () => {
+test('the one-shot toggles send when changed; provoke and enemy magnet wait for the loop', async () => {
   const run = createOptions();
   await run.feature.setToggle('infiniteRange', true);
   await run.feature.setToggle('provoke', true);
@@ -128,12 +128,10 @@ test('switching a toggle on sends the reference\'s own call for it', async () =>
   await run.feature.setToggle('hidePlayers', true);
   await run.feature.setToggle('skipCutscenes', true);
 
-  // OptionsManager.SetInfiniteRange and its neighbours are Flash.Call(name, empty), i.e. the
-  // zero-argument entry point the reference keeps apart from the one that takes arguments.
+  // Root.cs calls these as their CheckOnClick handlers run. Provoke and Enemy Magnet only set
+  // their flag there; OptionsManager.ApplySettings sends those two (OptionsManager.cs:188-217).
   assert.deepStrictEqual(run.calls.calls, [
     ['callGameFunction0', ['SetInfiniteRange']],
-    ['callGameFunction0', ['SetProvokeMonsters']],
-    ['callGameFunction0', ['SetEnemyMagnet']],
     ['callGameFunction0', ['DestroyPlayers']],
     ['callGameFunction0', ['SetSkipCutscenes']]
   ]);
@@ -262,11 +260,13 @@ test('the walkspeed loop keeps pushing the value while the tick is on, and lets 
 
 test('a call the game refuses is reported as an answer, not as success', async () => {
   const run = createOptions({ result: { ok: false, error: 'no member SetEnemyMagnet at SetEnemyMagnet' } });
-  await run.feature.setToggle('enemyMagnet', true);
+  // Infinite Range is a one-shot setter in the reference; Enemy Magnet only sets a flag and is
+  // sent by the running OptionsManager loop.
+  await run.feature.setToggle('infiniteRange', true);
   const state = run.feature.state();
-  assert.strictEqual(state.enemyMagnet, true, 'the user\'s own choice is kept either way');
-  assert.strictEqual(state.results.enemyMagnet.ok, false);
-  assert.strictEqual(state.results.enemyMagnet.error, 'no member SetEnemyMagnet at SetEnemyMagnet');
+  assert.strictEqual(state.infiniteRange, true, 'the user\'s own choice is kept either way');
+  assert.strictEqual(state.results.infiniteRange.ok, false);
+  assert.strictEqual(state.results.infiniteRange.error, 'no member SetEnemyMagnet at SetEnemyMagnet');
   await run.feature.stop();
 });
 
@@ -367,6 +367,22 @@ test('the ticks and the walkspeed value survive a restart', async () => {
   assert.strictEqual(state.walkSpeed, 35);
   assert.strictEqual(state.infiniteRange, false);
   await second.feature.stop();
+});
+
+test('a persisted walkspeed tick does not restart its loop on launch', async () => {
+  const store = memoryStore({ toggles: { walkSpeed: true }, walkSpeed: 33 });
+  const run = createOptions({ store: store });
+  assert.strictEqual(run.feature.state().walkSpeedOn, true, 'the user\'s tick is still drawn');
+  assert.deepStrictEqual(run.timers.running(), [],
+    'Grimlite starts its walkspeed loop from the tick changing, not from the file');
+  assert.deepStrictEqual(run.calls.calls, [], 'and it does not push the value on launch');
+
+  // Starting the OptionsManager loop does not restart the independent walkspeed timer either.
+  await run.feature.setApplying(true);
+  assert.deepStrictEqual(run.timers.running().filter(function (entry) {
+    return entry.ms === toggles.WALK_SPEED.intervalMs;
+  }), []);
+  await run.feature.stop();
 });
 
 test('a stored tick that no longer exists is ignored rather than fatal', async () => {

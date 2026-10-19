@@ -11,8 +11,6 @@
     font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
   }
   body { display: flex; flex-direction: column; box-sizing: border-box; }
-  #bar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid #2c2c2c; flex: 0 0 auto; }
-  #bar label { color: #9a9a9a; }
   button, select, input[type="number"] {
     background: #232323; color: #e6e6e6; border: 1px solid #383838;
     border-radius: 4px; padding: 4px 8px; font-size: 12px;
@@ -28,25 +26,57 @@
   }
   #sheet.drop-target { background: #14243a; }
   #hint { flex: 0 0 auto; padding: 6px 10px; color: #6f6f6f; border-top: 1px solid #2c2c2c; }
+  #menu { position: absolute; z-index: 20; background: #242430; border: 1px solid #4a4a58;
+    border-radius: 3px; padding: 3px 0; min-width: 110px; box-shadow: 0 4px 12px rgba(0,0,0,.5); }
+  #menu button { display: block; width: 100%; text-align: left; background: none; border: none;
+    border-radius: 0; padding: 4px 12px; }
+  #menu button:hover { background: #3a3a45; }
+  #formatDialog { position: absolute; z-index: 21; left: 20px; top: 20px; width: 220px;
+    background: #242430; border: 1px solid #4a4a58; border-radius: 6px; padding: 10px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.6); }
+  #formatDialog .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  #formatDialog .row label { color: #b9b9b9; width: 48px; }
+  #formatDialog .row select, #formatDialog .row input { flex: 1 1 auto; min-width: 0; }
+  #formatDialog .row.actions { justify-content: flex-end; margin: 0; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-  <div id="bar">
-    <label for="font">Font</label>
-    <select id="font">
-      <option value="Arial, Helvetica, sans-serif">Arial</option>
-      <option value="'Courier New', monospace">Courier New</option>
-      <option value="Georgia, serif">Georgia</option>
-      <option value="'Times New Roman', serif">Times New Roman</option>
-      <option value="Verdana, sans-serif">Verdana</option>
-    </select>
-    <input id="size" type="number" min="8" max="72" step="1" value="13" title="Font size">
-    <input id="colour" type="color" value="#e6e6e6" title="Text colour">
-    <button id="save" type="button">Save…</button>
-    <span id="grow"></span>
-  </div>
   <div id="sheet" contenteditable="true" spellcheck="false" aria-label="Notepad"></div>
-    <div id="hint">Drop a text file here to append it.</div>
+  <div id="hint">Drop a text file here to append it. Ctrl+S saves. Right-click for Font and Colour.</div>
+  <!--
+    Notepad.cs is a plain text box with no toolbar: Font and Color live on richTextBox1's own
+    right-click menu, each opening the WinForms dialog of its kind. A page cannot open a native
+    FontDialog/ColorDialog, so the equivalent is this small modal with the same two fields.
+  -->
+  <div id="menu" hidden>
+    <button id="menuFont" type="button">Font</button>
+    <button id="menuColor" type="button">Color</button>
+  </div>
+  <div id="formatDialog" hidden>
+    <div class="row">
+      <label for="font">Font</label>
+      <select id="font">
+        <option value="Arial, Helvetica, sans-serif">Arial</option>
+        <option value="'Courier New', monospace">Courier New</option>
+        <option value="Georgia, serif">Georgia</option>
+        <option value="'Times New Roman', serif">Times New Roman</option>
+        <option value="Verdana, sans-serif">Verdana</option>
+      </select>
+    </div>
+    <div class="row">
+      <label for="size">Size</label>
+      <input id="size" type="number" min="8" max="72" step="1" value="13">
+    </div>
+    <div class="row">
+      <label for="colour">Colour</label>
+      <input id="colour" type="color" value="#e6e6e6">
+    </div>
+    <div class="row actions">
+      <button id="cancelFormat" type="button">Cancel</button>
+      <button id="applyFormat" type="button">OK</button>
+    </div>
+  </div>
 
   <script>
     // The page owns the rich text: formatting is applied to the selection with execCommand,
@@ -59,6 +89,8 @@
       var sizeInput = document.getElementById('size');
       var colourInput = document.getElementById('colour');
       var hint = document.getElementById('hint');
+      var menu = document.getElementById('menu');
+      var dialog = document.getElementById('formatDialog');
       var bridge = window.aquastarNotepad || null;
       var messages = {};
 
@@ -67,12 +99,12 @@
         document.execCommand(command, false, value);
       }
 
-      fontSelect.addEventListener('change', function () { apply('fontName', fontSelect.value); });
+      function styleSelection() { apply('fontName', fontSelect.value); }
       // execCommand's font size is a 1-7 bucket, which cannot carry the pixel size the user
       // typed. With a selection: apply the top bucket, then rewrite the tags it inserted as
       // styled spans (any earlier ones are already spans, so these are the new ones). With no
       // selection the size becomes the sheet's own, which is what later typing inherits.
-      sizeInput.addEventListener('change', function () {
+      function styleSize() {
         var px = Math.max(8, Math.min(72, Number(sizeInput.value) || 13));
         var selection = window.getSelection();
         if (!selection || selection.isCollapsed) {
@@ -86,8 +118,36 @@
           while (node.firstChild) span.appendChild(node.firstChild);
           node.parentNode.replaceChild(span, node);
         });
+      }
+
+      function closeDialog() { dialog.hidden = true; }
+
+      function openDialog() {
+        sheet.focus();
+        dialog.hidden = false;
+      }
+
+      // richTextBox1's own ContextMenuStrip: Font and Color, each on a right-click.
+      sheet.addEventListener('contextmenu', function (event) {
+        event.preventDefault();
+        menu.style.left = event.clientX + 'px';
+        menu.style.top = event.clientY + 'px';
+        menu.hidden = false;
       });
-      colourInput.addEventListener('input', function () { apply('foreColor', colourInput.value); });
+      document.addEventListener('click', function (event) {
+        if (menu.hidden) return;
+        if (menu.contains && menu.contains(event.target)) return;
+        menu.hidden = true;
+      });
+      document.getElementById('menuFont').addEventListener('click', openDialog);
+      document.getElementById('menuColor').addEventListener('click', openDialog);
+      document.getElementById('cancelFormat').addEventListener('click', closeDialog);
+      document.getElementById('applyFormat').addEventListener('click', function () {
+        styleSelection();
+        styleSize();
+        apply('foreColor', colourInput.value);
+        closeDialog();
+      });
 
       // The reference appends a dropped file's text; keep that, leaving the rest of the sheet
       // untouched (it is rich text, so appending a text node keeps the existing formatting).
@@ -107,7 +167,8 @@
         Array.prototype.forEach.call(files, function (file) {
           var reader = new FileReader();
           reader.onload = function () {
-            sheet.appendChild(document.createTextNode('\n' + String(reader.result) + '\n'));
+            // Notepad_DragDrop appends "\r\n" + the file's text + "\r\n".
+            sheet.appendChild(document.createTextNode('\r\n' + String(reader.result) + '\r\n'));
           };
           reader.readAsText(file);
         });
@@ -144,13 +205,17 @@
         }
       });
 
-      // Ctrl+S saves, like the reference's richTextBox1_KeyDown.
+      // Ctrl+S saves, like the reference's richTextBox1_KeyDown; there is no Save control.
       document.addEventListener('keydown', function (event) {
+        if (event.key === 'Backspace' && (sheet.textContent || '').length < 1) {
+          // richTextBox1_KeyDown suppresses Backspace on an empty box.
+          event.preventDefault();
+          return;
+        }
         if (!(event.ctrlKey || event.metaKey) || String(event.key).toLowerCase() !== 's') return;
         event.preventDefault();
         save();
       });
-      document.getElementById('save').addEventListener('click', save);
 
       function save() {
         if (!bridge) return;

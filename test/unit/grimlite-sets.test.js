@@ -245,62 +245,9 @@ test('loading a set found by the listing needs no second dialog', async () => {
   assert.strictEqual(escaped.error, sets.ERRORS.outside);
 });
 
-test('the equip sequence walks the set in order and equips by name', async () => {
-  const equipped = [];
-  const game = {
-    readInventory: function () {
-      return Promise.resolve([
-        inventoryItem('Blinding Light of Destiny', 'Sword'),
-        inventoryItem('ArchPaladin', 'Class', true),
-        inventoryItem('Sepulchure\'s Armor', 'Armor'),
-        inventoryItem('Health Potion', 'Food')
-      ]);
-    },
-    equipItem: function (name) {
-      equipped.push(name);
-      return Promise.resolve();
-    }
-  };
-
-  const result = await sets.equipSet(game, [
-    { type: 'Weapon', name: 'blinding light of destiny' },
-    { type: 'Class', name: 'ArchPaladin' },
-    { type: 'Armor', name: "Sepulchure's Armor" },
-    { type: 'Weapon', name: 'Not In The Bag' },
-    { type: 'Item', name: 'Health Potion' }
-  ]);
-
-  // The reference resolves an entry by name on the inventory item, case-insensitively, and
-  // keeps only what that item's own IsEquippable says: the entry's stored Type is ignored.
-  // An already-worn item is skipped (the reference's loop exits at once); a name the bag does
-  // not hold, and a category outside EquippableCategories, are both treated as missing.
-  assert.deepStrictEqual(equipped, ['Blinding Light of Destiny', "Sepulchure's Armor"]);
-  assert.deepStrictEqual(result, {
-    equipped: ['Blinding Light of Destiny', "Sepulchure's Armor"],
-    skipped: ['ArchPaladin'],
-    missing: ['Not In The Bag', 'Health Potion'],
-    error: null
-  });
-});
-
-test('an equip that fails stops the sequence and says where', async () => {
-  const game = {
-    readInventory: function () {
-      return Promise.resolve([
-        inventoryItem('First Sword', 'Sword'),
-        inventoryItem('Second Sword', 'Sword')
-      ]);
-    },
-    equipItem: function (name) {
-      if (name === 'Second Sword') return Promise.reject(new Error('the game refused it'));
-      return Promise.resolve();
-    }
-  };
-
-  const result = await sets.equipSet(game, [
-    { type: 'Weapon', name: 'Second Sword' },
-    { type: 'Weapon', name: 'First Sword' }
-  ]);
-  assert.deepStrictEqual(result.equipped, []);
-  assert.strictEqual(result.error, 'the game refused it');
+// The reference's Set.cs has no Equip button and no CmdEquipSet wiring; the port keeps the
+// document, the combo and the four file buttons only.
+test('the Sets window carries no equip path', () => {
+  assert.strictEqual(sets.equipSet, undefined);
+  assert.strictEqual(sets.EQUIPPABLE_CATEGORIES, undefined);
 });

@@ -1,6 +1,8 @@
 // Open and save for a cosmetic set. The reference's dialogs are the model (CosmeticForm.cs:339-373):
-// title "Save Set"/"Load Set", filter "Grimoire sets|*.gset", and a Sets/ folder beside the exe as
-// the starting point (here: a Sets/ folder under the app's data directory).
+// SaveFileDialog/OpenFileDialog at their default titles ("Save As"/"Open"), filter
+// "Grimoire sets|*.gset", and a Sets/ folder beside the exe as the starting point (here: a Sets/
+// folder under the app's data directory). The reference sets an initial directory and no file
+// name, so neither dialog suggests a file for the user to accept by accident.
 //
 // A set is the user's own document, so nothing here picks a path by itself: what it remembers is
 // only the folder the user last used. Electron and the store are injected so this is testable.
@@ -62,7 +64,7 @@ function createCosmeticsDialogs(deps) {
      *  a grid of empties: the reference clears every box before it finds out. */
     function open() {
         return Promise.resolve(showOpenDialog(null, {
-            title: messages.openTitle || 'Load Set',
+            title: messages.openTitle || 'Open',
             defaultPath: lastDirectory(),
             filters: [filter()],
             properties: ['openFile']
@@ -83,20 +85,20 @@ function createCosmeticsDialogs(deps) {
         });
     }
 
-    /** Save the eight rows in the Sets window's own file shape. A cancel writes nothing. */
+    /** Save the eight rows in CosmeticForm.btnSaveSet_Click's own 24-line text shape. */
     function save(values) {
-        const suggested = path.join(lastDirectory(), 'set' + EXTENSION);
         return Promise.resolve(showSaveDialog(null, {
-            title: messages.saveTitle || 'Save Set',
-            defaultPath: suggested,
+            title: messages.saveTitle || 'Save As',
+            defaultPath: lastDirectory(),
             filters: [filter()]
         })).then(function (result) {
             if (!result || result.canceled || !result.filePath) return { canceled: true };
             const file = path.extname(result.filePath) ? result.filePath : result.filePath + EXTENSION;
             remember(path.dirname(file));
             try {
-                // UTF-8, no BOM, no trailing newline: the bytes the Sets window writes.
-                writeText(file, cosmetics.serializeSet(values));
+                // UTF-8, no BOM, CRLF line ends and a final newline: File.WriteAllLines'
+                // output for the reference's 24-entry array.
+                writeText(file, cosmetics.serializeSetFile(values));
             } catch (error) {
                 return { canceled: false, path: file, error: (error && error.message) || String(error) };
             }
@@ -116,7 +118,9 @@ function createFromHost(host, deps) {
     return createCosmeticsDialogs({
         store: host.getStore(STORE_NAMESPACE),
         defaultDirectory: path.join(host.appDataDirectory, 'Sets'),
-        messages: { openTitle: strings.loadSet, saveTitle: strings.saveSet, filterName: strings.filterName },
+        // The reference leaves both dialog titles at their own defaults. Only the filter's name
+        // is the plugin's word.
+        messages: { filterName: strings.filterName },
         showOpenDialog: function (owner, options) { return electron.dialog.showOpenDialog(owner, options); },
         showSaveDialog: function (owner, options) { return electron.dialog.showSaveDialog(owner, options); }
     });

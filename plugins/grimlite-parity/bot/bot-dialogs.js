@@ -60,7 +60,8 @@ function createBotDialogs(deps) {
 
     function filter() {
         return {
-            name: messages.filterName || 'Grimlite bots',
+            // BotManager.cs's own filter string: "Grimoire bots|*.gbot".
+            name: messages.filterName || 'Grimoire bots',
             extensions: [EXTENSION.slice(1)]
         };
     }

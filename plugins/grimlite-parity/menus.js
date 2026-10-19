@@ -1,12 +1,26 @@
 const windows = require('./windows.js');
 
-// The reference's own navigation: Packets -> Sniffer, Spammer, Tamperer, in the order Root.cs adds
-// them. (Root.cs also adds an Interceptor, which is hidden upstream and stays unshipped here.)
-function register(host, windowTitle) {
+// The reference's own menu bar (Root.cs:717-725): Bot, Tools, Packets, Options, Maid, Plugins,
+// About, Char Select. The platform already owns a Tools menu, so the reference's Tools entries
+// stay together under this plugin's own Grimlite menu rather than duplicating that label.
+function register(host, windowTitle, deps) {
+    deps = deps || {};
     host.registerMenus(function (ctx) {
         const labels = (ctx && ctx.labels) || {};
         const keybinds = (ctx && ctx.keybinds) || {};
-        return [{
+        const visible = typeof deps.charSelectVisible === 'function'
+            ? deps.charSelectVisible()
+            : true;
+
+        const menus = [{
+            // Root.cs:329-332: the whole Bot menu opens BotManager.Instance.
+            label: labels.grimliteBot || 'Bot',
+            click: function () {
+                host.windows.openFeatureWindow(windows.BOT_MANAGER_WINDOW_ID);
+            }
+        }, {
+            // The reference's own navigation: Packets -> Sniffer, Spammer, Tamperer, in the order
+            // Root.cs adds them. (Root.cs also adds an Interceptor, hidden upstream and unshipped.)
             label: labels.packetsMenu || 'Packets',
             submenu: [{
                 label: labels.packetsSniffer || 'Sniffer',
@@ -25,181 +39,153 @@ function register(host, windowTitle) {
                 }
             }]
         }, {
-            label: labels.grimliteMenu || 'Grimlite',
-            submenu: [
-                // The reference keeps Char Select as its own top-level menu, leftmost in its menu
-                // bar (Root.cs:1150-1152 lists it before Tools/Packets/About). Here it is the first
-                // entry of the one menu this port contributes, which is the same position in the
-                // order the user reads.
-                {
-                    label: labels.grimliteCharSelect || 'Char Select',
-                    accelerator: keybinds.grimliteCharSelect,
-                    registerAccelerator: false,
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.LOGIN_WINDOW_ID);
-                    }
-                },
-                // Bot file first: it is the window that works on a document of the user's own,
-                // like the reference's Bot Manager.
-                {
-                    label: labels.grimliteBotFile || 'Bot file',
-                    accelerator: keybinds.grimliteBotFile,
-                    registerAccelerator: false,
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.BOT_FILE_WINDOW_ID);
-                    }
-                },
-                // The editor sits beside the bot file it edits: the reference's Bot Manager is the
-                // window its Bot menu opens.
-                {
-                    label: labels.grimliteBotManager || 'Bot Manager',
-                    accelerator: keybinds.grimliteBotManager,
-                    registerAccelerator: false,
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.BOT_MANAGER_WINDOW_ID);
-                    }
-                },
-                // Eye Dropper above Notepad, as Root.cs orders its Tools menu.
-                {
-                    label: labels.grimliteEyedropper || 'Eye Dropper',
-                    accelerator: keybinds.grimliteEyedropper,
-                    registerAccelerator: false,
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.EYEDROPPER_WINDOW_ID);
-                    }
-                },
-                {
-                    label: labels.grimliteNotepad || 'Notepad',
-                    accelerator: keybinds.grimliteNotepad,
-                    registerAccelerator: false,
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.NOTEPAD_WINDOW_ID);
-                    }
-                },
-                {
-                    label: labels.grimliteAbout || 'About',
-                    accelerator: keybinds.grimliteAbout,
-                    registerAccelerator: false,
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.ABOUT_WINDOW_ID);
-                    }
-                },
-                {
-                    label: labels.grimlitePlaceholder || 'Parity placeholder window',
-                    accelerator: keybinds.grimliteParityPlaceholder,
-                    registerAccelerator: false,
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.PLACEHOLDER_WINDOW_ID);
-                    }
-                },
-                {
-                    // The reference keeps this under Tools -> Swf Dev Test (Grimlite/UI/Root.cs).
-                    label: labels.grimliteDevTest || 'Swf Dev Test',
-                    accelerator: keybinds.grimliteParityDevTest,
-                    registerAccelerator: false,
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.DEVTEST_WINDOW_ID);
-                    }
-                },
-                {
-                    // The reference puts this under Tools, word for word (Root.cs:784) and
-                    // reaches it from ShowForm(Loaders.Instance) (Root.cs:339).
-                    label: labels.grimliteLoaders || 'Loaders/grabbers',
-                    accelerator: keybinds.grimliteLoaders,
-                    registerAccelerator: false,
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.LOADERS_WINDOW_ID);
-                    }
-                },
-                // The reference's own Tools-menu words and order: Bank, then the Sets form it
-                // keeps hidden (Root.cs:820-831). Hidden there or not, the form is reachable,
-                // so it ships as a normal entry here.
-                {
-                    label: labels.grimliteBank || 'Bank',
-                    accelerator: keybinds.grimliteBank,
-                    registerAccelerator: false,
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.BANK_WINDOW_ID);
-                    }
-                },
-                {
-                    label: labels.grimliteSets || 'Sets',
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.SETS_WINDOW_ID);
-                    }
-                },
-                {
-                    // The reference's own Tools entry, word for word (Root.cs:805-812), bound to
-                    // its own action "Show Cosmetics form" (Hotkeys.cs:409).
-                    label: labels.grimliteCosmetics || 'Cosmetics',
-                    accelerator: keybinds.grimliteCosmetics,
-                    registerAccelerator: false,
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.COSMETICS_WINDOW_ID);
-                    }
-                },
-                // The reference puts its toggles under an Options menu (Root.cs:983-996) and its
-                // binding list under Tools -> Hotkeys (Root.cs:786-794). This port has one Grimlite
-                // menu, so both live here, under the reference's own words.
-                {
-                    label: labels.grimliteOptions || 'Options',
-                    accelerator: keybinds.grimliteOptions,
-                    registerAccelerator: false,
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.OPTIONS_WINDOW_ID);
-                    }
-                },
-                {
-                    label: labels.grimliteHotkeys || 'Hotkeys',
-                    accelerator: keybinds.grimliteHotkeys,
-                    registerAccelerator: false,
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.HOTKEYS_WINDOW_ID);
-                    }
-                },
-                // The reference's own Tools entry, word for word (Root.cs:927 "Drop Ui"), the
-                // last item of that menu and reached from its own action (Hotkeys.cs:415
-                // "Show DropUi").
-                {
-                    label: labels.grimliteDrop || 'Drop Ui',
-                    accelerator: keybinds.grimliteDrop,
-                    registerAccelerator: false,
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.DROP_WINDOW_ID);
-                    }
-                },
-                {
-                    // The reference's Tools menu, word for word (Root.cs:775): its first entry,
-                    // wired to its own "Show Fast Travels" action (Hotkeys.cs:402).
-                    label: labels.grimliteTravels || 'Fast travels',
-                    accelerator: keybinds.grimliteFastTravels,
-                    registerAccelerator: false,
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.TRAVEL_WINDOW_ID);
-                    }
-                },
-                {
-                    // The reference has no menu entry for the Maid at all: its window is opened from
-                    // its own strip on the main form (Root.cs) and its own hotkey action "Show Maid"
-                    // (Hotkeys.cs). This port's one Grimlite menu carries it, under its own title.
-                    label: labels.grimliteMaid || 'Maid',
-                    accelerator: keybinds.grimliteMaid,
-                    registerAccelerator: false,
-                    click: function () {
-                        host.windows.openFeatureWindow(windows.MAID_WINDOW_ID);
-                    }
-                }
-            ]
+            // Root.cs:983-996 ships the seven toggles as an Options menu. This port draws them in
+            // a window, which the reference's own menu entry opens instead.
+            label: labels.grimliteOptions || 'Options',
+            click: function () {
+                host.windows.openFeatureWindow(windows.OPTIONS_WINDOW_ID);
+            }
+        }, {
+            // Root.cs:1119-1127: the Maid is a top-level menu item.
+            label: labels.grimliteMaid || 'Maid',
+            click: function () {
+                host.windows.openFeatureWindow(windows.MAID_WINDOW_ID);
+            }
+        }, {
+            // Root.cs:1146-1152: About is its own top-level entry.
+            label: labels.grimliteAbout || 'About',
+            click: function () {
+                host.windows.openFeatureWindow(windows.ABOUT_WINDOW_ID);
+            }
         }];
+
+        // Root.cs:167 hides the Char Select menu while the connection is up and shows it again on
+        // every drop. The menu contributor is rebuilt from this live answer.
+        if (visible) {
+            const characters = typeof deps.characters === 'function' ? deps.characters() : [];
+            const charSelectItems = (Array.isArray(characters) ? characters : []).map(function (character) {
+                const username = typeof character === 'string' ? character :
+                    (character && character.username);
+                if (!username) return null;
+                return {
+                    label: String(username),
+                    click: function () {
+                        return typeof deps.selectCharacter === 'function'
+                            ? deps.selectCharacter(String(username))
+                            : host.windows.openFeatureWindow(windows.LOGIN_WINDOW_ID);
+                    }
+                };
+            }).filter(Boolean);
+            if (charSelectItems.length) charSelectItems.push({ type: 'separator' });
+            charSelectItems.push({
+                label: labels.grimliteCharSelectManage || 'Manage characters...',
+                click: function () {
+                    return typeof deps.openCharSelect === 'function'
+                        ? deps.openCharSelect()
+                        : host.windows.openFeatureWindow(windows.LOGIN_WINDOW_ID);
+                }
+            });
+            menus.push({
+                label: labels.grimliteCharSelect || 'Char Select',
+                submenu: charSelectItems,
+                click: function () {
+                    return typeof deps.openCharSelect === 'function'
+                        ? deps.openCharSelect()
+                        : host.windows.openFeatureWindow(windows.LOGIN_WINDOW_ID);
+                }
+            });
+        }
+
+        // The reference's Tools entries, in their own order (Root.cs:747-763). The hidden Sets
+        // entry and the extra Bot file window are deliberately absent; Logs is the reference's
+        // own Tools -> Logs. Hotkeys remains here because the reference keeps it under Tools.
+        menus.push({
+            label: labels.grimliteMenu || 'Grimlite',
+            submenu: [{
+                label: labels.grimliteTravels || 'Fast travels',
+                accelerator: keybinds.grimliteFastTravels,
+                registerAccelerator: false,
+                click: function () {
+                    host.windows.openFeatureWindow(windows.TRAVEL_WINDOW_ID);
+                }
+            }, {
+                label: labels.grimliteLoaders || 'Loaders/grabbers',
+                accelerator: keybinds.grimliteLoaders,
+                registerAccelerator: false,
+                click: function () {
+                    host.windows.openFeatureWindow(windows.LOADERS_WINDOW_ID);
+                }
+            }, {
+                label: labels.grimliteHotkeys || 'Hotkeys',
+                accelerator: keybinds.grimliteHotkeys,
+                registerAccelerator: false,
+                click: function () {
+                    host.windows.openFeatureWindow(windows.HOTKEYS_WINDOW_ID);
+                }
+            }, {
+                label: labels.grimliteCosmetics || 'Cosmetics',
+                accelerator: keybinds.grimliteCosmetics,
+                registerAccelerator: false,
+                click: function () {
+                    host.windows.openFeatureWindow(windows.COSMETICS_WINDOW_ID);
+                }
+            }, {
+                label: labels.grimliteBank || 'Bank',
+                accelerator: keybinds.grimliteBank,
+                registerAccelerator: false,
+                click: function () {
+                    host.windows.openFeatureWindow(windows.BANK_WINDOW_ID);
+                }
+            }, {
+                label: labels.grimliteEyedropper || 'Eye Dropper',
+                accelerator: keybinds.grimliteEyedropper,
+                registerAccelerator: false,
+                click: function () {
+                    host.windows.openFeatureWindow(windows.EYEDROPPER_WINDOW_ID);
+                }
+            }, {
+                // Root.cs:843-850: Tools -> Logs, which opens LogForm.
+                label: labels.grimliteLogs || 'Logs',
+                accelerator: keybinds.grimliteLogs,
+                registerAccelerator: false,
+                click: function () {
+                    host.windows.openFeatureWindow(windows.LOGS_WINDOW_ID);
+                }
+            }, {
+                label: labels.grimliteNotepad || 'Notepad',
+                accelerator: keybinds.grimliteNotepad,
+                registerAccelerator: false,
+                click: function () {
+                    host.windows.openFeatureWindow(windows.NOTEPAD_WINDOW_ID);
+                }
+            }, {
+                // Root.cs:927: the last visible Tools entry upstream.
+                label: labels.grimliteDevTest || 'Swf Dev Test',
+                accelerator: keybinds.grimliteParityDevTest,
+                registerAccelerator: false,
+                click: function () {
+                    host.windows.openFeatureWindow(windows.DEVTEST_WINDOW_ID);
+                }
+            }, {
+                label: labels.grimliteDrop || 'Drop Ui',
+                accelerator: keybinds.grimliteDrop,
+                registerAccelerator: false,
+                click: function () {
+                    host.windows.openFeatureWindow(windows.DROP_WINDOW_ID);
+                }
+            }]
+        });
+
+        return menus;
     });
 }
 
 module.exports = {
     register: register,
-    PLACEHOLDER_WINDOW_ID: windows.PLACEHOLDER_WINDOW_ID,
     LOGGER_WINDOW_ID: windows.LOGGER_WINDOW_ID,
     SPAMMER_WINDOW_ID: windows.SPAMMER_WINDOW_ID,
     TAMPERER_WINDOW_ID: windows.TAMPERER_WINDOW_ID,
     TRAVEL_WINDOW_ID: windows.TRAVEL_WINDOW_ID,
-    MAID_WINDOW_ID: windows.MAID_WINDOW_ID
+    MAID_WINDOW_ID: windows.MAID_WINDOW_ID,
+    LOGS_WINDOW_ID: windows.LOGS_WINDOW_ID
 };

@@ -248,6 +248,9 @@ function createAuraStore(deps) {
 
     let lastAnims = '';
     const auraMessages = [];
+    // CmdKill's AntiCounter flag: the reference's own handler pauses the rotation on
+    // "prepares a counter attack" and resumes on the "Counter Attack" aura removal.
+    let counterActive = false;
 
     /**
      * Hand one tapped frame over. Anything that is not an aura frame for this cache is ignored: a
@@ -284,6 +287,9 @@ function createAuraStore(deps) {
             payload.anims.forEach(function (one) {
                 if (one && typeof one.msg === 'string' && one.msg.length) {
                     lastAnims = one.msg.toLowerCase();
+                    if (lastAnims.indexOf('prepares a counter attack') !== -1) {
+                        counterActive = true;
+                    }
                 }
             });
         }
@@ -307,7 +313,9 @@ function createAuraStore(deps) {
             if (key.indexOf('p:') === 0 && self !== null && key !== self) return;
             if (one.cmd === REMOVE) {
                 const manager = managers.get(key);
-                if (manager) removedNames(one).forEach(function (name) { manager.delete(name.toLowerCase()); });
+                const names = removedNames(one);
+                if (manager) names.forEach(function (name) { manager.delete(name.toLowerCase()); });
+                if (names.indexOf('Counter Attack') !== -1) counterActive = false;
                 return;
             }
             if (!Array.isArray(one.auras)) return;
@@ -330,7 +338,9 @@ function createAuraStore(deps) {
 
         lastAnimationMessage: function () { return lastAnims; },
         consumeAnimation: function () { lastAnims = ''; },
-        lastAuraMessages: function () { return auraMessages.slice(); }
+        lastAuraMessages: function () { return auraMessages.slice(); },
+        clearAuraMessages: function () { auraMessages.length = 0; },
+        counterActive: function () { return counterActive; }
     };
 }
 
@@ -339,5 +349,6 @@ module.exports = {
     KEEP: KEEP,
     CLIENT_CLEARS: CLIENT_CLEARS,
     clientCommand: clientCommand,
-    payloadOf: payloadOf
+    payloadOf: payloadOf,
+    frameText: text
 };

@@ -130,6 +130,7 @@
   var slots = ['helm', 'armor', 'class', 'weapon', 'off', 'pet', 'cape', 'misc'];
   var rows = [];
   var selected = [];
+  var anchor = -1;
 
   function setStatus(text, bad) {
     status.textContent = text || '';
@@ -161,10 +162,18 @@
       line.textContent = row.text;
       line.addEventListener('click', function (event) {
         var at = selected.indexOf(index);
-        if (event.ctrlKey || event.metaKey) {
+        if (event.shiftKey && anchor !== -1) {
+          // SelectionMode.MultiExtended: Shift selects the whole range from the anchor.
+          var from = Math.min(anchor, index);
+          var to = Math.max(anchor, index);
+          selected = [];
+          for (var i = from; i <= to; i++) selected.push(i);
+        } else if (event.ctrlKey || event.metaKey) {
           if (at === -1) selected.push(index); else selected.splice(at, 1);
+          anchor = index;
         } else {
           selected = [index];
+          anchor = index;
         }
         paint();
       });
@@ -192,10 +201,9 @@
         option.textContent = player.label;
         players.appendChild(option);
       });
-      // The reference selects the first row after a refresh, when the room has one.
+      // lnkRefresh/btnRefresh clears the combo and selects the first player, if there is one.
       if (list.length) {
-        var keep = list.filter(function (player) { return String(player.id) === previous; })[0];
-        players.value = keep ? previous : list[0].id;
+        players.value = list[0].id;
       }
       if (result && result.error) setStatus(result.error, true);
     });
@@ -226,6 +234,9 @@
     var id = chosen();
     if (id === null) return;
     api.grabSlot(id, slot, valueOf(slot)).then(function (result) {
+      // The reference's per-slot link adds the grabbed row to the list before it touches the
+      // boxes; a box it declines to overwrite still gets its row added.
+      if (result && result.text) rows = rows.concat([{ row: slot, text: result.text }]);
       if (result && result.applied) {
         putValue(slot, result.fields.file + ';' + result.fields.link);
         setStatus('');
@@ -233,6 +244,7 @@
         // The reference's own guard: an occupied box is kept, not overwritten.
         setStatus((result && result.error) || 'kept what was already in that box', false);
       }
+      paint();
     });
   }
 
@@ -305,9 +317,15 @@
       setStatus('');
     });
   });
-  // Delete removes the selection, as the reference's own list does.
+  // Delete removes the selection; Enter fills the eight boxes from every selected row, as
+  // lbItems_KeyDown does.
   items.addEventListener('keydown', function (event) {
     if (event.key === 'Delete') remove(selected);
+    if (event.key === 'Enter' && selected.length) {
+      selected.slice().sort(function (a, b) { return a - b; }).forEach(function (index) {
+        if (rows[index]) fillRow(rows[index]);
+      });
+    }
   });
 
   // The plugin decides the grab links' words and the Set buttons'; the grid is the reference's

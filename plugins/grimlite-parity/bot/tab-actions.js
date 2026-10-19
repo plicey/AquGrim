@@ -27,7 +27,7 @@ const PLACEHOLDER = {
     tbMonNameF: 'Monster (* = random)',
     tbItemNameF: 'Item name',
     tbItemQtyF: 'Quantity (* = any)',
-    tbShopName: 'Shop Item Name',
+    tbShopItemName: 'Shop Item Name',
     tbShopId: 'Shop Id',
     tbItemId: 'Item Id',
     tbShopItemId: 'Shop Item Id',
@@ -94,11 +94,15 @@ const COMMAND_BUTTONS = {
     btnRest: () => command('CmdRest', {}),
     btnRestF: () => command('CmdRest', { Full: true }),
     btnKillF: function (v) {
+        // btnKillF_Click guards the item and the quantity first: either box empty, no command.
+        const item = field(v, 'txtKillFItem');
+        const quantity = field(v, 'txtKillFQ');
+        if (item === undefined || quantity === undefined) return null;
         return command('CmdKillFor', {
             ItemType: v.rbTemp ? 1 : 0,
             Monster: monster(v, 'txtKillFMon'),
-            ItemName: field(v, 'txtKillFItem') || '',
-            Quantity: fieldOr(v, 'txtKillFQ', '*')
+            ItemName: item.trim(),
+            Quantity: quantity.trim()
         });
     },
     btnUseSkillSet: (v) => command('CmdSkillSet', { Name: (field(v, 'txtSkillSet') || '').toUpperCase() }),
@@ -106,11 +110,19 @@ const COMMAND_BUTTONS = {
     btnStopAttack: () => command('CmdCancelTarget', {}),
     btnSkillCmd: function (v, mods) {
         const properties = {
-            Index: fieldOr(v, 'numSkill', '1'),
+            // btnAddSkillCmd_Click reads numSkillCmd, not the Skill Set group's numSkill.
+            Index: fieldOr(v, 'numSkillCmd', '1'),
             Wait: v.cbSkillCmdWait === true,
             Force: v.chkForceSkill === true,
             Monster: monster(v, 'txtMonsterSkillCmd')
         };
+        // The alt branch adds skills 1 to 4 at once, which is why a builder may return more
+        // than one command (the caller adds each of them where the reference adds each).
+        if (mods.alt) {
+            return ['1', '2', '3', '4'].map(function (index) {
+                return command('CmdUseSkill', Object.assign({}, properties, { Index: index }));
+            });
+        }
         return command('CmdUseSkill', properties);
     },
     btnSetSpawn: () => command('CmdSetSpawn', {}),
@@ -172,29 +184,44 @@ const COMMAND_BUTTONS = {
     btnWhitelistOn: () => command('CmdWhitelist', { state: 0 }),
     btnWhitelistOff: () => command('CmdWhitelist', { state: 1 }),
     btnWhitelistToggle: () => command('CmdWhitelist', { state: 2 }),
-    btnLoadShop: (v) => command('CmdLoad', { ShopId: number(v, 'tbShopId', 0) }),
+    // btnLoadShop_Click: a shop id of 0 is refused (a 0 is what an unparsable or empty box
+    // gives).
+    btnLoadShop: function (v) {
+        const shopId = number(v, 'tbShopId', 0);
+        if (shopId === 0) return null;
+        return command('CmdLoad', { ShopId: shopId });
+    },
     btnBuy: function (v, mods) {
+        // btnBuy_Click: the item name box is guarded first, whatever radio is on.
+        const name = field(v, 'tbShopItemName');
+        if (name === undefined) return null;
         const qty = mods.alt ? -1 : number(v, 'numBuyQty', 1);
+        const shopId = number(v, 'tbShopId', 0);
         if (v.radBuyByID === true) {
+            const itemId = number(v, 'tbItemId', 0);
+            const shopItemId = number(v, 'tbShopItemId', 0);
+            if (shopId === 0 || itemId === 0 || shopItemId === 0) return null;
             return command('CmdBuy', {
-                ShopId: number(v, 'tbShopId', 0),
-                ItemId: number(v, 'tbItemId', 0),
-                ShopItemId: number(v, 'tbShopItemId', 0),
+                ShopId: shopId,
+                ItemId: itemId,
+                ShopItemId: shopItemId,
                 Qty: qty,
                 ByID: true
             });
         }
+        if (shopId === 0) return null;
         return command('CmdBuy', {
-            ItemName: field(v, 'tbShopName') || '',
-            ShopId: number(v, 'tbShopId', 0),
+            ItemName: name,
+            ShopId: shopId,
             Qty: qty,
             ByID: false
         });
     },
-    btnBuyFast: (v, mods) => command('CmdBuyFast', {
-        ItemName: field(v, 'tbShopName') || '',
-        Qty: mods.alt ? -1 : number(v, 'numBuyQty', 1)
-    }),
+    btnBuyFast: function (v, mods) {
+        const name = field(v, 'tbShopItemName');
+        if (name === undefined) return null;
+        return command('CmdBuyFast', { ItemName: name, Qty: mods.alt ? -1 : number(v, 'numBuyQty', 1) });
+    },
     btnAddQuestList: (v) => command('CmdAddQuestList', {
         Id: number(v, 'numQuestListID', 1),
         ItemId: v.chkQuestListItem === true ? String(number(v, 'numQuestListItem', 1)) : null,
@@ -379,6 +406,12 @@ function questRow(values) {
 // Contains guard (AddDrop / AddItem / AddQuest), which Drops and Items and Quests all have.
 const LIST_BUTTONS = {
     btnAddSkill: (v, m) => [{ list: 'Skills', items: [skill(v, fieldOr(v, 'numSkill', '1'), 0, m)] }],
+    // btnAddSkillSet_Click: a Skill of type Label whose Text is the set name in brackets.
+    btnAddSkillSet: function (v) {
+        const name = field(v, 'txtSkillSet');
+        if (name === undefined) return [];
+        return [{ list: 'Skills', items: [{ $type: SKILL_TYPE, Text: '[' + name.toUpperCase() + ']', Type: 2 }] }];
+    },
     btnAddSafe: (v) => [{ list: 'Skills', items: [safeSkill(v)] }],
     btnAllSkill: (v, m) => [{
         list: 'Skills',
@@ -403,8 +436,23 @@ const LIST_BUTTONS = {
 };
 
 function special(values, mode) {
-    return command('CmdSpecialHandler', { Zone: fieldOr(values, 'cmbSpecials', ''), Mode: mode });
+    const zone = field(values, 'cmbSpecials');
+    // btnSpecialStart_Click and its two siblings: no entry selected, nothing is added.
+    if (zone === undefined) return null;
+    return command('CmdSpecialHandler', { Zone: zone, Mode: mode });
 }
+
+// The one command button that also writes another list, because its own handler does:
+// btnKillF_Click appends the comma-split item names to Drops (case-insensitively unique) before
+// it adds the command.
+const COMMAND_LISTS = {
+    btnKillF: function (v) {
+        if (v.chkAddToWhiteList !== true) return [];
+        const item = field(v, 'txtKillFItem');
+        if (item === undefined) return [];
+        return [{ list: 'Drops', items: item.split(','), unique: true, insensitive: true }];
+    }
+};
 
 // Ticks that write Configuration straight away (the reference's *CheckedChanged handlers).
 const SETTINGS = {
@@ -433,7 +481,13 @@ const SETTINGS = {
     chkExistQuest: 'ExitCombatBeforeQuest',
     chkExitRest: 'ExitCombatBeforeRest',
     chkHP: 'RestIfHp',
-    chkMP: 'RestIfMp'
+    chkMP: 'RestIfMp',
+    // The boxes the reference reads when it generates a configuration rather than on change
+    // (GenerateConfiguration: FollowName, AutoZone, Server). Here they write the document as
+    // they change, so a save writes what the window shows.
+    tbFollowPlayer2: 'FollowName',
+    cmbSpecials: 'AutoZone',
+    cbServers: 'Server'
 };
 
 // Number boxes that write Configuration straight away.
@@ -485,6 +539,14 @@ function buildList(id, values, modifiers) {
         });
 }
 
+/** The other lists a command button fills beside its command (btnKillF's whitelist). */
+function buildLists(id, values, modifiers) {
+    const builder = COMMAND_LISTS[id];
+    if (!builder) return [];
+    const mods = modifiers || {};
+    return builder(values || {}, { alt: mods.alt === true, ctrl: mods.ctrl === true });
+}
+
 module.exports = {
     PLACEHOLDER: PLACEHOLDER,
     COMMAND_BUTTONS: COMMAND_BUTTONS,
@@ -493,6 +555,7 @@ module.exports = {
     NUMBERS: NUMBERS,
     build: build,
     buildList: buildList,
+    buildLists: buildLists,
     buildStatement: buildStatement,
     statementCategories: function () { return STATEMENT_CATEGORIES.slice(); },
     statementsIn: statementsIn

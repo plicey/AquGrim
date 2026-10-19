@@ -58,10 +58,14 @@ const LOADER_BODIES = {
     Accept: { body: 'world.acceptQuest(id)' },
     Complete: { body: 'world.tryQuestComplete(id, itemId, bool, qty)' },
     LoadQuest: { body: 'world.showQuests([id], "q")' },
+    GetQuests: { body: 'world.getQuests(ids) - the batch the quest tree is asked for' },
+    Logout: { body: 'Root.Game.logout()' },
     IsInProgress: { body: 'world.isQuestInProgress(id)' },
     CanComplete: { body: 'world.canTurnInQuest(id) with the validation string' },
     IsAvailable: { body: 'the validation string, empty when the quest is available' },
-    GetQuestTree: { body: 'world.questTree as a list' }
+    GetQuestTree: { body: 'world.questTree as a list' },
+    HasActiveBoost: { body: 'world.myAvatar.objData.iBoost* by the boost name' },
+    UseBoost: { body: 'world.sendUseItemRequest(item resolved by ItemID)' }
 };
 
 /**
@@ -497,6 +501,10 @@ function createAccess(deps) {
         // ------------------------------------------------------------------ the writes
 
         accept: function (id) { return ask('Accept', [String(id)]); },
+        logout: function () { return ask('Logout', []); },
+        getQuests: function (ids) {
+            return ask('GetQuests', [(Array.isArray(ids) ? ids : [ids]).join(',')]);
+        },
         complete: function (id, qty, itemId) {
             return ask('Complete', [String(id), String(qty === undefined ? 1 : qty),
                 itemId === undefined || itemId === null ? '-1' : String(itemId), 'False']);
@@ -511,6 +519,10 @@ function createAccess(deps) {
         transferToInventory: function (name) { return ask('TransferToInventory', [name]); },
         bankSwap: function (invName, bankName) { return ask('BankSwap', [invName, bankName]); },
         sellItem: function (name, qty) { return ask('SellItem', [name, String(qty)]); },
+        hasActiveBoost: function (name) {
+            return ask('HasActiveBoost', [String(name)]).then(truthy);
+        },
+        useBoost: function (id) { return ask('UseBoost', [String(id)]); },
 
         /**
          * Player.refreshCell (OWN_ROUTES): a move to the cell the character already stands in,

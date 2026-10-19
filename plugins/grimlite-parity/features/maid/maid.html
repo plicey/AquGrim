@@ -32,7 +32,7 @@
   /* The reference paints the StopAttack label DeepPink and the box Magenta while it is on, and
      puts its own team strip in a red tint; the state line here is that same signal. */
   #state { margin: 0 0 8px; min-height: 16px; color: #cfcfcf; }
-  #state.stopped { color: #ff69b4; }
+  #state.stopped { color: #f03232; }
   #state.unfollowed { color: #7fb2ff; }
   #state.collision { color: #e0b34a; }
   #state.fighting { color: #7fd08a; }
@@ -40,35 +40,45 @@
   #note.err { color: #ff8e8e; }
   #note.ok { color: #7fd08a; }
   .hint { color: #8f8f8f; }
+  a.link { color: DeepSkyBlue; cursor: pointer; text-decoration: none; }
+  a.link:hover { text-decoration: underline; }
   #party { color: #9a9a9a; }
+  /* cbStopAttack_CheckedChanged: the label goes DeepPink, the box Magenta, the strip red. */
+  #stopAttack.stopattack { background: magenta; }
+  #stopAttackRow.stopattack label { background: DeepPink; color: #111; }
+  body.stopattack #state { color: #f03232; }
 </style>
 </head>
 <body>
   <div class="row">
     <label for="enabled" id="enableLabel">Enable</label>
     <input type="checkbox" id="enabled">
+    <input type="checkbox" id="partyCmd">
+    <label for="partyCmd" id="partyCmdLabel">PartyCmd</label>
   </div>
   <div id="state" role="status"></div>
   <div id="note" role="status"></div>
 
   <fieldset>
-    <legend id="targetLegend">Goto Username</legend>
+    <legend id="targetLegend">Goto Username:</legend>
     <div class="row">
-      <input type="text" id="Target" autocomplete="off">
+      <input type="text" id="Target" list="players" autocomplete="off">
+      <datalist id="players"></datalist>
       <button id="me">Me</button>
     </div>
     <div class="row">
       <label for="RelogDelay" id="relogLabel">Relog Delay</label>
-      <input type="number" id="RelogDelay" min="0">
+      <input type="number" id="RelogDelay" min="0" max="60000">
       <label for="SkillDelay" id="skillDelayLabel">Skill Delay</label>
-      <input type="number" id="SkillDelay" min="0">
+      <input type="number" id="SkillDelay" min="50" max="60000">
+      <span class="hint" id="skillDelayMs">ms</span>
     </div>
     <div class="row">
       <label for="preset" id="presetLabel">Skill Preset</label>
       <select id="preset"></select>
     </div>
     <div class="row">
-      <label for="SkillList" id="skillListLabel">Skill List</label>
+      <label for="SkillList" id="skillListLabel">Skill List:</label>
       <input type="text" id="SkillList" autocomplete="off">
     </div>
   </fieldset>
@@ -80,7 +90,7 @@
       <label for="SafeSkill" id="safeSkillLabel">Use</label>
       <input type="text" id="SafeSkillList" autocomplete="off">
       <label for="SafeSkillHP" id="safeSkillHpLabel">if health&lt;</label>
-      <input type="number" id="SafeSkillHP" min="0" max="100">
+      <input type="number" id="SafeSkillHP" min="1" max="99">
     </div>
     <div class="row">
       <input type="checkbox" id="BuffStopAttack">
@@ -89,7 +99,7 @@
     </div>
     <div class="row">
       <input type="checkbox" id="AttackPriority">
-      <label for="AttackPriority" id="priorityLabel">AttackPriority</label>
+      <label for="AttackPriority" id="priorityLabel">AttackPriority:</label>
       <input type="text" id="AttackPriorityMonster" autocomplete="off">
     </div>
   </fieldset>
@@ -106,7 +116,7 @@
     </div>
     <div class="row">
       <input type="checkbox" id="cbSpecialAnims">
-      <label for="cbSpecialAnims" id="specialAnimsLabel">Special animation actions</label>
+      <label for="cbSpecialAnims" id="specialAnimsLabel">skill action:</label>
       <label for="SpecialAct" id="specialActLabel">Skill:</label>
       <input type="number" id="SpecialAct" min="1" max="5">
     </div>
@@ -117,15 +127,15 @@
     <div class="row">
       <input type="checkbox" id="unfollow">
       <label for="unfollow" id="unfollowLabel">Unfollow (R)</label>
-      <input type="checkbox" id="stopAttack">
-      <label for="stopAttack" id="stopAttackLabel">StopAttack (T)</label>
+      <span id="stopAttackRow"><input type="checkbox" id="stopAttack">
+      <label for="stopAttack" id="stopAttackLabel">StopAttack (T)</label></span>
       <input type="checkbox" id="GlobalHotkey">
       <label for="GlobalHotkey" id="globalLabel">Global Hotkey</label>
     </div>
     <div class="hint" id="keyHint"></div>
   </fieldset>
 
-  <fieldset>
+  <fieldset id="optionsGroup">
     <legend id="optionsLegend">Options</legend>
     <div class="checks" id="options"></div>
   </fieldset>
@@ -134,9 +144,9 @@
     <legend id="mapsLegend">Maps</legend>
     <div class="row">
       <input type="checkbox" id="LockedZoneHandler">
-      <label for="LockedZoneHandler" id="lockedLabel">Locked Zone Handler</label>
+      <a class="link" id="lockedMapLink" href="#"><label for="LockedZoneHandler" id="lockedLabel">Locked Zone Handler</label></a>
       <input type="checkbox" id="WhitelistMap">
-      <label for="WhitelistMap" id="whitelistLabel">Whitelist Map</label>
+      <a class="link" id="whitelistMapLink" href="#"><label for="WhitelistMap" id="whitelistLabel">Whitelist Map</label></a>
     </div>
     <div class="row">
       <label for="LockedZoneHandlerMaps" id="lockedMapsLabel">Locked maps</label>
@@ -149,11 +159,10 @@
   </fieldset>
 
   <fieldset>
-    <legend id="configLegend">Config</legend>
+    <legend id="configLegend">Config : Default</legend>
     <div class="row">
       <button id="save">Save</button>
       <button id="load">Load</button>
-      <button id="autoload">Autoload</button>
       <span class="hint" id="loadedFrom"></span>
     </div>
     <div class="row" id="party"></div>
@@ -185,6 +194,23 @@
     'WhitelistMap', 'GlobalHotkey'];
   var CONTROLS = TEXT_FIELDS.concat(NUMBER_FIELDS, BOX_FIELDS);
 
+  // The reference's PartyCmd tooltip, verbatim (MaidRemake.cs:106-118).
+  var PARTY_TOOLTIP = '[Auto accept any party invitation when checked]'
+    + '\n\nEnter /p party chat\'s to use the commands below'
+    + '\n.join {mapname-room}'
+    + '\n.acc {questIds}'
+    + '\n.turnin {questIds}'
+    + '\n.target {playername} => change Maid\'s master target'
+    + '\n.start => turn on Maid'
+    + '\n.stop => turn off Maid';
+
+  // cbEnablePlugin_CheckedChanged -> startUI (:930-968): these go dead while the Maid runs.
+  var START_DISABLED = ['cbSpecialAnims', 'SpecialMsg', 'SpecialAct', 'Target', 'SkillList',
+    'preset', 'RelogDelay', 'LockedZoneHandler', 'LockedZoneHandlerMaps', 'WhitelistMap',
+    'WhitelistMapMaps', 'UltraBossExtra', 'cbStopIf', 'cbWaitSkill', 'me', 'cbCopyWalk'];
+  var stopwatchStarted = null;
+  var timer = null;
+
   function el(id) {
     return document.getElementById(id);
   }
@@ -196,6 +222,27 @@
   function say(text, kind) {
     el('note').textContent = text || '';
     el('note').className = kind || '';
+  }
+
+  function two(n) { return (n < 10 ? '0' : '') + n; }
+
+  /** timerStopAttack_Tick: `Maid Remake (hh:mm:ss)` while the box is ticked. */
+  function drawStopwatch(on) {
+    if (on && stopwatchStarted === null) stopwatchStarted = Date.now();
+    if (!on) {
+      stopwatchStarted = null;
+      if (timer) { clearInterval(timer); timer = null; }
+      document.title = label('title', 'Maid Remake');
+      return;
+    }
+    if (timer) return;
+    timer = setInterval(function () {
+      var left = Math.floor((Date.now() - stopwatchStarted) / 1000);
+      var h = Math.floor(left / 3600);
+      var m = Math.floor((left % 3600) / 60);
+      var s = left % 60;
+      document.title = label('title', 'Maid Remake') + ' (' + two(h) + ':' + two(m) + ':' + two(s) + ')';
+    }, 1000);
   }
 
   /** The box behind one config key: the named control, or the generic one the options group drew. */
@@ -222,21 +269,40 @@
     el('state').textContent = state.status || '';
     el('state').className = state.status || '';
     el('enabled').checked = state.enabled === true;
+    el('partyCmd').checked = state.partyCmd !== false;
     el('unfollow').checked = state.unfollow === true;
     el('stopAttack').checked = state.stopAttack === true;
+    el('stopAttack').className = state.stopAttack === true ? 'stopattack' : '';
+    el('stopAttackRow').className = state.stopAttack === true ? 'stopattack' : '';
+    document.body.className = state.stopAttack === true ? 'stopattack' : '';
+    drawStopwatch(state.stopAttack === true);
     var specialAnims = state.specialAnims !== false;
     el('cbSpecialAnims').checked = specialAnims;
-    el('cbSpecialAnims').disabled = state.enabled === true;
-    el('UltraBossExtra').disabled = state.enabled === true;
-    el('SpecialMsg').disabled = state.enabled === true || !specialAnims;
-    el('SpecialAct').disabled = state.enabled === true || !specialAnims;
+    // startUI disables its own set of controls while the Maid runs; stopMaid gives them back.
+    // The generic option boxes are built below, so their half of the lockout is applied afterwards.
+    START_DISABLED.forEach(function (id) {
+      var box = el(id);
+      if (box) box.disabled = state.enabled === true;
+    });
+    if (state.preset !== undefined && document.activeElement !== el('preset')) {
+      el('preset').value = state.preset || '';
+    }
     if (state.target && document.activeElement !== el('Target')) el('Target').value = state.target;
     if (view && view.fields) {
       fields = view.fields;
       if (!built) { build(view); built = true; }
+      START_DISABLED.forEach(function (id) {
+        var box = el(id);
+        if (box) box.disabled = state.enabled === true;
+      });
+    }
+    if (!state.enabled) {
+      el('SpecialMsg').disabled = !specialAnims;
+      el('SpecialAct').disabled = !specialAnims;
     }
     writeConfig(state.config, state.target);
     el('loadedFrom').textContent = state.loadedFrom || '';
+    el('configLegend').textContent = state.loadedFrom ? 'Config : ' + state.loadedFrom : 'Config : Default';
     if (state.missing && state.missing.length) {
       say(label('missing', 'The game cannot answer') + ': ' + state.missing.join(', '), 'err');
     }
@@ -286,6 +352,12 @@
       wrap.appendChild(text);
       options.appendChild(wrap);
     });
+    // cmbPreset starts with no selection (the reference's designer adds the entries but sets no
+    // SelectedIndex), so the blank row is the first one.
+    var blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = '';
+    el('preset').appendChild(blank);
     (view.presets || []).forEach(function (name) {
       var one = document.createElement('option');
       one.value = name;
@@ -304,6 +376,9 @@
     el('enabled').addEventListener('change', function () {
       send({ enabled: el('enabled').checked });
     });
+    el('partyCmd').addEventListener('change', function () {
+      send({ partyCmd: el('partyCmd').checked });
+    });
     el('unfollow').addEventListener('change', function () {
       send({ unfollow: el('unfollow').checked });
     });
@@ -312,6 +387,31 @@
     });
     el('cbSpecialAnims').addEventListener('change', function () {
       send({ specialAnims: el('cbSpecialAnims').checked });
+    });
+    // cmbGotoUsername_Clicked: the combo lists World.PlayersInMap when it is opened.
+    el('Target').addEventListener('focus', function () { fillPlayers(); });
+    el('Target').addEventListener('click', function () { fillPlayers(); });
+    // lblLockedMapSetting_LinkClicked / lblWhitelistMap_LinkClicked open the two sub-windows.
+    el('lockedMapLink').addEventListener('click', function (event) {
+      event.preventDefault();
+      api.openMaps('locked');
+    });
+    el('whitelistMapLink').addEventListener('click', function (event) {
+      event.preventDefault();
+      api.openMaps('whitelist');
+    });
+    // The form's own hotkey handler: bare R/T while it has focus, never inside a box or combo.
+    document.addEventListener('keydown', function (event) {
+      var active = document.activeElement;
+      if (active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return;
+      if (active && active.isContentEditable) return;
+      if (event.key === 'r' || event.key === 'R') {
+        event.preventDefault();
+        send({ unfollow: !el('unfollow').checked });
+      } else if (event.key === 't' || event.key === 'T') {
+        event.preventDefault();
+        send({ stopAttack: !el('stopAttack').checked });
+      }
     });
     // The Target box is both the config's own key and the scheduler's master, so it writes both:
     // the reference keeps them as one box (`cmbGotoUsername`) and its saveConfig reads that box.
@@ -331,6 +431,7 @@
       if (!el('preset').value) return;
       api.preset(el('preset').value).then(function (answer) {
         if (answer && answer.view) drawState(answer.view);
+        send({ preset: el('preset').value });
         say(label('presetApplied', 'Preset {name} applied').replace('{name}', el('preset').value), 'ok');
       }, function (error) { say(String(error.message || error), 'err'); });
     });
@@ -342,8 +443,7 @@
     });
     var BUTTONS = [
       { id: 'save', run: function () { return api.save(); } },
-      { id: 'load', run: function () { return api.load(); } },
-      { id: 'autoload', run: function () { return api.autoload(); } }
+      { id: 'load', run: function () { return api.load(); } }
     ];
     BUTTONS.forEach(function (one) {
       el(one.id).addEventListener('click', function () {
@@ -362,19 +462,39 @@
     });
   }
 
+  /** The combo's own list, drawn into the datalist behind the editable target box. */
+  function fillPlayers() {
+    api.players().then(function (names) {
+      var list = el('players');
+      list.innerHTML = '';
+      (names || []).forEach(function (name) {
+        var one = document.createElement('option');
+        one.value = name;
+        list.appendChild(one);
+      });
+    }, function () {});
+  }
+
   function words() {
     document.title = label('title', 'Maid Remake');
     el('enableLabel').textContent = label('enable', 'Enable');
-    el('targetLegend').textContent = label('target', 'Goto Username');
+    el('partyCmdLabel').textContent = 'PartyCmd';
+    el('partyCmd').title = PARTY_TOOLTIP;
+    el('partyCmdLabel').title = PARTY_TOOLTIP;
+    // The reference's own designer strings, verbatim (MaidRemake.designer.cs:100, :130, :276,
+    // :470, :578, :653). They are kept literal because the catalogue's own wording drifted from
+    // them and this checklist names the designer's text.
+    el('targetLegend').textContent = 'Goto Username:';
     el('relogLabel').textContent = label('relogDelay', 'Relog Delay');
-    el('skillDelayLabel').textContent = label('skillDelay', 'Skill Delay');
+    el('skillDelayLabel').textContent = 'Skill Delay:';
+    el('skillDelayMs').textContent = 'ms';
     el('presetLabel').textContent = label('preset', 'Skill Preset');
-    el('skillListLabel').textContent = label('skillList', 'Skill List');
+    el('skillListLabel').textContent = 'Skill List:';
     el('combatLegend').textContent = label('combat', 'Combat');
     el('safeSkillLabel').textContent = label('optionSafeSkill', 'Use');
     el('safeSkillHpLabel').textContent = label('safeSkillHp', 'if health<');
     el('buffLabel').textContent = label('optionBuffStopAttack', 'Buff If StopAttack');
-    el('priorityLabel').textContent = label('attackPriority', 'AttackPriority');
+    el('priorityLabel').textContent = 'AttackPriority:';
     el('keysLegend').textContent = label('keys', 'Keys');
     el('unfollowLabel').textContent = label('unfollow', 'Unfollow (R)');
     el('stopAttackLabel').textContent = label('stopAttack', 'StopAttack (T)');
@@ -383,7 +503,7 @@
       'Unfollow and StopAttack work whichever window has focus while Global Hotkey is ticked.');
     el('optionsLegend').textContent = label('options', 'Options');
     el('specialLegend').textContent = label('specials', 'Special Anims');
-    el('specialAnimsLabel').textContent = label('specialAnims', 'Special animation actions');
+    el('specialAnimsLabel').textContent = 'skill action:';
     el('ultraBossExtraLabel').textContent = label('ultraBossExtra', 'Ultra Boss w/ Extra:');
     el('specialMsgLabel').textContent = label('specialMsg', 'msg:');
     el('specialActLabel').textContent = label('specialAct', 'Skill:');
@@ -392,11 +512,9 @@
     el('whitelistLabel').textContent = label('whitelistMap', 'Whitelist Map');
     el('lockedMapsLabel').textContent = label('lockedMaps', 'Locked maps');
     el('whitelistMapsLabel').textContent = label('whitelistMaps', 'Whitelist maps');
-    el('configLegend').textContent = label('config', 'Config');
     el('me').textContent = label('me', 'Me');
     el('save').textContent = label('save', 'Save');
     el('load').textContent = label('load', 'Load');
-    el('autoload').textContent = label('autoload', 'Autoload');
   }
 
   function drawParty(parties) {

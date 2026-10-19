@@ -27,6 +27,35 @@ function createLoginWindow(deps) {
     // this only remembers which of them is showing the list.
     const shownIn = [];
 
+    // Usernames outlive the process; passwords never do. The names store holds the list, and a
+    // name loaded from it carries no password until the user types one again for this session.
+    const names = deps.names || null;
+
+    function readNames() {
+        if (!names) return [];
+        try {
+            const state = names.readOrCreate(function () { return { usernames: [] }; }) || {};
+            return Array.isArray(state.usernames) ? state.usernames : [];
+        } catch (error) {
+            return [];
+        }
+    }
+
+    function writeNames() {
+        if (!names) return;
+        try {
+            const state = names.readOrCreate(function () { return { usernames: [] }; }) || {};
+            state.usernames = store.list().map(function (character) { return character.username; });
+            names.write(state);
+        } catch (error) {
+            // Remembering names is a convenience; failing to must not stop the window.
+        }
+    }
+
+    store.adopt(readNames().map(function (username) {
+        return { username: username, password: '' };
+    }));
+
     function remember(sender) {
         if (!sender || shownIn.indexOf(sender) !== -1) return;
         shownIn.push(sender);
@@ -75,10 +104,12 @@ function createLoginWindow(deps) {
                 return Promise.resolve({ added: false, error: messages.usernameRequired });
             }
             store.add(username, args[1]);
+            writeNames();
             return Promise.resolve(Object.assign({ added: true, error: null }, list()));
         }
         if (channel === 'loginRemove') {
             const removed = store.remove(args[0]);
+            writeNames();
             return Promise.resolve(Object.assign(removed, list()));
         }
         if (channel === 'loginSignIn') {
@@ -117,6 +148,7 @@ function createLoginWindow(deps) {
                     if (result.error) return { imported: 0, error: result.error };
                     const before = store.size();
                     store.adopt(model.parseCredentialsFile(result.text));
+                    writeNames();
                     return Object.assign({
                         imported: store.size() - before,
                         skipped: 0,
@@ -178,6 +210,9 @@ function createLoginWindow(deps) {
         const session = startWatching(function (state) {
             const payload = push(state);
             notify(payload);
+            // The reference's menu item comes back on every drop, not only the first: a restored
+            // connection arms the next open again.
+            if (state === model.STATES.connected) opened = false;
         });
         const handle = every(function () {
             // Returned so a caller - the app or a test - can wait for the tick it asked for.
@@ -194,6 +229,28 @@ function createLoginWindow(deps) {
         return { session: session, stop: function () { cancel(handle); } };
     }
 
+    /**
+     * Root_Load reads CharSelect.cfg at startup (Root.cs:115) and keeps whatever it holds. Here
+     * that is the user's own file under the app's data directory: read once, adopted into the
+     * session, and ignored when it is not there. Nothing about it is written back.
+     */
+    function autoImport() {
+        return Promise.resolve()
+            .then(function () { return deps.readCredentialsFile ? deps.readCredentialsFile() : null; })
+            .then(function (result) {
+                if (!result || result.error || typeof result.text !== 'string') {
+                    return { imported: 0, error: null };
+                }
+                const before = store.size();
+                store.adopt(model.parseCredentialsFile(result.text));
+                writeNames();
+                return { imported: store.size() - before, error: null };
+            }, function () {
+                // A missing or unreadable file is the ordinary first-run case.
+                return { imported: 0, error: null };
+            });
+    }
+
     return {
         handle: handle,
         attach: attach,
@@ -201,7 +258,8 @@ function createLoginWindow(deps) {
         watch: function () { return watch; },
         startWatching: startWatching,
         startSessionWatch: startSessionWatch,
-        list: list
+        list: list,
+        autoImport: autoImport
     };
 }
 

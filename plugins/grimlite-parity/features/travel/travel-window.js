@@ -27,9 +27,6 @@ function createTravelWindow(deps) {
         if (channel === 'travelUnlock') {
             return run(travel.unlock, [(args && args[0]) || 0, {}]);
         }
-        if (channel === 'travelSendPacket') {
-            return run(travel.sendPacket, [(args && args[0]) || '']);
-        }
         if (channel === 'travelMessages') {
             return Promise.resolve(messages);
         }
@@ -54,9 +51,6 @@ function createTravelWindow(deps) {
         });
         deps.host.ipc.handle('travelUnlock', function (event, questId) {
             return handle('travelUnlock', event, [questId]);
-        });
-        deps.host.ipc.handle('travelSendPacket', function (event, packet) {
-            return handle('travelSendPacket', event, [packet]);
         });
         deps.host.ipc.handle('travelMessages', function (event) {
             return handle('travelMessages', event, []);

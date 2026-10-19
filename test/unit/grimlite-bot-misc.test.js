@@ -653,7 +653,7 @@ test('CmdLog substitutes the reference own templates', async () => {
   assert.strictEqual(line, 'yokai 3-1234 42 500 Enter Spawn 900 300 2 99 4/50 4 46 50 3 10 9 Tester');
 });
 
-test('CmdLog sends its output to the pane its own Debug flag names, and clears on {CLEAR}', async () => {
+test('CmdLog sends its output to the pane its own Debug flag names, and {CLEAR} is logged literally', async () => {
   const script = await run(engine(), 'CmdLog', { Text: 'plain' });
   assert.ok(script.records.some(function (l) { return l === 'plain'; }), script.records.join('|'));
   assert.deepStrictEqual(script.debug, []);
@@ -663,7 +663,8 @@ test('CmdLog sends its output to the pane its own Debug flag names, and clears o
   assert.strictEqual(debug.records.filter(function (l) { return l === 'quiet'; }).length, 0);
 
   const cleared = await run(engine(), 'CmdLog', { Text: '{CLEAR}' });
-  assert.deepStrictEqual(cleared.cleared, ['clear'], 'AppendScript clears the pane on {CLEAR}');
+  assert.deepStrictEqual(cleared.cleared, [],
+    'CmdLog.Clear is never set from Text, so the pane is not cleared');
   assert.ok(cleared.records.some(function (l) { return l.indexOf('{CLEAR}') !== -1; }),
     'and then appends that very text, which is what the reference own pane does: ' +
     cleared.records.join('|'));

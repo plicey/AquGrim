@@ -3,9 +3,8 @@
 //
 // Reference: Grimoire/UI/Hotkeys.cs. Its three controls are a key combo (cbKeys), an action combo
 // (cbActions) and Add / Remove / Save over a list (lstKeys). Add binds straight away, Remove gives
-// the key back, and Save writes hotkeys.json. This port persists on every change instead of only
-// on Save, so a binding cannot be lost by closing the window - Save stays as an explicit write and
-// reports where it went.
+// the key back, and Save writes hotkeys.json. Add and Remove only change the live list; Save is the
+// sole action that persists it.
 
 function stringOf(value) {
     return value == null ? '' : String(value);
@@ -33,7 +32,7 @@ function createHotkeysWindow(deps) {
             };
         });
         // The window's own words, so the page and the menu cannot drift apart on a translated
-        // build. Empty binds before every save: the list is already persisted on each change.
+        // build. The list remains in memory until the user presses Save.
         model.messages = messages;
         return model;
     }
@@ -57,9 +56,16 @@ function createHotkeysWindow(deps) {
         return { ok: cleared, error: cleared ? null : 'nothing is bound to ' + stringOf(key), view: view() };
     }
 
-    /** The reference's Save: the whole list is already persisted, so this reports where it went. */
+    /** The reference's Save: the only action that writes the list to disk. */
     function save() {
-        return { ok: true, error: null, saved: feature.list().length, view: view() };
+        try {
+            const answer = typeof feature.save === 'function'
+                ? feature.save()
+                : { ok: true, saved: feature.list().length };
+            return Object.assign({ error: null }, answer, { view: view() });
+        } catch (error) {
+            return { ok: false, error: message(error), view: view() };
+        }
     }
 
     /** Run an action, for the window's own affordance ("try it now"). */

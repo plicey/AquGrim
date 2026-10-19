@@ -13,6 +13,7 @@ const url = require('url');
 const platform = require('../../res/platform');
 const drops = require('../../plugins/grimlite-parity/features/drops/drops.js');
 const { createDropWindow } = require('../../plugins/grimlite-parity/features/drops/drop-window.js');
+const dropWindowModule = require('../../plugins/grimlite-parity/features/drops/drop-window.js');
 const { createDropGame } = require('../../plugins/grimlite-parity/features/drops/drop-game.js');
 const bridgeModule = require('../../plugins/grimlite-parity/bridge.js');
 
@@ -98,6 +99,7 @@ function build(options) {
     messages: { title: 'DropList' },
     // Clear is the one action the reference puts a dialog in front of.
     confirmClear: opts.confirmClear || function () { return Promise.resolve(true); },
+    showRejectInfo: opts.showRejectInfo || function () { return Promise.resolve(); },
     channel: 'plugin:grimlite-parity:dropRows',
     now: opts.now,
     log: function (msg) { opened.push(msg); }
@@ -413,7 +415,7 @@ test('Take Drop sends one frame per selected row, and reports what the game woul
   assert.strictEqual(tap.sends.length, 2, 'nothing was sent for the cooling item');
 });
 
-test('a row the player cannot take is refused by the window, with the reason it is refused', async () => {
+test('a full bag does not pre-gate a take: the reference asks the game anyway', async () => {
   const tap = fakeTap();
   const full = [];
   for (let i = 0; i < 100; i++) full.push(item({ ItemID: 1000 + i, sName: 'Bag ' + i, sType: 'Sword' }));
@@ -425,9 +427,13 @@ test('a row the player cannot take is refused by the window, with the reason it 
   assert.strictEqual(state.rows[0].reason, 'Item Inventory Full!');
 
   const result = await built.window.handle('dropTake', {}, [['Blinding Light of Destiny']]);
-  assert.deepStrictEqual(tap.sends, [], 'an item that cannot be taken is never asked for');
-  assert.strictEqual(result.failed.length, 1);
-  assert.strictEqual(result.failed[0].reason, 'Item Inventory Full!');
+  // DropUi.btnTakeDrop_Click calls DropStack.GetDrop for the row and lets the game refuse it;
+  // the window's bag check is not allowed to block a take the reference would send.
+  assert.deepStrictEqual(tap.sends, [
+    { direction: 'toServer', text: '%xt%zm%getDrop%battleon-1234%10414%' }
+  ]);
+  assert.deepStrictEqual(result.taken, ['Blinding Light of Destiny']);
+  assert.deepStrictEqual(result.failed, []);
 });
 
 test('the window with no game access says so rather than offering a take it cannot make', async () => {
@@ -482,7 +488,7 @@ test('Reject and Blacklist removes the selected rows and holds the names for the
   assert.strictEqual((await built.window.handle('dropState')).count, 1);
 });
 
-test('Clear asks before emptying the list, and a No leaves everything alone', async () => {
+test('Clear asks only until the first Yes, then clears the rows without the blacklist', async () => {
   const asked = [];
   let answer = false;
   const built = build({
@@ -501,6 +507,35 @@ test('Clear asks before emptying the list, and a No leaves everything alone', as
   assert.strictEqual(asked.length, 2);
   assert.strictEqual(cleared.cleared, true);
   assert.strictEqual(cleared.count, 0);
+
+  // A later Clear is rows only: no dialog, and a name held for the session stays held.
+  built.window.list().blacklist(['Keeper']);
+  built.window.offer(item({ ItemID: 9, sName: 'Trash Drop' }));
+  built.window.offer(item({ ItemID: 10, sName: 'Keeper' }));
+  const later = await built.window.handle('dropClear');
+  assert.strictEqual(asked.length, 2, 'the confirmation is a one-time dialog');
+  assert.strictEqual(later.cleared, true);
+  assert.strictEqual(later.count, 0);
+  assert.ok(built.window.list().blacklisted().indexOf('keeper') !== -1,
+    'a later Clear leaves the blacklist standing');
+  // ...so the blacklisted name is still refused when it drops again.
+  built.window.offer(item({ ItemID: 10, sName: 'Keeper' }));
+  assert.strictEqual((await built.window.handle('dropState')).count, 0);
+});
+
+// DropUi.RejectIngameDrop_Checkedchanged shows one information box, on the first tick only.
+test('ticking Reject ingame drop shows the reference information box once', async () => {
+  const shown = [];
+  const built = build({
+    showRejectInfo: function () { shown.push(dropWindowModule.REJECT_INFO); return Promise.resolve(); }
+  });
+  await built.window.handle('dropReject', {}, [true]);
+  assert.deepStrictEqual(shown, [
+    'This option will not override Reject drop & whitelist system from bot manager'
+  ]);
+  await built.window.handle('dropReject', {}, [false]);
+  await built.window.handle('dropReject', {}, [true]);
+  assert.strictEqual(shown.length, 1, 'the box is shown once per session');
 });
 
 test('the drop window is the app\'s own kind: a sandboxed page, no Flash, its own preload', async () => {
@@ -582,7 +617,8 @@ test('the drop window is the app\'s own kind: a sandboxed page, no Flash, its ow
 
   const binding = live.keybinds.filter(function (k) { return k.id === 'grimliteDrop'; });
   assert.strictEqual(binding.length, 1, 'the reference\'s own "Show DropUi" action must be bindable');
-  assert.strictEqual(typeof live.keybindDefaults.grimliteDrop, 'string');
+  assert.strictEqual(live.keybindDefaults.grimliteDrop, undefined,
+    'Grimlite ships no default hotkeys');
   opened.length = 0;
   binding[0].action();
   assert.deepStrictEqual(opened, [DROP_WINDOW_ID]);

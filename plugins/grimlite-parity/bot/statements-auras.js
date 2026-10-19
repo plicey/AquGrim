@@ -306,6 +306,65 @@ const handlers = {
         }
         await read(ctx, 'Special Anims', 'consumeAnimation', []);
         return undefined;
+    },
+
+    CmdDelayedAnims: async function (ctx, command) {
+        // CmdSpecialAnims.cs:124-219 - a matching animation or aura schedules one background task
+        // that waits delayPreskill, pauses the bot, waits out the skill's cooldown (at most 1.5s),
+        // attacks the target and force-casts the skill. A task already pending swallows the match.
+        const raw = ctx.resolve(command.Value1);
+        const terms = String(raw === undefined || raw === null ? '' : raw).toLowerCase()
+            .split(',')
+            .map(function (one) { return one.trim(); })
+            .filter(function (one) { return one.length > 0; });
+        const skill = String(ctx.resolve(command.Value2) || '').trim();
+        if (!skill || ctx.delayed.pending) return undefined;
+
+        const seen = await read(ctx, 'Delayed Anims', 'lastAnimationMessage', []);
+        if (!seen.ok) return unreadable(ctx, seen);
+        const last = String(seen.value === undefined || seen.value === null ? '' : seen.value)
+            .toLowerCase();
+        const matched = last.length > 0 && terms.some(function (term) {
+            return last.indexOf(term) !== -1;
+        });
+        const auraAnswer = await read(ctx, 'Delayed Anims', 'lastAuraMessages', []);
+        const auraMessages = auraAnswer.ok && Array.isArray(auraAnswer.value) ? auraAnswer.value : [];
+        const auramatch = terms.some(function (term) {
+            return auraMessages.some(function (message) {
+                return term.indexOf(String(message)) !== -1;
+            });
+        });
+        if (!matched && !auramatch) return undefined;
+
+        if (matched) {
+            await read(ctx, 'Delayed Anims', 'consumeAnimation', []);
+        }
+        if (auramatch) {
+            await read(ctx, 'Delayed Anims', 'clearAuraMessages', []);
+        }
+
+        const target = String(ctx.resolve(command.target === undefined ? '*' : command.target));
+        const delay = Math.max(0, Number(command.delayPreskill) || 0);
+        ctx.delayed.pending = true;
+        Promise.resolve().then(async function () {
+            try {
+                await ctx.sleep(delay);
+                if (!ctx.running()) return;
+                ctx.pauseFor(true);
+                const ready = await read(ctx, 'Delayed Anims', 'skillAvailable', [skill]);
+                const wait = ready.ok ? Math.min(Math.max(0, Number(ready.value) || 0), 1500) : 0;
+                await ctx.sleep(wait);
+                if (!ctx.running()) return;
+                await read(ctx, 'Delayed Anims', 'attackMonster', [target]);
+                await read(ctx, 'Delayed Anims', 'forceUseSkill', [skill]);
+            } finally {
+                ctx.pauseFor(false);
+                ctx.delayed.pending = false;
+            }
+        }).catch(function (error) {
+            ctx.log('CmdDelayedAnims stopped: ' + message(error));
+        });
+        return undefined;
     }
 };
 

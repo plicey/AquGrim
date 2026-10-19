@@ -60,6 +60,7 @@ function withReason(name, said) {
  * @param {(line: string) => void} deps.log
  * @param {(line: string) => void} [deps.logDebug] the Debug pane CmdLog writes to
  * @param {() => void} [deps.logClear] the CLEAR marker own action on that pane
+ * @param {(text: string) => void} [deps.popup] the shell own modal, for CmdPing
  */
 function createHandlers(deps) {
     const session = deps.session;
@@ -69,9 +70,11 @@ function createHandlers(deps) {
     const sleep = deps.sleep;
     const sendPacket = deps.sendPacket;
     const beep = deps.beep;
+    const popup = deps.popup;
     const spammer = deps.spammer || null;
     const timers = deps.timers || { setTimeout: setTimeout, clearTimeout: clearTimeout };
-    const background = { labels: [], timer: null };
+    // One timer per label: adding B must leave A's loop alone, and STOP removes only its label.
+    const background = { labels: [], timers: {} };
 
     /**
      * One loader helper, asked for by the reference own name. A name the surface does not answer
@@ -127,10 +130,10 @@ function createHandlers(deps) {
 
     function stopBackground() {
         background.labels.length = 0;
-        if (background.timer !== null) {
-            timers.clearTimeout(background.timer);
-            background.timer = null;
-        }
+        Object.keys(background.timers).forEach(function (label) {
+            timers.clearTimeout(background.timers[label]);
+            delete background.timers[label];
+        });
     }
 
     /** One frame on its way out. A relay that will not take it is answered, not assumed. */
@@ -145,14 +148,15 @@ function createHandlers(deps) {
 
     /** One frame of the background spammer, then the next wait - the reference own while body. */
     function backgroundTick(command) {
-        background.timer = null;
+        delete background.timers[command.Label];
         if (background.labels.indexOf(command.Label) === -1) return;
         if (!write("toServer", command.Packet)) {
             log("CmdBackgroundPacket: the frame was not written; there is no live connection");
             return;
         }
-        background.timer = timers.setTimeout(function () { backgroundTick(command); },
-            number(command.Delay, BACKGROUND_DEFAULT_DELAY));
+        background.timers[command.Label] = timers.setTimeout(function () {
+            backgroundTick(command);
+        }, number(command.Delay, BACKGROUND_DEFAULT_DELAY));
     }
 
     /** Is there a live connection to write on? CmdPacket own first condition. */
@@ -179,6 +183,10 @@ function createHandlers(deps) {
         return Promise.resolve()
             .then(function () { return options.setProvoke(wanted); })
             .then(function (answer) {
+                if (answer === undefined) {
+                    log(className + ": this build has no option toggles wired");
+                    return answer;
+                }
                 // The Options feature answers { ok, error }; a plain true/false is the seam a test
                 // injects, and either way a refusal is reported rather than swallowed.
                 if (answer && answer.ok === false) {
@@ -224,6 +232,7 @@ function createHandlers(deps) {
         if (once && delay > 0) await sleep(delay);
         let sent = 0;
         for (let i = 0; i < times; i++) {
+            if (typeof ctx.running === 'function' && !ctx.running()) break;
             if (!(await signedIn())) {
                 log("CmdPacket: nothing was sent, because no character is signed in");
                 break;
@@ -293,7 +302,12 @@ function createHandlers(deps) {
             const times = Math.max(0, number(command.Count, 10));
             if (typeof beep === "function") beep(times);
             else log("CmdPing: " + times + " beep(s), but this build has no alert sound");
-            log("CmdPing: " + times + "x beep" + (command.PopMsg ? " and pop msg" : ""));
+            if (command.PopMsg) {
+                if (typeof popup === "function") popup("Your ping !");
+                else log("CmdPing: " + times + "x beep and pop msg (this build has no popup)");
+            } else {
+                log("CmdPing: " + times + "x beep");
+            }
         },
 
         CmdChange: async function (ctx, command) {
@@ -413,11 +427,17 @@ function createHandlers(deps) {
                 return label !== command.Label;
             });
             if (number(command.ActionW, 0) === 0) background.labels.push(command.Label);
-            if (background.labels.indexOf(command.Label) === -1) return;
+            if (background.labels.indexOf(command.Label) === -1) {
+                if (background.timers[command.Label] !== undefined) {
+                    timers.clearTimeout(background.timers[command.Label]);
+                    delete background.timers[command.Label];
+                }
+                return;
+            }
             if (command.Packet === null || command.Packet === undefined) return;
-            if (background.timer !== null) {
-                timers.clearTimeout(background.timer);
-                background.timer = null;
+            if (background.timers[command.Label] !== undefined) {
+                timers.clearTimeout(background.timers[command.Label]);
+                delete background.timers[command.Label];
             }
             backgroundTick(command);
         },
@@ -463,7 +483,7 @@ function createHandlers(deps) {
             // no bridge callback can reach. Attempted anyway, so the refusal is the surface own,
             // and the surface own row reason rides along with it.
             try {
-                await ask("SetFPS", []);
+                await ask("SetFPS", [String(command.FPS === undefined ? 0 : command.FPS)]);
             } catch (error) {
                 log("CmdSetFPS: " + withReason("SetFPS", message(error)));
             }
@@ -538,12 +558,8 @@ function createHandlers(deps) {
 
         CmdLog: async function (ctx, command) {
             const text = String(command.Text === undefined ? "" : command.Text);
-            // '{CLEAR}' is not a substitution: LogForm.AppendScript clears its pane when the text
-            // contains it and then appends that very text, so a bot that writes it gets an empty
-            // pane holding the line - which is what the reference's own pane does.
-            if (text.indexOf("{CLEAR}") !== -1) {
-                logClear();
-            }
+            // CmdLog's private Clear property is never set from Text, so {CLEAR} does nothing in
+            // the reference beyond being logged as written. Reproduced rather than tidied.
             const values = await logValues(text, ctx.ints);
             const shaped = misc.logText(text, values);
             if (command.Debug) logDebug(shaped.plain);

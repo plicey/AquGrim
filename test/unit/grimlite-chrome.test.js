@@ -10,6 +10,7 @@ const path = require('path');
 
 const platform = require('../../res/platform');
 const { createChrome, HEIGHT, PADS, DEFAULT_SKILLS } = require('../../plugins/grimlite-parity/features/chrome/chrome.js');
+const skillPresets = require('../../plugins/grimlite-parity/features/chrome/skill-presets.js');
 const engine = require('../../plugins/grimlite-parity/bot/engine.js');
 const catalog = require('../../plugins/grimlite-parity/bot/command-catalog.js');
 
@@ -71,7 +72,10 @@ function harness(options) {
     useSkill: member('useSkill', null),
     forceUseSkill: member('forceUseSkill', null),
     className: member('className', 'No Class'),
+    health: member('health', 100),
+    healthMax: member('healthMax', 100),
     mana: member('mana', 100),
+    manaMax: member('manaMax', 100),
     selfAura: member('selfAura', 0)
   };
 
@@ -104,6 +108,7 @@ function harness(options) {
     },
     windowKey: function () { return 'game-window-1'; },
     bot: function () { return bot.document; },
+    presets: options.presets,
     messages: options.messages || {},
     log: function () {},
     sleep: function () { return Promise.resolve(); },
@@ -321,7 +326,32 @@ test('a refused skill is reported on the strip and the rotation keeps going', as
   assert.strictEqual(state.values.autoAttack, true, 'the loop keeps running; the refusal is shown');
 });
 
-test('Auto Attack waits out each skill own cooldown before casting it', async () => {
+test('Auto Attack waits out a preset skill\'s cooldown only when the preset says wait', async () => {
+  const slept = [];
+  const h = harness({ answers: { hasTarget: true, skillAvailable: 400 } });
+  h.chrome.stop();
+  const chrome = createChrome({
+    session: h.session,
+    runtime: h.runtime,
+    windowKey: function () { return 'game-window-1'; },
+    bot: function () { return EMPTY_BOT; },
+    presets: {
+      reload: function () {},
+      forClass: function () {
+        return [{ index: '1', safe: false, wait: true }];
+      }
+    },
+    sleep: function (ms) { slept.push(ms); return Promise.resolve(); },
+    timers: { setInterval: function () { return 1; }, clearInterval: function () {} },
+    log: function () {}
+  });
+  await chrome.action('autoAttack', { checked: true });
+  await chrome.tick();
+  assert.deepStrictEqual(slept, [400], 'SkillAvailable ms are waited out, as the reference does');
+  chrome.stop();
+});
+
+test('the fallback rotation casts without waiting, as the reference\'s default Skill rows do', async () => {
   const slept = [];
   const h = harness({ answers: { hasTarget: true, skillAvailable: 400 } });
   h.chrome.stop();
@@ -336,7 +366,7 @@ test('Auto Attack waits out each skill own cooldown before casting it', async ()
   });
   await chrome.action('autoAttack', { checked: true });
   await chrome.tick();
-  assert.deepStrictEqual(slept, [400], 'SkillAvailable ms are waited out, as the reference does');
+  assert.deepStrictEqual(slept, [], 'no preset means no wait flag');
   chrome.stop();
 });
 
@@ -370,8 +400,87 @@ test('the reference three class combos run before the rotation', async () => {
       return call.call === 'useSkill' || call.call === 'forceUseSkill';
     })
       .map(function (call) { return call.args[0]; });
-    assert.deepStrictEqual(cast, one.skills, one.className + ' should run its own combo');
+    // The reference runs SpecialClassCombo and then still spends one slot of the rotation in the
+    // same pass (Root.cs:1608-1624), which here is the 1-4 fallback's first skill.
+    assert.deepStrictEqual(cast, one.skills.concat(['1']),
+      one.className + ' should run its own combo before the rotation');
   }
+});
+
+test('ClientConfig SS.CLASS presets parse semicolons/commas, wait and the two safe checks', () => {
+  assert.deepStrictEqual(skillPresets.parsePreset('1;2;3:SH>60;4'), [
+    { index: '1', safe: false, wait: false },
+    { index: '2', safe: false, wait: false },
+    { index: '3', safe: true, isMp: false, op: '>', value: 60, wait: false },
+    { index: '4', safe: false, wait: false }
+  ]);
+  assert.deepStrictEqual(skillPresets.parsePreset('1,2,3:SM<30,4'), [
+    { index: '1', safe: false, wait: false },
+    { index: '2', safe: false, wait: false },
+    { index: '3', safe: true, isMp: true, op: '<', value: 30, wait: false },
+    { index: '4', safe: false, wait: false }
+  ]);
+  // 'wait' is the reference's own trailing marker (2wait) and makes every normal row wait.
+  assert.deepStrictEqual(skillPresets.parsePreset('3;2;1;2;4;2wait'), [
+    { index: '3', safe: false, wait: true },
+    { index: '2', safe: false, wait: true },
+    { index: '1', safe: false, wait: true },
+    { index: '2', safe: false, wait: true },
+    { index: '4', safe: false, wait: true },
+    { index: '2', safe: false, wait: true }
+  ]);
+
+  const config = skillPresets.parseConfig([
+    'SS.VOID HIGHLORD=1:SH>60;2;3:SH>60;4',
+    'ss.archpaladin=1,2:SH<60,3,4',
+    'somethingElse=1;2'
+  ].join('\n'));
+  assert.deepStrictEqual(Object.keys(config).sort(), ['ARCHPALADIN', 'VOID HIGHLORD']);
+  assert.strictEqual(config['VOID HIGHLORD'][0].safe, true);
+  assert.strictEqual(config.ARCHPALADIN[1].op, '<');
+});
+
+test('Auto Attack runs the matching class preset and skips a safe skill whose condition is false', async () => {
+  const preset = skillPresets.parsePreset('3:SH>60;2:SM<30');
+  const h = harness({
+    answers: { hasTarget: true, className: 'Void Highlord', health: 20, healthMax: 100, mana: 20 },
+    presets: { reload: function () {}, forClass: function () { return preset; } }
+  });
+  await h.chrome.action('autoAttack', { checked: true });
+  assert.deepStrictEqual(h.chrome.rotation(), preset, 'the matched class preset is the rotation');
+  await h.chrome.tick();
+  assert.strictEqual(h.count('useSkill'), 0, '20% HP does not satisfy SH>60');
+  await h.chrome.tick();
+  assert.deepStrictEqual(h.argsFor('useSkill'), ['2'], '20% mana satisfies SM<30');
+  h.chrome.stop();
+});
+
+test('a preset with no match falls back to skills 1-4', async () => {
+  const h = harness({
+    answers: { hasTarget: true, className: 'No Class' },
+    presets: { reload: function () {}, forClass: function () { return []; } }
+  });
+  await h.chrome.action('autoAttack', { checked: true });
+  assert.deepStrictEqual(h.chrome.rotation().map(function (one) { return one.index; }),
+    ['1', '2', '3', '4']);
+  h.chrome.stop();
+});
+
+test('the preset source reads ClientConfig.cfg, with the store key winning over it', () => {
+  const source = skillPresets.createPresetSource({
+    files: ['/app/ClientConfig.cfg'],
+    readFile: function () { return 'SS.VOID HIGHLORD=1;2\nSS.SHAMAN=1;2:SM>30'; },
+    store: {
+      read: function () {
+        return { autoAttackPresets: { 'VOID HIGHLORD': '4:SH>60;1' } };
+      }
+    }
+  });
+  assert.deepStrictEqual(source.forClass('void highlord').map(function (one) { return one.index; }),
+    ['4', '1'], 'the user\'s store edit is the one Auto Attack runs');
+  assert.deepStrictEqual(source.forClass('Shaman').map(function (one) { return one.index; }),
+    ['1', '2'], 'classes only in the file still work');
+  assert.deepStrictEqual(source.forClass('Nobody'), []);
 });
 
 // ------------------------------------------------------------------- the cell and pad pickers

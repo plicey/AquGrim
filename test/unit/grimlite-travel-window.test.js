@@ -102,24 +102,15 @@ test('the reference\'s own Tools entry opens it, and its own hotkey action does 
   // Hotkeys.cs:402's action, bound to a default of the plugin's own, opening the same window.
   const binding = state.keybinds.filter(function (k) { return k.id === 'grimliteFastTravels'; });
   assert.strictEqual(binding.length, 1, 'the reference\'s own action must be bindable');
-  assert.strictEqual(typeof state.keybindDefaults.grimliteFastTravels, 'string');
+  assert.strictEqual(state.keybindDefaults.grimliteFastTravels, undefined,
+    'Grimlite ships no default hotkeys');
   binding[0].action();
   assert.deepStrictEqual(opened, [WINDOW_ID, WINDOW_ID]);
 });
 
-// The app's own keys are read from res/const.js as source, the way test/unit/game-menu.test.js
-// does, because that module reads Electron at load time.
-test('the new default takes no key the app already holds', async () => {
+test('Grimlite ships no default key for Fast travels', async () => {
   const activated = await activateParity();
-  const key = activated.host._getState().keybindDefaults.grimliteFastTravels;
-  const source = fs.readFileSync(path.join(repoRoot, 'res/const.js'), 'utf8');
-  const block = source.slice(source.indexOf('const originalKeybinds'), source.indexOf('exports.originalKeybinds'));
-  const appKeys = (block.match(/"[^"]+"/g) || []).map(function (quoted) { return quoted.slice(1, -1); });
-
-  assert.ok(appKeys.indexOf('Alt+F') !== -1, 'the app\'s own keys must be found: ' + appKeys.join(', '));
-  assert.strictEqual(appKeys.indexOf(key), -1, 'the window would take the app\'s own ' + key);
-  // A modifier keeps the single-key bindings of the game plugin's own vocabulary free.
-  assert.ok(/\+/.test(key), key + ' must keep a modifier');
+  assert.strictEqual(activated.host._getState().keybindDefaults.grimliteFastTravels, undefined);
 });
 
 // ------------------------------------------------------------------ the page and its preload
@@ -229,10 +220,6 @@ function fakeApi(answers) {
       api.calls.push(['unlock', questId]);
       return Promise.resolve(answers.unlock || { packet: null, sent: false, error: null });
     },
-    sendPacket: function (packet) {
-      api.calls.push(['sendPacket', packet]);
-      return Promise.resolve(answers.send || { packet: packet, sent: true, error: null });
-    },
     copy: function (text) {
       api.calls.push(['copy', text]);
     }
@@ -315,6 +302,18 @@ test('the page keeps the reference\'s own private box and enchantment grid', asy
   assert.strictEqual(page.byId.privateToggle.checked, false);
   assert.strictEqual(Number(page.byId.privateNumber.value), 100000);
   assert.strictEqual(Number(page.byId.privateNumber.max), 1000000);
+  // chkPriv_CheckedChanged: the room box is dead until the private box is ticked.
+  assert.strictEqual(page.byId.privateNumber.disabled, true);
+  page.byId.privateToggle.checked = true;
+  (page.byId.privateToggle.listeners.change || []).forEach(function (fn) { fn({}); });
+  assert.strictEqual(page.byId.privateNumber.disabled, false);
+
+  // The Awe Shop button sits above the radio grid it is chosen in, as the reference stacks them.
+  const markup = fs.readFileSync(path.join(pluginRoot, 'features/travel/travel.html'), 'utf8');
+  assert.ok(markup.indexOf('id="aweButtons"') < markup.indexOf('id="aweTypes"'),
+    'Awe Shop (museum) belongs above the enchantment radios');
+  // numStoryQuestId's own range (Travel.cs: Maximum 1000000).
+  assert.ok(/id="questId"[^>]*max="1000000"/.test(markup), 'the quest id box caps at 1000000');
 
   // The two-column grid, in the designer's own order, with Lucky checked as it opens.
   const radios = page.byId.aweTypes.children.map(function (wrap) { return wrap.children[0]; });
@@ -324,7 +323,6 @@ test('the page keeps the reference\'s own private box and enchantment grid', asy
     data.AWE_TYPES.map(function (entry) { return entry.checked; }));
 
   // A click carries the private box and the chosen shop type to the window.
-  page.byId.privateToggle.checked = true;
   page.byId.privateNumber.value = '12345';
   click(page.byId.groupsLeft.children[0].children[1]); // Oblivion (tercess)
   await settled();
@@ -340,7 +338,32 @@ test('the page keeps the reference\'s own private box and enchantment grid', asy
     ['run', 'aweShop', { isPrivate: true, privateNumber: 12345, aweType: 'thief' }]);
 });
 
-test('the bypasser shows the packet the window generated, and copies and sends that one', async () => {
+// The reference disables its travel groups while ExecuteTravel runs, and the skip buttons and
+// Ultraboss disable themselves. The page mirrors that with one switch for the length of a run.
+test('the travel group is disabled while a run is in flight', async () => {
+  let release = null;
+  const api = fakeApi({});
+  api.run = function (id) {
+    return new Promise(function (resolve) { release = function () { resolve({ button: id, frames: [], error: null }); }; });
+  };
+  const page = loadPage(api);
+  await settled();
+  await settled();
+  for (let i = 0; i < 20 && !page.byId.groupsLeft.children.length; i++) {
+    await new Promise(function (resolve) { setTimeout(resolve, 0); });
+  }
+
+  const oblivion = groupButtons(page.byId.groupsLeft.children[0])[0];
+  click(oblivion);
+  assert.strictEqual(oblivion.disabled, true, 'a travel button is dead while its run is out');
+  assert.strictEqual(page.byId.privateToggle.disabled, true, 'chkPriv travels with grpTravel');
+  release();
+  await settled();
+  await settled();
+  assert.strictEqual(oblivion.disabled, false, 'and live again when the run comes back');
+});
+
+test('the bypasser shows the packet the window generated and copies that one', async () => {
   const packet = travel.updateQuestPacket(20, 126);
   const api = fakeApi({ unlock: { packet: packet, sent: true, error: null } });
   const page = loadPage(api);
@@ -360,9 +383,6 @@ test('the bypasser shows the packet the window generated, and copies and sends t
 
   click(page.byId.copy);
   assert.deepStrictEqual(api.calls[api.calls.length - 1], ['copy', packet]);
-  click(page.byId.send);
-  await settled();
-  assert.deepStrictEqual(api.calls[api.calls.length - 1], ['sendPacket', packet]);
 });
 
 test('a run the window refused is reported with its reason, never as a travel that happened', async () => {
@@ -487,9 +507,9 @@ test('a window with no game to reach reports that, instead of a travel or a fram
   assert.ok(/no game bridge channel/.test(unlock.error), unlock.error);
   assert.strictEqual(unlock.packet, undefined, 'a refusal must not look like a generated packet');
 
-  const sent = await window.handle('travelSendPacket', null, ['{"t":"xt"}']);
-  assert.strictEqual(sent.sent, false);
-  assert.strictEqual(sent.error, 'this app has no game bridge channel');
+  // The Send button is not part of this window: the reference sends on Unlock and offers Copy.
+  assert.throws(function () { window.handle('travelSendPacket', null, ['{"t":"xt"}']); },
+    /unknown travel channel/);
 });
 
 test('each channel the page asks for is one the window answers', function () {
@@ -511,7 +531,7 @@ test('each channel the page asks for is one the window answers', function () {
   const asked = (preload.match(/CH\('([^']+)'\)/g) || []).map(function (hit) {
     return /'([^']+)'/.exec(hit)[1];
   });
-  assert.ok(asked.length >= 6, 'the preload must expose the page\'s calls: ' + asked.join(', '));
+  assert.ok(asked.length >= 5, 'the preload must expose the page\'s calls: ' + asked.join(', '));
   asked.forEach(function (channel) {
     assert.strictEqual(typeof handlers[channel], 'function', 'nothing answers the preload\'s ' + channel);
   });

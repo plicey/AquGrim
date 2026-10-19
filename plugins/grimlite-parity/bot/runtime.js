@@ -42,7 +42,7 @@ function createRuntimeManager(deps) {
     // Everything but the three the manager itself owns. A seam is passed through as it was given,
     // so an engine built here has exactly the reach the caller handed the manager - no more.
     const SEAMS = ['packets', 'beep', 'readFile', 'exists', 'botsDirectory', 'spammer', 'timers',
-        'logDebug', 'logClear', 'options', 'relogin', 'specialHandler'];
+        'logDebug', 'logClear', 'options', 'relogin', 'specialHandler', 'popup'];
     function seams() {
         const out = {};
         SEAMS.forEach(function (name) {
@@ -95,9 +95,14 @@ function createRuntimeManager(deps) {
         if (entry.engine.running()) {
             return { ok: false, error: require('./engine.js').ERRORS.alreadyRunning };
         }
-        const result = await entry.engine.start(bot);
+        // The engine's commands write Configuration keys (CmdBotDelay and the quest delay), so a
+        // running bot works on its own copy. Otherwise a start would edit the document the Bot
+        // Manager is still showing, and a cancel or reload would keep the bot's changes.
+        const runningDocument = bot && typeof bot === 'object'
+            ? JSON.parse(JSON.stringify(bot)) : bot;
+        const result = await entry.engine.start(runningDocument);
         if (!result.ok) return result;
-        entry.document = bot;
+        entry.document = runningDocument;
         // The loop runs on its own; nothing awaits it except the tests and stop().
         entry.loop = Promise.resolve(entry.engine.run()).catch(function (error) {
             if (deps.log) deps.log('the bot loop ended: ' + ((error && error.message) || error));

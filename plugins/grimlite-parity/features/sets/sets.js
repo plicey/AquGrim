@@ -1,7 +1,7 @@
 // The Sets window's own logic (ticket #29). Reference: Grimoire/UI/Set.cs - class SetItem,
-// class Item and interface ISetInterface at :282-305, the Add handler at :53-67, Refresh at
-// :150-198, and CmdEquipSet (Grimoire/Botting/Commands/Item/CmdEquipSet.cs) for the equip
-// sequence the saved file drives.
+// class Item and interface ISetInterface at :282-305, the Add handler at :53-67 and Refresh at
+// :150-198. The reference ships no Equip button on this form and its menu entry is hidden
+// upstream, so the port keeps the document mechanics only.
 //
 // A .gset is a user document written where the user points the dialog, so this module only
 // reads and writes its bytes; the window and the dialogs own the paths (set-dialogs.js).
@@ -32,14 +32,6 @@ const GROUPS = [
 
 // InventoryItem.Weapons: every category the reference folds into the single "Weapon" type.
 const WEAPON_CATEGORIES = ['Sword', 'Axe', 'Dagger', 'Gun', 'Bow', 'Mace', 'Polearm', 'Staff', 'Wand'];
-
-// InventoryItem.EquippableCategories: what CmdEquipSet's IsEquippable test admits.
-const EQUIPPABLE_CATEGORIES = WEAPON_CATEGORIES.concat(
-    ['Class', 'Armor', 'Helm', 'Cape', 'Necklace', 'Misc', 'Item']);
-
-function isEquippable(item) {
-    return EQUIPPABLE_CATEGORIES.indexOf(item.category) !== -1;
-}
 
 /**
  * The entry a file stores for an inventory item: its name, and its category unless that
@@ -176,54 +168,6 @@ function listSets(directory, fsModule) {
     }
 }
 
-/**
- * Equip a set, the way CmdEquipSet does: entries in the file's order, each resolved by name on
- * the inventory (case-insensitively) and only kept when that item's own category is equippable.
- * An entry that is already worn is skipped; a name the bag does not hold, and a category
- * outside the equippable set, are both reported as missing. A refusal from the game stops the
- * sequence and is reported with position, rather than being swallowed the reference's way.
- *
- * The reference's own wait loop before each equip (wait out combat, then wait until
- * IsActionAvailable("equipItem")) is deliberately not here: it belongs with the rest of the
- * engine's pacing, which ticket #37 owns, and duplicating it here would give the app two
- * different ideas of when an equip may run.
- */
-async function equipSet(game, entries) {
-    const wanted = Array.isArray(entries) ? entries : [];
-    const equipped = [];
-    const skipped = [];
-    const missing = [];
-    const inventory = await game.readInventory();
-    const items = Array.isArray(inventory) ? inventory : [];
-
-    for (let i = 0; i < wanted.length; i++) {
-        const entry = wanted[i];
-        const match = items.filter(function (item) {
-            return String(item.name).toLowerCase() === String(entry.name).toLowerCase();
-        })[0];
-        if (!match || !isEquippable(match)) {
-            missing.push(entry.name);
-            continue;
-        }
-        if (match.isEquipped) {
-            skipped.push(entry.name);
-            continue;
-        }
-        try {
-            await game.equipItem(match.name);
-        } catch (error) {
-            return {
-                equipped: equipped,
-                skipped: skipped,
-                missing: missing,
-                error: (error && error.message) || String(error)
-            };
-        }
-        equipped.push(match.name);
-    }
-    return { equipped: equipped, skipped: skipped, missing: missing, error: null };
-}
-
 module.exports = {
     SET_ITEM_TYPE: SET_ITEM_TYPE,
     SET_LIST_TYPE: SET_LIST_TYPE,
@@ -231,11 +175,9 @@ module.exports = {
     ERRORS: ERRORS,
     GROUPS: GROUPS,
     WEAPON_CATEGORIES: WEAPON_CATEGORIES,
-    EQUIPPABLE_CATEGORIES: EQUIPPABLE_CATEGORIES,
     entryFor: entryFor,
     inventoryRows: inventoryRows,
     parseSet: parseSet,
     serializeSet: serializeSet,
-    listSets: listSets,
-    equipSet: equipSet
+    listSets: listSets
 };

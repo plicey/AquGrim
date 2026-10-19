@@ -135,13 +135,14 @@ function createLoadersFeature(host, deps) {
     }
 
     async function grab(target, orderBy) {
+        // btnGrab_Click clears the tree before it asks the game for anything, so a refused grab
+        // leaves an empty tree rather than the last one standing.
+        rows = [];
         try {
             rows = await rowsFor(target, orderBy);
             return { ok: true, rows: rows, target: target, orderBy: orderBy };
         } catch (error) {
-            // A grab that failed leaves the last tree standing, as the reference's own empty
-            // catch does, so a Save after a refused grab still writes what the user can see.
-            return failure(error);
+            return Object.assign(failure(error), { rows: [] });
         }
     }
 
@@ -217,11 +218,10 @@ function createLoadersFeature(host, deps) {
 
     /**
      * btnSave_Click: the tree the window is showing, through the reference's own dialog. A
-     * cancelled dialog writes nothing, and an empty tree is refused rather than written as an
-     * empty document.
+     * cancelled dialog writes nothing; an empty tree is a valid document to write, which is what
+     * the reference's SaveNodes does with no nodes.
      */
     async function save(owner) {
-        if (!rows.length) return { ok: false, error: messages.nothingToSave || ERRORS.noRows };
         if (!dialogs || typeof dialogs.save !== 'function') {
             return { ok: false, error: 'this window cannot open a save dialog here' };
         }

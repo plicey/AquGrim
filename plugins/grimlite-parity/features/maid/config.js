@@ -46,29 +46,57 @@ const BOOLEANS = [
     'StopFailedGoto', 'LockedZoneHandler', 'WhitelistMap', 'GlobalHotkey', 'SafeSkill'
 ];
 
-// Resources/Plugins/Maid/Default.json verbatim, including the CRLF inside LockedZoneHandlerMaps
-// (the file ships two map lines and the reference's own text box keeps them). It is the reference's
-// template rather than a full config: it omits WhitelistMapMaps and the five combat keys, which is
-// exactly why the overlay rule matters.
+// The form's own starting point, which is the reference's designer defaults rather than the
+// partial Resources/Plugins/Maid/Default.json template: the locked-map and whitelist boxes ship
+// filled (LockedMapForm.Designer.cs:61, WhitelistMap.Designer.cs:128-131), tbSpecialMsg and
+// numSkillAct are seeded (:629, :678), cbAntiCounter is ticked (:379) and cmbUltraBoss sits on
+// None. Because every one of the 23 keys is present, the state this starts from saves back whole
+// with no nulls.
 const DEFAULT_CONFIG = {
     Target: 'username',
     SkillList: '1,2,3,4',
+    LockedZoneHandlerMaps: 'doomvault\r\ndoomvaultb\r\nicewing\r\nvoidflibbi\r\nvoidnightbane\r\nvoidxyfrag',
+    SafeSkillList: '1,2',
+    BuffStopAttackList: '2,3',
+    AttackPriorityMonster: 'Defense Drone,Attack Drone',
+    SpecialMsg: 'converge,truth,resist,bleee',
+    WhitelistMapMaps: 'newbie;all\r\nprison;all\r\nchaoscrypt;all\r\nbattleunderb;Enter;Spawn',
+    RelogDelay: 5000,
     SkillDelay: 150,
+    SafeSkillHP: 60,
+    SpecialAct: 5,
+    UltraBossExtra: 0,
+    AntiCounter: true,
+    CopyWalk: false,
+    AttackPriority: false,
+    BuffStopAttack: false,
     WaitSkill: false,
     StopFailedGoto: false,
     LockedZoneHandler: false,
-    LockedZoneHandlerMaps: 'citadel-6666;m22;Left\r\ntercessuinotlim-6666',
-    RelogDelay: 5000,
+    WhitelistMap: false,
     GlobalHotkey: false,
-    SafeSkill: false,
-    SafeSkillList: '1,2',
-    SafeSkillHP: 60,
-    BuffStopAttack: false,
-    BuffStopAttackList: '2,3',
-    AttackPriority: false,
-    AttackPriorityMonster: 'Defense Drone,Attack Drone',
-    CopyWalk: false
+    SafeSkill: false
 };
+
+// The reference's own NumericUpDown bounds (MaidRemake.designer.cs): numSkillDelay 50-60000,
+// numRelogDelay 0-60000, numHealthPercent 1-99, numSkillAct 1-5. UltraBossExtra is a combo, not a
+// number box, so its only bound is the mode list's own length.
+const LIMITS = {
+    SkillDelay: { min: 50, max: 60000 },
+    RelogDelay: { min: 0, max: 60000 },
+    SafeSkillHP: { min: 1, max: 99 },
+    SpecialAct: { min: 1, max: 5 },
+    UltraBossExtra: { min: 0, max: 11 }
+};
+
+/** One numeric field as its own control clamps it; a value outside the box is refused, not saved. */
+function clamp(key, value) {
+    const bounds = LIMITS[key];
+    const number = Number(value);
+    if (!isFinite(number)) return null;
+    if (!bounds) return number;
+    return Math.max(bounds.min, Math.min(bounds.max, Math.round(number)));
+}
 
 /** A fresh copy of the shipped default, so a caller can edit one without touching the next. */
 function defaults() {
@@ -115,15 +143,17 @@ function parse(text) {
 
 /**
  * The other half of the round trip: every one of the 23 keys, indented, the way
- * `JsonConvert.SerializeObject(saveConfig(), Formatting.Indented)` writes the reference's file. A
- * key the state does not carry is written as null, so a file this app saved always loads back
- * whole.
+ * `JsonConvert.SerializeObject(saveConfig(), Formatting.Indented)` writes the reference's file.
+ * saveConfig reads all 23 live controls, so a key the state does not carry falls back to the
+ * form's own designer value rather than to null: a file this app saves never carries one.
  */
 function serialise(config) {
     const state = config || {};
+    const fallback = defaults();
     const out = {};
     FIELDS.forEach(function (key) {
-        out[key] = Object.prototype.hasOwnProperty.call(state, key) ? state[key] : null;
+        const value = Object.prototype.hasOwnProperty.call(state, key) ? state[key] : undefined;
+        out[key] = value === null || value === undefined ? fallback[key] : value;
     });
     return JSON.stringify(out, null, 2) + '\n';
 }
@@ -145,7 +175,10 @@ function apply(config, current) {
             return;
         }
         if (typeof value === 'number') {
-            out[key] = isFinite(value) ? value : out[key];
+            // A file that carries a number outside the control's own range is clamped the way
+            // ApplyConfig's `numSkillDelay.Value = config.SkillDelay` is clamped by the control.
+            const bounded = clamp(key, value);
+            out[key] = bounded === null ? out[key] : bounded;
             return;
         }
         const text = String(value);
@@ -237,8 +270,10 @@ module.exports = {
     FIELDS: FIELDS,
     NUMBERS: NUMBERS,
     BOOLEANS: BOOLEANS,
+    LIMITS: LIMITS,
     DEFAULT_CONFIG: DEFAULT_CONFIG,
     defaults: defaults,
+    clamp: clamp,
     parse: parse,
     serialise: serialise,
     apply: apply,

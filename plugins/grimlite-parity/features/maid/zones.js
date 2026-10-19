@@ -437,6 +437,8 @@ function parseTauntCycle(line) {
  * @param {object} [deps.maid]  the scheduler, for the three things a handler moves: setPaused,
  *                              setStopAttack and armSkill
  * @param {() => object} [deps.config] the live Maid config
+ * @param {() => string} [deps.preset] cmbPreset's own selection, which the class rotations read
+ *                              (the reference's `selectedPreset`; it is UI state, not a config key)
  * @param {object} [deps.auras] the tapped aura store; a fresh one is made when absent
  * @param {(line: string) => void} [deps.log]
  * @param {(ms: number) => Promise<void>} [deps.sleep]
@@ -454,6 +456,7 @@ function createZoneHandlers(deps) {
     const random = typeof deps.random === 'function' ? deps.random : Math.random;
     const store = deps.auras || auras.createAuraStore();
     const configOf = typeof deps.config === 'function' ? deps.config : function () { return {}; };
+    const presetOf = typeof deps.preset === 'function' ? deps.preset : function () { return ''; };
     const maid = deps.maid || null;
     const pauseBotEngine = typeof deps.pauseBotEngine === 'function'
         ? deps.pauseBotEngine : function () { return false; };
@@ -600,6 +603,107 @@ function createZoneHandlers(deps) {
             const aura = name.indexOf('potent') !== -1 ? 'Potent Honor Malice' : 'Felicitous Philtre';
             return selfStacks(aura).then(function (stacks) { return stacks === 0; });
         });
+    }
+
+    /** Player.HasTarget, for the rotations' own cast gates. */
+    function hasTarget() {
+        return attempt('HasTarget').then(truthy);
+    }
+
+    /**
+     * waitSkill (MaidRemake.cs:370-382), the forced cast the class rotations make: read the
+     * cooldown, wait at most 1500 ms of it, force the skill, then poll twenty times at 50 ms for
+     * the cooldown to appear and force once more if it never did.
+     */
+    async function rotWaitSkill(slot) {
+        const first = await attempt('SkillAvailable', [String(slot)]);
+        const cooldown = first.ok ? Number(first.value) : 0;
+        if (isFinite(cooldown) && cooldown > 0) await sleep(Math.min(cooldown, 1500));
+        await attempt('ForceUseSkill', [String(slot)]);
+        for (let i = 0; i < 20; i++) {
+            await sleep(50);
+            const ready = await attempt('SkillAvailable', [String(slot)]);
+            if (ready.ok && Number(ready.value) > 0) return;
+        }
+        await attempt('ForceUseSkill', [String(slot)]);
+    }
+
+    /** AuraManager.EnemyAura(id).GetRemainingTime(name), in milliseconds. */
+    function enemyRemaining(name) {
+        return readPath(TARGET_ID_PATH).then(function (answer) {
+            if (answer.value === null || answer.value === undefined || answer.value === '') return 0;
+            return store.remaining('m:' + answer.value, name);
+        });
+    }
+
+    /**
+     * MaidRemake.SpecialCombo (:465-583), the class rotations the Maid's fighting pass awaits.
+     * The Auto Potion branch is answered `true` for the scheduler's own waitSkill('5'), exactly
+     * as autoPotionNeeded did before; every other rotation runs here and answers false.
+     */
+    async function specialCombo() {
+        if (await autoPotionNeeded()) return true;
+        const klass = await attempt('Class');
+        const className = klass.ok ? String(klass.value || '').toUpperCase() : '';
+        const preset = String(presetOf() || '');
+        if (className.indexOf('CHRONO SHADOW') !== -1 && preset === 'CSH') {
+            await cshRotation();
+        } else if (className === 'ARCANA INVOKER' && preset === 'AI') {
+            await arcanaRotation();
+        } else if (className === 'ARCHMAGE' && preset === 'AM') {
+            await archMageRotation();
+        } else if (className === 'ARCHPALADIN') {
+            await archPaladinRotation();
+        }
+        return false;
+    }
+
+    /** CSH's AA spam (:486-520): Temporal Rift >= 4, then skill 0 while Gunslinger/Bang stand. */
+    async function cshRotation() {
+        if (await selfStacks('Temporal Rift') < 4) return;
+        await rotWaitSkill('1');
+        for (let i = 0; i < 10 && await selfStacks('Gunslinger Stance') < 1; i++) await sleep(10);
+        if (await selfStacks('Gunslinger Stance') < 1) return;
+        // `do { ... } while (Gunslinger >= 1 || Bang <= 3)`: every cast is gated on a target, so
+        // this port never fires into an empty cell even where the reference's own loop would.
+        do {
+            if (!(await hasTarget())) {
+                if (configured('AttackPriority') === true && maid && typeof maid.priorityAttack === 'function') {
+                    await maid.priorityAttack();
+                } else {
+                    await attackMonster('*');
+                }
+            }
+            if (await hasTarget()) await attempt('UseSkill', ['0']);
+            await sleep(30);
+        } while (await selfStacks('Gunslinger Stance') >= 1 || await selfStacks('Bang') <= 3);
+    }
+
+    /** Arcana Invoker's rotation (:521-533): skill 1 when the card cycle has restarted. */
+    async function arcanaRotation() {
+        const fool = await selfStacks('0 - The Fool');
+        const world = await selfStacks('XXI - The World');
+        const judgement = await selfStacks('XX - Judgement');
+        const end = await selfStacks('End of the world');
+        if ((fool === 0 && world === 0) || judgement === 1 || end >= 20) await rotWaitSkill('1');
+    }
+
+    /** ArchMage's rotation (:534-546): the two sigil skills, then its own 350 ms pause. */
+    async function archMageRotation() {
+        const corporeal = await selfStacks('Corporeal Ascension');
+        const sigil = await selfStacks('Arcane Sigil');
+        if (corporeal !== 0 && sigil !== 0) return;
+        await rotWaitSkill('2');
+        await rotWaitSkill('4');
+        await sleep(350);
+    }
+
+    /** ArchPaladin's rotation (:547-556): refresh the Righteous Seal below 600 ms. */
+    async function archPaladinRotation() {
+        const seal = await enemyRemaining('Righteous Seal');
+        if (seal >= 600 || seal <= 0) return;
+        await rotWaitSkill('4');
+        await sleep(350);
     }
 
     /** MaidRemake.CheckCrystalHealthBalance: switch crystals at the reference's 150/50 HP gates. */
@@ -1467,7 +1571,10 @@ function createZoneHandlers(deps) {
         return Promise.all([attempt('Map'), attempt('Cell')]).then(function (both) {
             currentMap = both[0].ok ? String(both[0].value).toLowerCase() : '';
             const cell = both[1].ok ? String(both[1].value).toLowerCase() : '';
-            if (currentMap === 'ascendeclipse' && cell !== 'r3') {
+            // The reference reads Player.Map live here, and the AntiCounter half spells the map
+            // 'ascendedeclipse' (:776) where resetSpecials spells it 'ascendeclipse' (:1008); the
+            // live spelling is the one the game reports, so it is the one used here.
+            if (currentMap === 'ascendedeclipse' && cell !== 'r3') {
                 sunCount = 0;
                 moonCount = 0;
             }
@@ -1479,6 +1586,8 @@ function createZoneHandlers(deps) {
                 crystalCount = 0;
                 maidCrystalCount = 0;
             }
+            // `counterAttack = false` (:1018).
+            countering = false;
             return counters();
         });
     }
@@ -1718,8 +1827,10 @@ function createZoneHandlers(deps) {
         }
         // The Maid's own two subscriptions (Flash.FlashCall2, MaidRemake.cs:98-99 and :160-161) see
         // every frame from the server rather than only the animation ones, which is why the counter
-        // handler asks for its payload's own shape instead of an anims list.
-        if (maidOn && configured('AntiCounter') !== false) work.push(onAntiCounter(payload));
+        // handler asks for its payload's own shape instead of an anims list. AntiCounterHandler is
+        // registered by its own box (cbAntiCounter_CheckedChanged -> antiCounter(), :1590-1594),
+        // independently of the Enable box, so its own tick is the whole gate.
+        if (configured('AntiCounter') === true) work.push(onAntiCounter(payload));
         if (maidOn && specialAnimsOn && anims.length) work.push(onMaidAnims(payload));
         return Promise.all(work).then(frameResults);
     }
@@ -1845,6 +1956,15 @@ function createZoneHandlers(deps) {
             return maidOn;
         },
         maid: function () { return maidOn; },
+        /**
+         * AlternativeMap.Init (:16-20): the round-robin starts at the first entry. Enable calls
+         * it when the locked-zone box is ticked and the list has entries (MaidRemake.cs:230-233).
+         */
+        initLocked: function () {
+            lockedIndex = 0;
+            return lockedIndex;
+        },
+        lockedIndex: function () { return lockedIndex; },
         setSpecialAnims: function (on) {
             specialAnimsOn = on === true;
             return specialAnimsOn;
@@ -1854,6 +1974,7 @@ function createZoneHandlers(deps) {
         /** The two run-lock flags doPriorityAttack steps aside on (MaidRemake.cs:838-840). */
         holding: function () { return countering || locktarget || balance; },
         autoPotionNeeded: autoPotionNeeded,
+        specialCombo: specialCombo,
         balanceCrystals: balanceCrystals,
         tauntCycle: tauntCycle,
         stopCycle: stopCycle,
@@ -1899,7 +2020,9 @@ const LOADER_NAMES = {
     // The reads: monster availability, character state/position, party health, and map.
     // Health is the Speaker taunt's own IsAlive gate (Player.IsAlive is `Health > 0`).
     IsMonsterAvailable: true, IsLoggedIn: true, Health: true, Map: true, Cell: true, UserID: true,
-    Position: true, HasTarget: true, PlayersInMap: true, GetPlayerHealthPercentage: true
+    Position: true, HasTarget: true, PlayersInMap: true, GetPlayerHealthPercentage: true,
+    // The class rotations' own reads: cmbPreset's class and the potion bag behind SpecialCombo.
+    Class: true, GetInventoryItems: true
 };
 
 module.exports = {

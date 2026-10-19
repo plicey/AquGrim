@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Alternative Map(s)</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 12px;
+  }
+  body { padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; }
+  #intro { text-align: center; color: #dcdcdc; padding: 4px 0; }
+  #sub { text-align: center; color: #9a9a9a; }
+  textarea {
+    font: 12px Consolas, monospace; color: #eee; background: #2a2a2a; border: 1px solid #444;
+    border-radius: 4px; padding: 5px; box-sizing: border-box; width: 100%; flex: 1 1 auto;
+    resize: none; min-height: 120px;
+  }
+  .row { display: flex; gap: 6px; align-items: center; }
+  input[type="text"] {
+    font: 12px Consolas, monospace; color: #eee; background: #2a2a2a; border: 1px solid #444;
+    border-radius: 4px; padding: 4px 6px; flex: 1 1 auto; text-align: center; min-width: 0;
+  }
+  button {
+    font: inherit; color: #eee; background: #2a2a2a; border: 1px solid #444;
+    border-radius: 4px; padding: 5px 8px; cursor: pointer;
+  }
+  button:hover { background: #333; }
+  a.link { color: DeepSkyBlue; cursor: pointer; text-decoration: none; }
+  a.link:hover { text-decoration: underline; }
+  #counter { color: #9a9a9a; }
+  #preview {
+    display: none; white-space: pre; font: 12px Consolas, monospace; color: #dcdcdc;
+    background: #1c1c1c; border: 1px solid #444; border-radius: 4px; padding: 6px;
+    overflow: auto; max-height: 180px;
+  }
+  #preview.show { display: block; }
+</style>
+</head>
+<body>
+  <div id="intro">Here's the whitelisted map(s) that don't need Maid to help you</div>
+  <textarea id="list" spellcheck="false"></textarea>
+  <div class="row">
+    <input type="text" id="grabResult" readonly>
+  </div>
+  <div class="row">
+    <button id="grab">Get Current Map</button>
+    <button id="add">Add To List</button>
+    <span style="flex:1 1 auto"></span>
+    <a class="link" id="check">[Check]</a>
+    <a class="link" id="clear">[Clear]</a>
+  </div>
+  <div id="counter">Number of map(s): 0</div>
+  <div id="sub"></div>
+  <div id="preview"></div>
+<script>
+(function () {
+  var api = window.aquastarMaps;
+  var kind = /kind=locked/.test(window.location.search) ? 'locked' : 'whitelist';
+  var el = function (id) { return document.getElementById(id); };
+
+  function draw(view) {
+    if (!view) return;
+    if (document.activeElement !== el('list')) el('list').value = view.text || '';
+    el('counter').textContent = 'Number of map(s): ' + view.counter;
+    if ((view.action === 'get' || view.action === 'grab') && view.result !== undefined &&
+        document.activeElement !== el('grabResult')) {
+      el('grabResult').value = view.result || '';
+    }
+    document.title = kind === 'locked' ? 'Alternative Map(s)' : 'Whitelist Map';
+    if (kind === 'locked') {
+      el('intro').textContent = "Here's the map(s) you'll try to join";
+      el('sub').textContent = ' when your target is in locked zone';
+    }
+  }
+
+  function send(promise) {
+    return promise.then(draw, function () {});
+  }
+
+  el('list').addEventListener('input', function () { send(api.set(kind, el('list').value)); });
+  el('grab').addEventListener('click', function () { send(api.grab(kind)); });
+  el('add').addEventListener('click', function () {
+    send(api.add(kind, el('grabResult').value));
+  });
+  el('clear').addEventListener('click', function () { send(api.clear(kind)); });
+  el('check').addEventListener('click', function () {
+    api.check(kind).then(function (view) {
+      draw(view);
+      var box = el('preview');
+      box.textContent = view.preview || '';
+      box.className = view.preview ? 'show' : '';
+    }, function () {});
+  });
+
+  api.get(kind).then(draw, function () {});
+})();
+</script>
+</body>
+</html>

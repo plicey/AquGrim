@@ -2,13 +2,7 @@ const path = require('path');
 const url = require('url');
 
 const featureRoot = path.join(__dirname, 'features');
-const PLACEHOLDER_PAGE = path.join(featureRoot, 'placeholder', 'placeholder.html');
-const PLACEHOLDER_WINDOW_ID = 'grimlite-parity-placeholder';
-const BOT_FILE_PAGE = path.join(featureRoot, 'bot-file', 'bot-file.html');
-const BOT_FILE_PRELOAD = path.join(featureRoot, 'bot-file', 'preload_bot_file.js');
-const BOT_FILE_WINDOW_ID = 'grimlite-parity-bot-file';
 const BANK_WINDOW_ID = 'grimlite-parity-bank';
-const SETS_WINDOW_ID = 'grimlite-parity-sets';
 const LOGIN_WINDOW_ID = 'grimlite-parity-char-select';
 const NOTEPAD_WINDOW_ID = 'grimlite-parity-notepad';
 const EYEDROPPER_WINDOW_ID = 'grimlite-parity-eyedropper';
@@ -23,6 +17,7 @@ const TAMPERER_WINDOW_ID = 'grimlite-parity-packet-tamperer';
 const BOT_MANAGER_WINDOW_ID = 'grimlite-parity-bot-manager';
 const OPTIONS_WINDOW_ID = 'grimlite-parity-options';
 const HOTKEYS_WINDOW_ID = 'grimlite-parity-hotkeys';
+const LOGS_WINDOW_ID = 'grimlite-parity-logs';
 const DROP_WINDOW_ID = 'grimlite-parity-drop';
 // The id the Hotkeys window's own "Show Fast Travels" action already names
 // (features/hotkeys/action-targets.js), so that action is inert only until this window registers.
@@ -58,14 +53,6 @@ function pageUrl(featureDir, file) {
 function register(host, windowTitle) {
     host.registerFeatureWindows([
         {
-            id: BOT_FILE_WINDOW_ID,
-            title: function () {
-                return windowTitle('botFile', 'Grimlite Parity - Bot File');
-            },
-            url: url.pathToFileURL(BOT_FILE_PAGE).href,
-            config: windowConfig(host, 'bot-file', 'preload_bot_file.js', { width: 760, height: 620 })
-        },
-        {
             id: BANK_WINDOW_ID,
             title: function () {
                 return windowTitle('bank', 'Grimlite Parity - Bank');
@@ -74,35 +61,6 @@ function register(host, windowTitle) {
             // The reference's Bank form is a 194x151 client area; the app's own font needs a
             // little more room, so it opens a little larger and stays the smallest of these.
             config: windowConfig(host, 'bank', 'preload_bank.js', { width: 320, height: 300 })
-        },
-        {
-            id: SETS_WINDOW_ID,
-            title: function () {
-                return windowTitle('sets', 'Grimlite Parity - Set');
-            },
-            url: pageUrl('sets', 'sets.html'),
-            config: windowConfig(host, 'sets', 'preload_sets.js', { width: 700, height: 420 })
-        },
-        {
-            id: PLACEHOLDER_WINDOW_ID,
-            title: function () {
-                return windowTitle('placeholder', 'Grimlite Parity - Placeholder');
-            },
-            url: url.pathToFileURL(PLACEHOLDER_PAGE).href,
-            config: {
-                width: 560,
-                height: 460,
-                useContentSize: true,
-                resizable: true,
-                icon: host.getAppIconPath(),
-                webPreferences: {
-                    nodeIntegration: false,
-                    sandbox: true,
-                    webviewTag: false,
-                    plugins: false,
-                    contextIsolation: true
-                }
-            }
         },
         {
             id: DEVTEST_WINDOW_ID,
@@ -228,6 +186,16 @@ function register(host, windowTitle) {
             config: windowConfig(host, 'hotkeys', 'preload_hotkeys.js', { width: 320, height: 330 })
         },
         {
+            // LogForm.cs's client area is 440x284; the port keeps that box and the reference's
+            // own title. The page is a small read-only view of the plugin log.
+            id: LOGS_WINDOW_ID,
+            title: function () {
+                return windowTitle('logs', 'Debug Log');
+            },
+            url: pageUrl('hotkeys', 'logs.html'),
+            config: windowConfig(host, 'hotkeys', 'preload_logs.js', { width: 440, height: 320 })
+        },
+        {
             // DropUi.Designer.cs's own client area is 401x300; the reference asks for 401
             // width through ClientSize, which useContentSize makes the room the page gets.
             id: DROP_WINDOW_ID,
@@ -267,10 +235,7 @@ module.exports = {
     // Every id this file registers, so a caller that has to look one up (the Hotkeys window's
     // action targets) reads the same list the registration uses instead of a second copy.
     WINDOW_IDS: [
-        PLACEHOLDER_WINDOW_ID,
-        BOT_FILE_WINDOW_ID,
         BANK_WINDOW_ID,
-        SETS_WINDOW_ID,
         DEVTEST_WINDOW_ID,
         COSMETICS_WINDOW_ID,
         NOTEPAD_WINDOW_ID,
@@ -283,17 +248,12 @@ module.exports = {
         BOT_MANAGER_WINDOW_ID,
         OPTIONS_WINDOW_ID,
         HOTKEYS_WINDOW_ID,
+        LOGS_WINDOW_ID,
         DROP_WINDOW_ID,
         TRAVEL_WINDOW_ID,
         MAID_WINDOW_ID
     ],
-    PLACEHOLDER_PAGE: PLACEHOLDER_PAGE,
-    PLACEHOLDER_WINDOW_ID: PLACEHOLDER_WINDOW_ID,
-    BOT_FILE_PAGE: BOT_FILE_PAGE,
-    BOT_FILE_PRELOAD: BOT_FILE_PRELOAD,
-    BOT_FILE_WINDOW_ID: BOT_FILE_WINDOW_ID,
     BANK_WINDOW_ID: BANK_WINDOW_ID,
-    SETS_WINDOW_ID: SETS_WINDOW_ID,
     LOGIN_WINDOW_ID: LOGIN_WINDOW_ID,
     DEVTEST_PAGE: DEVTEST_PAGE,
     DEVTEST_WINDOW_ID: DEVTEST_WINDOW_ID,
@@ -308,6 +268,7 @@ module.exports = {
     BOT_MANAGER_WINDOW_ID: BOT_MANAGER_WINDOW_ID,
     OPTIONS_WINDOW_ID: OPTIONS_WINDOW_ID,
     HOTKEYS_WINDOW_ID: HOTKEYS_WINDOW_ID,
+    LOGS_WINDOW_ID: LOGS_WINDOW_ID,
     DROP_WINDOW_ID: DROP_WINDOW_ID,
     TRAVEL_WINDOW_ID: TRAVEL_WINDOW_ID,
     MAID_WINDOW_ID: MAID_WINDOW_ID

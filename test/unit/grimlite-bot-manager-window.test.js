@@ -132,13 +132,14 @@ test('an add-button builds the command the reference builds and appends it', asy
 test('a button that needs a field it has not got contributes nothing', async () => {
   const o = await opened('plain.gbot');
   const before = o.feature.editor().items().length;
-  await o.feature.handle('botManagerAdd', null, ['btnKillF', { txtKillFItem: '' }, {}]);
-  assert.strictEqual(o.feature.editor().items().length, before + 1,
-    'Kill for with no item still builds: the reference guards only the item-list buttons');
+  const killFor = await o.feature.handle('botManagerAdd', null, ['btnKillF', { txtKillFItem: '' }, {}]);
+  assert.strictEqual(o.feature.editor().items().length, before,
+    'Kill for with no item adds nothing');
+  assert.strictEqual(killFor.refused, true, 'and the page is told it did nothing');
 
   // btnAddCmdHunt is the one command button the reference guards: no item name, no command.
   const hunt = await o.feature.handle('botManagerAdd', null, ['btnAddCmdHunt', {}, {}]);
-  assert.strictEqual(o.feature.editor().items().length, before + 1);
+  assert.strictEqual(o.feature.editor().items().length, before);
   assert.strictEqual(hunt.refused, true, 'the page is told the button did nothing');
 });
 
@@ -308,7 +309,7 @@ test('the folder tree: the chosen directory, its count, one level at a time, and
   assert.strictEqual(last.text, 'Load bot: lovers.gbot');
   const command = oLoadCommand(w.feature);
   assert.strictEqual(command.BotFileName, 'lovers.gbot');
-  assert.strictEqual(command.BotFilePath, path.join('Arcana', 'lovers.gbot'));
+  assert.strictEqual(command.BotFilePath, path.join('Bots', 'Arcana', 'lovers.gbot'));
   assert.strictEqual(catalog.classNameOf(command), 'CmdLoadBot');
 
   // Add folder makes it under the root and the count follows. A name that climbs out is refused.
@@ -418,7 +419,7 @@ test('the window reaches its page only through its own namespaced channels', asy
     'botManagerEdit', 'botManagerForm', 'botManagerKey', 'botManagerLoad', 'botManagerMessages',
     'botManagerRaw', 'botManagerSave', 'botManagerSelect', 'botManagerSetting', 'botManagerSheet',
     'botManagerStatements', 'botManagerStyle', 'botManagerTree', 'botManagerTreeSelect',
-    'botManagerEnable', 'botManagerOptionsEnable', 'botManagerState'
+    'botManagerEnable', 'botManagerOptionsEnable', 'botManagerSpecial', 'botManagerState'
   ].sort());
 
   const featureRoot = path.join(__dirname, '../../plugins/grimlite-parity/features/bot-manager');

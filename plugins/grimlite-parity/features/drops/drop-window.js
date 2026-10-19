@@ -10,6 +10,9 @@
 
 const drops = require('./drops.js');
 
+// DropUi.RejectIngameDrop_Checkedchanged's one-time information box, word for word.
+const REJECT_INFO = 'This option will not override Reject drop & whitelist system from bot manager';
+
 const CHANNELS = [
     'dropMessages', 'dropState', 'dropWatch', 'dropUnwatch', 'dropTake',
     'dropReject', 'dropBlacklist', 'dropClear', 'dropSettle'
@@ -24,10 +27,16 @@ function createDropWindow(deps) {
     const confirmClear = typeof deps.confirmClear === 'function'
         ? deps.confirmClear
         : function () { return Promise.resolve(true); };
+    const showRejectInfo = typeof deps.showRejectInfo === 'function'
+        ? deps.showRejectInfo
+        : function () { return Promise.resolve(); };
 
     const list = drops.createDropList({ now: deps.now });
     const watchers = [];
     let release = null;
+    // DropUi's own two one-shot flags: messageAlrShown and clearAlertMsg.
+    let rejectInfoShown = false;
+    let clearAlertShown = false;
     // One read of the bag and its slots per change, shared by every row: a frame is a burst of
     // drops and the reference reads the bag once per click, not once per row.
     let reads = null;
@@ -171,14 +180,6 @@ function createDropWindow(deps) {
         const failed = [];
         if (!wanted.length) return { taken: taken, failed: failed };
 
-        const around = await surroundings();
-        if (around.error) {
-            wanted.forEach(function (name) {
-                failed.push({ name: name, reason: around.error });
-            });
-            return { taken: taken, failed: failed };
-        }
-
         let room = '';
         try {
             room = await game.readRoomId();
@@ -194,11 +195,9 @@ function createDropWindow(deps) {
                 failed.push({ name: name, reason: 'not-held' });
                 continue;
             }
-            const verdict = drops.takeable(row, around.items, around.slots, around.house);
-            if (!verdict.ok) {
-                failed.push({ name: row.name, reason: verdict.reason });
-                continue;
-            }
+            // DropUi.btnTakeDrop_Click asks DropStack.GetDrop for every selected row and never
+            // consults the bag: the game itself decides whether the item goes in, so a full bag is
+            // not a gate this window may put in front of the take.
             const gate = list.beginTake(row.id);
             if (!gate.ok) {
                 failed.push({ name: row.name, reason: gate.reason });
@@ -240,6 +239,12 @@ function createDropWindow(deps) {
             });
         case 'dropReject':
             list.setRejecting(first === true);
+            if (first === true && !rejectInfoShown) {
+                rejectInfoShown = true;
+                // One information box per session, on the first tick, as the reference's
+                // messageAlrShown does.
+                return Promise.resolve(showRejectInfo()).then(function () { return announce(); });
+            }
             return announce();
         case 'dropBlacklist':
             return Promise.resolve(list.blacklist(first)).then(function (removed) {
@@ -249,14 +254,23 @@ function createDropWindow(deps) {
                 });
             });
         case 'dropClear':
-            // The reference's own confirmation, in front of the one destructive action.
+            // btnClear_Click asks Yes/No only until the first Yes; that Yes also wipes the
+            // blacklist, and every later Clear wipes the rows alone with no dialog.
+            if (clearAlertShown) {
+                list.clear(false);
+                forget();
+                return announce().then(function (state) {
+                    return Object.assign({ cleared: true }, state || {});
+                });
+            }
             return Promise.resolve(confirmClear()).then(function (yes) {
                 if (yes !== true) {
                     return view().then(function (state) {
                         return Object.assign({ cleared: false }, state);
                     });
                 }
-                list.clear();
+                clearAlertShown = true;
+                list.clear(true);
                 forget();
                 return announce().then(function (state) {
                     return Object.assign({ cleared: true }, state || {});
@@ -327,6 +341,18 @@ function createFromHost(host, deps) {
                 return !!result && result.response === 1;
             });
         },
+        // DropUi's own information box, on the reference's own words.
+        showRejectInfo: function () {
+            const dialog = deps.showMessageBox || function (win, options) {
+                return electron.dialog.showMessageBox(win, options);
+            };
+            return Promise.resolve(dialog(null, {
+                type: 'info',
+                buttons: ['OK'],
+                title: 'Information',
+                message: REJECT_INFO
+            }));
+        },
         log: function (msg) { host.log(msg); }
     });
 
@@ -352,5 +378,6 @@ function createFromHost(host, deps) {
 module.exports = {
     createDropWindow: createDropWindow,
     createFromHost: createFromHost,
-    CHANNELS: CHANNELS
+    CHANNELS: CHANNELS,
+    REJECT_INFO: REJECT_INFO
 };

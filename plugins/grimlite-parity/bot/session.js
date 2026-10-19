@@ -278,11 +278,15 @@ const LOADER_BODIES = {
     MapLoadComplete: { path: PATHS.mapLoading, body: 'world.mapLoadInProgress == false; the display-list half is ticket #41' },
     DropStack: {
         body: 'the reference loader keeps this list itself, fed by the game own dropItem frames ' +
-            '(Flash.cs HandlerDropItem); no game path answers it',
-        reason: 'the reference keeps this list itself, filled from the game own dropItem frames ' +
-            '(HandlerDropItem / Flash.cs), so no game path answers it, and this client own list is ' +
-            'the drop window own (ticket #33): it is fed by the packet tap only while that window ' +
-            'is watching, which a bot session cannot reach'
+            '(Flash.cs dropItem case); this session keeps the same list from the same tap',
+        helper: 'DropStack',
+        reason: 'filled from dropItem frames by this session packet tap (ticket #42), not by a game path'
+    },
+    RoomId: { helper: 'RoomId', body: 'world.curRoom, the room a getDrop frame names' },
+    RejectDrop: {
+        helper: 'RejectDrop',
+        body: 'Flash.Call("RejectDrop", name, id) - the loader own drop rejection',
+        why: 'the loader surface refuses RejectDrop until its stock-game route is implemented'
     }
 };
 
@@ -333,9 +337,73 @@ function createSession(deps) {
     const auras = require('./auras.js').createAuraStore();
     let tapFailure = null;
     let release = null;
+    // The dropped items the game reported, in the reference's own DropStack shape: unique by
+    // ItemID, filled from every dropItem frame, and removed when a getDrop succeeds. The engine
+    // subscribes to these frames while its bot runs; the list itself is kept for the session's
+    // whole life so a "has dropped" statement can answer even between pickups.
+    const drops = [];
+    const dropWatchers = [];
+
+    function isDropFrame(frame) {
+        const body = require('./auras.js').frameText(frame && frame.data);
+        if (!body || body.charAt(0) !== '{') return null;
+        let parsed;
+        try {
+            parsed = JSON.parse(body);
+        } catch (error) {
+            return null;
+        }
+        return require('./auras.js').payloadOf(parsed);
+    }
+
+    function firstItem(items) {
+        if (!items) return null;
+        if (Array.isArray(items)) return items[0] || null;
+        if (Array.isArray(items.$values)) return items.$values[0] || null;
+        const keys = Object.keys(items);
+        return keys.length ? items[keys[0]] : null;
+    }
+
+    function accountDrop(drop) {
+        if (!drop || typeof drop !== 'object') return;
+        const id = Number(drop.ItemID === undefined ? drop.Id : drop.ItemID);
+        if (isFinite(id) && !drops.some(function (held) {
+            return Number(held.ItemID === undefined ? held.Id : held.ItemID) === id;
+        })) {
+            drops.push(drop);
+        }
+        const watchers = dropWatchers.slice();
+        watchers.forEach(function (watch) {
+            try {
+                watch(drop);
+            } catch (error) {
+                log('a drop handler refused a frame: ' + message(error));
+            }
+        });
+    }
+
+    function observeDrop(frame) {
+        const payload = isDropFrame(frame);
+        if (!payload) return;
+        if (payload.cmd === 'dropItem') {
+            accountDrop(firstItem(payload.items));
+        } else if (payload.cmd === 'getDrop') {
+            const success = Number(payload.bSuccess);
+            if (success !== 1) return;
+            const id = Number(payload.ItemID);
+            const at = drops.findIndex(function (held) {
+                return Number(held.ItemID === undefined ? held.Id : held.ItemID) === id;
+            });
+            if (at !== -1) drops.splice(at, 1);
+        }
+    }
+
     if (deps.packets && typeof deps.packets.on === 'function') {
         try {
-            release = deps.packets.on('frame', function (frame) { auras.observe(frame); });
+            release = deps.packets.on('frame', function (frame) {
+                auras.observe(frame);
+                observeDrop(frame);
+            });
         } catch (error) {
             // A plugin without packet-tap, or an app session that is not steering traffic: the
             // reason is kept and handed to whoever asks for an aura, rather than swallowed - a
@@ -606,15 +674,32 @@ function createSession(deps) {
         },
 
         /**
-         * The dropped items. The reference's own DropStack, filled from the game's dropItem frames
-         * (HandlerDropItem / Flash.cs), so there is no game path to read it from and the surface
-         * has no row for it. This client's own list is the drop window's (#33), fed by the packet
-         * tap only while that window watches, so it is not a read this session can make: the
-         * refusal says where the list lives rather than letting a "has dropped" statement answer a
-         * confident no.
+         * World.DropStack: the dropped items the tap has seen, in drop order and unique by id.
+         * This is the same list the reference fills from its dropItem handler, so a "has dropped"
+         * statement answers from frames rather than from a game path.
          */
-        dropStack: function () {
-            return Promise.reject(refusal(LOADER_BODIES.DropStack.reason));
+        dropStack: function () { return Promise.resolve(drops.slice()); },
+
+        /** One handler for each drop frame while a bot runs; returns the release. */
+        onDrop: function (handler) {
+            if (typeof handler !== 'function') return function () {};
+            dropWatchers.push(handler);
+            return function () {
+                const at = dropWatchers.indexOf(handler);
+                if (at !== -1) dropWatchers.splice(at, 1);
+            };
+        },
+
+        /** Env:RoomId, which a getDrop frame needs. */
+        roomId: function () {
+            return loaderCall('RoomId').then(function (value) {
+                return value === null || value === undefined ? '' : String(value);
+            });
+        },
+
+        /** The loader's own drop rejection call, until its stock-game route is implemented. */
+        rejectDrop: function (name, id) {
+            return loaderCall('RejectDrop', [String(name).toLowerCase(), String(id)]);
         },
 
         // ---- combat and map (ticket #38) ----------------------------------------------------
@@ -829,6 +914,32 @@ function createSession(deps) {
         lastAnimationMessage: async function () { return tapped().lastAnimationMessage(); },
         consumeAnimation: async function () { tapped().consumeAnimation(); },
 
+        /** CmdKill's AntiCounter state, from the same tap ("prepares a counter attack"). */
+        counterActive: async function () { return tapped().counterActive(); },
+
+        /** Configuration.LastAuraMessages, which CmdDelayedAnims matches against. */
+        lastAuraMessages: async function () { return tapped().lastAuraMessages(); },
+        clearAuraMessages: async function () { tapped().clearAuraMessages(); },
+
+        /**
+         * Skill.isBuff: `world.actions.active[index].tgt != "h"`, with the reference's own
+         * catch-to-false when the action row or the game cannot be read. CmdUseSkill uses it in
+         * the SkipAttack branch to decide whether the skill can be forced without a target.
+         */
+        isBuffSkill: async function (index) {
+            const slot = parseInt(String(index), 10);
+            if (!isFinite(slot)) return false;
+            try {
+                const target = await readPath('world.actions.active.' + slot + '.tgt');
+                return target !== null && target !== undefined && String(target) !== 'h';
+            } catch (error) {
+                return false;
+            }
+        },
+
+        /** Player.Logout, which the quest list uses after five failed completions. */
+        logout: function () { return loaderCall('Logout'); },
+
         /**
          * Give this window's tap subscription back. The bot is per window and its subscription
          * outlives every call on it, so the window's own close is where it is released - a
@@ -841,6 +952,7 @@ function createSession(deps) {
                 release = null;
                 off();
             }
+            dropWatchers.length = 0;
         },
 
         /** The loader's bodies, exposed so the window and the tests can name their source. */

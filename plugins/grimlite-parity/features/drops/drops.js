@@ -369,10 +369,14 @@ function createDropList(options) {
         /** The names held for this session. */
         blacklisted: function () { return blacklisted.slice(); },
 
-        /** DropUi.clearDrop: the rows, and the blacklist with them (the reference clears both). */
-        clear: function () {
+        /**
+         * DropUi.clearDrop: the rows always. The blacklist goes only on the first confirmed
+         * Clear (btnClear_Click calls clearDrop then blacklisted.Clear once); a later Clear drops
+         * the rows and leaves the blacklist standing.
+         */
+        clear: function (withBlacklist) {
             rows = [];
-            blacklisted.length = 0;
+            if (withBlacklist !== false) blacklisted.length = 0;
             Object.keys(cooling).forEach(function (key) { delete cooling[key]; });
         },
 

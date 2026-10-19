@@ -689,22 +689,17 @@ test('a monster named by MonMapID asks the id helper, which is the reference own
   assert.deepStrictEqual(health.asked[health.asked.length - 1].args, ["id'12"]);
 });
 
-test('a dropped-item statement reports that the drop list is not readable here', async () => {
-  // World.DropStack is the reference's own list, filled from the game's dropItem frames. It is not
-  // state this bridge reads, so the read refuses - naming where the list comes from - and the
-  // statement reports the reason rather than answering a no.
-  const session = fakeSession({
-    dropStack: new Error("the reference own drop list, fed by dropItem frames; ticket #33 owns drops")
-  });
+test('a dropped-item statement reads the drop list the packet tap fills', async () => {
+  // World.DropStack is the reference's own list, filled from the game's dropItem frames; this
+  // build's session keeps the same list from its packet tap, so the statement compares against it.
+  const session = fakeSession({ dropStack: [{ sName: 'Gold', ItemID: 1 }] });
   const made = await after(session, catalog.makeStatement('CmdItemPickupable', 'Gold'));
-  assert.strictEqual(made.index(), 2);
-  assert.ok(logs(made, /cannot be evaluated/, 'CmdItemPickupable'), made.records.join('|'));
-  assert.ok(logs(made, /#33/, 'CmdItemPickupable'), made.records.join('|'));
+  assert.strictEqual(made.index(), 1, 'a held drop lets the guarded command run');
 
-  const not = await after(session, catalog.makeStatement('CmdItemNotPickupable', 'Gold'));
-  assert.strictEqual(not.index(), 2);
+  const empty = fakeSession({ dropStack: [] });
+  const not = await after(empty, catalog.makeStatement('CmdItemPickupable', 'Gold'));
+  assert.strictEqual(not.index(), 2, 'an absent drop skips the command under the statement');
 
-  // And the comparison itself, once the list can be read.
   assert.strictEqual(await holds(fakeSession({ dropStack: [{ sName: 'Gold' }] }),
     catalog.makeStatement('CmdItemPickupable', 'gold')), true);
   assert.strictEqual(await holds(fakeSession({ dropStack: [{ sName: 'Gold' }] }),
@@ -867,10 +862,10 @@ test('a session read that cannot be established refuses rather than answering a 
   assert.strictEqual(await monsters.monsterHealth('Darkon'), 150);
   assert.deepStrictEqual(await monsters.visibleMonsters(), []);
 
-  // And the drop list is this client's own rather than the game's: it says where it would come from.
+  // The drop list starts empty and is filled by the tap, not by a game path.
   const refused = sessionModel.createSession({ bridge: fakeBridge({}) });
-  await assert.rejects(function () { return refused.dropStack(); }, /#33/);
-  await assert.rejects(function () { return refused.dropStack(); }, /dropItem/);
+  assert.deepStrictEqual(await refused.dropStack(), [],
+    'a session with no drop frames has an empty DropStack');
 });
 
 test('a name the loader answers empty is a refusal for a name, not an empty string to compare', async () => {

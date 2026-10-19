@@ -58,7 +58,6 @@
   <div class="line">
     <button id="save">Save</button>
     <button id="open">Load</button>
-    <button id="equip">Equip</button>
   </div>
   <div id="status"></div>
 <script>
@@ -90,7 +89,6 @@
       setList.appendChild(row);
     });
     document.getElementById('save').disabled = entries.length === 0;
-    document.getElementById('equip').disabled = entries.length === 0;
   }
 
   function renderSaved() {
@@ -154,7 +152,6 @@
       document.getElementById('clear').textContent = chrome.clear;
       document.getElementById('save').textContent = chrome.save;
       document.getElementById('open').textContent = chrome.load;
-      document.getElementById('equip').textContent = chrome.equip;
       document.getElementById('setHeading').textContent = chrome.setHeading;
       document.getElementById('savedHeading').textContent = chrome.savedHeading;
       document.title = chrome.title;
@@ -184,12 +181,6 @@
       });
       document.getElementById('open').addEventListener('click', function () {
         openSet(null);
-      });
-      document.getElementById('equip').addEventListener('click', function () {
-        api.equip(entries).then(function (result) {
-          if (result.error) { setStatus(result.error, 'err'); return; }
-          setStatus(strings.equipped.replace('{n}', result.equipped.length), 'ok');
-        }).catch(fail);
       });
     }).then(function () {
       renderSet();

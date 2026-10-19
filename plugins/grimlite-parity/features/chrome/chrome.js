@@ -22,6 +22,7 @@
 // to answered in ticket #49, which the strip needs no change for: it asks for the name either way.
 
 const engine = require('../../bot/engine.js');
+const skillPresets = require('./skill-presets.js');
 
 /** splitContainer1's own height in Root.cs, which is the strip's height here. */
 const HEIGHT = 27;
@@ -30,7 +31,7 @@ const HEIGHT = 27;
 const PADS = ['Center', 'Spawn', 'Left', 'Right', 'Top', 'Bottom', 'Up', 'Down'];
 
 // chkAutoAttack's own fallback rotation, when the class carries no skill preset (Root.cs:1601).
-const DEFAULT_SKILLS = ['1', '2', '3', '4'];
+const DEFAULT_SKILLS = skillPresets.DEFAULT_SKILLS.map(function (skill) { return skill.index; });
 
 // The three class combos chkAutoAttack runs before its rotation (SpecialClassCombo, Root.cs:1643).
 // Each row is the reference's own class match and its own condition over the auras and the mana.
@@ -116,6 +117,7 @@ function createChrome(deps) {
     let autoAttack = false;
     let autoAttackError = null;
     let autoStep = 0;
+    let rotation = skillPresets.defaultSkills();
     let timer = null;
     // The list cbCells is filled from, kept between reads so the page can still offer it while the
     // character is between cells; the reference keeps its own in the combo box itself.
@@ -275,10 +277,12 @@ function createChrome(deps) {
      * game refuses is reported, and one refused cast does not end the rotation - the reference's
      * loop keeps going whatever a cast does.
      */
-    async function cast(index) {
-        const wait = await read('skillAvailable', [index]);
-        const ms = Number(wait.value);
-        if (isFinite(ms) && ms > 0) await sleep(ms);
+    async function cast(index, waitForCooldown) {
+        if (waitForCooldown === true) {
+            const wait = await read('skillAvailable', [index]);
+            const ms = Number(wait.value);
+            if (isFinite(ms) && ms > 0) await sleep(ms);
+        }
         // Skill.useSkill: a Chrono Shadow casts forced, everyone else plain (Skill.cs:106-115).
         // The engine's CmdUseSkill makes the same choice for the same reason (#38), so a rotation
         // and a bot command cast through one name rather than two.
@@ -293,6 +297,34 @@ function createChrome(deps) {
         } else {
             autoAttackError = null;
         }
+    }
+
+    /** Skill.ExecuteSkill's Safe branch: the condition decides whether this slot casts at all. */
+    async function safeAllows(skill) {
+        const currentName = skill.isMp ? 'mana' : 'health';
+        const maxName = skill.isMp ? 'manaMax' : 'healthMax';
+        const answers = await Promise.all([read(currentName), read(maxName)]);
+        const now = Number(answers[0].value);
+        const max = Number(answers[1].value);
+        if (answers[0].error || answers[1].error || !isFinite(now) || !isFinite(max) || max <= 0) {
+            autoAttackError = 'skill ' + skill.index + ': ' +
+                (answers[0].error || answers[1].error || 'the game reports no health or mana percentage');
+            log(autoAttackError);
+            return false;
+        }
+        const percent = now / max * 100;
+        if (skill.op === '>' || skill.op === '>=') return percent >= skill.value;
+        if (skill.op === '<' || skill.op === '<=') return percent <= skill.value;
+        return percent === skill.value;
+    }
+
+    /** The class's own SS.CLASS preset, reloaded when Auto Attack starts. */
+    async function rotationForClass() {
+        if (!deps.presets || typeof deps.presets.forClass !== 'function') return [];
+        if (typeof deps.presets.reload === 'function') deps.presets.reload();
+        const answer = await read('className');
+        if (answer.error) return [];
+        return deps.presets.forClass(answer.value) || [];
     }
 
     /**
@@ -320,13 +352,14 @@ function createChrome(deps) {
         }
         const combo = await classCombo();
         if (combo) {
-            for (let i = 0; i < combo.length; i++) await cast(combo[i]);
+            for (let i = 0; i < combo.length; i++) await cast(combo[i], true);
             await sleep(200);
-            return;
         }
-        const step = DEFAULT_SKILLS[autoStep];
-        autoStep = (autoStep + 1) % DEFAULT_SKILLS.length;
-        await cast(step);
+        const skill = rotation[autoStep];
+        autoStep = (autoStep + 1) % Math.max(1, rotation.length);
+        if (!skill) return;
+        if (skill.safe === true && !(await safeAllows(skill))) return;
+        await cast(skill.index, skill.wait === true);
     }
 
     function startTimer() {
@@ -355,11 +388,18 @@ function createChrome(deps) {
         if (botState()) return { ok: false, error: engine.ERRORS.alreadyRunning };
         const alive = await signedIn();
         if (alive.ok !== true) return { ok: false, error: alive.error || engine.ERRORS.notSignedIn };
+        const preset = await rotationForClass();
+        rotation = preset.length ? preset : skillPresets.defaultSkills();
         autoAttack = true;
         autoAttackError = null;
         autoStep = 0;
         startTimer();
         return { ok: true, error: null };
+    }
+
+    /** The hotkey action: tick or untick the same box the strip draws. */
+    async function toggleAutoAttack() {
+        return action('autoAttack', { checked: !autoAttack });
     }
 
     // -------------------------------------------------------- the cell and pad pickers
@@ -437,6 +477,9 @@ function createChrome(deps) {
         /** Give the loop back: a plugin that stops must not leave a timer ticking. */
         stop: function () { autoAttack = false; stopTimer(); },
         autoAttack: function () { return autoAttack; },
+        toggleAutoAttack: toggleAutoAttack,
+        /** One Auto Attack rotation, for the tests and for a window that wants to show it. */
+        rotation: function () { return rotation.map(function (skill) { return Object.assign({}, skill); }); },
         /** @internal test seam */
         _cells: function () { return cells.slice(); }
     };
@@ -470,6 +513,7 @@ function createFromHost(host, deps) {
         },
         messages: deps.messages || {},
         log: deps.log || function (line) { host.log('chrome: ' + line); },
+        presets: deps.presets,
         sleep: deps.sleep,
         timers: deps.timers
     });
@@ -483,5 +527,6 @@ module.exports = {
     DEFAULT_SKILLS: DEFAULT_SKILLS,
     COMBO_AURAS: COMBO_AURAS,
     TICK_MS: TICK_MS,
-    ERRORS: ERRORS
+    ERRORS: ERRORS,
+    skillPresets: skillPresets
 };

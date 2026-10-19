@@ -30,6 +30,7 @@
 </style>
 </head>
 <body>
+  <div id="root">
   <h1 id="title">Char Select</h1>
   <div class="card">
     <h2 id="savedHeading">Saved characters</h2>
@@ -49,6 +50,7 @@
     <div id="notice"></div>
   </div>
   <div id="status"></div>
+  </div>
 
   <script>
     (function () {
@@ -57,6 +59,7 @@
 
       var list = document.getElementById('list');
       var status = document.getElementById('status');
+      var root = document.getElementById('root');
       var notice = document.getElementById('notice');
       var username = document.getElementById('username');
       var password = document.getElementById('password');
@@ -144,10 +147,16 @@
         });
       });
 
-      // The list follows the session, so a dropped connection is when it matters.
+      // The reference's own rule: the entry is hidden while the connection is up and shown again
+      // on every drop (Root.cs:167, Flash.cs:403-409). Here the whole window body follows it.
       bridge.onConnection(function (state) {
-        if (state && state.state === 'connected') say(messages.connected || 'Connected.');
-        else if (state && state.state === 'lost') say(messages.disconnected || 'Connection lost.');
+        if (state && state.state === 'connected') {
+          root.hidden = true;
+          say(messages.connected || 'Connected.');
+        } else if (state && state.state === 'lost') {
+          root.hidden = false;
+          say(messages.disconnected || 'Connection lost.');
+        }
       });
     })();
   </script>

@@ -103,13 +103,13 @@ test('the Maid window is registered in the app\'s own window conventions', async
 test('the Maid window is reachable from a menu and from a keybind', async () => {
   const activated = await activateParity();
   const state = activated.host._getState();
-  assert.ok(state.keybindDefaults.grimliteMaid, 'the Maid needs a default key');
+  assert.strictEqual(state.keybindDefaults.grimliteMaid, undefined,
+    'Grimlite ships no default hotkeys');
   const binding = state.keybinds.filter(function (one) { return one.id === 'grimliteMaid'; });
   assert.strictEqual(binding.length, 1, 'the Maid\'s window has its own binding');
   const menus = state.menus.map(function (contribute) { return contribute({ labels: {}, keybinds: {} }); });
   const flat = menus.reduce(function (all, group) { return all.concat(group); }, []);
-  const submenus = flat.reduce(function (all, one) { return all.concat(one.submenu || []); }, []);
-  const entry = submenus.filter(function (one) { return one.label === 'Maid'; });
+  const entry = flat.filter(function (one) { return one.label === 'Maid'; });
   assert.strictEqual(entry.length, 1, 'the Maid is a menu entry');
 });
 
@@ -244,7 +244,7 @@ function fakeZoneHost(deps) {
   const opts = deps || {};
   const handlers = [];
   const listeners = [];
-  return {
+  const host = {
     pluginId: 'grimlite-parity',
     appDataDirectory: path.join(__dirname, '../tmp-plugin-data'),
     log: function () {},
@@ -253,6 +253,13 @@ function fakeZoneHost(deps) {
     ipc: {
       handle: function (channel, listener) { handlers.push({ channel: channel, listener: listener }); },
       handlers: handlers
+    },
+    featureWindows: [],
+    registerFeatureWindows: function (defs) {
+      defs.forEach(function (def) { host.featureWindows.push(def); });
+    },
+    windows: {
+      openFeatureWindow: function (id) { return { id: id }; }
     },
     packets: {
       on: function (event, listener) {
@@ -273,6 +280,7 @@ function fakeZoneHost(deps) {
     },
     opts: opts
   };
+  return host;
 }
 
 test('the panel carries the reference\'s own combo and its two-part switch', async () => {
@@ -352,6 +360,9 @@ test('a selected Speaker role uses the shared scheduler while Maid mode stays of
   };
   made = maidWindow.createFromHost(host, { game: game, party: null });
   made.attach();
+  // AntiCounter ships ticked and keeps its own subscription; switch it off so this test sees
+  // only the selected handler's own tap.
+  made.window.set({ config: { AntiCounter: false } });
   made.zones.set('Ultra Speaker LOO', true);
   await made.maid.idle();
 
@@ -438,23 +449,29 @@ test('switching a handler on takes the tap with no window open, and off gives it
   const host = fakeZoneHost();
   const made = maidWindow.createFromHost(host);
   made.attach();
-  assert.strictEqual(host.packets.subscribed(), 0,
-    'activation subscribes nothing, which is this app\'s own rule for the tap');
+  assert.strictEqual(host.packets.subscribed(), 1,
+    'PartyCmd ships ticked, so the form\'s handlers are alive from activation (MaidRemake.cs:100-105)');
 
   made.zones.set('Auto Zone - Ultradage', true);
-  assert.strictEqual(host.packets.subscribed(), 1, 'a registered handler reads frames');
+  assert.strictEqual(host.packets.subscribed(), 1, 'one subscription serves both halves');
 
   // And it really is this half\'s frame that reaches the handler: the Ultradage walker answers an
   // event frame by walking, which needs the fake game behind the window.
   made.zones.set('Auto Zone - Ultradage', false);
-  assert.strictEqual(host.packets.subscribed(), 0, 'switching it off gives the subscription back');
+  assert.strictEqual(host.packets.subscribed(), 1,
+    'the party handlers stay alive for the session, so the tap is still held');
   made.zones.set('Gramiel P1', true);
   assert.strictEqual(host.packets.subscribed(), 1);
   made.unwatch(null);
   assert.strictEqual(host.packets.subscribed(), 1,
     'a registration outlives an unwatch that was never watching');
   made.zones.set('Gramiel P1', false);
-  assert.strictEqual(host.packets.subscribed(), 0);
+  assert.strictEqual(host.packets.subscribed(), 1, 'and so does PartyCmd');
+  made.window.set({ config: { AntiCounter: false } });
+  made.window.set({ partyCmd: false });
+  assert.strictEqual(host.packets.subscribed(), 0, 'unticking PartyCmd is what releases the tap');
+  made.window.set({ partyCmd: true });
+  assert.strictEqual(host.packets.subscribed(), 1, 'and ticking it takes the tap back');
 });
 
 test('the window\'s own state is what the acceptance criteria name', () => {
@@ -532,16 +549,29 @@ test('the window\'s Me button reads the game\'s own name field', async () => {
   const answer = await fixture.window.me();
   assert.strictEqual(answer.ok, true);
   assert.strictEqual(fixture.maid.getTarget(), 'kirin');
-  assert.deepStrictEqual(fixture.game.calls.map(function (one) { return one.args[0]; }),
-    [maidWindow.PLAYERNAME_PATH]);
-  // No character signed in is a refusal, not an empty target.
+  assert.ok(fixture.game.calls.some(function (one) {
+    return one.name === 'read' && one.args[0] === maidWindow.PLAYERNAME_PATH;
+  }));
+  // No character signed in is a silent no-op, the reference's own `if (Player.IsLoggedIn)`.
+  const blankGame = {
+    loaderCall: function () { return Promise.resolve(false); },
+    read: function () { return Promise.resolve({ value: null }); }
+  };
+  const blankMaid = maidModel.createMaid({
+    game: blankGame,
+    config: function () { return {}; },
+    sleep: function () { return Promise.resolve(); },
+    send: function () { return true; }
+  });
   const blank = maidWindow.createMaidWindow({
-    maid: fixture.maid,
-    game: fakeGame({}),
+    maid: blankMaid,
+    game: blankGame,
     messages: {}
   });
   const refused = await blank.me();
-  assert.strictEqual(refused.ok, false);
+  assert.strictEqual(refused.ok, true);
+  assert.strictEqual(refused.silent, true);
+  assert.strictEqual(blank.view().state.target, '');
 });
 
 test('the window announces a config change so the keys can follow the Global Hotkey box', () => {
@@ -566,7 +596,7 @@ test('the window\'s channels answer what its own preload exposes', async () => {
   const invoked = (preload.match(/CH\('([a-zA-Z]+)'\)/g) || []).map(function (one) {
     return one.slice(4, -2);
   });
-  const known = maidWindow.CHANNELS.concat(['maidWatch', 'maidState']);
+  const known = maidWindow.CHANNELS.concat(['maidWatch', 'maidState', 'maidOpenMaps']);
   invoked.forEach(function (name) {
     assert.ok(known.indexOf(name) !== -1, 'the preload invokes unknown channel ' + name);
   });
@@ -614,11 +644,13 @@ function plain(value) {
 }
 
 const PAGE_IDS = ['enabled', 'state', 'note', 'loadedFrom', 'preset', 'Target', 'SkillList',
+  'players', 'partyCmd', 'partyCmdLabel', 'skillDelayMs', 'stopAttackRow',
+  'lockedMapLink', 'whitelistMapLink', 'optionsGroup',
   'RelogDelay', 'SkillDelay', 'SafeSkill', 'SafeSkillList', 'SafeSkillHP', 'BuffStopAttack',
   'BuffStopAttackList', 'AttackPriority', 'AttackPriorityMonster', 'unfollow', 'stopAttack',
   'UltraBossExtra', 'SpecialMsg', 'SpecialAct', 'cbSpecialAnims',
   'GlobalHotkey', 'LockedZoneHandler', 'WhitelistMap', 'LockedZoneHandlerMaps',
-  'WhitelistMapMaps', 'options', 'save', 'load', 'autoload', 'party', 'me', 'enableLabel',
+  'WhitelistMapMaps', 'options', 'save', 'load', 'party', 'me', 'enableLabel',
   'targetLegend', 'combatLegend', 'keysLegend', 'optionsLegend', 'mapsLegend', 'configLegend',
   'specialLegend', 'ultraBossExtraLabel', 'specialMsgLabel', 'specialActLabel', 'specialAnimsLabel',
   'unfollowLabel', 'stopAttackLabel', 'globalLabel', 'keyHint', 'relogLabel', 'skillDelayLabel',
@@ -637,6 +669,11 @@ test('the Maid page parses, draws the state line and only calls what its preload
   const document = {
     title: '',
     activeElement: null,
+    body: element(),
+    listeners: {},
+    addEventListener: function (type, fn) {
+      (document.listeners[type] = document.listeners[type] || []).push(fn);
+    },
     getElementById: function (id) {
       assert.ok(byId[id], 'the page asks for a #' + id + ' that does not exist');
       return byId[id];
@@ -667,10 +704,16 @@ test('the Maid page parses, draws the state line and only calls what its preload
     save: function () { return Promise.resolve({ ok: true }); },
     load: function () { return Promise.resolve({ ok: true }); },
     autoload: function () { return Promise.resolve({ ok: true, applied: false }); },
+    players: function () { return Promise.resolve(['Kirin']); },
+    openMaps: function () { return Promise.resolve({ ok: true }); },
+    maps: function () { return Promise.resolve({ ok: true }); },
     onState: function (listener) { pushed = listener; return function () {}; }
   };
 
-  vm.runInNewContext(script[1], { window: { aquastarMaid: api }, document: document });
+  vm.runInNewContext(script[1], {
+    window: { aquastarMaid: api }, document: document,
+    setInterval: function () { return 1; }, clearInterval: function () {}
+  });
   await new Promise(function (resolve) { setTimeout(resolve, 0); });
   await new Promise(function (resolve) { setTimeout(resolve, 0); });
 
@@ -782,4 +825,163 @@ test('enabling the Maid arms its own handlers, which is what makes them live', (
   assert.strictEqual(made.zones.maid(), false, 'and stopMaid disarms them again');
   made.zones.set('Gramiel P1', false);
   return made.maid.idle();
+});
+
+// ------------------------------------------------------------------ PartyCmd and the two map forms
+
+test('PartyCmd ships ticked and gates both party chat and invitations', async () => {
+  const host = fakeZoneHost();
+  const made = maidWindow.createFromHost(host);
+  made.attach();
+  assert.strictEqual(made.window.view().state.partyCmd, true, 'cbPartyCmd.Checked = true');
+  const invitation = { direction: 'toClient', data: JSON.stringify({ command: 'pi', pid: '5' }) };
+  assert.ok(made.party.handleFrame(invitation), 'a ticked PartyCmd answers an invitation');
+  made.window.set({ partyCmd: false });
+  assert.strictEqual(made.party.enabled(), false);
+  assert.strictEqual(made.party.handleFrame(invitation), null, 'unticked: no invitation answer');
+  assert.strictEqual(made.handleFrame({
+    direction: 'toClient', data: '%xt%zm%chatm%1%party~.join yulgar%'
+  }), null, 'unticked: no party command either');
+  made.window.set({ partyCmd: true });
+  assert.ok(made.party.handleFrame(invitation));
+});
+
+test('.start and .stop take the same announce path as the Enable box', async () => {
+  const host = fakeZoneHost();
+  const made = maidWindow.createFromHost(host);
+  made.attach();
+  assert.strictEqual(made.zones.maid(), false);
+  const start = await made.party.handleFrame({
+    direction: 'toClient', data: '%xt%zm%chatm%1%party~.start%'
+  });
+  assert.strictEqual(start.ok, true);
+  assert.strictEqual(made.maid.state().enabled, true, '.start turns the Maid on');
+  assert.strictEqual(made.zones.maid(), true, 'through the same announce -> zones.setMaid path');
+  await made.party.handleFrame({
+    direction: 'toClient', data: '%xt%zm%chatm%1%party~.stop%'
+  });
+  assert.strictEqual(made.maid.state().enabled, false);
+  assert.strictEqual(made.zones.maid(), false);
+  await made.maid.settled();
+});
+
+test('the two map sub-windows register from the Maid and answer their own controls', async () => {
+  const host = fakeZoneHost();
+  const made = maidWindow.createFromHost(host);
+  made.attach();
+  const ids = host.featureWindows.map(function (one) { return one.id; });
+  assert.ok(ids.indexOf(maidWindow.MAP_WINDOW_IDS.locked) !== -1);
+  assert.ok(ids.indexOf(maidWindow.MAP_WINDOW_IDS.whitelist) !== -1);
+  const locked = host.featureWindows.filter(function (one) {
+    return one.id === maidWindow.MAP_WINDOW_IDS.locked;
+  })[0];
+  assert.ok(/maps\.html\?kind=locked$/.test(locked.url), 'the locked page is the map form');
+  assert.ok(/preload_maps\.js$/.test(locked.config.webPreferences.preload));
+
+  const window = made.window;
+  const defaults = window.maps({ kind: 'locked', action: 'get' });
+  assert.strictEqual(defaults.counter, 6, 'doomvault, doomvaultb, icewing, voidflibbi, voidnightbane, voidxyfrag');
+  const whitelist = window.maps({ kind: 'whitelist', action: 'get' });
+  assert.strictEqual(whitelist.counter, 4, 'the four shipped whitelist maps');
+  const checked = window.maps({ kind: 'whitelist', action: 'check' });
+  assert.ok(/in all cells/.test(checked.preview), 'an all-cell whitelist row says so');
+  const set = window.maps({ kind: 'whitelist', action: 'set', text: 'Citadel-6666;all\r\nb' });
+  assert.strictEqual(set.counter, 2);
+  const added = window.maps({ kind: 'whitelist', action: 'add', piece: 'c;Enter;Spawn' });
+  assert.ok(/\r\nc;Enter;Spawn$/.test(added.text));
+  const cleared = window.maps({ kind: 'whitelist', action: 'clear' });
+  assert.strictEqual(cleared.counter, 0);
+  assert.strictEqual(cleared.text, '');
+});
+
+test('the window clamps the four numeric boxes and starts the preset combo blank', () => {
+  const fixture = maidFixture();
+  assert.strictEqual(fixture.window.view().state.preset, '', 'cmbPreset has no selection');
+  const state = fixture.window.set({ config: { SkillDelay: 10, RelogDelay: 70000, SafeSkillHP: 0 } })
+    .state.config;
+  assert.strictEqual(state.SkillDelay, 50);
+  assert.strictEqual(state.RelogDelay, 60000);
+  assert.strictEqual(state.SafeSkillHP, 1);
+  assert.strictEqual(fixture.window.preset('LC').view.state.preset, 'LC');
+});
+
+test('Save opens the folder without a pre-filled file name', async () => {
+  let asked = null;
+  const dialogs = maidWindow.createDialogs({
+    messages: {},
+    electron: function () {
+      return {
+        dialog: {
+          showSaveDialog: function (owner, options) {
+            asked = options;
+            return Promise.resolve({ canceled: true });
+          }
+        }
+      };
+    }
+  });
+  await dialogs.save(null, '{}', { directory: '/tmp/aquastar-config', name: 'autoload.json' });
+  assert.strictEqual(asked.defaultPath, '/tmp/aquastar-config',
+    'btnSave_Click pre-fills InitialDirectory only');
+});
+
+test('unticking Global Hotkey unchecks Unfollow and StopAttack', () => {
+  const calls = [];
+  const keys = maidWindow.createKeys({
+    maid: {
+      state: function () { return {}; },
+      toggleUnfollow: function () {}, toggleStopAttack: function () {},
+      setUnfollow: function (on) { calls.push(['unfollow', on]); },
+      setStopAttack: function (on) { calls.push(['stopAttack', on]); }
+    },
+    log: function () {},
+    localShortcuts: { register: function () { return true; }, unregister: function () {} },
+    globalShortcuts: { register: function () { return true; }, unregister: function () {} },
+    accelerators: function () { return {}; }
+  });
+  keys.apply(true);
+  assert.deepStrictEqual(calls, [], 'ticking the global box leaves the two boxes alone');
+  keys.apply(false);
+  assert.deepStrictEqual(calls, [['unfollow', false], ['stopAttack', false]],
+    'cbEnableGlobalHotkey_CheckedChanged unticks both on the way out');
+});
+
+test('the constructor pre-fills the target from the signed-in character', async () => {
+  const fixture = maidFixture();
+  await new Promise(function (resolve) { setTimeout(resolve, 0); });
+  assert.strictEqual(fixture.window.view().state.target, 'kirin');
+  assert.ok(fixture.game.calls.some(function (one) { return one.name === 'read'; }));
+});
+
+test('enabling with the locked-zone box and no maps unticks it, otherwise it re-inits', () => {
+  const empty = maidWindow.createFromHost(fakeZoneHost());
+  empty.window.set({ config: { LockedZoneHandler: true, LockedZoneHandlerMaps: '' } });
+  empty.window.set({ enabled: true });
+  assert.strictEqual(empty.window.config().LockedZoneHandler, false,
+    'MaidRemake.cs:230-233 unticks a handler with no alternative maps');
+  empty.window.set({ enabled: false });
+
+  const full = maidWindow.createFromHost(fakeZoneHost());
+  full.window.set({ config: { LockedZoneHandler: true, LockedZoneHandlerMaps: 'a;Enter;Spawn' } });
+  full.window.set({ enabled: true });
+  assert.strictEqual(full.window.config().LockedZoneHandler, true, 'a non-empty list stays ticked');
+  assert.strictEqual(full.zones.lockedIndex(), 0, 'and AlternativeMap.Init reset the round-robin');
+  full.window.set({ enabled: false });
+  return empty.maid.settled().then(function () { return full.maid.settled(); });
+});
+
+test('the page carries the reference labels, limits and startUI lockouts', () => {
+  const source = fs.readFileSync(path.join(pluginRoot, 'features/maid/maid.html'), 'utf8');
+  ['Goto Username:', 'Skill List:', 'Skill Delay:', 'AttackPriority:', 'skill action:',
+    'Config : Default', 'PartyCmd', '[Auto accept any party invitation when checked]'
+  ].forEach(function (text) {
+    assert.ok(source.indexOf(text) !== -1, 'the page is missing ' + text);
+  });
+  assert.ok(/id="SkillDelay"[^>]*min="50"[^>]*max="60000"/.test(source));
+  assert.ok(/id="RelogDelay"[^>]*max="60000"/.test(source));
+  assert.ok(/id="SafeSkillHP"[^>]*min="1"[^>]*max="99"/.test(source));
+  assert.strictEqual(source.indexOf('id="autoload"'), -1, 'the Autoload button is gone');
+  assert.ok(/event\.key === 'r'/.test(source), 'the form reads bare R while it has focus');
+  assert.ok(/INPUT\|TEXTAREA\|SELECT/.test(source), 'and is suppressed inside a box or combo');
+  assert.ok(/drawStopwatch/.test(source), 'StopAttack carries the elapsed-time title');
 });

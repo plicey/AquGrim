@@ -81,6 +81,37 @@ test('a failed bridge call is reported as the reference reports it, not thrown',
   assert.strictEqual(result.error, 'the game is not loaded yet');
 });
 
+// DevTest.cs waits a second between SetGameObject and GetGameObject, and uses its own two failure
+// literals for a read that answered nothing.
+test('Get/Set Object waits before the read-back and uses the reference failure strings', async () => {
+  const waited = [];
+  const bridge = {
+    call: function (name) {
+      if (name === 'setGameObject') return Promise.resolve({ ok: true });
+      return Promise.resolve({ ok: true, value: 'hello' });
+    }
+  };
+  const result = await callModes.run('getSetObject', 'world.x', ['hello'], bridge, {
+    wait: function (ms) { waited.push(ms); return Promise.resolve(); }
+  });
+  assert.deepStrictEqual(waited, [callModes.SETTLE_MS]);
+  assert.strictEqual(callModes.SETTLE_MS, 1000);
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.value, 'hello');
+
+  const nullRead = await callModes.run('getSetObject', 'world.x', [], {
+    call: function () { return Promise.resolve({ ok: true, value: null }); }
+  });
+  assert.deepStrictEqual(nullRead, { ok: false, error: "Can't call the function." });
+
+  const emptyRead = await callModes.run('getSetObject', 'world.x', [], {
+    call: function () { return Promise.resolve({ ok: true, value: '' }); }
+  });
+  assert.deepStrictEqual(emptyRead, {
+    ok: false, error: "Function called, but can't process its return."
+  });
+});
+
 test('the result is formatted as the reference\'s Format JSON button formats it', () => {
   assert.strictEqual(callModes.format('{"b":1,"a":[1,2]}'), '{\n  "b": 1,\n  "a": [\n    1,\n    2\n  ]\n}');
   // Not JSON: the reference shows what it had, unchanged.
@@ -111,11 +142,15 @@ test('the window page offers the reference\'s controls, wired to the plugin API'
   assert.ok(/id="result"/.test(page));
   assert.ok(/id="argsEnabled"/.test(page));
   assert.ok(page.indexOf('value="world"') !== -1, 'the reference defaults Function to world');
+  // The reference's bottom row has Copy on the left and Format JSON on the right.
+  assert.ok(page.indexOf('id="copy"') < page.indexOf('id="format"'));
 
   // Page-side work reaches the plugin only through the preload bridge: a sandboxed page has no
   // Node, and the bridge call itself is main-process work.
   const script = fs.readFileSync(path.join(PARITY, 'features', 'devtest', 'devtest.js'), 'utf8');
   assert.ok(script.indexOf('window.aquastarPlugin') !== -1, 'the page must use the plugin API bridge');
+  assert.ok(script.indexOf("callButton.disabled = true") !== -1,
+    'Get/Set Object must disable Call while it writes and waits');
   assert.ok(script.indexOf('require(') === -1, 'a sandboxed page must not require anything');
   assert.ok(page.indexOf('nodeIntegration') === -1);
   // The preload may require electron and nothing else (Electron 11 sandboxed preloads).

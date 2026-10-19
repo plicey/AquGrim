@@ -18,11 +18,7 @@ contextBridge.exposeInMainWorld('aquastarTravel', {
     unlock: function (questId) {
         return ipcRenderer.invoke(CH('travelUnlock'), questId);
     },
-    sendPacket: function (packet) {
-        return ipcRenderer.invoke(CH('travelSendPacket'), packet);
-    },
     copy: function (text) {
         return ipcRenderer.send(CH('travelCopy'), text);
     }
 });
-

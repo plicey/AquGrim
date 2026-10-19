@@ -18,10 +18,18 @@ const botTree = require('../../bot/bot-tree.js');
 const gameReads = require('../../bot/game-reads.js');
 const { createFromHost } = require('../../bot/bot-dialogs.js');
 
-// UserFriendlyCommandEditor.Show's skip list. A statement's own Text is skipped too (the
-// reference compares the key against the statement row's Text), because on a statement it is the
-// row's label rather than something the author edits.
-const FORM_SKIP = ['Tag', 'Description1', 'Description2', '$type', 'Text'];
+// UserFriendlyCommandEditor.Show's skip list. Text is not in it: on an ordinary command Text is
+// a member the author edits (CmdLog, CmdBlank2, CmdClientMessage), and only on a statement row is
+// it the row's label rather than something the form should offer (the reference's own comparison
+// against the statement row's Text).
+const FORM_SKIP = ['Tag', 'Description1', 'Description2', '$type'];
+
+// The class an InventoryItem row carries in a .gbot (bots.js's LIST_TYPES names it for a list).
+const INVENTORY_ITEM_TYPE = 'Grimoire.Game.Data.InventoryItem, Grimoire';
+// Grimoire.Game.Data.InventoryItem's own JsonProperty names (InventoryItem.cs): the keys the
+// reference's object serialises, so a boost keeps the shape the reference would have written.
+const ITEM_KEYS = ['iEnh', 'iQty', 'sDesc', 'iStk', 'iLvl', 'bCoins', 'sLink', 'sFile', 'bEquip',
+    'bUpg', 'bTemp', 'iCost', 'sType', 'ItemID', 'sName', 'ShopItemID', 'iRate'];
 
 function createBotManager(deps) {
     deps = deps || {};
@@ -139,7 +147,12 @@ function createBotManager(deps) {
                 // A refused start leaves the tick off; the reason is what the window shows.
                 return view({ enabled: false, error: (result && result.error) || 'the bot did not start' });
             }
-            return view({ enabled: true, error: null });
+            // chkEnableBot_CheckedChanged: with a zone selected the start switches the live
+            // handler on (`if (cmbSpecials.SelectedIndex != -1 && !chkSpecial.Checked)
+            // chkSpecial.Checked = true`). A build without the panel is told, not shown a tick.
+            const zone = botDocument.AutoZone ? specialZone(botDocument.AutoZone, true) : null;
+            return view({ enabled: true, error: null,
+                zoneError: zone && zone.ok !== true ? zone.error : null });
         }, function (error) {
             return view({ enabled: false, error: (error && error.message) || String(error) });
         });
@@ -170,6 +183,9 @@ function createBotManager(deps) {
                 const className = catalog.classNameOf(item);
                 return {
                     text: catalog.rowText(item),
+                    // lstCommands_DrawItem prints the row's [n] unless its class is one of the
+                    // LabelLess ones (and never for a statement).
+                    showsIndex: catalog.showsIndex(item),
                     // A row's colour is keyed by its class without the Cmd (CommandColorForm names
                     // it that way); a row that is not a command takes the variable colour, which
                     // is the segment colour the reference's draw handler uses for its values.
@@ -204,7 +220,7 @@ function createBotManager(deps) {
     }
 
     /** Load bot / a dropped file / a tree selection: parse, then ApplyConfiguration. */
-    function loadFile(file) {
+    function loadFile(file, key) {
         let text;
         try {
             text = readText(file);
@@ -213,19 +229,89 @@ function createBotManager(deps) {
         }
         const parsed = bots.parseBot(text);
         if (!parsed.ok) return { error: parsed.error };
-        apply(parsed.bot, file);
+        apply(parsed.bot, file, key);
+        // Every load stops the Options loop (btnLoad_Click, treeBots_AfterSelect and the drop
+        // handler all call OptionsManager.Stop()).
+        stopOptions();
         return null;
     }
 
-    /** ApplyConfiguration: chkMerge appends, otherwise every list is replaced. */
-    function apply(bot, file) {
-        if (loaded && settings.ui('Merge') === true) {
+    /**
+     * ApplyConfiguration: chkMerge appends and anything else replaces - and a merge while a bot is
+     * running replaces too (the reference's own `!chkMerge.Checked || ActiveBotEngine.IsRunning`,
+     * which clears the lists either way). The configuration the file carries reaches the form in
+     * both modes: the boxes take the loaded file's values even when the lists were appended to.
+     */
+    function apply(bot, file, key) {
+        const merge = loaded && settings.ui('Merge') === true && !botRunning(key);
+        if (merge) {
             editor.applyConfiguration(bot, { merge: true });
+            applyConfigurationValues(bot);
+            applyNotifyUponDrop(bot);
             currentPath = file || currentPath;
             return;
         }
         resetDocument(bot, file);
         editor.applyConfiguration(botDocument, { merge: false });
+    }
+
+    /** Is the bot that belongs to this window's game window running? */
+    function botRunning(key) {
+        if (!runtime) return false;
+        try {
+            return runtime.state(key === undefined ? windowKey : key).running === true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    /**
+     * The configuration keys this window's own controls carry (the tickboxes and spinners of
+     * tab-actions' two maps, which is exactly what ApplyConfiguration moves onto the form).
+     */
+    const CONFIGURATION_KEYS = (function () {
+        const keys = [];
+        [actions.SETTINGS, actions.NUMBERS].forEach(function (map) {
+            Object.keys(map).forEach(function (id) {
+                if (keys.indexOf(map[id]) === -1) keys.push(map[id]);
+            });
+        });
+        return keys;
+    })();
+
+    /** ApplyConfiguration's own assignments, in the document the merge is appending to. */
+    function applyConfigurationValues(bot) {
+        const config = bots.configuration(bot);
+        CONFIGURATION_KEYS.forEach(function (key) {
+            if (config[key] === undefined) return;
+            // numWalkSpeed.Value = (config.WalkSpeed <= 0) ? 8 : config.WalkSpeed.
+            const value = key === 'WalkSpeed' && !(config.WalkSpeed > 0) ? 8 : config[key];
+            editor.setSetting(key, value);
+        });
+    }
+
+    /** ApplyConfiguration appends NotifyUponDrop to lstSoundItems when it merges. */
+    function applyNotifyUponDrop(bot) {
+        const incoming = Array.isArray(bot.NotifyUponDrop) ? bot.NotifyUponDrop : [];
+        const own = Array.isArray(botDocument.NotifyUponDrop) ? botDocument.NotifyUponDrop : [];
+        if (incoming.length) botDocument.NotifyUponDrop = own.concat(incoming);
+    }
+
+    /** OptionsManager.Stop(), which every load calls before it returns. */
+    function stopOptions() {
+        if (!options || typeof options.setApplying !== 'function' || !optionsRunning()) return;
+        let answer;
+        try {
+            answer = options.setApplying(false);
+        } catch (error) {
+            optionsStateChanged(optionsRunning());
+            return;
+        }
+        Promise.resolve(answer).then(function () {
+            optionsStateChanged(optionsRunning());
+        }, function () {
+            optionsStateChanged(optionsRunning());
+        });
     }
 
     function statements() {
@@ -246,18 +332,31 @@ function createBotManager(deps) {
         const fields = [];
         Object.keys(command).forEach(function (key) {
             if (FORM_SKIP.indexOf(key) !== -1) return;
+            // A statement's Text is its own dropdown label, so the form leaves it alone.
+            if (key === 'Text' && row) return;
             let text = key;
             let value = command[key];
-            // The shipped catalog leaves some descriptions out; where it does, the reference's
-            // own label ends up empty (Value2) or falls back to the key (Value1).
-            if (key === 'Value1' && row) text = row.description1 || key;
-            if (key === 'Value2' && row) text = row.description2 || '';
+            // The shipped catalog leaves some descriptions out, and where it does the label ends
+            // up empty (the reference assigns the description straight onto the DarkLabel, and a
+            // null description is no text). A box holding exactly the description is the form's
+            // own placeholder: it opens empty (tbText == lblText ? "" : tbText).
+            if (key === 'Value1' && row) {
+                text = row.description1 || '';
+                if (value !== undefined && String(value) === text) value = '';
+            }
+            if (key === 'Value2' && row) {
+                text = row.description2 || '';
+                if (value !== undefined && String(value) === text) value = '';
+            }
             if (key === 'Quest') {
                 text = 'Quest ID';
                 value = command.Quest ? command.Quest.QuestID : '';
             }
             fields.push({
                 key: key, label: text,
+                // The box's own type, which is what the OK has to write back as.
+                type: typeof command[key] === 'boolean' ? 'bool'
+                    : (typeof command[key] === 'number' ? 'number' : 'text'),
                 value: value === undefined || value === null ? '' : String(value)
             });
         });
@@ -273,22 +372,81 @@ function createBotManager(deps) {
         Object.keys(values || {}).forEach(function (key) {
             // The reference writes the Quest row's id back into the row it came from.
             if (key === 'Quest') {
-                if (command.Quest) command.Quest.QuestID = Number(values[key]);
+                if (command.Quest) {
+                    const id = Number(values[key]);
+                    if (isFinite(id)) command.Quest.QuestID = id;
+                }
                 return;
             }
-            command[key] = values[key];
+            if (!(key in command)) return;
+            const typed = fromField(command[key], values[key]);
+            if (typed !== undefined) command[key] = typed;
         });
         return view({ refused: false });
     }
 
-    function loadDialog() {
+    /**
+     * UserFriendlyCommandEditor.Show deserialises the boxes back into the command's own typed
+     * members (JsonConvert.DeserializeObject(text, obj.GetType())), so a bool box writes a bool:
+     * "false" stays false rather than the string. A text its own type cannot parse is a failed
+     * deserialisation there - and there the field is left as it was.
+     */
+    function fromField(current, value) {
+        const raw = value === undefined || value === null ? '' : String(value).trim();
+        if (typeof current === 'boolean') {
+            if (raw.toLowerCase() === 'true') return true;
+            if (raw.toLowerCase() === 'false') return false;
+            return undefined;
+        }
+        if (typeof current === 'number') {
+            const parsed = Number(raw);
+            return isFinite(parsed) ? parsed : undefined;
+        }
+        return value === undefined || value === null ? '' : value;
+    }
+
+    function loadDialog(key) {
         return Promise.resolve(dialogs.open(null)).then(function (result) {
             if (!result || result.canceled) return { canceled: true };
             if (result.error) return view({ canceled: false, error: result.error });
-            apply(result.bot, result.path);
+            apply(result.bot, result.path, key);
+            stopOptions();
             currentPath = result.path;
             return view({ canceled: false, error: null });
         });
+    }
+
+    /**
+     * GenerateConfiguration writes `(Server)cbServers.SelectedItem`, so a bot's Server member is
+     * an object with the server's name in it. Writing a bare string there would be a shape the
+     * reference's own deserialiser refuses, so the name is wrapped (and dropped when empty).
+     */
+    function setServer(name) {
+        const text = name === undefined || name === null ? '' : String(name);
+        if (!text) {
+            delete botDocument.Server;
+            return;
+        }
+        botDocument.Server = { $type: 'Grimoire.Game.Data.Server, Grimoire', Name: text };
+    }
+
+    /**
+     * chkSpecial_CheckedChanged: the box toggles the live auto-zone handler through
+     * UpdateSpecialHandler, which lives with the handlers themselves (features/maid/zones.js).
+     * The shell hands that panel in the way the engine receives it; a build without one says so.
+     */
+    function specialZone(zone, enabled) {
+        const panel = typeof deps.specialHandler === 'function' ? deps.specialHandler() : null;
+        if (!panel || typeof panel.set !== 'function') {
+            return { ok: false, error: 'this window has no live zone handler wired (ticket #44)' };
+        }
+        const name = zone === undefined || zone === null ? '' : String(zone);
+        if (!name) return { ok: false, error: 'choose a zone first' };
+        try {
+            return { ok: true, value: panel.set(name, enabled === true) };
+        } catch (error) {
+            return { ok: false, error: (error && error.message) || String(error) };
+        }
     }
 
     function save(options) {
@@ -302,13 +460,17 @@ function createBotManager(deps) {
                 currentPath = where.path;
                 return Promise.resolve(view({ canceled: false, path: where.path, error: null }));
             } catch (error) {
-                return Promise.resolve(view({ canceled: false, path: null, error: error.message || String(error) }));
+                // btnSave_Click's own words: "Unable to save bot: " + ex.Message.
+                return Promise.resolve(view({ canceled: false, path: null,
+                    error: 'Unable to save bot: ' + (error.message || String(error)) }));
             }
         }
         return Promise.resolve(dialogs.save(null, botDocument, { path: where.path || currentPath }))
             .then(function (result) {
                 if (!result || result.canceled) return { canceled: true };
-                if (result.error) return view({ canceled: false, path: null, error: result.error });
+                if (result.error) {
+                    return view({ canceled: false, path: null, error: 'Unable to save bot: ' + result.error });
+                }
                 currentPath = result.path;
                 return view({ canceled: false, path: result.path, error: null });
             });
@@ -324,8 +486,10 @@ function createBotManager(deps) {
     }
 
     /** treeBots: the chosen directory, its subtree count, and one level of nodes. */
-    function tree(segments) {
-        const root = settings.botsDirectory() || deps.defaultBotsDirectory || '';
+    function tree(segments, directory) {
+        // txtSaved is the tree's root (UpdateTree reads the box); the chosen directory stands in
+        // for it when the box has not been typed into.
+        const root = directory || settings.botsDirectory() || deps.defaultBotsDirectory || '';
         const wanted = Array.isArray(segments) ? segments : [];
         return {
             directory: root,
@@ -356,28 +520,47 @@ function createBotManager(deps) {
     }
 
     function add(id, values, modifiers) {
-        const command = actions.build(id, values, modifiers);
+        const built = actions.build(id, values, modifiers);
         // btnAddCmdHunt refuses a hunt with no item, exactly as its handler returns early.
-        if (!command) return view({ refused: true });
-        editor.add(command, { insert: !!(modifiers && modifiers.ctrl) });
+        if (!built) return view({ refused: true });
+        // A builder may contribute more than one command (btnSkillCmd's alt branch adds the four
+        // skills), so the answer is read as a list either way.
+        const commands = Array.isArray(built) ? built : [built];
+        commands.forEach(function (command) {
+            editor.add(command, { insert: !!(modifiers && modifiers.ctrl) });
+        });
+        // The other lists the same press writes (btnKillF's whitelist).
+        fillLists(actions.buildLists(id, values, modifiers));
         return view({ refused: false });
     }
 
-    function addList(id, values, modifiers) {
-        const groups = actions.buildList(id, values, modifiers);
-        if (!groups.length) return view({ refused: true });
-        // AddDrop / AddItem / AddQuest guard with Contains; AddSkill does not, which is why the
-        // builder says which ones are unique rather than this loop assuming it.
+    /**
+     * Put the groups a builder returns into their lists. AddDrop / AddItem / AddQuest guard with
+     * Contains (OrdinalIgnoreCase, the reference's own comparison); AddSkill does not, which is
+     * why the builder says which groups are unique rather than this loop assuming it.
+     */
+    function fillLists(groups) {
         const back = editor.selected;
         groups.forEach(function (group) {
             editor.selected = group.list;
             const list = editor.items();
             group.items.forEach(function (item) {
-                if (group.unique && list.indexOf(item) !== -1) return;
+                const duplicate = group.unique && list.some(function (existing) {
+                    return group.insensitive
+                        ? String(existing).toLowerCase() === String(item).toLowerCase()
+                        : existing === item;
+                });
+                if (duplicate) return;
                 list.push(item);
             });
         });
         editor.selected = back;
+    }
+
+    function addList(id, values, modifiers) {
+        const groups = actions.buildList(id, values, modifiers);
+        if (!groups.length) return view({ refused: true });
+        fillLists(groups);
         return view({ refused: false });
     }
 
@@ -390,6 +573,12 @@ function createBotManager(deps) {
         case 'clear': editor.clear({ all: options.all === true }); break;
         case 'copyAsText': return Object.assign({ clipboard: editor.copyAsText() }, view());
         case 'copyJson': return Object.assign({ clipboard: editor.copyJson() }, view());
+        // Ctrl+X: the same configuration text as Ctrl+C, then the selection goes.
+        case 'cut': {
+            const clipboard = editor.copyJson();
+            editor.remove();
+            return Object.assign({ clipboard: clipboard }, view());
+        }
         case 'paste': editor.pasteJson(String(options.text == null ? '' : options.text)); break;
         case 'find': return Object.assign({ hit: editor.find(options.text) }, view());
         case 'label': return labelKey(options);
@@ -425,10 +614,10 @@ function createBotManager(deps) {
         return view();
     }
 
-    function drop(files) {
+    function drop(files, key) {
         // lstCommands_DragDrop returns without doing anything for more than one file.
         if (!Array.isArray(files) || files.length !== 1) return view({ refused: true });
-        const failure = loadFile(files[0]);
+        const failure = loadFile(files[0], key);
         return view(Object.assign({ refused: false, canceled: false }, failure || { error: null }));
     }
 
@@ -438,16 +627,9 @@ function createBotManager(deps) {
      * answer that must not be mistaken for an empty value, so it is checked first.
      */
     function parseValue(raw, name) {
-        let parsed;
-        try {
-            parsed = JSON.parse(String(raw));
-        } catch (error) {
-            // A value JSON cannot express; the bridge stringifies those, so take it as it came.
-            return { value: raw };
-        }
-        if (parsed && typeof parsed === 'object' && typeof parsed.error === 'string') {
-            return { error: parsed.error };
-        }
+        const parsed = decodeValue(raw).parsed;
+        const failure = memberError(parsed);
+        if (failure) return { error: failure };
         if (parsed === null || parsed === undefined) {
             // The path exists and is empty: the game has not logged in or drawn it yet. Saying so
             // keeps an empty box from looking like a real reading.
@@ -491,6 +673,7 @@ function createBotManager(deps) {
      * rest report the helper they wait for, so a press is never a silent no-op.
      */
     function gameAction(id, modifiers) {
+        if (GAME_ACTIONS[id]) return GAME_ACTIONS[id]((modifiers && modifiers.fields) || {});
         const spec = gameReads.GAME_BUTTONS[id];
         if (!spec) return Promise.resolve({ ok: false, error: 'not a game control: ' + id });
         const variant = gameReads.variantOf(spec, modifiers);
@@ -499,6 +682,94 @@ function createBotManager(deps) {
         }
         if (!spec.reads) return Promise.resolve({ ok: false, error: gameReads.why(spec, id) });
         return readGame(spec.reads);
+    }
+
+    /**
+     * The three controls game-reads.js does not own, each with its reference body:
+     *
+     *   btnMapItemExe  Player.GetMapItem((int)numMapItem.Value) - loader-surface.js's own route
+     *                  for GetMapItem, which is world.getMapItem(id)
+     *   btnGetInfo     UserFriendlyCommandEditor's "Get Cell / Map / Pad" helper: Player.Cell,
+     *                  Player.Map and Player.Pad, three dot-path reads (game-reads.READS)
+     *   cbBoosts       cbBoosts_Click: the bag's ServerUse rows, through the same path the loader
+     *                  surface's GetInventoryItems reads (world.myAvatar.items)
+     */
+    const GAME_ACTIONS = {
+        btnMapItemExe: function (fields) {
+            const id = Number(fields.numMapItem);
+            // The spinner's own minimum is 1; a box with nothing usable in it is refused.
+            if (!isFinite(id) || id <= 0) {
+                return Promise.resolve({ ok: false, error: 'give the map item an id first' });
+            }
+            return callChannel('callGameFunction', ['world.getMapItem', id]).then(function (answer) {
+                return answer.ok
+                    ? { ok: true, message: 'got the map item' }
+                    : { ok: false, error: answer.error };
+            });
+        },
+        btnGetInfo: function () { return readGame(['cell', 'map', 'pad']); },
+        cbBoosts: function () { return readServerUse(); }
+    };
+
+    /** A read's own value, with a member error kept apart from a value JSON cannot carry. */
+    function decodeValue(raw) {
+        try {
+            return { parsed: JSON.parse(String(raw)) };
+        } catch (error) {
+            // A value JSON cannot express; the bridge stringifies those, so take it as it came.
+            return { parsed: raw };
+        }
+    }
+
+    function memberError(parsed) {
+        if (parsed && typeof parsed === 'object' && typeof parsed.error === 'string') return parsed.error;
+        return null;
+    }
+
+    /** One generic bridge call, as {ok} or {ok:false,error} - a void call has no value to read. */
+    function callChannel(name, args) {
+        const bridge = deps.bridge;
+        if (!bridge) return Promise.resolve({ ok: false, error: 'this window has no game bridge' });
+        return Promise.resolve(bridge.attach()).then(function (attached) {
+            if (!attached || attached.ok !== true) {
+                return { ok: false, error: (attached && attached.error) || 'the game bridge is not attached' };
+            }
+            return Promise.resolve(bridge.call(name, args)).then(function (result) {
+                if (!result || result.ok !== true) {
+                    return { ok: false, error: (result && result.error) || ('the bridge did not answer ' + name) };
+                }
+                const decoded = decodeValue(result.value);
+                const failure = memberError(decoded.parsed);
+                if (failure) return { ok: false, error: failure };
+                return { ok: true, value: decoded.parsed };
+            });
+        });
+    }
+
+    /**
+     * cbBoosts_Click: Player.Inventory.Items.Where(i => i.Category == "ServerUse"). Category is
+     * the sType member, and the row keeps the reference class's own JSON keys, so what the button
+     * then adds to Boosts is the item the game sent rather than a name alone.
+     */
+    function readServerUse() {
+        return callChannel('getGameObject', ['world.myAvatar.items']).then(function (answer) {
+            if (!answer.ok) return answer;
+            const rows = Array.isArray(answer.value) ? answer.value : [];
+            const boosts = rows.filter(function (row) {
+                return row && (row.sType === 'ServerUse' || row.Category === 'ServerUse');
+            }).map(function (row) {
+                const item = { $type: INVENTORY_ITEM_TYPE };
+                ITEM_KEYS.forEach(function (key) {
+                    if (row[key] !== undefined) item[key] = row[key];
+                });
+                const name = item.sName === undefined || item.sName === null ? '' : String(item.sName);
+                return {
+                    name: name || (item.ItemID === undefined ? '' : String(item.ItemID)),
+                    item: item
+                };
+            });
+            return { ok: true, boosts: boosts };
+        });
     }
 
     /**
@@ -513,8 +784,8 @@ function createBotManager(deps) {
         return { ok: true };
     }
 
-    function treeSelect(segments, ctrl) {
-        const root = settings.botsDirectory() || deps.defaultBotsDirectory || '';
+    function treeSelect(segments, ctrl, directory, key) {
+        const root = directory || settings.botsDirectory() || deps.defaultBotsDirectory || '';
         const file = botTree.resolve(root, Array.isArray(segments) ? segments : []);
         if (!botTree.isBot(file)) return view({ refused: true });
         if (ctrl) {
@@ -523,14 +794,14 @@ function createBotManager(deps) {
             editor.add(catalog.makeCommand('CmdLoadBot', reference), { insert: true });
             return view({ refused: false, inserted: reference });
         }
-        const failure = loadFile(file);
+        const failure = loadFile(file, key);
         return view(Object.assign({ refused: false }, failure || { error: null }));
     }
 
-    function addFolder(name) {
-        const root = settings.botsDirectory() || deps.defaultBotsDirectory || '';
+    function addFolder(name, directory) {
+        const root = directory || settings.botsDirectory() || deps.defaultBotsDirectory || '';
         const made = botTree.addFolder(root, name);
-        return Object.assign(tree([]), made
+        return Object.assign(tree([], root), made
             ? { error: null }
             : { error: message('addFolderFailed', 'That folder could not be added.') });
     }
@@ -562,8 +833,9 @@ function createBotManager(deps) {
                     commandButtons: Object.keys(actions.COMMAND_BUTTONS),
                     listButtons: Object.keys(actions.LIST_BUTTONS),
                     // The ids that act on the running game, and the reasons the ones that cannot
-                    // are waiting. The page draws them either way; none is a dead button.
-                    gameButtons: gameReads.ids(),
+                    // are waiting. The page draws them either way; none is a dead button. The
+                    // three this window serves itself (GAME_ACTIONS) travel with them.
+                    gameButtons: gameReads.ids().concat(Object.keys(GAME_ACTIONS)),
                     gameReasons: gameReads.ids().reduce(function (out, id) {
                         const spec = gameReads.GAME_BUTTONS[id];
                         if (!spec.reads) out[id] = gameReads.why(spec, id);
@@ -591,10 +863,10 @@ function createBotManager(deps) {
                 return message('all', {}) || {};
             case 'botManagerLoad':
                 if (argv[0]) {
-                    const failure = loadFile(argv[0]);
+                    const failure = loadFile(argv[0], windowKeyFor(event));
                     return view(Object.assign({ canceled: false }, failure || { error: null }));
                 }
-                return loadDialog();
+                return loadDialog(windowKeyFor(event));
             case 'botManagerSave':
                 return save(argv[0]);
             case 'botManagerAdd':
@@ -619,6 +891,8 @@ function createBotManager(deps) {
                 // chkMerge is a control of this window, not a member of a bot: the reference
                 // keeps it in the form and reads it when a configuration is applied.
                 if (argv[0] === 'Merge') settings.setUi('Merge', argv[1] === true);
+                // The server combo holds a Server object in Configuration, not its name.
+                else if (argv[0] === 'Server') setServer(argv[1]);
                 else editor.setSetting(argv[0], argv[1]);
                 return view();
             case 'botManagerOptionsEnable':
@@ -635,19 +909,24 @@ function createBotManager(deps) {
             case 'botManagerStyle':
                 return styleAction(argv[0] || {});
             case 'botManagerTree':
-                return tree(argv[0]);
+                return tree(argv[0], argv[1]);
             case 'botManagerChooseDirectory':
                 return chooseDirectory();
             case 'botManagerAddFolder':
-                return addFolder(argv[0]);
+                return addFolder(argv[0], argv[1]);
             case 'botManagerTreeSelect':
-                return treeSelect(argv[0], argv[1] === true);
+                return treeSelect(argv[0], argv[1] === true, argv[2], windowKeyFor(event));
             case 'botManagerGame':
                 return gameAction(argv[0], argv[1]);
+            // chkSpecial_CheckedChanged: the live zone handler, which belongs to the Maid
+            // window's panel (ticket #44). The shell hands that panel in the same way the engine
+            // receives it; a build without one is told so rather than shown a silent tick.
+            case 'botManagerSpecial':
+                return specialZone(argv[0], argv[1] === true);
             case 'botManagerBeep':
                 return beep();
             case 'botManagerDrop':
-                return drop(argv[0] || []);
+                return drop(argv[0] || [], windowKeyFor(event));
             case 'botManagerCopy':
                 clipboard.write(String(argv[0] == null ? '' : argv[0]));
                 return true;
@@ -665,7 +944,7 @@ function createBotManager(deps) {
                 'botManagerRaw', 'botManagerSetting', 'botManagerOptionsEnable', 'botManagerStyle', 'botManagerTree',
                 'botManagerChooseDirectory', 'botManagerAddFolder', 'botManagerTreeSelect',
                 'botManagerDrop', 'botManagerCopy', 'botManagerPaste', 'botManagerGame',
-                'botManagerBeep', 'botManagerEnable', 'botManagerState'];
+                'botManagerBeep', 'botManagerEnable', 'botManagerState', 'botManagerSpecial'];
             channels.forEach(function (channel) {
                 host.ipc.handle(channel, function (event) {
                     const rest = Array.prototype.slice.call(arguments, 1);

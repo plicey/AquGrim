@@ -41,6 +41,11 @@ const HELPERS = {
     PlayerByName: true,
     GetCellPlayers: true,
     SkillAvailable: true,
+    IsMonsterAvailable: true,
+    Class: true,
+    State: true,
+    GetCells: true,
+    GetInventoryItems: true,
     // calls
     SetSpawnPoint: true,
     CancelAutoAttack: true,
@@ -51,6 +56,9 @@ const HELPERS = {
     Jump: true,
     GoTo: true,
     UseSkill: true,
+    EquipPotion: true,
+    SetLagKiller: true,
+    SetInfiniteRange: true,
     // The forced cast the Maid's own phrase handler arms (SpecialAct, ticket #44). The reference
     // forces the cast through ForceUseSkill rather than UseSkill, so both are named here.
     ForceUseSkill: true
@@ -74,12 +82,37 @@ const TARGET_NAME_PATH = 'world.myAvatar.target.objData.strMonName';
 // (MaidRemake.cs:845). Comparing a name against an id would report a good attack as a failure.
 const TARGET_ID_PATH = 'world.myAvatar.target.objData.MonMapID';
 
+// The game's own map-load flag, the same path zones.js and bot/session.js read. The reference's
+// World.IsMapLoading is this flag.
+const MAP_LOADING_PATH = 'world.mapLoadInProgress';
+
+// Player.State.InCombat, from Player.cs's own enum (Dead, Idle, InCombat).
+const STATE_IN_COMBAT = 2;
+
+// InventoryItem.EquippableCategories (Game/Data/InventoryItem.cs:13-30), which is the test the
+// reference's equipEnrage makes through IsEquippable.
+const EQUIPPABLE_CATEGORIES = [
+    'Sword', 'Axe', 'Dagger', 'Gun', 'Bow', 'Mace', 'Polearm', 'Staff', 'Wand',
+    'Class', 'Armor', 'Helm', 'Cape', 'Necklace', 'Misc', 'Item'
+];
+
+const ENRAGE_NAME = 'Scroll of Enrage';
+
 // The reference's own waits, as they appear in its loop and in chaseTargetCell.
 const TIMING = {
     mapLoadPollMs: 500,
     gotoWaitPollMs: 150,
     gotoWaitTries: 36,
+    gotoWaitUntilTries: 15,
+    gotoWaitUntilMs: 500,
+    exitCombatMs: 100,
     chaseDelayMs: 800,
+    chaseGoToDelayMs: 500,
+    lockedZoneWaitMs: 500,
+    lockedZoneWaitTries: 6,
+    deadWaitMs: 500,
+    enrageWaitMs: 1000,
+    waitSkillAdvanceMs: 150,
     waitStepMs: 150,
     firstJoinPollMs: 2000
 };
@@ -165,7 +198,18 @@ function createMaid(deps) {
     let lastNote = null;
     let running = false;
     let loop = null;
+    // The enable-time game effects run asynchronously (the reference awaits them inside its own
+    // box handler); `idle()` joins them so a caller can tell when the enable has settled.
+    const effects = [];
     const missing = [];         // helper names the surface refused, with their reasons
+
+    function queueEffect(promise) {
+        const tracked = Promise.resolve(promise).catch(function (error) {
+            log('maid: an enable effect failed (' + message(error) + ')');
+        });
+        effects.push(tracked);
+        return tracked;
+    }
 
     function fail(text) {
         lastNote = text;
@@ -289,10 +333,10 @@ function createMaid(deps) {
             firstJoinDone = false;
             return { ok: true, status: status };
         }
-        // The reference's waitForFirstJoin: after a (re)login, wait RelogDelay before acting.
+        // The reference's waitForFirstJoin: wait out the loading screen first, then RelogDelay
+        // (MaidRemake.cs:812-822, `while (cbEnablePlugin.Checked && World.IsMapLoading)`).
         if (!firstJoinDone) {
-            const delay = Number(configOf().RelogDelay);
-            if (isFinite(delay) && delay > 0) await sleep(delay);
+            await waitForFirstJoin();
             firstJoinDone = true;
             return { ok: true, status: STATUS.waitingJoin };
         }
@@ -307,20 +351,30 @@ function createMaid(deps) {
         const inMap = await playerInMap();
         const inCell = await playerInCell();
 
-        if (paused) {
-            status = STATUS.paused;
-            return { ok: true, status: status };
-        }
-
+        // The reference's chain runs the chase and the goto while onPause stands (`!onPause` gates
+        // the combat branch, not the movement branches), which is why paused still gotos and
+        // chases the target's cell.
         if (!unfollow && (inMap !== true || inCell !== true)) {
             status = STATUS.following;
             await follow(inMap === true);
             return { ok: true, status: status };
         }
 
+        // The reference's own first line of the combat branch: `gotoTry = 0` (MaidRemake.cs:215).
+        gotoTries = 0;
+
+        if (paused) {
+            status = STATUS.paused;
+            return { ok: true, status: status };
+        }
+
         const alive = await isAlive();
         if (alive === false) {
             await call('SetSpawnPoint');
+            // MaidRemake.cs:220-224: SetSpawnPoint, 500 ms, then forceSkill = false.
+            await sleep(TIMING.deadWaitMs);
+            forcedSkill = null;
+            skillIndex = 0;
             status = STATUS.dead;
             return { ok: true, status: status };
         }
@@ -355,8 +409,11 @@ function createMaid(deps) {
         if (config.AttackPriority === true && forcedSkill === null) await priorityTarget();
         let hasTarget = asBool(await call('HasTarget')) === true;
         if (!hasTarget && !(scheduled && scheduled.wildcardAttempted === true)) {
-            await attack('*');
-            hasTarget = asBool(await call('HasTarget')) === true;
+            // `if (World.IsMonsterAvailable("*") && !Player.HasTarget)` (MaidRemake.cs:246).
+            if (asBool(await call('IsMonsterAvailable', ['*'])) === true) {
+                await attack('*');
+                hasTarget = asBool(await call('HasTarget')) === true;
+            }
         }
 
         // MaidRemake.cs:294-296 awaits SpecialCombo before asking taunt() inside HasTarget.
@@ -371,7 +428,10 @@ function createMaid(deps) {
         // waits the skill out, forces it, clears the flag and pauses, instead of running the list.
         // `waitSkill` is its own helper: SkillAvailable capped at 1500 ms, force the cast, then up
         // to twenty 50 ms checks for the cooldown to appear, forcing once more if it never does.
-        if (forcedSkill !== null && hasTarget) {
+        if (forcedSkill !== null) {
+            // The reference's forced cast lives inside `if (Player.HasTarget)`, so no target means
+            // the flag stands and nothing is cast.
+            if (!hasTarget) return { ok: true, status: status, waiting: 'no target' };
             const slot = forcedSkill;
             forcedSkill = null;
             await waitSkill(slot);
@@ -382,12 +442,27 @@ function createMaid(deps) {
         const list = skills('SkillList', ['1', '2', '3', '4']);
         const slot = list[skillIndex % list.length];
         if (config.WaitSkill === true) {
+            // MaidRemake.cs:250-259: a self/buff skill (`tgt` is not "h") is cooldown-waited, then
+            // FORCE-cast, then the index advances; a hostile skill is only waited/skipped.
+            const aim = await skillAim(slot);
+            if (aim !== 'h') {
+                if (!hasTarget) return { ok: true, status: status, waiting: 'no target' };
+                const ready = await call('SkillAvailable', [slot]);
+                const cooldown = ready.ok ? Number(ready.value) : 0;
+                if (isFinite(cooldown) && cooldown > 0) await sleep(cooldown);
+                await force(slot);
+                skillIndex = (skillIndex + 1) % list.length;
+                await sleep(TIMING.waitSkillAdvanceMs);
+                return { ok: true, status: status, cast: slot, forced: true };
+            }
             const ready = await call('SkillAvailable', [slot]);
-            if (ready.ok && Number(ready.value) > 0) {
+            if (!ready.ok || Number(ready.value) > 0 || !hasTarget) {
                 await sleep(TIMING.waitStepMs);
-                return { ok: true, status: status, waiting: 'cooldown' };
+                return { ok: true, status: status, waiting: ready.ok ? 'cooldown' : 'unknown' };
             }
         }
+        // `if (Player.HasTarget)` (MaidRemake.cs:294): the skill list is never cast with no target.
+        if (!hasTarget) return { ok: true, status: status, waiting: 'no target' };
         await use(slot);
         skillIndex = (skillIndex + 1) % list.length;
         await sleep(Number(config.SkillDelay) || TIMING.waitStepMs);
@@ -496,7 +571,11 @@ function createMaid(deps) {
      * a cast that happened.
      */
     async function use(slot) {
-        const answer = await call('UseSkill', [String(slot)]);
+        // `useSkill` (MaidRemake.cs:384-392): a Chrono Shadow cast always goes through
+        // ForceUseSkill, whatever the skill list's own wait branch decided.
+        const klass = await call('Class');
+        const csh = klass.ok && String(klass.value || '').toUpperCase().indexOf('CHRONO SHADOW') !== -1;
+        const answer = await call(csh ? 'ForceUseSkill' : 'UseSkill', [String(slot)]);
         if (!answer.ok) lastNote = 'skill ' + slot + ': ' + answer.error;
         return answer;
     }
@@ -577,40 +656,138 @@ function createMaid(deps) {
      */
     async function follow(inMap) {
         if (!target || unfollow) return { ok: true };
-        // Inside the map the reference never writes a frame: chaseTargetCell walks (MoveToCell's
-        // Jump to the target's own cell and pad, otherwise Player.GoToPlayer -> the loader GoTo).
-        // The raw cmd frame belongs to gotoTarget, which runs only when the target is somewhere
-        // else entirely (`if (!isPlayerInMyRoom)`, MaidRemake.cs:898-903).
+        const config = configOf() || {};
         if (inMap === true) {
-            const player = await call('PlayerByName', [target]);
-            const where = player.ok ? player.value : null;
-            const cell = where && where.strFrame ? String(where.strFrame) : '';
-            const pad = where && where.strPad ? String(where.strPad) : 'Spawn';
-            const mine = await call('Cell');
-            if (cell && mine.ok && cell.toLowerCase() !== String(mine.value).toLowerCase()) {
-                await call('Jump', [cell, pad]);
-                await sleep(TIMING.chaseDelayMs);
-                return { ok: true };
-            }
-            await call('GoTo', [target]);
-            await sleep(TIMING.chaseDelayMs);
+            await chaseTargetCell();
             return { ok: true };
         }
 
-        // Not in the map: the reference's own frame, written straight to the server.
-        const frame = '%xt%zm%cmd%1%goto%' + target + '%';
-        const written = send(frame) === true;
-        if (!written) log('maid: the relay has no live connection to goto ' + target + ' on');
-        await sleep(TIMING.gotoWaitPollMs * 2);
-        const config = configOf() || {};
-        if (config.StopFailedGoto === true && !written) {
+        const written = await gotoTarget();
+        // MaidRemake.cs:335-343: every pass that reaches the goto branch counts, whether the
+        // frame was written or the relay was down.
+        if (config.StopFailedGoto === true) {
             gotoTries++;
             if (gotoTries >= 5) {
                 gotoTries = 0;
                 stop('could not reach ' + target + ' five times, so the Maid stopped');
+                return { ok: false, error: lastNote };
             }
         }
+        await waitForMapLoad(config);
+        // The reference's own post-goto chase (MaidRemake.cs:352-356).
+        while (enabled && !unfollow && await playerInMap() === true) {
+            if (await playerInCell() === true) break;
+            await chaseTargetCell();
+        }
         return { ok: written };
+    }
+
+    /** Player.ExitCombat: when in combat (or forced), refresh the cell and wait the delay out. */
+    async function exitCombat(delayMs, force) {
+        const state = await call('State');
+        const inCombat = state.ok && Number(state.value) === STATE_IN_COMBAT;
+        if (!inCombat && force !== true) return { ok: true, skipped: true };
+        await sleep(TIMING.exitCombatMs);
+        // Player.ExitCombat's own Cut1 branch, then its refreshCell fallback.
+        const cells = await call('GetCells');
+        const names = Array.isArray(cells.value) ? cells.value : [];
+        if (names.indexOf('Cut1') !== -1) {
+            await call('Jump', ['Cut1', 'Left']);
+        } else {
+            const cell = await call('Cell');
+            const pad = await call('Pad');
+            if (cell.ok) await call('Jump', [String(cell.value), pad.ok ? String(pad.value) : 'Spawn']);
+        }
+        await sleep(delayMs);
+        return { ok: true };
+    }
+
+    /**
+     * chaseTargetCell (:880-905): in combat first, then MoveToCell to the target's own cell and
+     * pad; with no cell to walk to, GoToPlayer instead. Both paths exit combat first, which is
+     * what keeps a chase from being swallowed by the fight it leaves behind.
+     */
+    async function chaseTargetCell() {
+        const player = await call('PlayerByName', [target]);
+        const where = player.ok ? player.value : null;
+        const cell = where && where.strFrame ? String(where.strFrame) : '';
+        const pad = where && where.strPad ? String(where.strPad) : 'Spawn';
+        const mine = await call('Cell');
+        const inCombat = await call('State');
+        const fighting = inCombat.ok && Number(inCombat.value) === STATE_IN_COMBAT;
+        if (fighting) await exitCombat(TIMING.chaseGoToDelayMs, true);
+        if (cell && mine.ok && cell.toLowerCase() !== String(mine.value).toLowerCase()) {
+            await call('Jump', [cell, pad]);
+            await sleep(TIMING.chaseDelayMs);
+            return { ok: true, moved: 'cell' };
+        }
+        await call('GoTo', [target]);
+        await sleep(TIMING.chaseGoToDelayMs);
+        return { ok: true, moved: 'goto' };
+    }
+
+    /**
+     * gotoTarget (:907-917): leave combat first, and only when the target is somewhere else
+     * entirely write the raw cmd frame, then wait for the map to change (BotUtilities.WaitUntil,
+     * interval 500 ms, timeout 15 - so at most 7.5 s) and for the loading screen to end.
+     */
+    async function gotoTarget() {
+        await exitCombat(1500, true);
+        if (await playerInMap() === true) return true;
+        const now = await call('Map');
+        const currentmap = now.ok ? String(now.value) : '';
+        const frame = '%xt%zm%cmd%1%goto%' + target + '%';
+        const written = send(frame) === true;
+        if (!written) log('maid: the relay has no live connection to goto ' + target + ' on');
+        for (let i = 0; i < TIMING.gotoWaitUntilTries; i++) {
+            const map = await call('Map');
+            const changed = map.ok && String(map.value) !== currentmap;
+            if (changed && !(await mapLoading())) break;
+            await sleep(TIMING.gotoWaitUntilMs);
+        }
+        return written;
+    }
+
+    /** MaidRemake.cs:346-351: wait the loading screen out, and locked zones get 3 s more. */
+    async function waitForMapLoad(config) {
+        // 'wait loading screen before try to goto again (max: 5100 ms)'.
+        for (let i = 0; i < TIMING.gotoWaitTries && !(await mapLoading()); i++) {
+            await sleep(TIMING.gotoWaitPollMs);
+        }
+        while (enabled && await mapLoading()) await sleep(TIMING.mapLoadPollMs);
+        if (config && config.LockedZoneHandler === true) {
+            for (let i = 0; i < TIMING.lockedZoneWaitTries; i++) {
+                if (await mapLoading()) break;
+                await sleep(TIMING.lockedZoneWaitMs);
+            }
+        }
+    }
+
+    /** World.IsMapLoading, over the game's own mapLoadInProgress flag. */
+    async function mapLoading() {
+        const answer = await readPath(MAP_LOADING_PATH);
+        return answer.ok && (answer.value === true || answer.value === 'true');
+    }
+
+    /** The reference's waitForFirstJoin (:812-822): loading first, then RelogDelay. */
+    async function waitForFirstJoin() {
+        while (enabled && await mapLoading()) await sleep(TIMING.firstJoinPollMs);
+        if (!enabled) return;
+        const delay = Number(configOf().RelogDelay);
+        if (isFinite(delay) && delay > 0) await sleep(delay);
+    }
+
+    /**
+     * The `tgt` field of one skill slot (world.actions.active), which is the reference's own
+     * `skillproperties[skillIdx]["tgt"]`: 'h' is a hostile skill, anything else a self/buff one.
+     * A slot the game cannot answer is treated as self, the reference's own null comparison.
+     */
+    async function skillAim(slot) {
+        const index = Number(slot);
+        if (!isFinite(index) || index < 0) return null;
+        const answer = await readPath('world.actions.active.' + index + '.tgt');
+        if (!answer.ok || answer.value === null || answer.value === undefined) return null;
+        return String(answer.value).toLowerCase();
     }
 
     // ------------------------------------------------------------------ the loop
@@ -640,12 +817,45 @@ function createMaid(deps) {
         const next = on === true;
         if (next === enabled) return enabled;
         enabled = next;
-        if (!enabled) stop();
-        else {
+        if (!enabled) {
+            stop();
+        } else {
             firstJoinDone = false;
             status = STATUS.waitingSignIn;
+            enableEffects();
         }
         return enabled;
+    }
+
+    /**
+     * cbEnablePlugin_CheckedChanged's own enable-time lines (:200-244): Lag Killer on, Infinite
+     * Range applied once, and for every crystal/ultra mode (anything but None or Auto Potion)
+     * the Scroll of Enrage is equipped and skill 5 forced a second later.
+     */
+    function enableEffects() {
+        queueEffect(call('SetLagKiller', ['True']));
+        queueEffect(call('SetInfiniteRange', []));
+        const mode = Number((configOf() || {}).UltraBossExtra);
+        if (isFinite(mode) && mode !== 0 && mode !== 1) queueEffect(equipEnrage());
+    }
+
+    /** equipEnrage (:393-406): the equippable, unequipped Scroll, then skill 5 after a second. */
+    async function equipEnrage() {
+        const bag = await call('GetInventoryItems');
+        if (!bag.ok) return { ok: false, error: bag.error };
+        const items = Array.isArray(bag.value) ? bag.value : [];
+        const scroll = items.filter(function (item) {
+            if (!item || typeof item !== 'object') return false;
+            if (String(item.sName || '').toLowerCase() !== ENRAGE_NAME.toLowerCase()) return false;
+            if (EQUIPPABLE_CATEGORIES.indexOf(String(item.sType || '')) === -1) return false;
+            const equipped = item.bEquip === undefined ? item.IsEquipped : item.bEquip;
+            return !(equipped === true || Number(equipped) === 1);
+        })[0];
+        if (!scroll) return { ok: true, equipped: false };
+        await call('EquipPotion', [String(scroll.ItemID), scroll.sDesc, scroll.sFile, scroll.sName]);
+        await sleep(TIMING.enrageWaitMs);
+        await force('5');
+        return { ok: true, equipped: true };
     }
 
     function ensureLoop() {
@@ -721,6 +931,8 @@ function createMaid(deps) {
         tick: tick,
         follow: follow,
         attack: attack,
+        /** doPriorityAttack's own walk, for the CSH rotation's no-target branch. */
+        priorityAttack: function () { return priorityTarget(); },
         use: use,
         /**
          * The Maid's own AnimsMsgHandler hands its phrase hit here (MaidRemake.cs:713-714): the
@@ -753,14 +965,20 @@ function createMaid(deps) {
             return onTick;
         },
         start: function () {
-            if (enabled && running) return loop;
-            enabled = true;
+            setEnabled(true);
+            if (running) return loop;
             return ensureLoop();
         },
         /** Wake the same loop when a Misc 2 handler starts or stops. */
         wake: ensureLoop,
         stop: stop,
         idle: function () { return loop || Promise.resolve(); },
+        /** The loop plus the enable-time effects, so a caller can await a settled enable. */
+        settled: function () {
+            return Promise.all(effects.slice()).then(function () {
+                return loop || Promise.resolve();
+            }).then(function () { return undefined; });
+        },
         collisions: function () { return collisions; },
         note: function () { return lastNote; }
     };
@@ -770,6 +988,13 @@ function createMaid(deps) {
         status = STATUS.off;
         firstJoinDone = false;
         forcedSkill = null;
+        // stopMaid (:863-996) unticks Unfollow and clears onPause on the way out.
+        unfollow = false;
+        paused = false;
+        gotoTries = 0;
+        // OptionsManager.SetLagKiller(toggle) runs on both edges (:198-199), so stopping through
+        // any door - the box, a party `.stop`, or five failed gotos - turns Lag Killer back off.
+        queueEffect(call('SetLagKiller', ['False']));
         if (why) log('maid: ' + why);
     }
 }
@@ -781,5 +1006,8 @@ module.exports = {
     TIMING: TIMING,
     STATUS: STATUS,
     TARGET_NAME_PATH: TARGET_NAME_PATH,
-    TARGET_ID_PATH: TARGET_ID_PATH
+    TARGET_ID_PATH: TARGET_ID_PATH,
+    MAP_LOADING_PATH: MAP_LOADING_PATH,
+    EQUIPPABLE_CATEGORIES: EQUIPPABLE_CATEGORIES,
+    ENRAGE_NAME: ENRAGE_NAME
 };

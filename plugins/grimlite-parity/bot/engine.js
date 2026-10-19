@@ -154,6 +154,7 @@ function evaluate(input) {
  * @param {object} [deps.timers] setTimeout/clearTimeout, injected for tests
  * @param {(line: string) => void} [deps.logDebug] the Debug pane CmdLog writes to
  * @param {() => void} [deps.logClear] the CLEAR marker own action on that pane
+ * @param {(text: string) => void} [deps.popup] the shell own modal, for CmdPing
  * @param {(line: string) => void} [deps.log]
  */
 function createEngine(deps) {
@@ -167,6 +168,7 @@ function createEngine(deps) {
     // rather than a whole command. Absent in a build with no game access, in which case the
     // quest branches report that rather than pretending to run.
     const game = deps.game || null;
+    const now = typeof deps.now === 'function' ? deps.now : function () { return Date.now(); };
 
     let running = false;
     let paused = false;
@@ -185,6 +187,20 @@ function createEngine(deps) {
     const oldIndexes = {};
     let currentConfiguration = 0;
     let background = null;  // the background packet labels, while one is held
+    // CmdStop carries KeepLagkiller, which Bot.Stop applies after the bot has stopped.
+    let keepLagKiller = false;
+    // The drop frame subscription Bot.Start adds and Bot.Stop releases.
+    let dropRelease = null;
+    // The quest-list background loop and the initial ghost-accept pass each hold their own token.
+    let questListToken = null;
+    let questInitToken = null;
+    const questFailures = {};
+    // The 10-second CheckBoosts gate (Bot.cs's _boostDelayCounter).
+    let boostCheckedAt = 0;
+    // CmdDelayedAnims' background task, and the pause it holds while it runs.
+    const delayed = { pending: false };
+    // DropStack.GetDrop's three-second per-item cooldown.
+    const dropCooldowns = {};
 
     function commands() {
         const list = config && config.Commands;
@@ -233,7 +249,7 @@ function createEngine(deps) {
      */
     function resolve(value) {
         let result = String(value === undefined || value === null ? '' : value)
-            .replace('{PLAYERNAME}', username);
+            .replace(/\{PLAYERNAME\}/g, username);
         for (let depth = 0; depth < 5; depth++) {
             const previous = result;
             result = result.replace(/\[(.*?)\]/g, function (match, key) {
@@ -304,21 +320,595 @@ function createEngine(deps) {
      * to whatever the Options window wired in, and says so when nothing is.
      */
     function options() {
-        const wired = deps.options;
-        if (!wired) return {};
+        const wired = deps.options || {};
         return {
             setProvoke: function (on) {
                 if (typeof wired.setProvoke === 'function') return wired.setProvoke(on);
                 if (typeof wired.setToggle === 'function') return wired.setToggle('provoke', on);
-                return false;
+                return undefined;
             },
             getProvoke: function () {
                 if (typeof wired.getProvoke === 'function') return wired.getProvoke();
                 if (typeof wired.state === 'function') return (wired.state() || {}).provoke === true;
                 return false;
+            },
+            /** The reference's OptionsManager.Start/Stop. */
+            setApplying: function (on) {
+                if (typeof wired.setApplying === 'function') return wired.setApplying(on);
+                if (typeof wired.start === 'function' && on === true) return wired.start();
+                if (typeof wired.stop === 'function' && on === false) return wired.stop();
+                return undefined;
+            },
+            stop: function () {
+                if (typeof wired.stop === 'function') return wired.stop();
+                if (typeof wired.setApplying === 'function') return wired.setApplying(false);
+                return undefined;
+            },
+            state: function () {
+                if (typeof wired.state === 'function') return wired.state() || {};
+                return {};
+            },
+            setToggle: function (id, on) {
+                if (typeof wired.setToggle === 'function') return wired.setToggle(id, on);
+                return undefined;
+            },
+            /** OptionsManager.DisableAnimations, which CmdKill's AntiCounter flips. */
+            getDisableAnimations: function () {
+                if (typeof wired.getDisableAnimations === 'function') {
+                    return wired.getDisableAnimations() === true;
+                }
+                return (options().state() || {}).disableAnimations === true;
+            },
+            setDisableAnimations: function (on) {
+                if (typeof wired.setDisableAnimations === 'function') return wired.setDisableAnimations(on);
+                if (typeof wired.setToggle === 'function') return wired.setToggle('disableAnimations', on);
+                return undefined;
+            },
+            /** OptionsManager.SetLagKiller, which Bot.Stop restores from keepLagKiller. */
+            setLagKiller: function (on) {
+                if (typeof wired.setLagKiller === 'function') return wired.setLagKiller(on);
+                if (typeof wired.setToggle === 'function') return wired.setToggle('lagKiller', on);
+                return undefined;
             }
         };
     }
+
+    /** One line of the reference's timestamped debug output, in local time. */
+    function timestamp() {
+        const at = new Date(now());
+        const two = function (value) { return value < 10 ? '0' + value : String(value); };
+        return '[' + two(at.getHours()) + ':' + two(at.getMinutes()) + ':' + two(at.getSeconds()) + ']';
+    }
+
+    /** A real macrotask yield, so an immediate test sleep cannot starve the app's timers. */
+    function nextTask() {
+        const set = deps.timers && typeof deps.timers.setTimeout === 'function'
+            ? deps.timers.setTimeout : setTimeout;
+        return new Promise(function (resolve) { set(resolve, 0); });
+    }
+
+    /** A quest row's id (QuestID in a .gbot, Id on an older writer). */
+    function questIdOf(row) {
+        if (!row || typeof row !== 'object') return null;
+        const raw = row.QuestID === undefined || row.QuestID === null ? row.Id : row.QuestID;
+        const id = Number(raw);
+        return isFinite(id) ? id : null;
+    }
+
+    /** The request counter CmdStop checks before it stops. */
+    function truthy(value) {
+        return value === true || value === 1 || value === '1' || value === 'true' ||
+            value === 'True';
+    }
+
+    // ---------------------------------------------------------------- start / stop preloads
+
+    /** Editor-only start option; a running bot gets it from the document, never from config. */
+    function inventOnStart() {
+        return !(document && document.InventOnStart === false);
+    }
+
+    /** The Bot Manager's numQuestDelay, carried on the document. */
+    function questDelay() {
+        const raw = document && (document.QuestDelay !== undefined
+            ? document.QuestDelay : document.numQuestDelay);
+        if (raw === undefined || raw === null || raw === '') return 1000;
+        const value = Number(raw);
+        return isFinite(value) && value >= 0 ? value : 1000;
+    }
+
+    /** BotManager's UnBankItems: the Items list goes back to the inventory before Start. */
+    async function unbankOnStart() {
+        const names = config && Array.isArray(config.Items) ? config.Items : [];
+        if (!names.length || !inventOnStart()) return;
+        if (!game || typeof game.transferToInventory !== 'function') return;
+        for (let i = 0; i < names.length && running; i++) {
+            try {
+                await game.transferToInventory(String(names[i]));
+            } catch (error) {
+                reportOnce('unbank:' + names[i], 'could not unbank ' + names[i] + ': ' + message(error));
+            }
+            await sleep(200);
+        }
+    }
+
+    /** The command classes BotUtilities.LoadBankItems scans for. */
+    const BANK_COMMANDS = {
+        CmdBankSwap: true, CmdBankTransfer: true, CmdInBank: true, CmdNotInBank: true,
+        CmdInBankOrInvent: true, CmdNotInBankAndInvent: true, CmdBankList: true
+    };
+
+    /** BotUtilities.LoadBankItems: ask the bank to load when a bank command needs it. */
+    async function loadBankItems() {
+        if (!game || typeof game.bankItems !== 'function') return;
+        const needs = commands().some(function (command) {
+            return BANK_COMMANDS[catalog.classNameOf(command)] === true;
+        });
+        if (!needs) return;
+        try {
+            await game.bankItems();
+        } catch (error) {
+            reportOnce('bank-preload', 'could not load the bank: ' + message(error));
+        }
+    }
+
+    /** Every quest id BotUtilities.LoadAllQuests collects from the command list. */
+    function referencedQuestIds() {
+        const ids = [];
+        function add(id) {
+            const value = Number(id);
+            if (isFinite(value) && value !== 0 && ids.indexOf(value) === -1) ids.push(value);
+        }
+        commands().forEach(function (command) {
+            const name = catalog.classNameOf(command);
+            if (name === 'CmdAcceptQuest' || name === 'CmdCompleteQuest') {
+                const quest = command.Quest;
+                add(quest && typeof quest === 'object' ? questIdOf(quest) : command.QuestId);
+            } else if (name === 'CmdAddQuestList') {
+                add(command.Id);
+            } else if (name === 'CmdQuestHunt') {
+                add(command.QID);
+            }
+        });
+        const rows = config && Array.isArray(config.Quests) ? config.Quests : [];
+        rows.forEach(function (row) { add(questIdOf(row)); });
+        return ids;
+    }
+
+    /**
+     * BotUtilities.LoadAllQuests: load the quests the bot's commands name, in batches of 30,
+     * while the loop is paused. Quests already in the tree are skipped, as upstream does.
+     */
+    async function loadAllQuests() {
+        if (!game || typeof game.getQuests !== 'function') return;
+        const wanted = referencedQuestIds();
+        if (!wanted.length) return;
+        let loaded = [];
+        if (typeof game.questTree === 'function') {
+            try {
+                const tree = await game.questTree();
+                loaded = (Array.isArray(tree) ? tree : []).map(questIdOf);
+            } catch (error) {
+                // A tree that cannot be read is not a reason to skip the load: the load is what
+                // makes it readable in the first place.
+            }
+        }
+        const list = wanted.filter(function (id) { return loaded.indexOf(id) === -1; });
+        if (!list.length) return;
+        const wasPaused = paused;
+        paused = true;
+        try {
+            for (let i = 0; i < list.length && running; i += 30) {
+                const batch = list.slice(i, i + 30);
+                await game.getQuests(batch);
+                await sleep(600);
+            }
+            const last = list[list.length - 1];
+            for (let i = 0; i < 150 && running; i++) {
+                let there = false;
+                try {
+                    there = (await game.hasQuest(last)) === true;
+                } catch (error) {
+                    there = false;
+                }
+                if (there) break;
+                await sleep(100);
+            }
+        } catch (error) {
+            reportOnce('quest-preload', 'could not load the quests this bot names: ' + message(error));
+        } finally {
+            if (!questInitToken) paused = wasPaused;
+        }
+    }
+
+    /** Bot.initQuestList: ghost-accept four or more, otherwise accept each unstarted quest. */
+    function startInitQuestList() {
+        const rows = config && Array.isArray(config.Quests) ? config.Quests.slice() : [];
+        if (!rows.length) return;
+        if (!game || typeof game.hasQuest !== 'function' || typeof game.ghostAccept !== 'function') {
+            reportOnce('quest-init', 'this build has no quest access, so the quest list cannot be started');
+            return;
+        }
+        if (questInitToken) questInitToken.cancelled = true;
+        const token = { cancelled: false };
+        questInitToken = token;
+        Promise.resolve().then(async function () {
+            paused = true;
+            try {
+                await sleep(100);
+                const total = rows.length;
+                for (let i = 0; i < rows.length && !token.cancelled && running; i++) {
+                    const id = questIdOf(rows[i]);
+                    if (id === null) continue;
+                    let has = false;
+                    for (let wait = 0; wait < 15 && !token.cancelled; wait++) {
+                        try {
+                            has = (await game.hasQuest(id)) === true;
+                        } catch (error) {
+                            has = false;
+                        }
+                        if (has) break;
+                        await sleep(500);
+                    }
+                    const label = String((rows[i] && (rows[i].sName || rows[i].Name)) || id);
+                    if (total >= 4) {
+                        log('Accepting Quest (Ghost) : ' + label + ' [' + (i + 1) + '/' + total + ']');
+                        await sleep(600);
+                        try {
+                            await game.ghostAccept(id);
+                        } catch (error) {
+                            reportOnce('ghost:' + id, 'could not ghost-accept quest ' + id + ': ' + message(error));
+                        }
+                    } else {
+                        let active = false;
+                        try {
+                            active = (await game.isInProgress(id)) === true;
+                        } catch (error) {
+                            active = false;
+                        }
+                        if (!active) {
+                            log('Accepting Quest : ' + label + ' [' + (i + 1) + '/' + total + ']');
+                            await sleep(1000);
+                            try {
+                                await game.accept(id);
+                            } catch (error) {
+                                reportOnce('accept:' + id, 'could not accept quest ' + id + ': ' + message(error));
+                            }
+                        } else {
+                            log('Quest [' + (i + 1) + '/' + total + ']: ' + label + ' Alr accepted');
+                        }
+                    }
+                }
+            } finally {
+                if (questInitToken === token) {
+                    questInitToken = null;
+                    paused = false;
+                }
+            }
+        }).catch(function (error) {
+            if (questInitToken === token) {
+                questInitToken = null;
+                paused = false;
+            }
+            log('starting the quest list failed: ' + message(error));
+        });
+    }
+
+    /** Bot.StopQuestList. */
+    function stopQuestList() {
+        if (questListToken) questListToken.cancelled = true;
+        questListToken = null;
+        if (questInitToken) questInitToken.cancelled = true;
+        questInitToken = null;
+    }
+
+    /**
+     * Bot.StartQuestList: turn in the first quest that can be completed, retry five times, and
+     * ghost-accept it again after a successful turn-in. The send is the item access's own
+     * Complete, whose default quantity is the one the reference's Quest.Complete() uses.
+     */
+    function startQuestList() {
+        if (questListToken) stopQuestList();
+        const rows = config && Array.isArray(config.Quests) ? config.Quests.slice() : [];
+        if (!rows.length) return;
+        if (!game || typeof game.canComplete !== 'function' || typeof game.complete !== 'function') {
+            reportOnce('quest-list', 'this build has no quest access, so the quest list cannot run');
+            return;
+        }
+        const token = { cancelled: false };
+        questListToken = token;
+        Object.keys(questFailures).forEach(function (key) { delete questFailures[key]; });
+        rows.forEach(function (row) {
+            const id = questIdOf(row);
+            if (id !== null) questFailures[String(id)] = 0;
+        });
+        log('QuestList Started');
+        Promise.resolve().then(async function () {
+            while (running && !token.cancelled) {
+                const signed = await read('signedIn');
+                if (!(signed.ok && signed.value === true)) break;
+                let found = null;
+                for (let i = 0; i < rows.length; i++) {
+                    const id = questIdOf(rows[i]);
+                    if (id === null) continue;
+                    let done = false;
+                    try {
+                        done = (await game.canComplete(id)) === true;
+                    } catch (error) {
+                        done = false;
+                    }
+                    if (done) {
+                        found = { row: rows[i], id: id };
+                        break;
+                    }
+                }
+                const delay = questDelay();
+                await sleep(delay);
+                if (token.cancelled || !running) break;
+                if (!found) {
+                    await nextTask();
+                    continue;
+                }
+                const id = found.id;
+                let qty = 1;
+                if (found.row && found.row.SafeRelogin === true &&
+                    typeof game.maximumTurnIns === 'function') {
+                    qty = await game.maximumTurnIns(id).catch(function () { return 1; });
+                }
+                const itemId = found.row ? found.row.ItemId : undefined;
+                try {
+                    await game.complete(id, qty, itemId);
+                } catch (error) {
+                    reportOnce('complete:' + id, 'could not complete quest ' + id + ': ' + message(error));
+                }
+                await sleep(delay);
+                let still = false;
+                try {
+                    still = (await game.canComplete(id)) === true;
+                } catch (error) {
+                    still = false;
+                }
+                if (still) {
+                    const f = Number(questFailures[String(id)] || 0);
+                    if (f >= 5) {
+                        if (typeof game.logout === 'function') {
+                            await game.logout().catch(function () {});
+                        }
+                        log(timestamp() + ' Failed to complete quest [' + id + '] ' + f + ' times.');
+                    } else {
+                        questFailures[String(id)] = f + 1;
+                    }
+                } else {
+                    questFailures[String(id)] = 0;
+                    // QuestCompleted -> OnQuestCompleted: ghost-accept it again after 600ms.
+                    await sleep(600);
+                    if (typeof game.ghostAccept === 'function' && running && !token.cancelled) {
+                        await game.ghostAccept(id).catch(function (error) {
+                            reportOnce('reaccept:' + id, 'could not ghost-accept quest ' + id +
+                                ' again: ' + message(error));
+                        });
+                    }
+                }
+                await nextTask();
+            }
+        }).catch(function (error) {
+            log('the quest list stopped: ' + message(error));
+        }).then(function () {
+            if (questListToken === token) questListToken = null;
+        });
+    }
+
+    /** Bot.CheckBoosts: every ten seconds, use each configured boost that is not active. */
+    async function checkBoosts() {
+        const boosts = config && Array.isArray(config.Boosts) ? config.Boosts : [];
+        if (!boosts.length || now() - boostCheckedAt < 10000) return;
+        boostCheckedAt = now();
+        if (!game || typeof game.hasActiveBoost !== 'function' ||
+            typeof game.useBoost !== 'function') {
+            reportOnce('boosts', 'this build has no boost access, so configured boosts cannot be used');
+            return;
+        }
+        for (let i = 0; i < boosts.length && running; i++) {
+            const boost = boosts[i] || {};
+            const name = boost.sName === undefined
+                ? (boost.Name === undefined ? '' : boost.Name) : boost.sName;
+            const id = boost.ItemID === undefined ? boost.Id : boost.ItemID;
+            if (!name || id === undefined || id === null) continue;
+            try {
+                if (!(await game.hasActiveBoost(String(name)))) {
+                    await game.useBoost(id);
+                }
+            } catch (error) {
+                reportOnce('boost:' + name, 'could not use boost ' + name + ': ' + message(error));
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- resting before a command
+
+    /** Bot.RestHealth / RestMana: restore one bar when it is at or below its threshold. */
+    async function restBar(kind) {
+        const isHp = kind === 'hp';
+        const current = await read(isHp ? 'health' : 'mana');
+        const maximum = await read(isHp ? 'healthMax' : 'manaMax');
+        if (!current.ok || !maximum.ok) {
+            reportOnce('rest-' + kind, 'could not read the ' + kind + ' needed to decide whether to rest');
+            return;
+        }
+        const max = Number(maximum.value);
+        if (!(max > 0)) return;
+        const threshold = isHp ? Number(config.RestHp) || 0 : Number(config.RestMp) || 0;
+        if (Number(current.value) / max > threshold / 100) return;
+
+        const wasProvoking = config.ProvokeMonsters === true;
+        if (wasProvoking) config.ProvokeMonsters = false;
+        try {
+            if (config.ExitCombatBeforeRest) {
+                const cell = await read('cell');
+                const pad = await read('pad');
+                if (cell.ok && pad.ok) await readN('jump', [cell.value, pad.value]);
+                await sleep(2000);
+            }
+            const rested = await read('rest');
+            if (!rested.ok) {
+                reportOnce('rest-call', 'could not rest: ' + rested.error);
+                return;
+            }
+            await waitUntil(async function () {
+                const nowValue = await read(isHp ? 'health' : 'mana');
+                return nowValue.ok && Number(nowValue.value) >= max;
+            }, {});
+        } finally {
+            if (wasProvoking) config.ProvokeMonsters = true;
+        }
+    }
+
+    /** Bot.Activate's two pre-command rest checks, Hp first and then Mp. */
+    async function automaticRest() {
+        if (config.RestIfHp) await restBar('hp');
+        if (running && config.RestIfMp) await restBar('mp');
+    }
+
+    // ---------------------------------------------------------------- drops
+
+    /** The frame's item is AC-tagged (InventoryItem.bCoins). */
+    function isAcDrop(drop) {
+        return truthy(drop.bCoins) || truthy(drop.IsAcItem);
+    }
+
+    function dropName(drop) {
+        return String(drop.sName === undefined ? (drop.Name === undefined ? '' : drop.Name) : drop.sName);
+    }
+
+    /** World.DropStack.GetDrop: the room frame, with the reference's three-second cooldown. */
+    async function pickupDrop(id) {
+        const key = String(id);
+        const at = Number(dropCooldowns[key] || 0);
+        if (now() - at < 3000) return;
+        dropCooldowns[key] = now();
+        let room = null;
+        if (game && typeof game.roomId === 'function') {
+            try {
+                room = await game.roomId();
+            } catch (error) {
+                room = null;
+            }
+        }
+        if (room === null) {
+            const readRoom = await read('roomId');
+            if (!readRoom.ok) {
+                reportOnce('drop-room', 'could not pick up drop ' + id + ': ' + readRoom.error);
+                return;
+            }
+            room = readRoom.value;
+        }
+        if (typeof deps.packets !== 'object' || typeof deps.packets.send !== 'function') {
+            reportOnce('drop-send', 'could not pick up drop ' + id + ': this build has no packet path');
+            return;
+        }
+        try {
+            const sent = deps.packets.send({
+                direction: 'toServer',
+                text: '%xt%zm%getDrop%' + String(room) + '%' + String(id) + '%'
+            });
+            if (sent === false) throw new Error('the relay is not connected');
+        } catch (error) {
+            reportOnce('drop-send:' + id, 'could not pick up drop ' + id + ': ' + message(error));
+        }
+    }
+
+    /** Bot.OnItemDropped plus the dropItem rejection in Flash.cs. */
+    async function handleDrop(drop) {
+        if (!running || !drop) return;
+        const name = dropName(drop);
+        const pushes = function (list) {
+            return (Array.isArray(list) ? list : []).some(function (entry) {
+                return String(entry).toLowerCase() === name.toLowerCase();
+            });
+        };
+        const id = drop.ItemID === undefined ? drop.Id : drop.ItemID;
+
+        if (config.NotifyUponDrop && pushes(config.NotifyUponDrop) && typeof deps.beep === 'function') {
+            deps.beep(10);
+        }
+        if (config.EnablePickupAll) {
+            if (id !== undefined && id !== null) await pickupDrop(id);
+        } else if (config.EnablePickup && config.Drops && pushes(config.Drops)) {
+            if (id !== undefined && id !== null) await pickupDrop(id);
+        }
+        if (config.EnablePickupAcTagged && isAcDrop(drop) && id !== undefined && id !== null) {
+            await pickupDrop(id);
+        }
+        if (config.EnableRejection && config.Drops && !pushes(config.Drops)) {
+            if (session && typeof session.rejectDrop === 'function' && id !== undefined && id !== null) {
+                try {
+                    await session.rejectDrop(name.toLowerCase(), id);
+                } catch (error) {
+                    reportOnce('drop-reject', 'the drop rejection was refused: ' + message(error));
+                }
+            }
+        }
+    }
+
+    function subscribeDrops() {
+        if (dropRelease || !session || typeof session.onDrop !== 'function') return;
+        dropRelease = session.onDrop(function (drop) {
+            handleDrop(drop).catch(function (error) {
+                log('handling a drop failed: ' + message(error));
+            });
+        });
+    }
+
+    function unsubscribeDrops() {
+        if (typeof dropRelease !== 'function') {
+            dropRelease = null;
+            return;
+        }
+        const off = dropRelease;
+        dropRelease = null;
+        off();
+    }
+
+    /** The carried items, from the window's game access when there is one. */
+    async function inventoryRows() {
+        if (game && typeof game.inventoryItems === 'function') {
+            try {
+                return await game.inventoryItems();
+            } catch (error) {
+                reportOnce('inventory', 'could not read the inventory: ' + message(error));
+                return [];
+            }
+        }
+        let list = await read('inventory');
+        if (!list.ok) list = await read('items');
+        return list.ok && Array.isArray(list.value) ? list.value : [];
+    }
+
+    /** BotManager.BankingItems, which CmdStop runs when BankOnStop is ticked. */
+    async function bankItemsOnStop() {
+        const list = await inventoryRows();
+        const wanted = config && Array.isArray(config.Items) ? config.Items : [];
+        for (let i = 0; i < list.length && running; i++) {
+            const item = list[i] || {};
+            const name = dropName(item);
+            const category = String(item.sType === undefined ? item.category || '' : item.sType);
+            const keep = truthy(item.bEquip) || !isAcDrop(item) || category === 'Class' ||
+                name.toLowerCase() === 'treasure potion' ||
+                wanted.indexOf(name) === -1;
+            if (keep) continue;
+            if (game && typeof game.transferToBank === 'function') {
+                try {
+                    await game.transferToBank(name);
+                } catch (error) {
+                    log('could not bank ' + name + ': ' + message(error));
+                    continue;
+                }
+            }
+            log('Transferred to Bank: ' + name);
+        }
+        log('Banked all AC Items in Items list');
+    }
+
 
     /** Where a CmdLoadBot path resolves: the bots directory the user chose (#36). */
     function botsDirectory() {
@@ -361,6 +951,7 @@ function createEngine(deps) {
         const oldDrops = wanted.PassDropList && previousConfig && Array.isArray(previousConfig.Drops)
             ? previousConfig.Drops : null;
         if (oldSkills !== null) loaded.Skills = oldSkills;
+        else botSkill = '';  // CmdLoadBot.cs: BotData.BotSkill = null when no preset is passed
         if (oldDrops !== null) {
             // `new HashSet<string>(newConfiguration.Drops, StringComparer.OrdinalIgnoreCase)
             // .UnionWith(oldDropList)`: the old list is merged in, so nothing the running bot was
@@ -378,6 +969,10 @@ function createEngine(deps) {
         config = bots.configuration(loaded);
         index = -1;  // the loop's own increment makes that the top of the new list
         currentConfiguration++;
+        // CmdLoadBot.cs reloads both caches and restarts the quest list against the new document.
+        loadBankItems();
+        loadAllQuests();
+        startQuestList();
         return { ok: true };
     }
 
@@ -400,6 +995,10 @@ function createEngine(deps) {
         document = entry.document;
         config = entry.config;
         index = at;
+        botSkill = '';  // CmdReturn.cs: BotData.BotSkill = null
+        loadBankItems();
+        loadAllQuests();
+        startQuestList();
         return { ok: true };
     }
 
@@ -433,6 +1032,9 @@ function createEngine(deps) {
             botsDirectory: botsDirectory,
             config: function () { return config; },
             setConfig: function (key, value) { setConfig(document, config, key, value); },
+            /** CmdDelayedAnims' own `instance.paused`, which holds the loop but not running. */
+            pauseFor: function (on) { paused = on === true; },
+            delayed: delayed,
             stop: stop,
             running: function () { return running; }
         };
@@ -443,6 +1045,17 @@ function createEngine(deps) {
         const raw = isVar(value) ? (vars[getVar(value)] !== undefined ? vars[getVar(value)] : value) : value;
         const parsed = parseInt(String(raw), 10);
         return isNaN(parsed) ? null : parsed;
+    }
+
+    /**
+     * A CmdInt* statement's int key: the reference first resolves a [name] through the string
+     * variables, then uses the resulting text as the Configuration.Tempvalues key.
+     */
+    function intKey(value) {
+        const written = String(value === undefined || value === null ? '' : value);
+        if (!isVar(value)) return written;
+        const key = getVar(value);
+        return Object.prototype.hasOwnProperty.call(vars, key) ? String(vars[key]) : written;
     }
 
     // ---------------------------------------------------------------- combat and map (#38)
@@ -732,6 +1345,34 @@ function createEngine(deps) {
      * something in it could not be carried through, so the caller can log it; a refusal here is
      * never a hang, which is the ticket's own last acceptance criterion.
      */
+    /** Is the tapped "Counter Attack" state up? A session without the tap says so once. */
+    async function counterIsActive() {
+        if (!session || typeof session.counterActive !== 'function') {
+            reportOnce('anticounter-tap', 'AntiCounter needs the packet tap, which this session ' +
+                'does not carry; the fight runs without its pause');
+            return false;
+        }
+        const answer = await read('counterActive');
+        return answer.ok && answer.value === true;
+    }
+
+    /** The previous DisableAnimations setting, or null when this build has no such seam. */
+    function animationSeam() {
+        const wired = deps.options || {};
+        if (typeof wired.getDisableAnimations === 'function' &&
+            typeof wired.setDisableAnimations === 'function') {
+            return { get: function () { return wired.getDisableAnimations() === true; },
+                set: function (on) { return wired.setDisableAnimations(on); } };
+        }
+        const state = typeof wired.state === 'function' ? wired.state() || {} : {};
+        if (Object.prototype.hasOwnProperty.call(state, 'disableAnimations') &&
+            typeof wired.setToggle === 'function') {
+            return { get: function () { return state.disableAnimations === true; },
+                set: function (on) { return wired.setToggle('disableAnimations', on); } };
+        }
+        return null;
+    }
+
     async function killOnce(options) {
         const opts = options || {};
         if (config && config.SkipAttack) {
@@ -756,53 +1397,82 @@ function createEngine(deps) {
             return 'there is no living, signed-in character to attack with';
         }
 
+        let restoreAnimations = null;
         if (opts.antiCounter) {
-            // The reference watches its own packet tap for "prepares a counter attack" and for the
-            // Counter Attack aura fading. This engine has no tap, so the option is reported rather
-            // than half-honoured: a pause that never happens would look like a stuck bot.
-            reportOnce('anticounter', 'AntiCounter watches the animation packets, which this ' +
-                'engine has no tap for yet; the fight runs without its pause');
+            const seam = animationSeam();
+            if (seam) {
+                const previous = seam.get();
+                await seam.set(false);
+                restoreAnimations = function () { return seam.set(previous); };
+            } else {
+                reportOnce('anticounter-anims', 'AntiCounter could not change the animation ' +
+                    'setting; this build has no DisableAnimations seam');
+            }
         }
 
-        const attacked = await attackMonster(opts.monster);
-        if (!attacked.ok) return attacked.error;
+        try {
+            const attacked = await attackMonster(opts.monster);
+            if (!attacked.ok) return attacked.error;
 
-        const list = config && Array.isArray(config.Skills) ? config.Skills : [];
-        // CmdKill.cs rotates the whole set while the target lives; the reference has no round
-        // count. `untilDead` is that loop, and the cap is only a runaway guard that reports.
-        const untilDead = opts.untilDead === true;
-        const rounds = untilDead ? Infinity : (opts.rounds === undefined ? 1 : opts.rounds);
-        let round = 0;
-        if (list.length && rounds > 0) {
-            for (; round < (untilDead ? KILL_ROUND_CAP : rounds); round++) {
-                if (!running) break;
-                const signedNow = await read('signedIn');
+            const list = config && Array.isArray(config.Skills) ? config.Skills : [];
+            // CmdKill.cs rotates the whole set while the target lives; the reference has no round
+            // count. `untilDead` is that loop, and the cap is only a runaway guard that reports.
+            const untilDead = opts.untilDead === true;
+            const rounds = untilDead ? Infinity : (opts.rounds === undefined ? 1 : opts.rounds);
+            let round = 0;
+            let countered = false;
+            if (list.length && rounds > 0) {
+                for (; round < (untilDead ? KILL_ROUND_CAP : rounds); round++) {
+                    if (!running) break;
+                    if (opts.antiCounter && await counterIsActive()) {
+                        // The reference's handler: cancel the swing and the target as soon as the
+                        // counter is announced, and leave them cancelled until the aura fades.
+                        await read('cancelAutoAttack');
+                        await read('cancelTargets');
+                        for (let wait = 0; wait < 40 && running; wait++) {
+                            if (!(await counterIsActive())) break;
+                            await sleep(1000);
+                        }
+                        countered = true;
+                        break;
+                    }
+                    const signedNow = await read('signedIn');
+                    const target = await read('hasTarget');
+                    const hp = await read('targetHealth');
+                    if (!(signedNow.ok && signedNow.value === true)) break;
+                    if (!(target.ok && target.value === true)) break;
+                    if (!hp.ok || !(Number(hp.value) > 0)) break;
+                    await killSpecials(opts.monster);
+                    if (opts.killPriority) await killPriority(opts.killPriority);
+                    await sleep(Number(config.SkillDelay) || 0);
+                    await rotateSkills('kill', { waitForSkill: !!(config && config.WaitForSkill) });
+                }
+                if (untilDead && round >= KILL_ROUND_CAP) {
+                    return 'the target survived ' + KILL_ROUND_CAP + ' rotation pass(es), so the kill was stopped';
+                }
+            }
+            if (countered) return undefined;
+
+            // "timeout increased to 40 for Autoattack/empty skills users" - the reference's own note.
+            await waitUntil(async function () {
                 const target = await read('hasTarget');
-                const hp = await read('targetHealth');
-                if (!(signedNow.ok && signedNow.value === true)) break;
-                if (!(target.ok && target.value === true)) break;
-                if (!hp.ok || !(Number(hp.value) > 0)) break;
-                await killSpecials(opts.monster);
-                if (opts.killPriority) await killPriority(opts.killPriority);
-                await sleep(Number(config.SkillDelay) || 0);
-                await rotateSkills('kill', { waitForSkill: !!(config && config.WaitForSkill) });
+                return !(target.ok && target.value === true);
+            }, { timeout: 40 });
+            const still = await read('hasTarget');
+            if (still.ok && still.value === true) {
+                await read('cancelTargets');
+                return 'the target did not die, so it was dropped for the next command';
             }
-            if (untilDead && round >= KILL_ROUND_CAP) {
-                return 'the target survived ' + KILL_ROUND_CAP + ' rotation pass(es), so the kill was stopped';
+            return undefined;
+        } finally {
+            if (restoreAnimations) {
+                try {
+                    await restoreAnimations();
+                } catch (error) {
+                    log('could not restore the animation setting: ' + message(error));
+                }
             }
         }
-
-        // "timeout increased to 40 for Autoattack/empty skills users" - the reference's own note.
-        await waitUntil(async function () {
-            const target = await read('hasTarget');
-            return !(target.ok && target.value === true);
-        }, { timeout: 40 });
-        const still = await read('hasTarget');
-        if (still.ok && still.value === true) {
-            await read('cancelTargets');
-            return 'the target did not die, so it was dropped for the next command';
-        }
-        return undefined;
     }
     /**
      * CmdKillFor's quest mode: accept until in progress, then kill until CanComplete. The two
@@ -868,25 +1538,30 @@ function createEngine(deps) {
             let amount = Number(command.Index) || 0;
             const written = command.IndexString;
             if (written && String(written).length) {
-                const resolved = isVar(written) ? (vars[getVar(written)] !== undefined
-                    ? vars[getVar(written)] : written) : written;
-                const parsed = parseInt(String(resolved), 10);
-                if (!isNaN(parsed)) amount = parsed;
+                const resolved = varOf(written);
+                // int.TryParse: an optional sign and digits, whitespace around them, Int32 only.
+                const text = String(resolved).trim();
+                const parsed = /^[+-]?\d+$/.test(text) ? Number(text) : NaN;
+                if (Number.isInteger(parsed) && Math.abs(parsed) <= 2147483647) amount = parsed;
             }
             const type = Number(command.Type) || 0;
-            if (type === 1) setIndex(indexOf(index + (amount - 1)));          // Down
-            else if (type === 0) setIndex(indexOf(index - (amount + 1)));    // Up
-            else setIndex(amount - 1);                                       // Goto
+            // CmdIndex.cs: Down adds (n - 1) only when that is positive AND the result is still
+            // inside the list; Up subtracts (n + 1) only when the result stays at or above zero.
+            // Neither branch uses the Index setter, so neither wraps.
+            if (type === 1) {
+                const step = amount - 1;
+                if (step > 0 && index + step < commands().length) index += step;
+            } else if (type === 0) {
+                const step = amount + 1;
+                if (step > 0 && index - step > -1) index -= step;
+            } else {
+                setIndex(amount - 1);
+            }
         },
         CmdRestart: function () { index = -1; },
-        CmdStop: function (ctx, command) {
-            // CmdStop's KeepLagkiller is the option toggles (#34) and its BankOnStop banks the
-            // AC items in the bot's own Items list (the loader's TransferToBank / GetInventoryItems,
-            // both of which the surface now answers). Neither is wired into this loop yet, so the
-            // log names them rather than pretending to have honoured them.
-            if (command && (command.KeepLagkiller || (config && config.BankOnStop))) {
-                log('CmdStop: KeepLagkiller (#34) and BankOnStop are not applied by this loop yet');
-            }
+        CmdStop: async function (ctx, command) {
+            if (config && config.BankOnStop) await bankItemsOnStop();
+            keepLagKiller = command && command.KeepLagkiller === true;
             stop();
         },
 
@@ -912,19 +1587,65 @@ function createEngine(deps) {
             Object.keys(ints).forEach(function (key) { delete ints[key]; });
         },
 
-        CmdSetVar: function (ctx, command) {
+        CmdSetVar: async function (ctx, command) {
             const key = String(command.Value1);
-            const written = String(command.Value2 === undefined ? '' : command.Value2);
-            // CmdSetVar's own conveniences read the inventory ({weapon}, {class}, {nr10},
-            // {helm}, {cape} and ".qty"), which the reference serves from its loader's
-            // GetInventoryItems. That helper is now on the surface (#48) but this loop holds no
-            // game access of its own beyond the session, so the value is left as written and the
-            // reason is reported rather than a stand-in item name being invented.
-            if (/^\{(weapon|class|nr10|helm|cape)\}$/.test(key) || /\.qty$/i.test(written)) {
-                log('CmdSetVar: "' + (/\.qty$/i.test(written) ? written : key) + '" reads the ' +
-                    'inventory (the loader\'s GetInventoryItems), which this loop cannot reach yet');
+            let value = String(command.Value2 === undefined ? '' : command.Value2);
+            const needsInventory = /^\{(weapon|class|nr10|helm|cape)\}$/.test(key) ||
+                /\.qty$/i.test(value);
+            const rows = needsInventory ? await inventoryRows() : [];
+            const itemName = function (item) {
+                return item ? String(item.sName === undefined
+                    ? (item.Name === undefined ? '' : item.Name) : item.sName) : '';
+            };
+            const category = function (item) {
+                return item ? String(item.sType === undefined
+                    ? (item.category === undefined ? '' : item.category) : item.sType) : '';
+            };
+            const equipped = function (item) { return truthy(item && item.bEquip); };
+            const quantity = function (item) {
+                return item ? Number(item.iQty === undefined ? item.Quantity : item.iQty) || 0 : 0;
+            };
+            const first = function (test) {
+                for (let i = 0; i < rows.length; i++) if (test(rows[i])) return rows[i];
+                return null;
+            };
+            const WEAPONS = ['Sword', 'Axe', 'Dagger', 'Gun', 'Bow', 'Mace', 'Polearm', 'Staff', 'Wand'];
+            if (key === '{weapon}') {
+                const item = first(function (one) {
+                    return WEAPONS.indexOf(category(one)) !== -1 && equipped(one);
+                });
+                value = item ? itemName(item) : 'Error';
+            } else if (key === '{class}') {
+                const item = first(function (one) {
+                    return category(one) === 'Class' && equipped(one);
+                });
+                value = item ? itemName(item) : '';
+            } else if (key === '{nr10}') {
+                const item = first(function (one) {
+                    return category(one) === 'Class' && quantity(one) < 300000;
+                });
+                value = item ? itemName(item) : 'Error';
+            } else if (key === '{helm}') {
+                const item = first(function (one) {
+                    return category(one) === 'Helm' && equipped(one);
+                });
+                value = item ? itemName(item) : 'Error';
+            } else if (key === '{cape}') {
+                const item = first(function (one) {
+                    return category(one) === 'Cape' && equipped(one);
+                });
+                value = item ? itemName(item) : 'Error';
             }
-            vars[key] = written.indexOf('[') !== -1 ? resolve(written) : written;
+            if (/\.qty$/i.test(value)) {
+                const base = value.replace(/\.qty$/i, '');
+                const item = first(function (one) {
+                    return itemName(one).toLowerCase() === base.toLowerCase();
+                });
+                value = item ? String(quantity(item)) : '0';
+            } else if (value.indexOf('[') !== -1 && command.skipScan !== true) {
+                value = resolve(value);
+            }
+            vars[key] = value;
         },
         CmdUpdateVar: function (ctx, command) {
             const key = String(command.Value1);
@@ -935,36 +1656,36 @@ function createEngine(deps) {
         // The variable and integer statements (the reference's Misc.Statements int/var rows). A
         // failing one advances the index by one, which skips the command under it.
         CmdIntIs: function (ctx, command) {
-            const left = ints[String(isVar(command.Value1) ? getVar(command.Value1) : command.Value1)];
+            const left = ints[intKey(command.Value1)];
             const right = intOperand(command.Value2);
             if (left !== right) ctx.skipNext();
         },
         CmdIntIsNot: function (ctx, command) {
-            const left = ints[String(isVar(command.Value1) ? getVar(command.Value1) : command.Value1)];
+            const left = ints[intKey(command.Value1)];
             const right = intOperand(command.Value2);
             if (left === right) ctx.skipNext();
         },
         CmdIntGreaterThan: function (ctx, command) {
-            const left = ints[String(isVar(command.Value1) ? getVar(command.Value1) : command.Value1)];
+            const left = ints[intKey(command.Value1)];
             const right = intOperand(command.Value2);
             // CmdIntGreaterThan upstream asks "less than" and skips when that holds, so the row's
             // own text ("Int Greater Than") and its comparison disagree - reproduced as written.
             if (left < right) ctx.skipNext();
         },
         CmdIntLessThan: function (ctx, command) {
-            const left = ints[String(isVar(command.Value1) ? getVar(command.Value1) : command.Value1)];
+            const left = ints[intKey(command.Value1)];
             const right = intOperand(command.Value2);
             // CmdIntLessThan likewise asks "greater than" (ToString: "{V1} <= {V2}").
             if (left > right) ctx.skipNext();
         },
         CmdIntEqualInt: function (ctx, command) {
-            const left = ints[String(isVar(command.Value1) ? getVar(command.Value1) : command.Value1)];
-            const right = ints[String(isVar(command.Value2) ? getVar(command.Value2) : command.Value2)];
+            const left = ints[intKey(command.Value1)];
+            const right = ints[intKey(command.Value2)];
             if (String(left) !== String(right)) ctx.skipNext();
         },
         CmdIntNotEqualInt: function (ctx, command) {
-            const left = ints[String(isVar(command.Value1) ? getVar(command.Value1) : command.Value1)];
-            const right = ints[String(isVar(command.Value2) ? getVar(command.Value2) : command.Value2)];
+            const left = ints[intKey(command.Value1)];
+            const right = ints[intKey(command.Value2)];
             if (!(String(left) !== String(right))) ctx.skipNext();
         },
         CmdVarEqualVar: function (ctx, command) {
@@ -1039,13 +1760,18 @@ function createEngine(deps) {
             }, {});
             if (config && config.ExitCombatBeforeRest) {
                 // "while (Player.CurrentState == Player.State.InCombat)": State.InCombat is 2.
-                for (let guard = 0; guard < 10; guard++) {
+                while (running) {
                     const state = await read('state');
-                    if (!state.ok || Number(state.value) !== 2) break;
+                    if (!state.ok) {
+                        reportOnce('rest-state', 'could not read the combat state to leave it');
+                        break;
+                    }
+                    if (Number(state.value) !== 2) break;
                     const cell = await read('cell');
                     const pad = await read('pad');
                     await readN('jump', [cell.ok ? cell.value : '', pad.ok ? pad.value : '']);
                     await sleep(1250);
+                    await nextTask();
                 }
             }
             const rested = await read('rest');
@@ -1076,7 +1802,17 @@ function createEngine(deps) {
             const monster = varOf(command.Monster === undefined ? '*' : command.Monster);
             if (config && config.SkipAttack) {
                 if ((await read('hasTarget')).value === true) await read('cancelTargets');
-                return 'SkipAttack is on: the target was dropped instead of the skill being cast';
+                const index = String(resolve(command.Index));
+                // `if (Skill.isBuff(Index)) Player.ForceUseSkill(Index);` - only a buff can be
+                // cast without a target in this branch.
+                if (session && typeof session.isBuffSkill === 'function') {
+                    const buff = await read1('isBuffSkill', index);
+                    if (buff.ok && buff.value === true) {
+                        const cast = await read1('forceUseSkill', index);
+                        return cast.ok ? undefined : cast.error;
+                    }
+                }
+                return undefined;
             }
             await findTarget(monster);
             if (command.Force !== true) {
@@ -1193,14 +1929,16 @@ function createEngine(deps) {
             // - the loop has no other exit, so the engine's own running flag is the bound here.
             const cell = varOf(command.Cell);
             const pad = varOf(command.Pad);
-            for (let guard = 0; guard < 20 && running; guard++) {
+            while (running) {
                 const here = await read('cell');
                 if (here.ok && String(here.value).toLowerCase() === String(cell).toLowerCase()) return undefined;
+                if (!here.ok) return 'could not read the cell to move from: ' + here.error;
                 const moved = await readN('jump', [String(cell), String(pad)]);
                 if (!moved.ok) return 'could not move to ' + cell + ': ' + moved.error;
                 await sleep(500);
+                await nextTask();
             }
-            return undefined;
+            return 'the bot stopped before it reached ' + cell;
         },
 
         CmdSetSpawn: async function () {
@@ -1590,6 +2328,7 @@ function createEngine(deps) {
         // same way SetSpecialHandlerFromScript does. Absent in a build without the Maid's panel,
         // in which case the command reports that rather than appearing to switch a handler.
         specialHandler: deps.specialHandler,
+        popup: deps.popup,
         sleep: sleep,
         log: log,
         logDebug: deps.logDebug,
@@ -1747,35 +2486,105 @@ function createEngine(deps) {
 
     // ---------------------------------------------------------------- the loop
 
+    /** BotUtilities.StopCommands: take back the quest rows the bot's CmdAddQuestList added. */
+    function removeQuestListEntries() {
+        const rows = config && Array.isArray(config.Quests) ? config.Quests : null;
+        if (!rows) return;
+        commands().forEach(function (command) {
+            if (catalog.classNameOf(command) !== 'CmdAddQuestList') return;
+            const at = rows.findIndex(function (row) {
+                return Number(questIdOf(row)) === Number(command.Id) &&
+                    String(row && row.ItemId === undefined ? '' : row.ItemId) ===
+                    String(command.ItemId === undefined ? '' : command.ItemId) &&
+                    truthy(row && row.SafeRelogin) === truthy(command.SafeRelogin);
+            });
+            if (at !== -1) rows.splice(at, 1);
+        });
+    }
+
+    /** OptionsManager.SetLagKiller(Configuration.Instance.keepLagKiller). */
+    function applyKeepLagKiller() {
+        // The reference's default keepLagKiller=false has nothing to restore, and a test seam
+        // without a lag-killer method must not turn Stop into a game call.
+        if (keepLagKiller !== true &&
+            !(deps.options && typeof deps.options.setLagKiller === 'function')) return;
+        const wired = options();
+        let answer;
+        try {
+            answer = typeof wired.setLagKiller === 'function'
+                ? wired.setLagKiller(keepLagKiller) : undefined;
+            if (answer === undefined && session && typeof session.loaderCall === 'function') {
+                answer = session.loaderCall('SetLagKiller', [keepLagKiller ? 'True' : 'False']);
+            }
+        } catch (error) {
+            log('could not restore lag killer: ' + message(error));
+            return;
+        }
+        Promise.resolve(answer).catch(function (error) {
+            log('could not restore lag killer: ' + message(error));
+        });
+    }
+
+    /** Put back the option ticks auto-relogin found, then start OptionsManager again. */
+    async function restoreOptions(snapshot) {
+        const wired = options();
+        const ids = ['infiniteRange', 'provoke', 'lagKiller', 'skipCutscenes', 'enemyMagnet'];
+        for (let i = 0; i < ids.length; i++) {
+            if (snapshot && typeof snapshot[ids[i]] === 'boolean') {
+                try {
+                    await wired.setToggle(ids[i], snapshot[ids[i]]);
+                } catch (error) {
+                    log('could not restore option ' + ids[i] + ': ' + message(error));
+                }
+            }
+        }
+        if (typeof wired.setApplying === 'function') {
+            try {
+                await wired.setApplying(true);
+            } catch (error) {
+                log('could not start the options loop again: ' + message(error));
+            }
+        }
+    }
+
     function stop() {
         externallyPaused = false;
         if (!running) return;
         running = false;
         paused = false;
-        if (background && typeof background.labels !== 'undefined') {
-            background.labels.length = 0;
-            if (background.timer !== null && deps.timers && typeof deps.timers.clearTimeout === 'function') {
-                deps.timers.clearTimeout(background.timer);
-                background.timer = null;
-            }
-        }
+        stopQuestList();
+        unsubscribeDrops();
+        if (misc && typeof misc.stopBackground === 'function') misc.stopBackground();
+        removeQuestListEntries();
         // CmdMoveToCell2's background jump holds the engine's own cancellation token, and the
         // reference's Stop is what a stopped bot expects to end it.
         if (jump.token) {
             jump.token.cancelled = true;
             jump.token = null;
         }
-        if (deps.options && typeof deps.options.stop === 'function') {
-            Promise.resolve(deps.options.stop()).catch(function () {});
+        const wired = options();
+        try {
+            if (typeof wired.stop === 'function') {
+                Promise.resolve(wired.stop()).catch(function () {});
+            }
+        } catch (error) {
+            // OptionsManager.Stop is sync in the reference; a seam that throws must not keep the
+            // rest of Stop from running.
         }
+        applyKeepLagKiller();
         if (session && typeof session.exitCombat === 'function') {
             Promise.resolve().then(function () { return session.exitCombat(); }).catch(function () {});
         }
-        // The reference stops, clears its pause, and pulls the character out of combat.
     }
 
     /** The reference's death block: respawn, wait for it, then follow the bot's own setting. */
     async function handleDeath() {
+        const wired = options();
+        try {
+            await wired.stop();
+        } catch (error) {
+            // OptionsManager.Stop before respawn; a refusal is not a reason to stay dead.
+        }
         if (session && typeof session.setSpawnPoint === 'function') {
             try {
                 await session.setSpawnPoint();
@@ -1800,11 +2609,19 @@ function createEngine(deps) {
         await sleep(1000);
         // RestartUponDeath -> 0, otherwise one step back (the loop's own increment undoes it).
         index = config && config.RestartUponDeath ? 0 : indexOf(index - 1);
+        if (typeof wired.setApplying === 'function') {
+            try {
+                await wired.setApplying(true);
+            } catch (error) {
+                log('could not restart the options loop after respawning: ' + message(error));
+            }
+        }
     }
 
     /** The reference's relogin block: relog in and start over, or stop. */
     async function handleDisconnect() {
-        log('disconnected. Last cmd: [' + index + ']' + (lastCommand === null ? '' : lastCommand));
+        log(timestamp() + ' Disconnected. Last cmd: [' + index + ']' +
+            (lastCommand === null ? '' : lastCommand));
         if (!(config && config.AutoRelogin)) {
             stop();
             return;
@@ -1817,15 +2634,37 @@ function createEngine(deps) {
             stop();
             return;
         }
-        await deps.relogin(config_);
+        stopQuestList();
+        if (misc && typeof misc.stopBackground === 'function') misc.stopBackground();
+        if (game && typeof game.clearShops === 'function') {
+            try {
+                await game.clearShops();
+            } catch (error) {
+                log('could not clear the loaded shops: ' + message(error));
+            }
+        }
+        const wired = options();
+        const snapshot = wired.state();
+        try {
+            if (typeof wired.stop === 'function') await wired.stop();
+            await deps.relogin(config_);
+        } catch (error) {
+            log('auto-relogin failed: ' + message(error));
+            stop();
+            return;
+        }
         if (!running) return;
         index = 0;
-        log('relogin success.');
+        loadAllQuests();
+        loadBankItems();
+        startQuestList();
+        log(timestamp() + ' Relogin success.');
+        await restoreOptions(snapshot);
     }
 
     async function tick() {
         if (!running) return { ok: false, error: ERRORS.stopped };
-        if (externallyPaused) {
+        if (externallyPaused || paused) {
             await sleep(PAUSE_POLL_MS);
             return { ok: true, paused: true };
         }
@@ -1853,7 +2692,10 @@ function createEngine(deps) {
         if (!ready.ok || ready.value !== true) {
             reportOnce('map-load', 'the map is reloading; commands that need it will wait');
         }
-        paused = false;
+
+        // Bot.Activate rests before every command, Hp first and then Mp.
+        if (config && (config.RestIfHp || config.RestIfMp)) await automaticRest();
+        if (!running) return { ok: true, stopped: true };
 
         const at = readIndex();
         const command = commands()[at];
@@ -1881,6 +2723,9 @@ function createEngine(deps) {
         const skipGate = config && config.SkipDelayIndexIf;
         if (delay > 0 && (!skipGate || requiresDelay(command))) await sleep(delay);
         if (!running) return { ok: true, stopped: true };
+
+        // Bot.CheckBoosts sits after the delay and before the index increment.
+        if (config && Array.isArray(config.Boosts) && config.Boosts.length) await checkBoosts();
 
         setIndex(index + 1);
         return { ok: true };
@@ -1920,6 +2765,31 @@ function createEngine(deps) {
         externallyPaused = false;
         lastCommand = null;
         dispatched = [];
+        botSkill = '';
+        keepLagKiller = false;
+        boostCheckedAt = now();
+        delayed.pending = false;
+        Object.keys(dropCooldowns).forEach(function (key) { delete dropCooldowns[key]; });
+        subscribeDrops();
+
+        // Bot.Start's preloads, in its own order: the quests the commands name, the bank a bank
+        // command needs, the quest list, and then the options manager. LoadAllQuests and
+        // LoadBankItems are async void upstream, so Start does not wait for them.
+        await unbankOnStart();
+        loadAllQuests();
+        loadBankItems();
+        startInitQuestList();
+        if (config && Array.isArray(config.Quests) && config.Quests.length) startQuestList();
+        const wired = options();
+        if (typeof wired.setApplying === 'function') {
+            try {
+                Promise.resolve(wired.setApplying(true)).catch(function (error) {
+                    log('could not start the options loop: ' + message(error));
+                });
+            } catch (error) {
+                log('could not start the options loop: ' + message(error));
+            }
+        }
         return { ok: true };
     }
 

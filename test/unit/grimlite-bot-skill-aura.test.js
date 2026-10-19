@@ -158,6 +158,15 @@ test('the kill loop consults the same gate, which is the reference own call site
     // CmdAttack. A row the aura does not permit is walked past there too - the command that decides
     // a fight must not reach for a skill the character cannot use.
     const session = fakeSession({ aura: { Chi: 0 } });
+    // CmdKill now rotates until the target dies, as the reference does. This test has no combat
+    // simulation, so the first aura read also ends the fake fight; otherwise it would run the
+    // full runaway guard and allocate a call log for every pass.
+    const readAura = session.selfAura;
+    session.selfAura = function (name) {
+        const answer = readAura(name);
+        session.snapshot.hasTarget = false;
+        return answer;
+    };
     const made = engine({ session: session });
     await made.start({
         Commands: [command('CmdKill', { Monster: '*', rounds: 1 })],

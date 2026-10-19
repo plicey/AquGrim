@@ -69,10 +69,39 @@ function readPixel(buffer, width, x, y) {
     };
 }
 
+// The reference's eyedropper control draws a magnified preview around the cursor: a 150x150
+// square at 15x, which is the 10x10 source pixels this returns. The page scales each one up.
+const PREVIEW_SIZE = 150;
+const PREVIEW_ZOOM = 15;
+const PREVIEW_SOURCE = PREVIEW_SIZE / PREVIEW_ZOOM;
+
+/** The 10x10 block of source pixels around a point, as flat RGBA bytes. */
+function previewPixels(buffer, imageSize, at, sourceSize) {
+    const span = Math.max(1, Math.round(Number(sourceSize) || PREVIEW_SOURCE));
+    const half = Math.floor(span / 2);
+    const width = Math.max(1, Number(imageSize && imageSize.width) || 1);
+    const height = Math.max(1, Number(imageSize && imageSize.height) || 1);
+    const clamp = function (value, max) { return Math.min(max, Math.max(0, Math.round(value))); };
+    const data = [];
+    for (let y = 0; y < span; y++) {
+        for (let x = 0; x < span; x++) {
+            const pixel = readPixel(buffer, width,
+                clamp((Number(at && at.x) || 0) - half + x, width - 1),
+                clamp((Number(at && at.y) || 0) - half + y, height - 1));
+            data.push(pixel.r, pixel.g, pixel.b, pixel.a === undefined ? 255 : pixel.a);
+        }
+    }
+    return { width: span, height: span, data: data };
+}
+
 module.exports = {
     formatColour: formatColour,
     cssColour: cssColour,
     readoutTextColour: readoutTextColour,
     imagePoint: imagePoint,
-    readPixel: readPixel
+    readPixel: readPixel,
+    previewPixels: previewPixels,
+    PREVIEW_SIZE: PREVIEW_SIZE,
+    PREVIEW_ZOOM: PREVIEW_ZOOM,
+    PREVIEW_SOURCE: PREVIEW_SOURCE
 };

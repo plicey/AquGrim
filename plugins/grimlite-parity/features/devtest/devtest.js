@@ -38,6 +38,9 @@
   });
 
   document.getElementById('call').addEventListener('click', function () {
+    var callButton = document.getElementById('call');
+    // DevTest.cs disables btnCall while Get/Set Object writes and waits the second out.
+    if (mode === 'getSetObject') callButton.disabled = true;
     setStatus('calling...');
     api.run(mode, fn.value, args.value, argsEnabled.checked).then(function (out) {
       if (out && out.ok) {
@@ -49,6 +52,8 @@
       }
     }).catch(function (error) {
       setStatus(String(error && error.message ? error.message : error), true);
+    }).then(function () {
+      callButton.disabled = false;
     });
   });
 

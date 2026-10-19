@@ -19,6 +19,10 @@
   var tabsById = {};
   var state = null;
   var multiline = false;
+  // The ServerUse rows cbBoosts offered last (the objects the game sent), by option index.
+  var boosts = [];
+  // The Bots tab's tree: its root, count and one level of nodes (UpdateTree's own state).
+  var botTreeState = null;
   var list = document.getElementById('list');
   var tabHost = document.getElementById('tabHost');
 
@@ -47,8 +51,34 @@
     size: 'Commands size',
     saveSize: 'Save Size',
     numberOfBots: 'Number of Bots: ',
-    folder: 'Folder'
+    folder: 'Folder',
+    commandEditor: 'Command Editor',
+    getInfo: 'Get Cell / Map / Pad',
+    followPlaceholder: 'Player',
+    authorised: 'Author',
+    described: 'Description',
+    botStarted: 'Bot started.',
+    botStopped: 'Bot stopped.',
+    noBoosts: 'No ServerUse items in the bag.',
+    read: 'Read from the game.'
   };
+
+  // The controls keep their own state while the form lives, as the reference's form does; the
+  // page rebuilds a tab whenever it is shown, so what a user typed or ticked on it is put back.
+  var remembered = {};
+
+  function snapshot(node) {
+    if (node.type === 'checkbox' || node.type === 'radio') return node.checked;
+    if (node.tagName === 'SELECT') return node.multiple ? undefined : node.value;
+    return node.value;
+  }
+
+  function restore(node, value) {
+    if (value === undefined) return;
+    if (node.type === 'checkbox' || node.type === 'radio') node.checked = value === true;
+    else if (node.tagName === 'SELECT' && !node.multiple) node.value = String(value);
+    else if (node.tagName !== 'SELECT') node.value = String(value);
+  }
 
   function el(tag, className, text) {
     var node = document.createElement(tag);
@@ -73,19 +103,23 @@
 
   // ---------------------------------------------------------------- the sheet
 
-  function control(entry) {
+  function control(entry, groupName) {
     var node;
     switch (entry.kind) {
     case 'group':
       node = el('fieldset', 'group');
       node.appendChild(el('legend', null, entry.text || ''));
-      (entry.children || []).forEach(function (child) { node.appendChild(control(child)); });
+      (entry.children || []).forEach(function (child) {
+        node.appendChild(control(child, entry.id));
+      });
       return node;
     case 'split':
     case 'panel':
     case 'grid':
       node = el('div', entry.kind);
-      (entry.children || []).forEach(function (child) { node.appendChild(control(child)); });
+      (entry.children || []).forEach(function (child) {
+        node.appendChild(control(child, groupName));
+      });
       return node;
     case 'button':
       node = el('button', 'sheet-button', entry.text || entry.id);
@@ -98,19 +132,26 @@
     case 'radio':
       node = el('input');
       node.type = entry.kind === 'tick' ? 'checkbox' : 'radio';
-      if (entry.kind === 'radio') node.name = entry.id;
+      // WinForms groups radios by their container, so a pair in one group box is one choice.
+      if (entry.kind === 'radio') node.name = groupName || entry.id;
       node.id = entry.id;
+      node.checked = entry.checked === true;
+      restore(node, remembered[entry.id]);
       return label(entry.text, node, el('span'));
     case 'text':
       node = el('input', 'sheet-text');
       node.type = 'text';
       node.id = entry.id;
       node.placeholder = entry.text || '';
+      restore(node, remembered[entry.id]);
       return node;
     case 'number':
       node = el('input', 'sheet-number');
       node.type = 'number';
       node.id = entry.id;
+      // The designer's own spinner values (BotManager.Designer.cs).
+      if (entry.value !== undefined) node.value = String(entry.value);
+      restore(node, remembered[entry.id]);
       return node;
     case 'select':
       node = el('select', 'sheet-select');
@@ -120,6 +161,9 @@
         item.value = option;
         node.appendChild(item);
       });
+      // cbItemCmds and cmbSpecials start with no selection (their designer sets no index).
+      if (entry.unselected) node.selectedIndex = -1;
+      restore(node, remembered[entry.id]);
       return node;
     case 'label':
       return el('span', 'sheet-label', entry.text || '');
@@ -158,16 +202,17 @@
 
   function buildSheet() {
     var bar = document.getElementById('tabs');
-    (sheet.tabs || []).forEach(function (tab, position) {
+    (sheet.tabs || []).forEach(function (tab) {
       tabsById[tab.id] = tab;
       var button = el('button', 'tab', tab.title);
       button.id = 'tab-' + tab.id;
       button.addEventListener('click', function () { showTab(tab.id); });
       bar.appendChild(button);
-      if (position === 0) { showTab(tab.id); }
     });
     // The left column's controls carry the reference's ids as well.
     index(sheet.column);
+    // The constructor opens the Bots tab: `mainTabControl.SelectedIndex = 9`.
+    showTab(((sheet.tabs || [])[9] || (sheet.tabs || [])[0] || {}).id);
   }
 
   function showTab(id) {
@@ -181,9 +226,11 @@
     (tab.controls || []).forEach(function (entry) { page.appendChild(control(entry)); });
     tabHost.appendChild(page);
     index(tab.controls);
-    if (id === 'bots') { drawTree(); bindTreeControls(); }
     applyConfiguration();
     wires();
+    syncRules();
+    drawList();
+    if (id === 'bots') { refreshTree(); }
   }
 
   // ---------------------------------------------------------------- values
@@ -199,8 +246,9 @@
     values.lstDrops = textsOf('Drops');
     values.lstItems = textsOf('Items');
     values.lstBoosts = textsOf('Boosts');
-    // cbBoosts shows the game's own server-use objects; the row carries one when it has it.
-    values.cbBoostsSelected = rowAt('cbBoosts', 'Boosts');
+    // cbBoosts shows the game's own server-use objects, so the selected one is the object the
+    // game sent rather than a name rebuilt here.
+    values.cbBoostsSelected = selectedBoost();
     values.rbTemp = checked('rbTemp');
     values.cbJoinMapSwf = checked('cbJoinMapSwf');
     values.chkQuestItem = checked('chkQuestListItem');
@@ -220,13 +268,11 @@
     return (rows || []).map(function (row) { return row.text; });
   }
 
-  function rowAt(id, key) {
-    var node = document.getElementById(id);
-    var rows = state && state.lists ? state.lists[key] : null;
-    if (!rows || !rows.length) return null;
-    var at = node && node.selectedIndex >= 0 ? node.selectedIndex : 0;
-    var row = rows[at];
-    return row ? { $type: 'Grimoire.Game.Data.InventoryItem, Grimoire', Name: row.text } : null;
+  function selectedBoost() {
+    var node = document.getElementById('cbBoosts');
+    if (!node || node.selectedIndex < 0) return null;
+    var row = boosts[node.selectedIndex];
+    return row && row.item ? row.item : null;
   }
 
   function applyConfiguration() {
@@ -242,19 +288,84 @@
       var node = document.getElementById(id);
       if (!node) return;
       var key = (sheet.settings || {})[id] || (sheet.numbers || {})[id];
-      if (!key) return;
+      if (!key || key === 'Server') return;
       var value = state.configuration[key];
       if (node.type === 'checkbox') node.checked = value === true;
-      else if (value !== undefined && value !== null) node.value = String(value);
+      else if (key === 'FollowName') {
+        // tbFollowPlayer2.Text = config.FollowName == null ? "Player" : config.FollowName.
+        node.value = value === undefined || value === null ? messages.followPlaceholder : String(value);
+      } else if (node.tagName === 'SELECT') {
+        // Remove the previous server entry this window added before the list is rebuilt.
+        if (value === undefined || value === null) node.selectedIndex = -1;
+        else node.value = String(value);
+      } else if (value !== undefined && value !== null) node.value = String(value);
     });
     setValue('txtAuthor', state.author);
     setValue('txtDescription', state.description);
-    setValue('txtSaved', state.tree ? state.tree.directory : '');
+    // Save/Load's own labels read the document: config.Author ?? "Author", and the description
+    // (already unzipped by bots.description) ?? "Description".
+    setValue('txtSavedAuthor', state.author ? String(state.author) : messages.authorised);
+    setValue('txtSavedDesc', state.description ? String(state.description) : messages.described);
+    if (botTreeState) setValue('txtSaved', botTreeState.directory);
+    applyServer();
+    fillSoundList();
+    drawBotsLabels();
     var merge = document.getElementById('chkMerge');
     if (merge) merge.checked = state.merge === true;
     var selector = document.getElementById('cbLists');
     if (selector && state.selected) selector.value = state.selected;
     drawInfo();
+  }
+
+  /** ApplyConfiguration selects the loaded Server by name (FindIndex over cbServers' items). */
+  function applyServer() {
+    var node = document.getElementById('cbServers');
+    if (!node || !state || !state.configuration) return;
+    var server = state.configuration.Server;
+    var name = server && server.Name ? String(server.Name) : '';
+    if (!name) { node.selectedIndex = -1; return; }
+    var known = false;
+    Array.prototype.forEach.call(node.options, function (option) {
+      if (option.value === name) known = true;
+    });
+    if (!known) {
+      // This build has no server list to offer; the loaded name still has to be visible, or a
+      // save would drop a Server the file carried.
+      var option = el('option', null, name);
+      option.value = name;
+      node.appendChild(option);
+    }
+    node.value = name;
+  }
+
+  /** lstSoundItems is NotifyUponDrop, and ApplyConfiguration refills it from the document. */
+  function fillSoundList() {
+    var node = document.getElementById('lstSoundItems');
+    if (!node || !state || !state.configuration) return;
+    var items = state.configuration.NotifyUponDrop;
+    node.textContent = '';
+    (Array.isArray(items) ? items : []).forEach(function (name) {
+      var option = el('option', null, name);
+      option.value = String(name);
+      node.appendChild(option);
+    });
+  }
+
+  // treeBots_AfterSelect's six labels, which live on the Bots tab itself (the footer repeats
+  // them so they are visible from every tab).
+  var BOT_LABELS = {
+    lblCommands: 'commands', lblSkills: 'skills', lblQuests: 'quests',
+    lblDrops: 'drops', lblBoosts: 'boosts', lblItems: 'items'
+  };
+
+  function drawBotsLabels() {
+    if (!state || !state.labels) return;
+    Object.keys(BOT_LABELS).forEach(function (id) {
+      var node = document.getElementById(id);
+      if (!node) return;
+      node.textContent = state.labels[BOT_LABELS[id]];
+      node.classList.add('counter-label');
+    });
   }
 
   function setValue(id, value) {
@@ -270,16 +381,35 @@
     var selection = (state && state.selection) || [];
     rows.forEach(function (row, at) {
       var item = el('li', 'row');
-      item.textContent = '[' + at + '] ' + row.text;
-      item.style.color = '#' + hexOf(row.colour);
-      if (row.centered) item.classList.add('centered');
+      // lstCommands_DrawItem puts the [n] in front only in colour mode, and never on a LabelLess
+      // row; the other five lists are plain listboxes with neither index nor colours.
+      var index = colourful() && state.selected === 'Commands' && row.showsIndex !== false
+        ? '[' + at + '] ' : '';
+      item.textContent = index + row.text;
+      if (colourful()) item.style.color = '#' + hexOf(row.colour);
+      if (colourful() && row.centered) item.classList.add('centered');
       if (selection.indexOf(at) !== -1) item.classList.add('picked');
+      if (running() && state.selected === 'Commands' && state.bot && state.bot.index === at) {
+        item.classList.add('current');
+      }
       item.dataset.index = String(at);
       list.appendChild(item);
     });
     if (!rows.length) list.appendChild(el('li', 'empty', messages.empty));
     drawCounters();
+     drawBotsLabels();
     drawStyle();
+  }
+
+  /** colorfulCommands, the Client tab's own tick (checked in the designer). */
+  function colourful() {
+    var node = document.getElementById('colorfulCommands');
+    return node ? node.checked : remembered.colorfulCommands !== false;
+  }
+
+  /** Whether this window's bot is running (runtime.state's own flag). */
+  function running() {
+    return !!(state && state.bot && state.bot.running);
   }
 
   function hexOf(argb) {
@@ -305,6 +435,64 @@
     return api.select(key, selection).then(applyState);
   }
 
+  function setEnabled(id, on) {
+    var node = document.getElementById(id);
+    if (node) node.disabled = !on;
+  }
+
+  /**
+   * The reference's own enable/disable rules, each one a *CheckedChanged handler:
+   * cbJoinMapSwf -> tbJoinMapSwf, radBuyByName -> the two id boxes and the name box,
+   * chkQuestItem/chkQuestListItem -> their spinners, chkRelog -> chkAFK,
+   * chkSpecial -> cmbSpecials, and a running bot -> the list buttons and single selection.
+   */
+  function syncRules() {
+    setEnabled('tbJoinMapSwf', checked('cbJoinMapSwf'));
+    var byName = checked('radBuyByName');
+    setEnabled('tbShopItemName', byName);
+    setEnabled('tbShopItemId', !byName);
+    setEnabled('tbItemId', !byName);
+    setEnabled('numQuestItem', checked('chkQuestItem'));
+    setEnabled('numQuestListItem', checked('chkQuestListItem'));
+    setEnabled('chkAFK', checked('chkRelog'));
+    setEnabled('cmbSpecials', !checked('chkSpecial'));
+    var busy = running();
+    ['btnUp', 'btnDown', 'btnClear', 'btnRemove'].forEach(function (id) { setEnabled(id, !busy); });
+  }
+
+  var poll = null;
+
+  /** Watch the runtime while the tick is on: the engine can stop on its own (an error, a stop). */
+  function startPolling() {
+    if (poll) return;
+    poll = window.setInterval(refreshBotState, 1000);
+  }
+
+  function stopPolling() {
+    if (!poll) return;
+    window.clearInterval(poll);
+    poll = null;
+  }
+
+  function refreshBotState() {
+    return api.botState().then(function (next) {
+      if (!next) return;
+      var wasRunning = running();
+      state = Object.assign({}, state, next);
+      var enable = document.getElementById('chkEnable');
+      if (enable) enable.checked = running();
+      drawList();
+      syncRules();
+      if (wasRunning && !running()) {
+        // The reference un-ticks chkSpecial when a run ends.
+        stopPolling();
+        var special = document.getElementById('chkSpecial');
+        if (special) special.checked = false;
+        syncRules();
+      }
+    });
+  }
+
   function drawStyle() {
     var style = state && state.style;
     var size = style && style.fontSize ? style.fontSize : 10;
@@ -326,6 +514,7 @@
     if (next.clipboard !== undefined) api.clipboardWrite(next.clipboard);
     drawList();
     applyConfiguration();
+    syncRules();
     if (next.error) setStatus(next.error, true);
     else if (next.path) setStatus(messages.opened + ' ' + next.path, false);
     else if (next.clipboard !== undefined) setStatus(next.clipboard ? messages.copyHint : '', false);
@@ -341,12 +530,15 @@
       return api.addList(id, valuesFromSheet(), modifiers).then(applyState);
     }
     if ((sheet.gameButtons || []).indexOf(id) !== -1) {
-      return api.game(id, modifiers).then(function (result) {
+      // The boxes travel with the press: Player.GetMapItem reads numMapItem, and cbBoosts is
+      // filled from the bag rather than from a value on the page.
+      return api.game(id, Object.assign({}, modifiers, { fields: valuesFromSheet() })).then(function (result) {
         // A control the game cannot answer reports why; it never fills a field with nothing.
         if (!result || result.ok !== true) {
           setStatus((result && result.error) || 'the game did not answer', true);
           return;
         }
+        if (id === 'cbBoosts') { fillBoosts(result.boosts || []); return; }
         fillFromGame(id, result.values, modifiers);
       });
     }
@@ -355,12 +547,22 @@
     case 'btnClear': return api.key('clear', { all: checked('chkAll') }).then(applyState);
     case 'btnUp': return api.key('moveUp').then(applyState);
     case 'btnDown': return api.key('moveDown').then(applyState);
-    case 'btnSearchCmd': return api.key('find', { text: value('txtSearchCmd') }).then(applyState);
+    case 'btnSearchCmd': return api.key('find', { text: value('txtSearchCmd') }).then(function (next) {
+      applyState(next);
+      // lblLabels_DoubleClick's commented-out TopIndex: the hit is scrolled into view.
+      if (next && next.hit !== null && next.hit !== undefined) scrollToRow(next.hit);
+      return next;
+    });
     case 'btnSave': return save(true);
     case 'btnLoad': return api.load(null).then(applyState);
     case 'btnLoadCmd': return loadCommand();
     case 'btnStatementAdd': return api.add('btnStatementAdd', valuesFromSheet(), {}).then(applyState);
-    case 'btnSetBotsDir': return api.chooseDirectory().then(function (result) { state = null; return applyState(result); });
+    case 'btnSetBotsDir': return api.chooseDirectory().then(function (result) {
+      botTreeState = result;
+      applyState(result);
+      drawTree();
+      return result;
+    });
     case 'btnSavedAdd': return addFolder();
     case 'btnSoundAdd': return addSound();
     case 'btnSoundDelete': return removeSound();
@@ -396,6 +598,27 @@
     setStatus(messages.read || 'Read from the game.', false);
   }
 
+  /** cbBoosts: the ServerUse rows the game answered, each carrying the object it sent. */
+  function fillBoosts(rows) {
+    boosts = Array.isArray(rows) ? rows : [];
+    var node = document.getElementById('cbBoosts');
+    if (!node) return;
+    node.textContent = '';
+    boosts.forEach(function (boost, at) {
+      var option = el('option', null, boost.name);
+      option.value = String(at);
+      node.appendChild(option);
+    });
+    node.selectedIndex = boosts.length ? 0 : -1;
+    if (!boosts.length) setStatus(messages.noBoosts || 'No ServerUse items in the bag.', false);
+  }
+
+  /** Scroll the list to a row (the search hit). */
+  function scrollToRow(index) {
+    var row = list.querySelector('li.row[data-index="' + index + '"]');
+    if (row) row.scrollIntoView({ block: 'nearest' });
+  }
+
   function loadCommand() {
     return api.load(null).then(function (result) {
       if (!result || !result.path || result.canceled) return applyState(result);
@@ -414,13 +637,20 @@
     option.value = box.value;
     target.appendChild(option);
     box.value = '';
-    return Promise.resolve(null);
+    // lstSoundItems is Configuration.NotifyUponDrop: the document follows the list.
+    return api.setting('NotifyUponDrop', soundNames()).then(applyState);
   }
 
   function removeSound() {
     var target = document.getElementById('lstSoundItems');
     if (target && target.selectedIndex > -1) target.remove(target.selectedIndex);
-    return Promise.resolve(null);
+    return api.setting('NotifyUponDrop', soundNames()).then(applyState);
+  }
+
+  function soundNames() {
+    var target = document.getElementById('lstSoundItems');
+    if (!target) return [];
+    return Array.prototype.map.call(target.options, function (option) { return option.value; });
   }
 
   function save(ask) {
@@ -433,13 +663,28 @@
     // lint: no-op; the tree's own controls are wired through press() like every other button.
   }
 
+  /**
+  * tabControl1_Selected: opening the Bots tab fills txtSaved with the chosen directory and
+  * calls UpdateTree. txtSaved is the tree's root, so a typed path re-lists from there.
+  */
+  function refreshTree() {
+    return api.tree([], value('txtSaved')).then(function (result) {
+      botTreeState = result;
+      drawTree();
+      applyConfiguration();
+      return result;
+    }).catch(function (error) {
+      setStatus(String(error && error.message ? error.message : error), true);
+    });
+  }
+
   function drawTree() {
     var host = document.getElementById('treeBots');
-    if (!host || !state || !state.tree) return;
+    if (!host || !botTreeState) return;
     host.textContent = '';
     var bots = document.getElementById('lblBots');
-    if (bots) bots.textContent = messages.numberOfBots + state.tree.count;
-    appendNodes(host, state.tree.nodes || [], []);
+    if (bots) bots.textContent = messages.numberOfBots + botTreeState.count;
+    appendNodes(host, botTreeState.nodes || [], []);
   }
 
   function appendNodes(host, nodes, pathSoFar) {
@@ -451,10 +696,11 @@
       name.addEventListener('click', function (event) {
         event.stopPropagation();
         // treeBots_AfterSelect: a folder is a branch, a file is a bot. Ctrl+click adds a command.
-        return api.treeSelect(path, event.ctrlKey || event.metaKey).then(function (next) {
+        return api.treeSelect(path, event.ctrlKey || event.metaKey, value('txtSaved')).then(function (next) {
           state = Object.assign({}, state, next);
-          if (next.tree) { state.tree = next.tree; drawTree(); }
+          if (next.tree) { botTreeState = next.tree; drawTree(); }
           drawList();
+          applyConfiguration();
           if (next.error) setStatus(next.error, true);
           else setStatus(node.name, false);
         });
@@ -476,7 +722,7 @@
   }
 
   function expand(path, item) {
-    return api.tree(path).then(function (result) {
+    return api.tree(path, value('txtSaved')).then(function (result) {
       var old = item.querySelector('ul.lazy');
       if (old) item.removeChild(old);
       var nested = el('ul', 'nested');
@@ -489,9 +735,10 @@
     var box = document.getElementById('txtSavedAdd');
     var name = box && box.value ? box.value : window.prompt(messages.addFolder);
     if (!name) return Promise.resolve(null);
-    return api.addFolder(name).then(function (next) {
+    return api.addFolder(name, value('txtSaved')).then(function (next) {
       if (box) box.value = '';
-      state = Object.assign({}, state, next, { tree: next });
+      botTreeState = next;
+      state = Object.assign({}, state, next);
       drawTree();
       if (next.error) setStatus(next.error, true);
       else setStatus(next.directory || '', false);
@@ -509,6 +756,7 @@
     document.getElementById('modalTitle').textContent = title;
     var body = document.getElementById('modalBody');
     body.textContent = '';
+    body.onkeydown = null;
     document.getElementById('modal').hidden = false;
     document.getElementById('modalRaw').hidden = true;
     return body;
@@ -526,7 +774,8 @@
   function openForm(index) {
     return api.form(index).then(function (form) {
       if (!form.fields.length) return;
-      var body = openModal(form.className || 'Command');
+      // UserFriendlyCommandEditor's own caption.
+      var body = openModal(messages.commandEditor);
       var inputs = {};
       form.fields.forEach(function (field) {
         var row = el('div', 'field');
@@ -538,16 +787,46 @@
         inputs[field.key] = input;
         body.appendChild(row);
       });
+      // btnGetInfo exists only for a command that has a Cell, Map or Pad member, and it fills the
+      // boxes those names match from the player's own cell, map and pad.
+      if (form.fields.some(function (field) { return /^(cell|map|pad)$/i.test(field.key); })) {
+        var getInfo = el('button', 'sheet-button', messages.getInfo);
+        getInfo.type = 'button';
+        getInfo.addEventListener('click', function () {
+          api.game('btnGetInfo', {}).then(function (result) {
+            if (!result || result.ok !== true) {
+              setStatus((result && result.error) || 'the game did not answer', true);
+              return;
+            }
+            form.fields.forEach(function (field) {
+              var key = String(field.key).toLowerCase();
+              if (key.indexOf('swf') !== -1 || key.indexOf('max') !== -1) return;
+              var next = key.indexOf('cell') !== -1 ? result.values.cell
+                : (key.indexOf('map') !== -1 ? result.values.map
+                : (key.indexOf('pad') !== -1 ? result.values.pad : undefined));
+              if (next !== undefined && next !== null && inputs[field.key]) inputs[field.key].value = String(next);
+            });
+          });
+        });
+        body.appendChild(getInfo);
+      }
       document.getElementById('modalRaw').hidden = false;
       document.getElementById('modalRaw').onclick = function () {
         closeModal();
         openRaw(index, form.json);
       };
-      document.getElementById('modalOk').onclick = function () {
+      var submit = function () {
         var values = {};
         Object.keys(inputs).forEach(function (key) { values[key] = inputs[key].value; });
         api.edit(index, values).then(function (next) { closeModal(); applyState(next); });
       };
+      // txtCmd_KeyDown and the form's own handler: Enter is OK, Escape is Cancel.
+      body.onkeydown = function (event) {
+        if (event.target && event.target.tagName === 'BUTTON') return;
+        if (event.key === 'Escape') { event.preventDefault(); closeModal(); }
+        else if (event.key === 'Enter' && !event.altKey) { event.preventDefault(); submit(); }
+      };
+      document.getElementById('modalOk').onclick = submit;
       document.getElementById('modalCancel').onclick = closeModal;
       var first = form.fields[0];
       if (first && inputs[first.key]) inputs[first.key].focus();
@@ -575,6 +854,17 @@
     };
     document.getElementById('transferCancel').onclick = function () {
       document.getElementById('transfer').hidden = true;
+    };
+    // RawCommandEditor's own key handler: Ctrl+Enter submits, Escape cancels (Enter alone is a
+    // newline in this box, which is what the reference's multiline txtCmd does).
+    box.onkeydown = function (event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        document.getElementById('transferCancel').click();
+      } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        document.getElementById('transferOk').click();
+      }
     };
     box.focus();
   }
@@ -697,13 +987,20 @@
       var index = Number(row.dataset.index);
       var current = (state && state.selection) || [];
       var next;
-      if (event.shiftKey && current.length) {
+      if (running()) {
+        // selectionMode(SelectionMode.One) while the bot runs: one row, never a block.
+        next = [index];
+      } else if (event.shiftKey && current.length) {
         var from = Math.min(current[0], index);
         var to = Math.max(current[current.length - 1], index);
         next = [];
         for (var at = from; at <= to; at++) { next.push(at); }
-      } else {
+      } else if (event.ctrlKey || event.metaKey) {
+        // Ctrl toggles one row in or out of the selection.
         next = selectionOf(index);
+      } else {
+        // A plain click selects that row alone (MultiExtended's own behaviour).
+        next = [index];
       }
       select(state ? state.selected : 'Commands', next);
     });
@@ -723,7 +1020,16 @@
       else if (event.key === 'Delete') action = 'remove';
       else if (event.key === 'd' || event.key === 'D') action = 'duplicate';
       else if (event.key === 'v' || event.key === 'V') { event.preventDefault(); openPaste(); return; }
-      else if (event.key === 'c' || event.key === 'C') action = event.shiftKey ? 'copyAsText' : 'copyJson';
+      else if (event.key === 'x' || event.key === 'X') {
+        // Ctrl+X cuts; with nothing selected there is nothing to cut (and no clipboard write).
+        if (!(state && state.selection && state.selection.length)) return;
+        action = 'cut';
+      } else if (event.key === 'c' || event.key === 'C') {
+        // Ctrl+C and Ctrl+Shift+C are both guarded by SelectedList.SelectedIndex > -1 in the
+        // reference: with no selection the press is a no-op and the clipboard is left alone.
+        if (!(state && state.selection && state.selection.length)) return;
+        action = event.shiftKey ? 'copyAsText' : 'copyJson';
+      }
       else if (event.key === 's' || event.key === 'S') { event.preventDefault(); save(true); return; }
       else return;
       event.preventDefault();
@@ -763,7 +1069,10 @@
       if (!node || node.dataset.wired) return;
       node.dataset.wired = '1';
       node.addEventListener('change', function () {
-        api.setting(sheet.settings[id], node.checked).then(applyState);
+        // A tick writes its checked flag; a box or combo writes its value (FollowName, AutoZone,
+        // Server - the three the reference reads when it generates a configuration).
+        var value = node.type === 'checkbox' ? node.checked : node.value;
+        api.setting(sheet.settings[id], value).then(applyState);
       });
     });
     Object.keys(sheet.numbers || {}).forEach(function (id) {
@@ -790,7 +1099,21 @@
           enable.checked = !!(next && next.enabled);
           state = Object.assign({}, state, next);
           if (next && next.error) setStatus(next.error, true);
+          else if (next && next.zoneError) setStatus(next.zoneError, true);
           else setStatus(enable.checked ? messages.botStarted : messages.botStopped, false);
+          if (enable.checked) {
+            // chkEnableBot_CheckedChanged ticks chkSpecial for the selected zone, which is what
+            // registers the live handler for the run.
+            var special = document.getElementById('chkSpecial');
+            if (special && !special.checked && value('cmbSpecials')) special.checked = true;
+            startPolling();
+          } else {
+            stopPolling();
+            var tick = document.getElementById('chkSpecial');
+            if (tick && tick.checked) tick.checked = false;
+          }
+          syncRules();
+          drawList();
         });
       });
     }
@@ -830,7 +1153,125 @@
       node.dataset.wired = '1';
       node.addEventListener('change', function () { api.setting(id === 'txtAuthor' ? 'Author' : 'Description', node.value); });
     });
+    wireRemembered();
+    wireStatements();
+    wireBoosts();
+    wireSaved();
+    var special = document.getElementById('chkSpecial');
+    if (special && !special.dataset.wired) {
+      special.dataset.wired = '1';
+      special.addEventListener('change', function () { toggleSpecial(special); });
+    }
+    var colourful = document.getElementById('colorfulCommands');
+    if (colourful && !colourful.dataset.wired) {
+      colourful.dataset.wired = '1';
+      colourful.addEventListener('change', function () { drawList(); });
+    }
     drawLabelList();
+  }
+
+  /** Remember what a control holds, so a tab switch does not lose it (the reference has one form). */
+  function wireRemembered() {
+    Object.keys(controlsById).forEach(function (id) {
+      var node = document.getElementById(id);
+      if (!node || node.dataset.remembered) return;
+      node.dataset.remembered = '1';
+      ['input', 'change'].forEach(function (type) {
+        node.addEventListener(type, function () {
+          remembered[id] = snapshot(node);
+          // A radio's siblings are part of the same choice.
+          if (node.type === 'radio' && node.name) {
+            Array.prototype.forEach.call(
+              document.querySelectorAll('input[type="radio"][name="' + node.name + '"]'),
+              function (other) { remembered[other.id] = other.checked; });
+          }
+          syncRules();
+        });
+      });
+    });
+  }
+
+  /** cbCategories feeds cbStatement, and cbStatement feeds the two Value boxes (BM.cs:1413-1450). */
+  function wireStatements() {
+    var categories = document.getElementById('cbCategories');
+    var statements = document.getElementById('cbStatement');
+    var first = document.getElementById('txtStatement1');
+    var second = document.getElementById('txtStatement2');
+    if (!categories || !statements || categories.dataset.statements) return;
+    categories.dataset.statements = '1';
+    function fill() {
+      statements.textContent = '';
+      var tag = categories.value;
+      if (!tag) return;
+      (sheet.statements || []).forEach(function (statement) {
+        if (statement.tag !== tag) return;
+        var option = el('option', null, statement.text);
+        option.value = statement.className;
+        option.dataset.description1 = statement.description1 || '';
+        option.dataset.description2 = statement.description2 || '';
+        statements.appendChild(option);
+      });
+      statements.selectedIndex = -1;
+    }
+    categories.addEventListener('change', fill);
+    statements.addEventListener('change', function () {
+      var option = statements.options[statements.selectedIndex];
+      if (!option) return;
+      var one = option.dataset.description1 || '';
+      var two = option.dataset.description2 || '';
+      first.disabled = !one;
+      second.disabled = !two;
+      first.value = one;
+      second.value = two;
+    });
+    if (categories.value) fill();
+  }
+
+  /** cbBoosts_Click: the combo repopulates from the bag's ServerUse items when it is opened. */
+  function wireBoosts() {
+    var node = document.getElementById('cbBoosts');
+    if (!node || node.dataset.boosts) return;
+    node.dataset.boosts = '1';
+    node.addEventListener('mousedown', loadBoosts);
+  }
+
+  function loadBoosts() {
+    return api.game('cbBoosts', { fields: valuesFromSheet() }).then(function (result) {
+      if (!result || result.ok !== true) {
+        setStatus((result && result.error) || 'the game did not answer', true);
+        return;
+      }
+      fillBoosts(result.boosts || []);
+    });
+  }
+
+  /** txtSaved_TextChanged: the box is the tree's root, so an edit re-lists from it. */
+  function wireSaved() {
+    var node = document.getElementById('txtSaved');
+    if (!node || node.dataset.saved) return;
+    node.dataset.saved = '1';
+    node.addEventListener('change', refreshTree);
+  }
+
+  /** chkSpecial_CheckedChanged: requires login, then toggles the live handler and the combo. */
+  function toggleSpecial(node) {
+    syncRules();
+    if (!node.checked) {
+      api.special(value('cmbSpecials'), false);
+      return;
+    }
+    // Player.IsLoggedIn: the game reports no cell until a character is in the world.
+    api.game('btnGetInfo', {}).then(function (result) {
+      if (!result || result.ok !== true) {
+        node.checked = false;
+        syncRules();
+        setStatus((result && result.error) || 'sign in to the game first', true);
+        return;
+      }
+      api.special(value('cmbSpecials'), true).then(function (answer) {
+        if (answer && answer.ok === false) setStatus(answer.error, true);
+      });
+    });
   }
 
   function drawLabelList() {

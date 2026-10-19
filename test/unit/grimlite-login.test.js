@@ -421,6 +421,13 @@ test('a drop opens the list by itself, and a live connection pushes the hidden s
   // and it does not keep reopening a list that is already up.
   await tick();
   assert.strictEqual(opened, 1);
+
+  // A reconnect arms the next drop: the reference's entry comes back on every loss, not once.
+  answer = { connected: true };
+  await tick();
+  answer = { connected: false };
+  await tick();
+  assert.strictEqual(opened, 2, 'a later disconnect opens the list again');
   session.stop();
 });
 
@@ -475,7 +482,7 @@ function loadLoginPage(bridge) {
   const script = /<script>([\s\S]*?)<\/script>/.exec(source);
   assert.ok(script, 'the login page has no inline script');
 
-  const ids = ['title', 'savedHeading', 'list', 'username', 'password', 'add', 'import',
+  const ids = ['root', 'title', 'savedHeading', 'list', 'username', 'password', 'add', 'import',
     'notice', 'status'];
   const byId = {};
   ids.forEach(function (id) { byId[id] = domElement(); });
@@ -530,6 +537,55 @@ test('the login page draws the saved characters and names its controls', async (
   assert.strictEqual(row.children[1].textContent, 'Sign in');
 });
 
+// Root_Load reads CharSelect.cfg at startup. The window does the same read once on activation,
+// silently: a first run with no file is not an error the user needs to see.
+test('the credentials file is read at startup, and a missing one is silent', async () => {
+  const reads = [];
+  const opened = openWindow({
+    readCredentialsFile: function () {
+      reads.push(1);
+      return Promise.resolve({'text': '0=first,pass1\n1=second,pass2\n', error: null});
+    }
+  });
+  const imported = await opened.window.autoImport();
+  assert.strictEqual(imported.imported, 2);
+  assert.deepStrictEqual((await opened.handled.loginList()).characters,
+    [{ username: 'first' }, { username: 'second' }]);
+
+  const missing = openWindow({
+    readCredentialsFile: function () { return Promise.resolve({ text: null, error: 'ENOENT' }); }
+  });
+  assert.deepStrictEqual(await missing.window.autoImport(), { imported: 0, error: null });
+  assert.deepStrictEqual((await missing.handled.loginList()).characters, []);
+});
+
+// Usernames outlive the process; passwords do not. A name loaded from the store has no password
+// until the user types one again, and signing in says so instead of sending an empty one.
+test('usernames persist without passwords, and a name with no password cannot sign in', async () => {
+  const saved = { usernames: [] };
+  const names = {
+    readOrCreate: function () { return saved; },
+    write: function (state) { saved.usernames = state.usernames.slice(); }
+  };
+  const first = openWindow({ store: model.createCredentialStore(), names: names });
+  await first.handled.loginAdd({}, 'first', 'pass1');
+  assert.deepStrictEqual(saved.usernames, ['first']);
+  assert.strictEqual(JSON.stringify(saved).indexOf('pass1'), -1, 'no password reaches the store');
+
+  const game = fakeGame();
+  const second = openWindow({ store: model.createCredentialStore(), names: names, game: game });
+  assert.deepStrictEqual((await second.handled.loginList()).characters, [{ username: 'first' }]);
+  const refused = await second.handled.loginSignIn({}, 'first');
+  assert.strictEqual(refused.signedIn, false);
+  assert.strictEqual(refused.error, model.ERRORS.noPassword);
+  assert.deepStrictEqual(game.calls, []);
+
+  await second.handled.loginAdd({}, 'first', 'pass2');
+  assert.strictEqual((await second.handled.loginSignIn({}, 'first')).signedIn, true);
+  assert.deepStrictEqual(game.calls, [{ name: 'FixLogin', args: ['first', 'pass2'] }]);
+  assert.deepStrictEqual(saved.usernames, ['first'], 're-adding a name does not duplicate it');
+});
+
 test('clicking Sign in on a row hands the page that one username and draws the answer', async () => {
   const signedIn = [];
   const page = loadLoginPage({
@@ -553,6 +609,30 @@ test('clicking Sign in on a row hands the page that one username and draws the a
   // look like a wrong password.
   assert.strictEqual(page.byId.status.textContent, 'no member FixLogin at world');
   assert.strictEqual(page.byId.status.className, 'error');
+});
+
+// The reference hides the list while connected and shows it again on every drop; the page follows
+// the pushed state rather than leaving a dead list in front of a live session.
+test('the page hides while connected and shows itself on every disconnect', async () => {
+  let push = null;
+  const page = loadLoginPage({
+    getMessages: function () { return Promise.resolve({}); },
+    getList: function () { return Promise.resolve({ characters: [], heldIn: '' }); },
+    signIn: function () { return Promise.resolve({}); },
+    remove: function () { return Promise.resolve({}); },
+    importFile: function () { return Promise.resolve({}); },
+    onConnection: function (callback) { push = callback; }
+  });
+  await settled();
+
+  push({ state: 'connected', visible: false });
+  assert.strictEqual(page.byId.root.hidden, true);
+  push({ state: 'lost', visible: true });
+  assert.strictEqual(page.byId.root.hidden, false);
+  push({ state: 'connected', visible: false });
+  assert.strictEqual(page.byId.root.hidden, true);
+  push({ state: 'lost', visible: true });
+  assert.strictEqual(page.byId.root.hidden, false, 'a second drop shows it again');
 });
 
 test('reading the reference own file reports how many characters came in', async () => {

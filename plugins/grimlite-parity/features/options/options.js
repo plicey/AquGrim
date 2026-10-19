@@ -140,7 +140,6 @@ function createOptionsFeature(host, deps) {
     function settleLoops() {
         if (applying) startOptionsLoop();
         else stopOptionsLoop();
-        settleWalkSpeedLoop();
     }
 
     /** The reference's OptionsManager.Start/Stop. Ticks stay as the user left them. */
@@ -183,6 +182,13 @@ function createOptionsFeature(host, deps) {
                         [toggle.call, String(toggles.WALK_SPEED.restore)]);
                     results[id] = { ok: answer.ok === true, error: answer.error || null };
                 }
+                // The loop belongs to this tick, not to the process: a value restored on launch
+                // stays a value until the user moves the box (BotManager.cs:1696-1702).
+                settleWalkSpeedLoop();
+            } else if (id === 'provoke' || id === 'enemyMagnet') {
+                // OptionsManager's setters only set these two flags. ApplySettings sends them
+                // while its loop runs (OptionsManager.cs:188-217).
+                results[id] = { ok: true, error: null };
             } else if (wanted || toggle.callAlways) {
                 // Root.cs calls these the moment the tick goes on. The five without an off call
                 // in the reference send nothing on untick, so neither does this port.
@@ -191,7 +197,6 @@ function createOptionsFeature(host, deps) {
                 results[id] = { ok: true, error: null };
             }
 
-            settleLoops();
             return { ok: answer.ok === true, error: answer.error || null, state: state[id] };
         },
 
@@ -230,7 +235,6 @@ function createOptionsFeature(host, deps) {
         /** Load remembered ticks; OptionsManager itself starts stopped on a fresh app launch. */
         attach: function () {
             load();
-            settleLoops();
             return feature;
         },
 

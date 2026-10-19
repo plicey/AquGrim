@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld('aquastarTamperer', {
     getMessages: function () {
         return ipcRenderer.invoke(CH('tampererMessages'));
     },
+    // The banner the window shows while packet steering is off.
+    steering: function () {
+        return ipcRenderer.invoke(CH('tampererSteering'));
+    },
     // Ticked capture switches: the main process subscribes the tap while either is on.
     watch: function (switches) {
         return ipcRenderer.invoke(CH('tampererWatch'), switches);

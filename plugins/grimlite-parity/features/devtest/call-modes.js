@@ -12,6 +12,13 @@ const MODES = [
     { id: 'getSetObject', label: 'Get/Set Object' }
 ];
 
+// DevTest.cs's own wait between Flash.SetGameObject and the read-back: `await Task.Delay(1000)`.
+const SETTLE_MS = 1000;
+
+// DevTest.cs's two failure literals for a Get/Set read-back.
+const CANNOT_CALL = "Can't call the function.";
+const CANNOT_PROCESS = "Function called, but can't process its return.";
+
 /**
  * Split the Args box the way the reference splits it: on commas when there is one, otherwise the
  * whole box is a single argument, and an empty box is no arguments at all.
@@ -38,10 +45,13 @@ function coerce(value) {
  * @param {string} path the Function box
  * @param {string[]} args already split by parseArgs
  * @param {{ call: (name: string, args: any[]) => Promise<object> }} bridge
+ * @param {object} [options] { wait(ms) } - the delay between a write and its read-back; tests
+ *   inject an immediate one, the app passes a real timer.
  * @returns {Promise<{ ok: boolean, value?: any, error?: string }>}
  */
-function run(mode, path, args, bridge) {
+function run(mode, path, args, bridge, options) {
     const parts = Array.isArray(args) ? args : [];
+    const wait = (options && typeof options.wait === 'function') ? options.wait : function () { return Promise.resolve(); };
     if (mode === 'callFunction') {
         // The reference keeps a separate zero-argument entry point; so does the loader.
         return parts.length
@@ -49,14 +59,31 @@ function run(mode, path, args, bridge) {
             : bridge.call('callGameFunction0', [path]);
     }
     if (mode === 'getSetObject') {
-        if (!parts.length) return bridge.call('getGameObject', [path]);
+        if (!parts.length) return readBack(bridge.call('getGameObject', [path]));
         // The reference writes, waits a moment, then reads the path back.
         return bridge.call('setGameObject', [path, coerce(parts[0])])
             .then(function () {
-                return bridge.call('getGameObject', [path]);
+                return wait(SETTLE_MS);
+            })
+            .then(function () {
+                return readBack(bridge.call('getGameObject', [path]));
             });
     }
     return bridge.call('getGameObject', [path]);
+}
+
+/** DevTest.cs's radGetGame branch: null is "Can't call"; an empty string is the other literal. */
+function readBack(answer) {
+    return Promise.resolve(answer).then(function (result) {
+        if (!result || result.ok !== true) return result;
+        if (result.value === null || result.value === undefined) {
+            return { ok: false, error: CANNOT_CALL };
+        }
+        if (typeof result.value === 'string' && result.value.length < 1) {
+            return { ok: false, error: CANNOT_PROCESS };
+        }
+        return result;
+    });
 }
 
 /** Pretty-print JSON; anything else is shown as it came. The reference's Format JSON button. */
@@ -73,6 +100,9 @@ function format(text) {
 
 module.exports = {
     MODES: MODES,
+    SETTLE_MS: SETTLE_MS,
+    CANNOT_CALL: CANNOT_CALL,
+    CANNOT_PROCESS: CANNOT_PROCESS,
     parseArgs: parseArgs,
     coerce: coerce,
     run: run,

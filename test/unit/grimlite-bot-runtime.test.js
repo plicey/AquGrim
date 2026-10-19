@@ -235,13 +235,15 @@ test('a window key that is absent or empty falls back to one default bot, not ma
   assert.strictEqual(r.sessions['default'].key, 'default');
 });
 
-test('a bot that writes a Configuration key edits the document it was started with', async () => {
+test('a bot that writes a Configuration key edits its running copy, not the editor document', async () => {
   const r = runtime();
   const document = { Commands: [command('CmdBotDelay', { Delay: 40 }), command('CmdStop', {})] };
   await r.manager.start('win-a', document);
   await r.manager.idle('win-a');
-  assert.strictEqual(document.BotDelay, 40,
-    'CmdBotDelay writes Configuration.BotDelay, which is the document the editor holds');
+  assert.strictEqual(document.BotDelay, undefined,
+    'the editor document is untouched by the running bot');
+  assert.strictEqual(r.manager.forWindow('win-a').document.BotDelay, 40,
+    'CmdBotDelay writes the running copy the runtime started it with');
 });
 
 test('the seams a misc command needs reach the engine the plugin actually runs', async () => {

@@ -135,16 +135,14 @@ const TERCESS = { map: 'tercessuinotlim', entry: { cell: 'm22', pad: 'Left' } };
 // it opens with 100000).
 const PRIVATE = { label: 'Private', value: 100000, max: 1000000 };
 
-// darkGroupBox2, "Map Bypasser". Its labels are the reference's own control text; "Send" is this
-// port's addition, because the reference sends the packet on Unlock and offers no way to re-send
-// one that is already in the box.
+// darkGroupBox2, "Map Bypasser". Its labels are the reference's own control text; the reference
+// sends the packet as part of Unlock and offers only Copy afterwards.
 const BYPASSER = {
     label: 'Map Bypasser',
     hint: 'Story Quest ID that required to unlock the map',
     unlock: 'Unlock',
     packetLabel: 'Generated packet',
-    copy: 'Copy',
-    send: 'Send'
+    copy: 'Copy'
 };
 
 // The enchantment types, in the order the designer lays them out in its two-column grid (row 0:

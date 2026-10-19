@@ -75,11 +75,16 @@ function createFromHost(host, deps) {
         game: game,
         messages: messages,
         store: deps.store,
+        // Usernames persist in the platform's namespaced store (never passwords); the file above
+        // is the user's own CharSelect.cfg, read only.
+        names: deps.names || host.getStore('login'),
         pluginId: host.pluginId,
         readCredentialsFile: deps.readCredentialsFile ||
             readCredentialsFile(path.join(host.appDataDirectory, loginWindow.CREDENTIALS_FILE)),
-        readConnection: deps.readConnection || connectionReader(game)
+            readConnection: deps.readConnection || connectionReader(game)
     });
+    // Root_Load reads the credentials file at startup; a first run with no file is silent.
+    Promise.resolve(window.autoImport()).catch(function () {});
     // The window follows the session from the moment the plugin activates: the reference's list is
     // loaded at startup too (Root.cs:115), and a session that drops while nothing is open still
     // brings the list up.

@@ -31,12 +31,18 @@ contextBridge.exposeInMainWorld('aquastarBotManager', {
     style: function (options) { return ipcRenderer.invoke(CH('botManagerStyle'), options || {}); },
     tree: function (segments) { return ipcRenderer.invoke(CH('botManagerTree'), segments || []); },
     chooseDirectory: function () { return ipcRenderer.invoke(CH('botManagerChooseDirectory')); },
-    addFolder: function (name) { return ipcRenderer.invoke(CH('botManagerAddFolder'), name); },
+    addFolder: function (name, directory) {
+        return ipcRenderer.invoke(CH('botManagerAddFolder'), name, directory || '');
+    },
     treeSelect: function (segments, ctrl) {
         return ipcRenderer.invoke(CH('botManagerTreeSelect'), segments, ctrl === true);
     },
     game: function (id, modifiers) {
         return ipcRenderer.invoke(CH('botManagerGame'), id, modifiers || {});
+    },
+    // chkSpecial: the live auto-zone handler behind the Misc 2 combo.
+    special: function (zone, enabled) {
+        return ipcRenderer.invoke(CH('botManagerSpecial'), zone || '', enabled === true);
     },
     beep: function () { return ipcRenderer.invoke(CH('botManagerBeep')); },
     drop: function (files) { return ipcRenderer.invoke(CH('botManagerDrop'), files || []); },

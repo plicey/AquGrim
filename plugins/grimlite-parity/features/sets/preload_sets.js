@@ -18,9 +18,6 @@ contextBridge.exposeInMainWorld('aquastarSets', {
     save: function (entries) {
         return ipcRenderer.invoke(CH('saveSet'), entries);
     },
-    equip: function (entries) {
-        return ipcRenderer.invoke(CH('equipSet'), entries);
-    },
     getMessages: function () {
         return ipcRenderer.invoke(CH('setMessages'));
     }

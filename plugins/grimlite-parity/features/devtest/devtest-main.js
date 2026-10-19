@@ -21,7 +21,9 @@ function register(host) {
                 mode,
                 name,
                 callModes.parseArgs(args, argsEnabled !== false),
-                { call: function (callback, callArgs) { return host.bridge.call(callback, callArgs); } }
+                { call: function (callback, callArgs) { return host.bridge.call(callback, callArgs); } },
+                // Get/Set Object writes, waits ~1 s and reads back, exactly as DevTest.cs does.
+                { wait: function (ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); } }
             );
         });
     });

@@ -214,8 +214,10 @@ function serializeSetFile(values) {
         const parts = sides(source[section.row]);
         if (!section.first) lines.push('');
         lines.push(section.label);
-        lines.push(section.prefix + ' file:' + (parts.file || 'None'));
-        lines.push(section.prefix + ' link:' + (parts.link || 'None'));
+        // CosmeticForm.cs writes the box text as it is: TextBox.Text is never null, so its
+        // `?? "None"` never fires and an empty box is written as an empty value.
+        lines.push(section.prefix + ' file:' + parts.file);
+        lines.push(section.prefix + ' link:' + parts.link);
     });
     return lines.join('\r\n') + '\r\n';
 }

@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld('aquastarSpammer', {
     getMessages: function () {
         return ipcRenderer.invoke(CH('spammerMessages'));
     },
+    // The banner the window shows while packet steering is off.
+    steering: function () {
+        return ipcRenderer.invoke(CH('spammerSteering'));
+    },
     load: function () {
         return ipcRenderer.invoke(CH('spammerLoad'));
     },

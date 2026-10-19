@@ -52,7 +52,8 @@ const TABS = [
           },
           {
             id:  "numRest",
-            kind:  "number"
+            kind:  "number",
+            value:  60
           },
           {
             id:  "chkMP",
@@ -66,7 +67,8 @@ const TABS = [
           },
           {
             id:  "numRestMP",
-            kind:  "number"
+            kind:  "number",
+            value:  60
           },
           {
             id:  "label10",
@@ -93,6 +95,7 @@ const TABS = [
           {
             id:  "rbItems",
             kind:  "radio",
+            checked:  true,
             text:  "Items"
           },
           {
@@ -118,6 +121,7 @@ const TABS = [
           {
             id:  "chkAddToWhiteList",
             kind:  "tick",
+            checked:  true,
             text:  "add to Whitelist"
           },
           {
@@ -144,7 +148,8 @@ const TABS = [
           },
           {
             id:  "numSkillCmd",
-            kind:  "number"
+            kind:  "number",
+            value:  1
           },
           {
             id:  "cbSkillCmdWait",
@@ -191,6 +196,7 @@ const TABS = [
       {
         id:  "chkExitRest",
         kind:  "tick",
+        checked:  true,
         text:  "Exit combat before resting"
       },
       {
@@ -215,7 +221,8 @@ const TABS = [
           },
           {
             id:  "numSkill",
-            kind:  "number"
+            kind:  "number",
+            value:  1
           },
           {
             id:  "btnAddSkill",
@@ -234,7 +241,8 @@ const TABS = [
           },
           {
             id:  "numSafe",
-            kind:  "number"
+            kind:  "number",
+            value:  60
           },
           {
             id:  "label2",
@@ -266,7 +274,8 @@ const TABS = [
           },
           {
             id:  "numSkillD",
-            kind:  "number"
+            kind:  "number",
+            value:  50
           }
         ]
       }
@@ -297,7 +306,8 @@ const TABS = [
       },
       {
         id:  "numJoinTry",
-        kind:  "number"
+        kind:  "number",
+        value:  1
       },
       {
         id:  "btnSetSpawn",
@@ -321,11 +331,13 @@ const TABS = [
       },
       {
         id:  "numWalkY",
-        kind:  "number"
+        kind:  "number",
+        value:  1
       },
       {
         id:  "numWalkX",
-        kind:  "number"
+        kind:  "number",
+        value:  1
       },
       {
         id:  "button2",
@@ -400,7 +412,8 @@ const TABS = [
           },
           {
             id:  "numMapItem",
-            kind:  "number"
+            kind:  "number",
+            value:  1
           }
         ]
       },
@@ -412,6 +425,7 @@ const TABS = [
           {
             id:  "chkInventOnStart",
             kind:  "tick",
+            checked:  true,
             text:  "Items to Invent on Start"
           },
           {
@@ -422,6 +436,7 @@ const TABS = [
           {
             id:  "chkPickup",
             kind:  "tick",
+            checked:  true,
             text:  "Pick up whitelisted"
           },
           {
@@ -448,7 +463,8 @@ const TABS = [
         children:  [
           {
             id:  "radBuyByName",
-            kind:  "radio"
+            kind:  "radio",
+            checked:  true
           },
           {
             id:  "radBuyByID",
@@ -476,7 +492,8 @@ const TABS = [
           },
           {
             id:  "numBuyQty",
-            kind:  "number"
+            kind:  "number",
+            value:  1
           },
           {
             id:  "btnLoadShop",
@@ -579,6 +596,7 @@ const TABS = [
       {
         id:  "cbItemCmds",
         kind:  "select",
+        unselected:  true,
         options:  [
           "Get drop",
           "Sell",
@@ -609,7 +627,8 @@ const TABS = [
           },
           {
             id:  "numQQuestId",
-            kind:  "number"
+            kind:  "number",
+            value:  1
           },
           {
             id:  "btnQAddToWhitelist",
@@ -619,11 +638,13 @@ const TABS = [
           {
             id:  "chkQRequirements",
             kind:  "tick",
+            checked:  true,
             text:  "Requirments"
           },
           {
             id:  "chkQRewards",
             kind:  "tick",
+            checked:  true,
             text:  "Rewards"
           }
         ]
@@ -636,6 +657,7 @@ const TABS = [
           {
             id:  "chkReloginCompleteQuest",
             kind:  "tick",
+            checked:  true,
             text:  "Logout after 5 times failed to complete a quest"
           },
           {
@@ -650,11 +672,13 @@ const TABS = [
           },
           {
             id:  "numQuestListID",
-            kind:  "number"
+            kind:  "number",
+            value:  1
           },
           {
             id:  "numQuestDelay",
-            kind:  "number"
+            kind:  "number",
+            value:  1000
           },
           {
             id:  "btnAddQuestList",
@@ -673,7 +697,8 @@ const TABS = [
           },
           {
             id:  "numQuestListItem",
-            kind:  "number"
+            kind:  "number",
+            value:  1
           },
           {
             id:  "btnRemoveQuestList",
@@ -704,7 +729,8 @@ const TABS = [
           },
           {
             id:  "numQuestID",
-            kind:  "number"
+            kind:  "number",
+            value:  1
           },
           {
             id:  "chkQuestItem",
@@ -713,7 +739,8 @@ const TABS = [
           },
           {
             id:  "numQuestItem",
-            kind:  "number"
+            kind:  "number",
+            value:  1
           },
           {
             id:  "btnQuestComplete",
@@ -727,7 +754,8 @@ const TABS = [
           },
           {
             id:  "numEnsureTries",
-            kind:  "number"
+            kind:  "number",
+            value:  1
           }
         ]
       }
@@ -821,7 +849,8 @@ const TABS = [
       },
       {
         id:  "numSpamTimes",
-        kind:  "number"
+        kind:  "number",
+        value:  1
       },
       {
         id:  "darkGroupBox14",
@@ -935,7 +964,8 @@ const TABS = [
       },
       {
         id:  "numBeepTimes",
-        kind:  "number"
+        kind:  "number",
+        value:  10
       },
       {
         id:  "btnDelay",
@@ -944,7 +974,8 @@ const TABS = [
       },
       {
         id:  "numDelay",
-        kind:  "number"
+        kind:  "number",
+        value:  1500
       },
       {
         id:  "btnStatementAdd",
@@ -1009,9 +1040,9 @@ const TABS = [
         text:  "Special handlers",
         children:  [
           {
-            id:  "btnSpecialSwitch",
+            id:  "btnSpecialStart",
             kind:  "button",
-            text:  "Switch"
+            text:  "Start"
           },
           {
             id:  "btnSpecialStop",
@@ -1019,9 +1050,9 @@ const TABS = [
             text:  "Stop"
           },
           {
-            id:  "btnSpecialStart",
+            id:  "btnSpecialSwitch",
             kind:  "button",
-            text:  "Start"
+            text:  "Switch"
           },
           {
             id:  "chkSpecial",
@@ -1030,6 +1061,7 @@ const TABS = [
           {
             id:  "cmbSpecials",
             kind:  "select",
+            unselected:  true,
             options:  [
               "Auto Zone - Ultradage",
               "Auto Zone - Dark Carnax",
@@ -1058,6 +1090,7 @@ const TABS = [
           {
             id:  "chkRestartAFK",
             kind:  "tick",
+            checked:  true,
             text:  "Restart bot on AFK"
           },
           {
@@ -1068,6 +1101,7 @@ const TABS = [
           {
             id:  "chkSkip",
             kind:  "tick",
+            checked:  true,
             text:  "Skip bot delay for index/if"
           },
           {
@@ -1077,11 +1111,13 @@ const TABS = [
           },
           {
             id:  "numBotDelay",
-            kind:  "number"
+            kind:  "number",
+            value:  100
           },
           {
             id:  "chkRestartDeath",
             kind:  "tick",
+            checked:  true,
             text:  "Restart bot upon dying"
           }
         ]
@@ -1158,7 +1194,8 @@ const TABS = [
           },
           {
             id:  "numBSDelay",
-            kind:  "number"
+            kind:  "number",
+            value:  1000
           },
           {
             id:  "tbBSPacket",
@@ -1275,7 +1312,8 @@ const TABS = [
       },
       {
         id:  "numOptionsTimer",
-        kind:  "number"
+        kind:  "number",
+        value:  500
       },
       {
         id:  "chkEnableSettings",
@@ -1317,7 +1355,8 @@ const TABS = [
       },
       {
         id:  "numWalkSpeed",
-        kind:  "number"
+        kind:  "number",
+        value:  8
       },
       {
         id:  "chkSkipCutscenes",
@@ -1380,7 +1419,8 @@ const TABS = [
           },
           {
             id:  "numRelogDelay",
-            kind:  "number"
+            kind:  "number",
+            value:  5000
           },
           {
             id:  "label7",
@@ -1434,7 +1474,8 @@ const TABS = [
           },
           {
             id:  "numSaveProgress",
-            kind:  "number"
+            kind:  "number",
+            value:  60
           },
           {
             id:  "darkLabel6",
@@ -1456,6 +1497,7 @@ const TABS = [
       {
         id:  "colorfulCommands",
         kind:  "tick",
+        checked:  true,
         text:  "Enable custom commands (CPU intensive)\r\n"
       },
       {
@@ -1466,16 +1508,19 @@ const TABS = [
           {
             id:  "chkAMStopBot",
             kind:  "tick",
+            checked:  true,
             text:  "Stop Bot"
           },
           {
             id:  "chkAMLogout",
             kind:  "tick",
+            checked:  true,
             text:  "Logout"
           },
           {
             id:  "chkAntiMod",
             kind:  "tick",
+            checked:  true,
             text:  "Enable"
           }
         ]
@@ -1493,6 +1538,7 @@ const TABS = [
       {
         id:  "chkCorrection",
         kind:  "tick",
+        checked:  true,
         text:  "Auto Correct Quantity"
       },
       {
@@ -1514,7 +1560,8 @@ const TABS = [
       },
       {
         id:  "numSetFPS",
-        kind:  "number"
+        kind:  "number",
+        value:  30
       },
       {
         id:  "btnSetFPS",
@@ -1666,6 +1713,7 @@ const TABS = [
       {
         id:  "chkAddToWhitelistF",
         kind:  "tick",
+        checked:  true,
         text:  "add to Whitelist"
       },
       {
@@ -1686,6 +1734,7 @@ const TABS = [
       {
         id:  "cbBlankFirstF",
         kind:  "tick",
+        checked:  true,
         text:  "Blank first before join"
       },
       {

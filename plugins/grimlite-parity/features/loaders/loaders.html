@@ -77,6 +77,7 @@
       <option value="Id">Id</option>
     </select>
     <button id="save">Save</button>
+    <button id="open">Open</button>
     <button id="grab">Grab</button>
   </div>
 
@@ -133,7 +134,9 @@
       fill(el('loadTarget'), sheet.loadTargets);
       fill(el('grabTarget'), sheet.grabTargets);
       el('loadTarget').selectedIndex = sheet.defaultLoadIndex;
-      el('grabTarget').selectedIndex = 0;
+      // cbGrab has no SelectedIndex set in the reference's constructor: the window opens with no
+      // grabber chosen, and Grab does nothing until one is.
+      el('grabTarget').selectedIndex = -1;
       onChange();
     });
   }
@@ -150,9 +153,11 @@
 
   // ------------------------------------------------------------------ the tree
 
-  function drawNode(row) {
+  function drawNode(row, parent) {
     var li = document.createElement('li');
     li.className = 'collapsed';
+    row.container = li;
+    row.parent = parent || null;
     var line = document.createElement('div');
     line.className = 'row';
     var kids = (row.children || []).length;
@@ -167,12 +172,25 @@
       });
     }
     line.appendChild(twisty);
-    line.appendChild(document.createTextNode(row.text));
+    // TreeView.LabelEdit: the node's text is editable in place; Enter or a click elsewhere ends
+    // the edit, and the saved tree is the edited text.
+    var label = document.createElement('span');
+    label.className = 'label';
+    label.contentEditable = 'true';
+    label.textContent = row.text;
+    label.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') { event.preventDefault(); label.blur(); }
+    });
+    label.addEventListener('blur', function () {
+      row.text = label.textContent;
+      say(row.text);
+    });
+    line.appendChild(label);
     li.appendChild(line);
     if (kids) {
       var ul = document.createElement('ul');
       ul.className = 'kids';
-      row.children.forEach(function (child) { ul.appendChild(drawNode(child)); });
+      row.children.forEach(function (child) { ul.appendChild(drawNode(child, row)); });
       li.appendChild(ul);
     }
     line.addEventListener('contextmenu', function (event) {
@@ -190,7 +208,7 @@
 
   function draw() {
     tree.innerHTML = '';
-    rows.forEach(function (row) { tree.appendChild(drawNode(row)); });
+    rows.forEach(function (row) { tree.appendChild(drawNode(row, null)); });
     flat = flatten(rows);
   }
 
@@ -241,10 +259,24 @@
   }
 
   function grab() {
+    // The reference clears the search state with the tree at the start of every grab.
+    matches = [];
+    matchIndex = -1;
+    keyword = '';
+    if (!el('grabTarget').value) {
+      // btnGrab_Click clears the tree and its search state before it looks at the combo.
+      rows = [];
+      draw();
+      say('');
+      return;
+    }
     say('Grabbing...');
     Promise.resolve(bridge.grab(el('grabTarget').value, el('orderBy').value))
       .then(function (result) {
         if (!result || !result.ok) {
+          // A refused grab still shows the cleared tree it left behind.
+          rows = (result && result.rows) || [];
+          draw();
           say((result && result.error) || 'the grab was refused', true);
           return;
         }
@@ -290,6 +322,16 @@
     if (!matches.length) { say('No match.', true); return; }
     matchIndex = matchIndex + 1 >= matches.length ? 0 : matchIndex + 1;
     var row = matches[matchIndex];
+    // EnsureVisible expands a collapsed ancestor before it scrolls the match into view.
+    var ancestor = row.parent;
+    while (ancestor) {
+      if (ancestor.container && ancestor.container.classList) {
+        ancestor.container.classList.remove('collapsed');
+        var twisty = ancestor.container.querySelector ? ancestor.container.querySelector('.twisty') : null;
+        if (twisty) twisty.textContent = '-';
+      }
+      ancestor = ancestor.parent;
+    }
     if (selected) selected.classList.remove('sel');
     selected = row.element;
     selected.classList.add('sel');
@@ -306,16 +348,11 @@
   el('forceAccept').addEventListener('click', function () { load(true); });
   el('grab').addEventListener('click', grab);
   el('save').addEventListener('click', save);
+  el('open').addEventListener('click', open);
   el('searchButton').addEventListener('click', search);
   el('search').addEventListener('keydown', function (event) {
     if (event.key === 'Enter') search();
   });
-  // The reference has a Save dialog and no open one; a document this window wrote is opened by
-  // double-clicking the tree, so a saved grab can be read back without a second control.
-  el('treeWrap').addEventListener('dblclick', function (event) {
-    if (event.target.className === 'row') open();
-  });
-
   sheets().then(function () { say('Ready.'); });
 })();
 </script>

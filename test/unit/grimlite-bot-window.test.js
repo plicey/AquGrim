@@ -118,12 +118,12 @@ test('cancelling reaches the window as a cancellation, not as an error', async (
   assert.deepStrictEqual(await feature.handle('saveBot', null, [text]), { canceled: true });
 });
 
-test('the window reaches the feature only through its own namespaced channels', async () => {
+test('the reference has no separate Bot file window, so the feature is not registered', async () => {
   const host = await activatedHost();
   const channels = host._getState().ipcHandlers.map(function (h) { return h.channel; });
-  assert.ok(channels.indexOf('plugin:grimlite-parity:openBot') !== -1);
-  assert.ok(channels.indexOf('plugin:grimlite-parity:saveBot') !== -1);
-  assert.ok(channels.indexOf('plugin:grimlite-parity:getBotFileMessages') !== -1);
+  assert.strictEqual(channels.indexOf('plugin:grimlite-parity:openBot'), -1);
+  assert.strictEqual(channels.indexOf('plugin:grimlite-parity:saveBot'), -1);
+  assert.strictEqual(channels.indexOf('plugin:grimlite-parity:getBotFileMessages'), -1);
 
   // and the page's preload only requires electron, as a sandboxed preload must
   const preload = fs.readFileSync(

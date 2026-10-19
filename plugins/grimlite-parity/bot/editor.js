@@ -143,12 +143,12 @@ function create(bot) {
 
     /**
      * Ctrl+Shift+C: the selected commands as plain text, one per line, from the command list
-     * whatever list is showing - the reference reads lstCommands.SelectedItems.
+     * whatever list is showing - the reference reads lstCommands.SelectedItems, so a selection
+     * kept in the Commands list still copies while another list is visible.
      */
     function copyAsText() {
         const commands = listOf(document, 'Commands') || [];
-        const wanted = selected === 'Commands' ? selections.Commands : [];
-        return selectionOf(commands, wanted).map(function (index) {
+        return selectionOf(commands, selections.Commands || []).map(function (index) {
             return catalog.display(commands[index]);
         }).join('\n');
     }

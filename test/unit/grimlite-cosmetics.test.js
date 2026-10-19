@@ -20,6 +20,7 @@ const platform = require('../../res/platform');
 const cosmetics = require('../../plugins/grimlite-parity/features/cosmetics/cosmetics.js');
 const { createGameAccess } = require('../../plugins/grimlite-parity/features/cosmetics/game-access.js');
 const { createCosmeticsWindow } = require('../../plugins/grimlite-parity/features/cosmetics/cosmetics-window.js');
+const { createCosmeticsDialogs } = require('../../plugins/grimlite-parity/features/cosmetics/cosmetics-dialogs.js');
 
 const repoRoot = path.join(__dirname, '../..');
 const pluginRoot = path.join(repoRoot, 'plugins/grimlite-parity');
@@ -645,6 +646,46 @@ test('Save and Load use the reference\'s own dialog shape, and a cancel touches 
   assert.strictEqual(refused.error, cosmetics.ERRORS.set);
 });
 
+// CosmeticForm.cs sets only InitialDirectory and Filter: the dialog titles stay at their own
+// "Save As"/"Open", and neither dialog suggests a file name.
+test('the cosmetic dialogs keep the reference titles and write the 24-line text', async () => {
+  const asked = [];
+  const written = [];
+  const dialogs = createCosmeticsDialogs({
+    store: null,
+    defaultDirectory: '/sets',
+    messages: { filterName: 'Grimoire sets' },
+    showOpenDialog: function (owner, options) {
+      asked.push({ open: options });
+      return Promise.resolve({ canceled: true });
+    },
+    showSaveDialog: function (owner, options) {
+      asked.push({ save: options });
+      return Promise.resolve({ canceled: false, filePath: '/sets/mine.gset' });
+    },
+    writeText: function (file, text) { written.push([file, text]); }
+  });
+
+  await dialogs.open();
+  const values = cosmetics.emptyValues();
+  values.helm = 'A;a.swf';
+  await dialogs.save(values);
+
+  assert.strictEqual(asked[0].open.title, 'Open');
+  assert.strictEqual(asked[0].open.defaultPath, '/sets');
+  assert.deepStrictEqual(asked[0].open.filters,
+    [{ name: 'Grimoire sets', extensions: ['gset'] }]);
+  assert.strictEqual(asked[1].save.title, 'Save As');
+  assert.strictEqual(asked[1].save.defaultPath, '/sets', 'no file name is suggested');
+
+  // Exactly the 24-entry array's text, with the empty boxes written empty - the reference's
+  // `?? "None"` never fires because a WinForms TextBox's Text is never null.
+  assert.deepStrictEqual(written, [['/sets/mine.gset', cosmetics.serializeSetFile(values)]]);
+  assert.ok(written[0][1].indexOf('he file:A\r\nhe link:a.swf\r\n\r\nArmor:') !== -1,
+    written[0][1]);
+  assert.ok(written[0][1].indexOf('co file:\r\nco link:\r\n') !== -1, written[0][1]);
+});
+
 // ------------------------------------------------------------------ the app surface
 
 test('the window is registered in the app\'s own window conventions', async () => {
@@ -696,7 +737,8 @@ test('the menu opens the Cosmetics window and the reference\'s action can be bou
   assert.strictEqual(binding.length, 1, 'Cosmetics needs its own keybind');
   binding[0].action();
   assert.deepStrictEqual(opened, [WINDOW_ID, WINDOW_ID]);
-  assert.strictEqual(state.keybindDefaults.grimliteCosmetics, 'Alt+Shift+C');
+  assert.strictEqual(state.keybindDefaults.grimliteCosmetics, undefined,
+    'Grimlite ships no default hotkeys');
   // Every menu entry this plugin contributes opens a window it registered, and nothing else.
   const registeredIds = state.featureWindows.map(function (w) { return w.id; });
   items.forEach(function (item) {
@@ -741,6 +783,13 @@ test('the page is the reference\'s own layout and calls only what its preload ex
       assert.ok(html.indexOf('id="' + id + '"') !== -1, 'the page has no #' + id);
     });
   assert.ok(html.indexOf('res/features/common/focus.css') !== -1, 'needs the shared focus style');
+  // A per-slot Grab appends its row to the list; Enter fills from the selection; Shift extends
+  // the selection like SelectionMode.MultiExtended; Refresh always selects the first player.
+  assert.ok(html.indexOf('result.text') !== -1, 'a per-slot grab must append its row');
+  assert.ok(html.indexOf("event.key === 'Enter'") !== -1, 'Enter must fill from the selection');
+  assert.ok(html.indexOf('event.shiftKey') !== -1, 'Shift must extend the selection');
+  assert.strictEqual(/var keep = list\.filter/.test(html), false,
+    'Refresh must not preserve the previous player');
   // A page whose inline script does not parse loads as a blank window; check it as JavaScript.
   const blocks = html.match(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g) || [];
   assert.ok(blocks.length > 0, 'the page has no inline script');

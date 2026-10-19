@@ -13,13 +13,15 @@ const toggles = require('../../plugins/grimlite-parity/features/options/toggles.
 const actions = require('../../plugins/grimlite-parity/features/hotkeys/actions.js');
 const { createOptionsWindow } = require('../../plugins/grimlite-parity/features/options/options-window.js');
 const { createHotkeysWindow } = require('../../plugins/grimlite-parity/features/hotkeys/hotkeys-window.js');
+const menusModule = require('../../plugins/grimlite-parity/menus.js');
 
 const repoRoot = path.join(__dirname, '../..');
 const pluginRoot = path.join(repoRoot, 'plugins/grimlite-parity');
 const appVersion = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')).version;
 const OPTIONS_WINDOW_ID = 'grimlite-parity-options';
 const HOTKEYS_WINDOW_ID = 'grimlite-parity-hotkeys';
-const WINDOW_IDS = [OPTIONS_WINDOW_ID, HOTKEYS_WINDOW_ID];
+const LOGS_WINDOW_ID = 'grimlite-parity-logs';
+const WINDOW_IDS = [OPTIONS_WINDOW_ID, HOTKEYS_WINDOW_ID, LOGS_WINDOW_ID];
 
 // res/const.js reads Electron at load time, so its platform keybinds are read as source - the same
 // way test/unit/game-menu.test.js does - and this is the list the app already holds.
@@ -113,22 +115,34 @@ test('the Options and Hotkeys windows are registered in the app\'s own window co
   });
 });
 
-// The reference reaches its toggles from an Options menu and its Hotkeys window from a Tools menu
-// entry; this port has one Grimlite menu, and both entries must open a window that exists. The
-// window ids are deliberately not listed here: adding a window means editing windows.js.
-test('the Grimlite menu opens the Options and Hotkeys windows, and only registered ones', async () => {
+// The reference has a top-level Options menu and keeps Hotkeys under Tools. The platform already
+// has a Tools menu, so Hotkeys stays under this plugin's Grimlite menu. Both must open a registered
+// window; the window ids are deliberately not listed here.
+test('the menus open the Options and Hotkeys windows, and only registered ones', async () => {
   const opened = [];
   const activated = await activateParity({
     openFeatureWindow: function (id) { opened.push(id); return {}; }
   });
   const state = activated.host._getState();
-  const items = state.menus
+  const top = state.menus
     .map(function (contributor) {
-      return contributor({ labels: { grimliteMenu: 'Grimlite' }, keybinds: {} });
+      return contributor({ labels: {}, keybinds: {} });
     })
-    .reduce(function (all, group) { return all.concat(group); }, [])
-    .filter(function (menu) { return menu.label === 'Grimlite'; })
-    .reduce(function (all, menu) { return all.concat(menu.submenu); }, []);
+    .reduce(function (all, group) { return all.concat(group); }, []);
+  const options = top.filter(function (menu) { return menu.label === 'Options'; });
+  const grimlite = top.filter(function (menu) { return menu.label === 'Grimlite'; })[0];
+  const items = options.concat((grimlite && grimlite.submenu) || []);
+
+  assert.deepStrictEqual(top.map(function (menu) { return menu.label; }),
+    ['Bot', 'Packets', 'Options', 'Maid', 'About', 'Char Select', 'Grimlite'],
+    'the reference order, with its Tools entries in this plugin\'s own menu');
+  const tools = (grimlite && grimlite.submenu || []).map(function (item) { return item.label; });
+  ['Bot file', 'Parity placeholder window', 'Sets'].forEach(function (hidden) {
+    assert.strictEqual(tools.indexOf(hidden), -1, hidden + ' must not have a visible entry');
+  });
+  ['Logs', 'Hotkeys', 'Bank', 'Loaders/grabbers'].forEach(function (kept) {
+    assert.ok(tools.indexOf(kept) !== -1, 'the remaining tools stay reachable: ' + kept);
+  });
 
   const labels = items.map(function (item) { return item.label; });
   ['Options', 'Hotkeys'].forEach(function (label) {
@@ -136,6 +150,9 @@ test('the Grimlite menu opens the Options and Hotkeys windows, and only register
   });
 
   const registered = state.featureWindows.map(function (w) { return w.id; });
+  ['grimlite-parity-bot-file', 'grimlite-parity-placeholder'].forEach(function (id) {
+    assert.strictEqual(registered.indexOf(id), -1, id + ' must not be a registered surface');
+  });
   items.forEach(function (item) {
     if (['Options', 'Hotkeys'].indexOf(item.label) === -1) return;
     opened.length = 0;
@@ -144,11 +161,11 @@ test('the Grimlite menu opens the Options and Hotkeys windows, and only register
     assert.ok(registered.indexOf(opened[0]) !== -1, item.label + ' opened an unregistered window: ' + opened[0]);
   });
 
-  // The plugin has a keybind for each, and both point at a registered window too.
+  // The plugin still registers both actions for Settings, even though it ships no default keys.
   ['grimliteOptions', 'grimliteHotkeys'].forEach(function (id) {
     const binding = state.keybinds.filter(function (k) { return k.id === id; });
     assert.strictEqual(binding.length, 1, id + ' needs its own keybind');
-    assert.ok(state.keybindDefaults[id], id + ' needs a default accelerator');
+    assert.strictEqual(state.keybindDefaults[id], undefined, id + ' ships unbound');
     opened.length = 0;
     binding[0].action();
     assert.strictEqual(opened.length, 1, id + ' must open one window');
@@ -156,23 +173,59 @@ test('the Grimlite menu opens the Options and Hotkeys windows, and only register
   });
 });
 
-// A core key the app holds must not be silently walked over: the reference refuses a key its own
-// hook already has (Hotkeys.cs:395). The defaults this plugin ships on the Alt+Shift family take
-// nothing the platform or the game plugin already uses.
-test('the new keybind defaults take no accelerator the app or the game plugin holds', async () => {
+test('the Char Select top-level entry follows the connection', () => {
+  let visible = true;
+  let contributor = null;
+  const host = {
+    windows: { openFeatureWindow: function () { return {}; } },
+    registerMenus: function (contribute) { contributor = contribute; }
+  };
+  menusModule.register(host, function () { return 'title'; }, {
+    charSelectVisible: function () { return visible; }
+  });
+  assert.ok(contributor({ labels: {}, keybinds: {} })
+    .some(function (menu) { return menu.label === 'Char Select'; }));
+  visible = false;
+  assert.strictEqual(contributor({ labels: {}, keybinds: {} })
+    .some(function (menu) { return menu.label === 'Char Select'; }), false);
+});
+
+test('Char Select has a one-click sign-in item for each saved username', () => {
+  const selected = [];
+  let contributor = null;
+  const host = {
+    windows: { openFeatureWindow: function () { return {}; } },
+    registerMenus: function (contribute) { contributor = contribute; }
+  };
+  menusModule.register(host, function () { return 'title'; }, {
+    charSelectVisible: function () { return true; },
+    characters: function () { return [{ username: 'mira' }, { username: 'kai' }]; },
+    selectCharacter: function (username) { selected.push(username); }
+  });
+
+  const menu = contributor({ labels: {}, keybinds: {} })
+    .filter(function (item) { return item.label === 'Char Select'; })[0];
+  const accounts = menu.submenu.filter(function (item) { return item.type !== 'separator'; });
+  assert.deepStrictEqual(accounts.map(function (item) { return item.label; }),
+    ['mira', 'kai', 'Manage characters...']);
+  accounts[0].click();
+  assert.deepStrictEqual(selected, ['mira']);
+});
+
+// Grimlite ships no hotkeys of its own, and the platform's defaults stay untouched.
+test('the plugin contributes no default accelerators and takes nothing from the app', async () => {
   const activated = await activateParity();
   const defaults = activated.host._getState().keybindDefaults;
   const platformKeys = platformKeybindValues();
   assert.ok(platformKeys.indexOf('F2') !== -1, 'the app\'s own keys must be found: ' + platformKeys.join(', '));
   assert.ok(platformKeys.indexOf('Ctrl+J') !== -1, 'the app\'s own keys must be found');
-
-  ['grimliteOptions', 'grimliteHotkeys'].forEach(function (id) {
-    assert.strictEqual(platformKeys.indexOf(defaults[id]), -1,
-      id + ' would take the app\'s own ' + defaults[id]);
+  // Grimlite ships no global hotkeys; the two Maid form keys are the safe Electron adaptation.
+  assert.deepStrictEqual(defaults, {
+    grimliteMaidUnfollow: 'Alt+Shift+U',
+    grimliteMaidStopAttack: 'Alt+Shift+X'
   });
-  // None of the defaults is a bare key a hotkey could want: every one carries a modifier.
-  ['grimliteOptions', 'grimliteHotkeys'].forEach(function (id) {
-    assert.ok(/\+/.test(defaults[id]), id + ' must keep a modifier so a single-key binding stays free');
+  Object.keys(defaults).forEach(function (id) {
+    assert.strictEqual(platformKeys.indexOf(defaults[id]), -1, id + ' steals an app key');
   });
 });
 
@@ -320,8 +373,8 @@ test('the two windows need no permission the manifest does not declare', async (
   });
 });
 
-// The hotkeys page takes its own words from the locale; the Options tick labels come straight
-// from the reference's control names in toggles.js.
+// The hotkeys page takes its own words from the locale; the empty-list and save-count lines the
+// reference does not have are gone.
 test('the hotkeys page takes its words from the locale', async () => {
   const locales = require(path.join(pluginRoot, 'locales/en-US.js'));
   const hotkeyFeature = {
@@ -333,39 +386,23 @@ test('the hotkeys page takes its words from the locale', async () => {
   }));
 
   const hotkeysView = await hotkeyHandlers.hotkeysView({});
-  assert.strictEqual(hotkeysView.messages.empty, locales.hotkeysMessages.empty);
-  assert.strictEqual(hotkeysView.messages.selectFirst, locales.hotkeysMessages.selectFirst);
-  assert.strictEqual(hotkeysView.messages.saved, locales.hotkeysMessages.saved);
+  assert.strictEqual(hotkeysView.messages.add, 'Add');
+  assert.strictEqual(hotkeysView.messages.remove, 'Remove');
+  assert.strictEqual(hotkeysView.messages.save, 'Save');
+  assert.strictEqual(hotkeysView.messages.empty, undefined);
 
-  // ...and the hotkeys page reads it: the literals it falls back to are defaults, never the only source.
+  // ...and the page no longer draws text the reference does not have.
   const hotkeysHtml = fs.readFileSync(path.join(pluginRoot, 'features/hotkeys/hotkeys.html'), 'utf8');
-  ['empty', 'selectFirst', 'saved'].forEach(function (name) {
-    assert.ok(hotkeysHtml.indexOf('words().' + name) !== -1,
-      'the hotkeys page must read messages.' + name);
+  ['Nothing is bound yet.', 'Select a binding first.', 'Saved $1 binding(s).'].forEach(function (text) {
+    assert.strictEqual(hotkeysHtml.indexOf(text), -1, 'the page must not add ' + text);
   });
 });
 
-// One accelerator, one window: two defaults on the same key means the second registration wins and
-// the first window loses its shortcut with nothing said about it. The app's own list is checked
-// against the platform above; this is the plugin's own list against itself, which is where the two
-// new entries land next to nine that were already there.
-test('no two of this plugin\'s default accelerators are the same key', async () => {
+test('the plugin registers only the Maid form keys as defaults', async () => {
   const activated = await activateParity();
   const defaults = activated.host._getState().keybindDefaults;
-  const seen = {};
-  const clashes = [];
-  Object.keys(defaults).forEach(function (id) {
-    const key = defaults[id];
-    if (typeof key !== 'string' || !key) return;
-    if (seen[key]) clashes.push(seen[key] + ' and ' + id + ' both take ' + key);
-    else seen[key] = id;
-  });
-  assert.deepStrictEqual(clashes, []);
-  // And the nine that were already here are all still here: the two new entries were added beside
-  // them, not on top of one.
-  ['grimliteParityPlaceholder', 'grimliteBotFile', 'grimliteBotManager', 'grimliteEyedropper',
-    'grimliteNotepad', 'grimliteAbout', 'grimliteParityDevTest', 'grimliteBank',
-    'grimliteCosmetics'].forEach(function (id) {
-    assert.strictEqual(typeof defaults[id], 'string', id + ' lost its default');
-  });
+  assert.deepStrictEqual(defaults, {
+    grimliteMaidUnfollow: 'Alt+Shift+U',
+    grimliteMaidStopAttack: 'Alt+Shift+X'
+  }, 'Grimlite hotkeys ship empty; the two Maid form keys are the safe Electron adaptation');
 });

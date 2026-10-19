@@ -1,6 +1,6 @@
-// The Bank and Sets windows as the app hands them out (ticket #29): registered feature windows
-// in the plugin's own conventions (sandboxed, no Flash, dark local pages), a menu entry each,
-// and main-process channels that reach the logic and the dialogs. Everything that needs live
+// The Bank window as the app hands it out (ticket #29): a registered feature window in the
+// plugin's own conventions (sandboxed, no Flash, dark local page), a menu entry, and main-process
+// channels that reach the logic and the dialogs. Everything that needs live
 // game state is reported as unwired here rather than faked; the manual side is on
 // docs/FLASH_CHECKLIST.md.
 const assert = require('assert');
@@ -20,7 +20,7 @@ const repoRoot = path.join(__dirname, '../..');
 const pluginRoot = path.join(repoRoot, 'plugins/grimlite-parity');
 const appVersion = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')).version;
 
-const WINDOW_IDS = ['grimlite-parity-bank', 'grimlite-parity-sets'];
+const WINDOW_IDS = ['grimlite-parity-bank'];
 
 function activateParity(deps) {
   return platform.activatePlugin({
@@ -36,7 +36,7 @@ function activateParity(deps) {
   });
 }
 
-test('the two windows are registered in the app\'s window conventions', async () => {
+test('the Bank window is registered in the app\'s window conventions', async () => {
   const activated = await activateParity();
   const windows = activated.host._getState().featureWindows;
 
@@ -60,9 +60,11 @@ test('the two windows are registered in the app\'s window conventions', async ()
     assert.ok(source.indexOf("require('electron')") !== -1, id + ' preload needs electron');
     assert.strictEqual(source.indexOf("require('../"), -1, id + ' preload must stay self-contained');
   });
+  assert.strictEqual(windows.some(function (w) { return w.id === 'grimlite-parity-sets'; }), false,
+    'Sets has no shell surface and must not be registered');
 });
 
-test('the Grimlite menu gains Bank and Sets, each opening its own window', async () => {
+test('the Grimlite menu keeps Bank visible and hides Sets', async () => {
   const opened = [];
   const activated = await activateParity({
     openFeatureWindow: function (id) {
@@ -83,13 +85,12 @@ test('the Grimlite menu gains Bank and Sets, each opening its own window', async
     return menu.label === 'Grimlite';
   })[0].submenu;
   const labels = submenu.map(function (item) { return item.label; });
-  // The reference's own Tools menu words: Bank, and the Sets form it keeps hidden.
+  // Bank is reachable from Grimlite; Sets has no shell surface.
   assert.ok(labels.indexOf('Bank') !== -1, 'no Bank entry: ' + labels.join(', '));
-  assert.ok(labels.indexOf('Sets') !== -1, 'no Sets entry: ' + labels.join(', '));
+  assert.strictEqual(labels.indexOf('Sets'), -1, 'Sets must not have a visible menu entry');
 
   submenu.filter(function (item) { return item.label === 'Bank'; })[0].click();
-  submenu.filter(function (item) { return item.label === 'Sets'; })[0].click();
-  assert.deepStrictEqual(opened, WINDOW_IDS);
+  assert.deepStrictEqual(opened, [WINDOW_IDS[0]]);
 });
 
 test('the reference\'s Show Bank hotkey action is bindable, and defaults to a key of its own', async () => {
@@ -106,7 +107,8 @@ test('the reference\'s Show Bank hotkey action is bindable, and defaults to a ke
     return binding.id === 'grimliteBank';
   });
   assert.strictEqual(bank.length, 1, "the reference's Show Bank action must be bindable");
-  assert.strictEqual(typeof state.keybindDefaults.grimliteBank, 'string');
+  assert.strictEqual(state.keybindDefaults.grimliteBank, undefined,
+    'Grimlite ships no default hotkeys');
   bank[0].action();
   assert.deepStrictEqual(fired, ['grimlite-parity-bank']);
 
@@ -182,7 +184,6 @@ test('the Sets window lists, adds, saves, opens, clears and equips through its c
     path.join(setsDir, 'mine.gset')
   );
 
-  const equipped = [];
   const game = {
     readInventory: function () {
       return Promise.resolve([
@@ -190,10 +191,6 @@ test('the Sets window lists, adds, saves, opens, clears and equips through its c
         { id: 2, name: 'ArchPaladin', category: 'Class', isAcItem: false, isEquipped: true },
         { id: 3, name: "Sepulchure's Armor", category: 'Armor', isAcItem: false, isEquipped: false }
       ]);
-    },
-    equipItem: function (name) {
-      equipped.push(name);
-      return Promise.resolve();
     }
   };
   const saved = [];
@@ -231,10 +228,9 @@ test('the Sets window lists, adds, saves, opens, clears and equips through its c
     'Blinding Light of Destiny', 'ArchPaladin', "Sepulchure's Armor"
   ]);
 
-  const results = await window.handle('equipSet', null, [opened.entries]);
-  assert.deepStrictEqual(equipped, ['Blinding Light of Destiny', "Sepulchure's Armor"]);
-  assert.deepStrictEqual(results.skipped, ['ArchPaladin']);
-  assert.strictEqual(results.error, null);
+  // The extra equip path is gone: the channel is refused like any other unknown one.
+  assert.throws(function () { window.handle('equipSet', null, [opened.entries]); },
+    /unknown sets channel/);
 
   const saveResult = await window.handle('saveSet', null, [opened.entries]);
   assert.strictEqual(saveResult.error, null);

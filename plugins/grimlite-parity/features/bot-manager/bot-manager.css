@@ -33,6 +33,7 @@ main { flex: 1; display: flex; min-height: 0; }
 #list .row { padding: 1px 4px; cursor: default; white-space: pre; }
 #list .row.centered { text-align: center; }
 #list .row.picked { background: #2b3a55; outline: 1px solid #3a7fe0; }
+#list .row.current { background: #3a3020; }
 #list .empty { color: #7d7d7d; padding: 8px; white-space: normal; }
 
 #tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 6px 8px 0; }
@@ -55,6 +56,8 @@ fieldset.group > legend { color: #9f9f9f; padding: 0 4px; font-size: 11px; }
 .sheet-text { width: 130px; }
 .sheet-list { min-width: 120px; }
 .sheet-label { color: #9a9a9a; }
+/* lblCommands' own "Number of\r\nCommands:" keeps its line break (treeBots_AfterSelect). */
+.sheet-label.counter-label { white-space: pre-line; }
 .tick { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .sheet-tree { list-style: none; margin: 0; padding-left: 10px; overflow: auto; max-height: 240px; width: 100%; }
 .sheet-tree li { padding: 1px 2px; }

@@ -82,7 +82,8 @@ Automated: `npm test` and `npm run smoke:plugins`.
 ### Parallel agent and test safety
 
 - **Subagents/workers edit files only.** Never run `npm test`, `node test/run.js`, `npm run smoke:plugins`, `npm start`, Electron, `npm run pack`/`dist`, or any test/app process from a worker.
-- The parent/integrator runs verification serially: one targeted pure-Node test file at a time, through a minimal harness. Do not run suites or multiple test processes concurrently; the test suite and Electron can **OOM** this machine.
+- The parent/integrator runs verification serially. The full suite is bounded (about 140 MB); never run multiple suites or Electron instances concurrently.
+- A test that loops on a game condition must give its fake a terminal state and a hard pass/timeout limit. The `CmdKill` OOM came from a fake target that never died, not from the suite itself.
 - A worker that needs verification reports the file and expected check to the parent instead of running it. `node --check` on edited files is the only command a worker may run.
 
 **Manual PPAPI / UI:** follow and tick boxes in [`docs/FLASH_CHECKLIST.md`](docs/FLASH_CHECKLIST.md) (Example, AQW, F2/Ctrl+J/Alt+K, language, local plugins, pack).

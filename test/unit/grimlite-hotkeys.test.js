@@ -68,9 +68,12 @@ function createHotkeys(deps) {
     openWindow: function (id) { opened.push(id); return { ok: true, id: id }; },
     // The windows this plugin has registered right now (windows.js is the only list).
     windowIds: deps.windowIds || ['grimlite-parity-hotkeys', 'grimlite-parity-notepad',
-      'grimlite-parity-devtest', 'grimlite-parity-packet-logger'],
+      'grimlite-parity-devtest', 'grimlite-parity-packet-logger', 'grimlite-parity-logs'],
     takenKeys: deps.takenKeys || [],
-    platform: deps.platform || { showMainWindow: function () { opened.push('main-window'); } },
+    platform: deps.platform || {
+      showMainWindow: function () { opened.push('main-window'); },
+      toggleMainWindow: function () { opened.push('main-window-toggle'); }
+    },
     gameCalls: deps.gameCalls || { call: function () { return Promise.resolve({ ok: true, value: null }); } },
     log: function () {}
   });
@@ -140,18 +143,20 @@ test('binding a key stores the reference\'s record and installs it', () => {
   assert.deepStrictEqual(run.local.keys(), ['1', 'B']);
 });
 
-test('firing a bound key runs its action', async () => {
+test('firing a bound key runs its action, and a key already bound is refused', async () => {
   const run = createHotkeys();
   run.feature.bind('N', 16); // Show Notepad, a window this plugin has
   await run.local.press('N');
   assert.deepStrictEqual(run.opened, ['grimlite-parity-notepad']);
 
-  // Rebinding the same key to another action replaces the old binding rather than doubling it.
-  run.feature.bind('N', 21); // Show Swf Dev test
+  // Hotkeys.cs:395 refuses a key its hook already holds; this port refuses the duplicate.
+  const again = run.feature.bind('N', 21); // Show Swf Dev test
+  assert.strictEqual(again.ok, false);
+  assert.ok(/already bound/.test(again.error), again.error);
   assert.strictEqual(run.feature.list().length, 1);
-  assert.strictEqual(run.feature.list()[0].ActionIndex, 21);
+  assert.strictEqual(run.feature.list()[0].ActionIndex, 16);
   await run.local.press('N');
-  assert.deepStrictEqual(run.opened, ['grimlite-parity-notepad', 'grimlite-parity-devtest']);
+  assert.deepStrictEqual(run.opened, ['grimlite-parity-notepad', 'grimlite-parity-notepad']);
   assert.deepStrictEqual(run.local.keys(), ['N']);
 
   // Clearing gives the key back and takes the binding away.
@@ -162,7 +167,7 @@ test('firing a bound key runs its action', async () => {
 });
 
 test('an action whose window has not shipped yet is inert, and says so', async () => {
-  const run = createHotkeys();
+  const run = createHotkeys({ windowIds: [] });
   // "Show Logs" is the reference's action 15; this port has no Logs window yet, so the action must
   // not throw when the key is pressed.
   run.feature.bind('K', 15);
@@ -225,7 +230,7 @@ test('the actions this port can already do reach the game or the window they nam
   run.feature.bind('T', 12);
   assert.deepStrictEqual(run.global.keys(), ['T']);
   await run.global.press('T');
-  assert.deepStrictEqual(run.opened.slice(-1), ['main-window']);
+  assert.deepStrictEqual(run.opened.slice(-1), ['main-window-toggle']);
   // Toggle Options: the reference's Start()/Stop() over the option loop.
   const options = require(path.join(pluginRoot, 'features/options/options.js'));
   assert.strictEqual(typeof options.createOptionsFeature, 'function');
@@ -241,6 +246,33 @@ test('a key the app or the game plugin already uses is refused, not taken', () =
 
   // A free key still works.
   assert.strictEqual(run.feature.bind('D7', 1).ok, true);
+});
+
+test('the live shell actions reach the bot, auto attack, Maid, launcher skin and log window', async () => {
+  const done = [];
+  const run = createHotkeys({
+    platform: {
+      toggleBot: function () { done.push('bot'); return { ok: true }; },
+      toggleAutoAttack: function () { done.push('auto'); return { ok: true }; },
+      toggleMaid: function () { done.push('maid'); return { ok: true }; },
+      toggleLauncherSkin: function () { done.push('skin'); return { ok: true }; },
+      toggleMainWindow: function () { done.push('tray'); return { ok: true }; }
+    }
+  });
+
+  const cases = [[0, '1', 'bot'], [9, '2', 'maid'], [10, '3', 'skin'], [12, '4', 'tray'], [22, '5', 'auto']];
+  for (const one of cases) {
+    assert.strictEqual(run.feature.bind('D' + one[1], one[0]).ok, true);
+    const layer = one[0] === 12 ? run.global : run.local;
+    const answer = await layer.press(one[1]);
+    assert.strictEqual(answer.ok, true, answer.error);
+  }
+  assert.deepStrictEqual(done, ['bot', 'maid', 'skin', 'tray', 'auto']);
+
+  // Show Logs is action 15 and now has its own window.
+  assert.strictEqual(run.feature.bind('L', 15).ok, true);
+  await run.local.press('L');
+  assert.ok(run.opened.indexOf('grimlite-parity-logs') !== -1);
 });
 
 test('a bare modifier is refused with the reason this app cannot register it', () => {
@@ -264,6 +296,7 @@ test('the bindings survive a restart', () => {
   const store = memoryStore(undefined);
   const first = createHotkeys({ store: store });
   first.feature.bind('D3', 20);
+  first.feature.save();
   first.feature.uninstall();
 
   const second = createHotkeys({ store: store });
@@ -277,6 +310,7 @@ test('what the window reads is what it writes: one list, the reference\'s record
   const run = createHotkeys({ store: store });
   await run.feature.bind('Z', 0);
   await run.feature.bind('X', 22);
+  await run.feature.save();
   const model = run.feature.view();
   assert.deepStrictEqual(model.actions, ACTION_LABELS);
   assert.deepStrictEqual(model.keys, actions.KEYS);
@@ -289,6 +323,48 @@ test('what the window reads is what it writes: one list, the reference\'s record
     { Text: 'Z: Start/Stop Bot', Key: 'Z', ActionIndex: 0 },
     { Text: 'X: Start/Stop AutoAttack', Key: 'X', ActionIndex: 22 }
   ]);
+});
+
+test('Add and Remove only change the list; Save is the one write', () => {
+  const store = memoryStore([]);
+  const run = createHotkeys({ store: store });
+  run.feature.bind('D1', 3);
+  assert.deepStrictEqual(store.read(), [], 'Add does not write the file');
+  run.feature.clear('D1');
+  assert.deepStrictEqual(store.read(), [], 'Remove does not write the file either');
+
+  run.feature.bind('D1', 3);
+  const saved = run.feature.save();
+  assert.strictEqual(saved.ok, true);
+  assert.deepStrictEqual(store.read(), [
+    { Text: 'D1: Show Loaders', Key: 'D1', ActionIndex: 3 }
+  ]);
+});
+
+test('the reference hotkeys.json is imported when the plugin store has no list yet', () => {
+  const store = memoryStore(undefined);
+  const read = [];
+  const run = hotkeysModule.createHotkeys({
+    store: store,
+    hotkeysFile: '/app/hotkeys.json',
+    readFile: function (file) {
+      read.push(file);
+      return JSON.stringify([
+        { Text: 'D2: Show Hotkeys', Key: 'D2', ActionIndex: 2 },
+        { Text: 'Q: not an action', Key: 'Q', ActionIndex: 99 }
+      ]);
+    },
+    localShortcuts: fakeShortcuts(),
+    globalShortcuts: fakeShortcuts(),
+    openWindow: function () { return {}; },
+    windowIds: [],
+    takenKeys: [],
+    log: function () {}
+  });
+  run.install();
+  assert.deepStrictEqual(run.list(), [{ Text: 'D2: Show Hotkeys', Key: 'D2', ActionIndex: 2 }]);
+  assert.deepStrictEqual(read, ['/app/hotkeys.json']);
+  assert.deepStrictEqual(store.read(), undefined, 'importing does not write the plugin store');
 });
 
 test('a record the window cannot use is skipped rather than fatal', () => {

@@ -179,10 +179,11 @@ test('the plugin contributes the packet logger window under the reference\'s own
   assert.ok(packets, 'the reference groups its packet tools under Packets');
   const sniffer = packets.submenu.filter(function (item) { return item.label === 'Sniffer'; })[0];
   assert.ok(sniffer, 'the reference opens the logger from Packets -> Sniffer');
+  const before = tap.subscribes;
   sniffer.click();
   assert.deepStrictEqual(opened, ['grimlite-parity-packet-logger']);
 
-  assert.strictEqual(tap.subscribes, 0, 'opening or activating subscribes nothing: Start does');
+  assert.strictEqual(tap.subscribes, before, 'opening the logger adds no subscription: Start does');
 });
 
 test('Start and Stop on the logger window control the one subscription', async () => {
@@ -193,8 +194,9 @@ test('Start and Stop on the logger window control the one subscription', async (
   const stop = handlerFor(state, 'packetsStop');
   const window_ = fakeWindow();
 
+  const base = tap.subscribes;
   start({ sender: window_ });
-  assert.strictEqual(tap.subscribes, 1);
+  assert.strictEqual(tap.subscribes, base + 1);
   tap.emit({ id: 1, direction: 'toClient', data: Buffer.from('first') });
   tap.emit({ id: 1, direction: 'toServer', data: Buffer.from('second') });
   assert.deepStrictEqual(window_.sent.map(function (item) { return item.payload.text; }), ['first', 'second']);
@@ -203,7 +205,7 @@ test('Start and Stop on the logger window control the one subscription', async (
     ['toClient', 'toServer'], 'direction travels with the frame');
 
   start({ sender: window_ });
-  assert.strictEqual(tap.subscribes, 1, 'a second Start is not a second listener');
+  assert.strictEqual(tap.subscribes, base + 1, 'a second Start is not a second listener');
 
   stop({ sender: window_ });
   assert.strictEqual(tap.releases, 1, 'Stop releases the subscription');
@@ -220,9 +222,10 @@ test('two logger windows share one subscription and each sees every frame once',
   const first = fakeWindow();
   const second = fakeWindow();
 
+  const base = tap.subscribes;
   start({ sender: first });
   start({ sender: second });
-  assert.strictEqual(tap.subscribes, 1, 'two windows, one listener');
+  assert.strictEqual(tap.subscribes, base + 1, 'two windows, one listener');
 
   tap.emit({ id: 1, direction: 'toServer', data: Buffer.from('once') });
   assert.strictEqual(first.sent.length, 1, 'no duplicate frames for the first window');
@@ -238,9 +241,9 @@ test('two logger windows share one subscription and each sees every frame once',
   assert.strictEqual(tap.releases, 1);
 });
 
-// The read-only half is a permission of its own: this window must never need packet-send, and the
-// plugin must not ask any tool for a frame write it does not perform.
-test('the logger is a read-only tool: it holds no send surface', async () => {
+// The sniffer itself reads through packet-tap; its embedded Spammer is the one write path, and it
+// goes through packet-send exactly like the separate Spammer window.
+test('the logger reads through packet-tap and its embedded Spammer writes through packet-send', async () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(pluginRoot, 'plugin.json'), 'utf8'));
   assert.ok(manifest.permissions.indexOf('packet-tap') !== -1, 'the logger reads through packet-tap');
   assert.ok(manifest.permissions.indexOf('packet-send') !== -1,
@@ -251,8 +254,8 @@ test('the logger is a read-only tool: it holds no send surface', async () => {
   const source = ['frames.js', 'logger.js', 'preload_logger.js'].map(function (file) {
     return fs.readFileSync(path.join(pluginRoot, 'features/packets', file), 'utf8');
   }).join('\n');
-  assert.strictEqual(/packets\.send|\.send\(id/.test(source), false,
-    'the logger never writes a frame');
+  assert.ok(/packets\.send/.test(source),
+    'the embedded Spammer writes through host.packets.send');
 });
 test('the filter narrows what is drawn without losing a frame, and clears case-insensitively', () => {
   const captured = [
@@ -278,7 +281,7 @@ test('the filter narrows what is drawn without losing a frame, and clears case-i
       '%xt%zm%MoveToCell%extra%']);
 });
 
-test('Copy hands over the frames as shown, one per line, with the direction visible', () => {
+test('Copy hands over the raw frames one per line, as the reference does', () => {
   const captured = [
     { direction: 'toServer', text: '%xt%zm%gar%1%2%w' },
     { direction: 'toClient', text: "apiOK" },
@@ -286,16 +289,16 @@ test('Copy hands over the frames as shown, one per line, with the direction visi
   ];
 
   assert.strictEqual(feed.copyText(captured, ''),
-    'Client: %xt%zm%gar%1%2%w\nServer: apiOK\nClient: %xt%zm%moveToCell%',
-    'the reference prints one frame per line and the logger names the side');
+    '%xt%zm%gar%1%2%w\napiOK\n%xt%zm%moveToCell%',
+    'the reference prints one raw frame per line');
   assert.strictEqual(feed.copyText(captured, 'm'),
-    'Client: %xt%zm%gar%1%2%w\nClient: %xt%zm%moveToCell%',
+    '%xt%zm%gar%1%2%w\n%xt%zm%moveToCell%',
     'Copy respects the filter, like anything else the window shows');
   assert.strictEqual(feed.copyText([], ''), '', 'an empty list copies nothing');
   assert.strictEqual(feed.copyText(captured.map(function (f) {
     return { direction: f.direction, text: Buffer.from(f.text, 'utf8') };
-  }), ''), 'Client: %xt%zm%gar%1%2%w\nServer: apiOK\nClient: %xt%zm%moveToCell%',
-  'a buffer frame copies the same text the window shows');
+  }), ''), '%xt%zm%gar%1%2%w\napiOK\n%xt%zm%moveToCell%',
+  'a buffer frame copies the same raw text the window shows');
 });
 
 test('each direction has its own name, so a frame is never ambiguous', () => {

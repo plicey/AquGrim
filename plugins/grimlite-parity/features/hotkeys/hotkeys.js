@@ -37,6 +37,8 @@ const GLOBAL_ACTION_LABEL = 'Minimize to tray';
  * @param {object} deps.platform the app-wide actions this port can reach
  * @param {object} deps.gameCalls see game-calls.js
  * @param {object} [deps.options] the options feature, for the "Toggle Options" action
+ * @param {string} [deps.hotkeysFile] the reference's own hotkeys.json, imported when the store is empty
+ * @param {Function} [deps.readFile] file reader seam (fs.readFileSync by default)
  */
 function createHotkeys(deps) {
     deps = deps || {};
@@ -50,28 +52,53 @@ function createHotkeys(deps) {
     const gameCalls = deps.gameCalls || { call: function () { return Promise.resolve({ ok: false, error: 'no game bridge in this build' }); } };
     const options = deps.options || null;
     const log = typeof deps.log === 'function' ? deps.log : function () {};
+    const hotkeysFile = deps.hotkeysFile || '';
+    const readFile = deps.readFile || function (file) {
+        return require('fs').readFileSync(file, 'utf8');
+    };
 
     const installed = {};   // accelerator -> the record that holds it
     let bindings = [];      // the reference's own list, in the user's order
 
+    function imported() {
+        if (!hotkeysFile) return [];
+        try {
+            const parsed = JSON.parse(readFile(hotkeysFile));
+            if (Array.isArray(parsed)) return parsed;
+            if (parsed && Array.isArray(parsed.bindings)) return parsed.bindings;
+        } catch (error) {
+            // No reference file yet, or one that is not JSON: the store is still the truth.
+        }
+        return [];
+    }
+
     function load() {
-        if (!store) return [];
+        if (!store) return imported();
         let stored;
         try {
             stored = store.read();
         } catch (error) {
-            // No file yet is the ordinary first run, not a failure.
-            return [];
+            // No file yet is the ordinary first run. A reference hotkeys.json, when the user has
+            // one, is the same Text/Key/ActionIndex records this window writes.
+            return imported();
         }
-        return Array.isArray(stored) ? stored : [];
+        if (stored === undefined || stored === null) return imported();
+        if (Array.isArray(stored)) return stored;
+        if (stored && Array.isArray(stored.bindings)) return stored.bindings;
+        return imported();
     }
 
     function save() {
-        if (!store) return;
+        if (!store || typeof store.write !== 'function') {
+            return { ok: false, error: 'this app has no hotkeys store' };
+        }
         try {
             store.write(bindings);
+            return { ok: true, error: null };
         } catch (error) {
-            log('could not save the hotkeys (' + (error && error.message ? error.message : error) + ')');
+            const reason = error && error.message ? error.message : String(error);
+            log('could not save the hotkeys (' + reason + ')');
+            return { ok: false, error: 'could not save the hotkeys (' + reason + ')' };
         }
     }
 
@@ -154,7 +181,12 @@ function createHotkeys(deps) {
             if (typeof platform[appAction] !== 'function') {
                 return { ok: true, done: null, error: label + ': this app has no ' + appAction + ' action' };
             }
-            return { ok: true, done: platform[appAction]() };
+            const answer = await platform[appAction]();
+            return {
+                ok: !(answer && answer.ok === false),
+                done: answer,
+                error: (answer && answer.error) || null
+            };
         }
 
         const target = targets.WINDOW_BY_ACTION[label];
@@ -175,7 +207,7 @@ function createHotkeys(deps) {
             });
         },
 
-        /** Bind one key to one action, replacing whatever that key held. */
+        /** Bind one key to one action. A key already bound is refused, as the reference does. */
         bind: function (key, actionIndex) {
             const name = String(key == null ? '' : key);
             const action = actions.byIndex(actionIndex);
@@ -189,25 +221,24 @@ function createHotkeys(deps) {
                     'layer takes a single key, and a bare modifier is not one' };
             }
             const previous = bindingFor(name);
-            if (!previous) {
-                const held = takenKeys.filter(function (entry) {
-                    return entry && entry.key === accelerator;
-                })[0];
-                if (held) return { ok: false, error: accelerator + ' is already used by ' + held.owner };
+            if (previous) {
+                return {
+                    ok: false,
+                    error: accelerator + ' is already bound to ' + previous.Text
+                };
             }
+            const held = takenKeys.filter(function (entry) {
+                return entry && entry.key === accelerator;
+            })[0];
+            if (held) return { ok: false, error: accelerator + ' is already used by ' + held.owner };
             const record = {
                 Text: actions.labelFor(name, actionIndex),
                 Key: name,
                 ActionIndex: actionIndex
             };
-            // Move it first: a rebind and a fresh bind take the same key the same way.
-            if (previous) uninstallOne(previous);
             const installAnswer = installOne(record);
             if (!installAnswer.ok) return installAnswer;
-            bindings = previous
-                ? bindings.map(function (item) { return item.Key === name ? record : item; })
-                : bindings.concat([record]);
-            save();
+            bindings = bindings.concat([record]);
             return { ok: true, binding: record };
         },
 
@@ -218,8 +249,16 @@ function createHotkeys(deps) {
             if (!record) return false;
             uninstallOne(record);
             bindings = bindings.filter(function (item) { return item.Key !== name; });
-            save();
             return true;
+        },
+
+        /** The reference's Save button: only this writes the list to disk. */
+        save: function () {
+            const answer = save();
+            return Object.assign({}, answer, {
+                saved: answer.ok ? bindings.length : 0,
+                list: feature.list()
+            });
         },
 
         /** Install what is stored. Called at activation, like the reference's LoadHotkeys. */

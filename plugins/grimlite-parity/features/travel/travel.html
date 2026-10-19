@@ -47,7 +47,7 @@
     <div class="row">
       <label for="privateToggle" id="privateLabel">Private</label>
       <input type="checkbox" id="privateToggle">
-      <input type="number" id="privateNumber" min="0">
+      <input type="number" id="privateNumber" min="0" disabled>
     </div>
     <div id="groupsLeft"></div>
     <div id="status"></div>
@@ -58,20 +58,19 @@
       <legend id="bypassLegend">Map Bypasser</legend>
       <div class="hint" id="bypassHint"></div>
       <div class="pairs">
-        <input type="number" id="questId" min="0">
+        <input type="number" id="questId" min="0" max="1000000">
         <button id="unlock"></button>
       </div>
       <div class="hint" id="packetLabel"></div>
       <div class="pairs">
         <input type="text" id="packet" readonly>
         <button id="copy"></button>
-        <button id="send"></button>
       </div>
     </fieldset>
     <fieldset id="aweBox">
       <legend id="aweLegend">Awe Enchantment Shop</legend>
-      <div class="radios" id="aweTypes"></div>
       <div id="aweButtons"></div>
+      <div class="radios" id="aweTypes"></div>
     </fieldset>
   </div>
 
@@ -85,6 +84,9 @@
   var privateNumber = document.getElementById('privateNumber');
   var strings = {};
   var selectedAwe = null;
+  var groupBoxes = [];
+  var groupButtons = [];
+  var busy = false;
 
   function setStatus(text, kind) {
     status.textContent = text || '';
@@ -94,6 +96,12 @@
   function label(key, fallback) {
     return strings[key] || fallback;
   }
+
+  // chkPriv_CheckedChanged: numPriv is enabled only while the private box is ticked.
+  privateToggle.addEventListener('change', function () {
+    privateNumber.disabled = busy || !privateToggle.checked;
+  });
+  privateNumber.disabled = !privateToggle.checked;
 
   // What the private box and the chosen enchantment type add to a click.
   function options() {
@@ -129,10 +137,24 @@
   }
 
   function run(id) {
+    if (busy) return;
+    // ExecuteTravel disables the travel groups while a run is in flight, and the skip buttons and
+    // Ultraboss disable themselves; the page does the whole of that with one switch.
+    setBusy(id !== 'unlock');
     setStatus(label('working', 'Working...'), '');
     return api.run(id, options()).then(report).catch(function (error) {
       setStatus(String(error.message || error), 'err');
+    }).then(function () {
+      setBusy(false);
     });
+  }
+
+  function setBusy(on) {
+    busy = on === true;
+    groupButtons.forEach(function (button) { button.disabled = busy; });
+    groupBoxes.forEach(function (box) { box.disabled = busy; });
+    privateToggle.disabled = busy;
+    privateNumber.disabled = busy || !privateToggle.checked;
   }
 
   function button(spec) {
@@ -143,6 +165,7 @@
     // radio defaults make true from the start.
     el.disabled = !!spec.awe && !selectedAwe;
     el.addEventListener('click', function () { run(spec.id); });
+    groupButtons.push(el);
     return el;
   }
 
@@ -152,6 +175,7 @@
     groups.forEach(function (group) {
       var host = group.column === 'right' ? right : left;
       var box = document.createElement('fieldset');
+      groupBoxes.push(box);
       var legend = document.createElement('legend');
       legend.textContent = group.label;
       box.appendChild(legend);
@@ -198,7 +222,6 @@
       document.getElementById('packetLabel').textContent = label('generatedPacket', 'Generated packet');
       document.getElementById('unlock').textContent = label('unlock', 'Unlock');
       document.getElementById('copy').textContent = label('copy', 'Copy');
-      document.getElementById('send').textContent = label('send', 'Send');
       document.getElementById('aweLegend').textContent = label('aweGroup', 'Awe Enchantment Shop');
     }).then(api.getGroups).then(function (lists) {
       privateNumber.value = lists.private.value;
@@ -207,22 +230,21 @@
       drawGroups(lists.groups, lists.buttons);
 
       document.getElementById('unlock').addEventListener('click', function () {
+        if (busy) return;
+        document.getElementById('unlock').disabled = true;
         setStatus(label('working', 'Working...'), '');
         api.unlock(Number(questId.value)).then(function (result) {
           if (result.packet) packetBox.value = result.packet;
           report(result);
         }).catch(function (error) {
           setStatus(String(error.message || error), 'err');
+        }).then(function () {
+          document.getElementById('unlock').disabled = false;
         });
       });
       document.getElementById('copy').addEventListener('click', function () {
         api.copy(packetBox.value);
         setStatus(label('copied', 'Copied.'), 'ok');
-      });
-      document.getElementById('send').addEventListener('click', function () {
-        api.sendPacket(packetBox.value).then(report).catch(function (error) {
-          setStatus(String(error.message || error), 'err');
-        });
       });
     }).catch(function (error) {
       setStatus(String(error.message || error), 'err');

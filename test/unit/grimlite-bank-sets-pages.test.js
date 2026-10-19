@@ -75,7 +75,7 @@ function settled() {
 const BANK_IDS = ['category', 'ac', 'allExcept', 'status', 'categoryLabel', 'acLabel',
   'allExceptLabel', 'bank', 'bankAll'];
 const SETS_IDS = ['item', 'setList', 'savedList', 'status', 'refresh', 'add', 'clear', 'save',
-  'open', 'equip', 'setHeading', 'savedHeading'];
+  'open', 'setHeading', 'savedHeading'];
 
 test('the Bank page fills both lists from the window and names its controls', async () => {
   const asked = [];
@@ -195,8 +195,7 @@ test('the Sets page lists saved sets, fills the item combo and adds the selectio
     save: function (entries) {
       page.saved = entries;
       return Promise.resolve({ canceled: false, path: '/tmp/x.gset', error: null });
-    },
-    equip: function () { return Promise.resolve({ equipped: [], skipped: [], missing: [], error: null }); }
+    }
   });
   await settled();
 
@@ -219,12 +218,14 @@ test('the Sets page lists saved sets, fills the item combo and adds the selectio
   assert.deepStrictEqual(plain(page.saved), [{ type: 'Weapon', name: 'Sword of Awe' }]);
   assert.strictEqual(page.byId.status.textContent, 'Saved.');
 
-  // Clear empties the list and takes Save and Equip out of reach with it.
+  // Clear empties the list and takes Save out of reach with it.
   click(page.byId.clear);
   await settled();
   assert.deepStrictEqual(page.byId.setList.children, []);
   assert.strictEqual(page.byId.save.disabled, true);
-  assert.strictEqual(page.byId.equip.disabled, true);
+  assert.strictEqual(/\.equip\b/.test(fs.readFileSync(
+    path.join(pluginRoot, 'features/sets/sets.html'), 'utf8')), false,
+    'the Sets page must carry no Equip control');
 });
 
 test('clicking a saved set opens it, and opening shows the file\'s own list', async () => {
