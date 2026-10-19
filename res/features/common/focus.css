@@ -1,4 +1,16 @@
-/* Keep keyboard focus consistent across AquaStar's native HTML windows. */
+/* No focus ring: dense client windows use a background tint for keyboard focus instead. */
+button:focus,
+input:focus,
+select:focus,
+textarea:focus,
+a:focus,
+summary:focus,
+[role="button"]:focus,
+[tabindex]:focus {
+  outline: none;
+  box-shadow: none;
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -7,10 +19,9 @@ a:focus-visible,
 summary:focus-visible,
 [role="button"]:focus-visible,
 [tabindex]:focus-visible {
-  /* An inset shadow follows border-radius and adds no outside gap; an outline is rectangular in
-     Chromium 87 and looked wrong on rounded buttons and tabs. */
   outline: none;
-  box-shadow: inset 0 0 0 2px #4da3ff;
+  box-shadow: none;
+  background-color: #2f2f2f;
 }
 
 /* Chromium's native scrollbar otherwise stays bright against AquaStar's dark
