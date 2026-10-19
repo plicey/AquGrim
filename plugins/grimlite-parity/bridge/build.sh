@@ -63,7 +63,7 @@ mkdir -p "$(dirname "$out")"
 exec "$FLEX_HOME/bin/mxmlc" \
     -target-player=32.0 \
     -swf-version=32 \
-    -default-size 960 530 \
+    -default-size 960 550 \
     -default-background-color=0x000000 \
     -default-frame-rate=24 \
     -static-link-runtime-shared-libraries=true \

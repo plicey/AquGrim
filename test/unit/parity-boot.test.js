@@ -141,6 +141,8 @@ test('the bridge starts Artix Loader4 so it can initialize the current game', fu
     'Loader4 must be on stage when it starts');
   assert.ok(/stage\.scaleMode\s*=\s*StageScaleMode\.SHOW_ALL/.test(source),
     'the game must scale with the window instead of staying at its authored size');
+  assert.ok(!/stage\.align\s*=/.test(source),
+    'the stage alignment stays at its centered default');
   assert.ok(/new Timer\(1000\)/.test(source) && /TimerEvent\.TIMER/.test(source) &&
     !/TIMER_COMPLETE|onGameRootTimeout/.test(source),
     'the bridge must keep waiting for Game until the user signs in');
@@ -222,4 +224,10 @@ test('the built bridge asset carries the call surface the manifest declares', fu
     'the built bridge must start Loader4 and wait for its initialized Game root');
   assert.ok(text.indexOf('SHOW_ALL') !== -1,
     'the built bridge must carry the window-following scale mode');
+  const build = fs.readFileSync(path.join(PARITY, 'bridge/build.sh'), 'utf8');
+  assert.ok(/-default-size\s+960\s+550/.test(build),
+    'the bridge stage must match the game and Loader4 960x550 stage');
+  const windowConfig = fs.readFileSync(path.join(REPO, 'res/windows/config.js'), 'utf8');
+  assert.ok(/height:\s*550/.test(windowConfig),
+    'the plain game window must not crop the game\'s bottom 20 px');
 });

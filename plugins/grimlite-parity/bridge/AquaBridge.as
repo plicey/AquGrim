@@ -21,7 +21,6 @@ package {
     import flash.display.Loader;
     import flash.display.Sprite;
     import flash.display.Stage;
-    import flash.display.StageAlign;
     import flash.display.StageScaleMode;
     import flash.events.Event;
     import flash.events.IOErrorEvent;
@@ -53,9 +52,9 @@ package {
 
             domain = ApplicationDomain.currentDomain;
             // The reference's AxShockwaveFlash defaults to ShowAll, so the game follows the
-            // window's size instead of staying fixed at its authored stage size.
+            // window's size instead of staying fixed at its authored stage size. Leave align at
+            // its default: with ShowAll, that centers the letterboxed stage in the window.
             stage.scaleMode = StageScaleMode.SHOW_ALL;
-            stage.align = StageAlign.TOP_LEFT;
 
             registerCallSurface();
 
