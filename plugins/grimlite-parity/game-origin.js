@@ -20,10 +20,8 @@ function launcherUserAgent(rawUA) {
 
 const GAME_HOST = 'https://game.aq.com';
 
-// Where the bridge SWF is served. '/game/' is deliberate: the platform's wrapper passes the SWF's
-// own directory as the movie's `base`, so the bridge sees exactly the same base the stock loader
-// sees on the live host (sURL + 'gamefiles/'), and resolves the game's paths from the param rather
-// than from a compiled-in URL.
+// Where the bridge SWF is served. '/game/' is deliberate: the bridge loads Loader4 from the same
+// origin, and Loader4 resolves the current game SWF and assets relative to this base.
 const BRIDGE_PATH = '/game/aqua-bridge.swf';
 
 // Longest prefix wins. "/" preserves the game host's own paths; a "/proxy/<host>/" mount serves

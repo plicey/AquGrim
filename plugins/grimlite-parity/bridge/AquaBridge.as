@@ -1,5 +1,5 @@
-// The game bridge: a small loader that owns the load of the game SWF and registers the call
-// surface the parity features drive, so game state is readable and writable from the app.
+// The game bridge: a small loader that boots Artix's loader in the shared ApplicationDomain,
+// then registers the call surface the parity features drive against the loader's Game root.
 //
 // Three facts decide its shape, all measured (docs/research/grimlite-bridge-spike.md):
 //
@@ -10,9 +10,9 @@
 //      live in a child domain reachable only through getDefinition; with it they are first-class
 //      here (509 classes enumerable, currentTotal 510), which is what makes the game's internals
 //      addressable rather than merely lookup-able.
-//   3. The entry point must not be compiled in. This bridge is a loader in the reference's own
-//      sense (Grimlite's grimoire.swf): it asks the game host which file is current and loads
-//      that, so a game or loader update needs no rebuild here.
+//   3. The entry point must not be compiled in. Loader4 performs the game's startup and passes
+//      its FlashVars into Game.params; loading the current Game*.swf directly leaves it stopped
+//      on its first frame with no login screen.
 //
 // The call surface is the reference loader's, not the stock game's: the names below are the ones
 // the reference's features call, and most of them exist only in its own loader.
@@ -26,14 +26,14 @@ package {
     import flash.events.Event;
     import flash.events.IOErrorEvent;
     import flash.events.SecurityErrorEvent;
+    import flash.events.TimerEvent;
     import flash.external.ExternalInterface;
-    import flash.net.URLLoader;
-    import flash.net.URLLoaderDataFormat;
     import flash.net.URLRequest;
     import flash.system.ApplicationDomain;
     import flash.system.LoaderContext;
     import flash.system.Security;
     import flash.utils.getQualifiedClassName;
+    import flash.utils.Timer;
 
     public class AquaBridge extends Sprite {
         // Bounded so a page that never polls cannot grow the movie's memory without limit.
@@ -43,6 +43,7 @@ package {
         private var domain:ApplicationDomain;    // where the game's classes live (ours)
         private var events:Array = [];
         private var gameLoader:Loader;
+        private var gameRootWait:Timer;
         private var base:String = '';
 
         public function AquaBridge() {
@@ -56,11 +57,8 @@ package {
 
             registerCallSurface();
 
-            // The base is this movie's own directory, resolved from where it was served. That is
-            // what the stock loader calls sURL, and it is why the bridge is served beside the
-            // game's paths: with the bridge at /game/aqua-bridge.swf both the version payload
-            // (/game/api/data/gameversion) and the game file (/game/gamefiles/<file>) resolve
-            // relative to it, on whatever host served it. Nothing about the game is compiled in.
+            // The base is this movie's own directory, resolved from where it was served. Loader4
+            // and the game it loads therefore both use the loopback origin shared with this bridge.
             base = ownBase();
             if (base.length === 0) {
                 emit('error', 'cannot tell where this movie was served from, so the game cannot be found');
@@ -528,84 +526,67 @@ package {
         // ---------------------------------------------------------------- loading the game
 
         private function resolveThenLoad():void {
-            emit('load', 'resolving');
-            var url:String = base + 'api/data/gameversion';
-            var loader:URLLoader = new URLLoader();
-            loader.dataFormat = URLLoaderDataFormat.TEXT;
-            loader.addEventListener(Event.COMPLETE, onVersionLoaded);
-            loader.addEventListener(IOErrorEvent.IO_ERROR, onVersionFailed);
-            loader.addEventListener(SecurityErrorEvent.SECURITY_ERROR, onVersionDenied);
-            try {
-                loader.load(new URLRequest(url));
-            } catch (e:Error) {
-                emit('error', 'bad game base ' + base + ': ' + e.message);
-            }
+            // shortcut: Loader4 is the current Artix launcher entry; use the launcher config if
+            // Artix changes this path.
+            loadGameLoader(base + 'gamefiles/Loader4.swf?ver=b');
         }
 
-        // Named and side-effect-only: an inline closure that both returns a value and contains
-        // try/catch does not compile (see docs/research/grimlite-bridge-spike.md).
-        private function onVersionLoaded(e:Event):void {
-            var file:String = gameFileFrom(String(e.target.data));
-            if (file.length === 0) {
-                emit('error', 'the game host did not name a game file');
-                return;
-            }
-            loadGame(base + 'gamefiles/' + file);
-        }
-
-        private function onVersionFailed(e:Event):void {
-            emit('error', 'could not ask the game host which file is current');
-        }
-
-        private function onVersionDenied(e:Event):void {
-            emit('error', 'denied asking the game host which file is current');
-        }
-
-        /** The current game file name out of the game host's own version payload. */
-        private function gameFileFrom(payload:String):String {
-            var file:String = '';
-            try {
-                var parsed:Object = JSON.parse(payload);
-                if (parsed && parsed.sFile) file = String(parsed.sFile);
-            } catch (e:Error) {
-                emit('error', 'the game host answered with something else: ' + e.message);
-            }
-            return file;
-        }
-
-        private function loadGame(url:String):void {
-            emit('load', 'loading ' + url);
+        private function loadGameLoader(url:String):void {
+            emit('load', 'loading the game loader');
             gameLoader = new Loader();
-            gameLoader.contentLoaderInfo.addEventListener(Event.COMPLETE, onGameComplete);
+            gameLoader.contentLoaderInfo.addEventListener(Event.COMPLETE, onLoaderComplete);
             gameLoader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, function (e:Event):void {
+                stopGameRootWait();
                 emit('error', 'could not load ' + url);
             });
             gameLoader.contentLoaderInfo.addEventListener(SecurityErrorEvent.SECURITY_ERROR, function (e:Event):void {
+                stopGameRootWait();
                 emit('error', 'denied loading ' + url + ' - page, bridge and game must share one origin');
             });
-            // Sharing the domain explicitly is the load-bearing half: it is what puts the game's
-            // classes in this movie's own domain instead of a child's.
+            // Put Loader4 on stage before its first frame so its stage-dependent startup works.
             try {
-                gameLoader.load(new URLRequest(url), new LoaderContext(true, ApplicationDomain.currentDomain));
+                addChild(gameLoader);
+                // Loader4 loads the game into ApplicationDomain.currentDomain itself.
+                gameLoader.load(new URLRequest(url), new LoaderContext(false, ApplicationDomain.currentDomain));
             } catch (e:Error) {
-                emit('error', 'bad game url ' + url + ': ' + e.message);
+                stopGameRootWait();
+                emit('error', 'bad game loader url ' + url + ': ' + e.message);
             }
         }
 
-        private function onGameComplete(e:Event):void {
+        private function onLoaderComplete(e:Event):void {
             var content:Object = gameLoader.content;
-            game = content;
-            // The stock loader hands the game on through a property of its own root; when the
-            // entry point is the loader rather than the game, that is where the game lives.
-            if (game != null && game['Game'] != null) game = game['Game'];
+            emit('load', 'loader ready ' + getQualifiedClassName(content));
+            if (captureGameRoot()) return;
 
-            try {
-                addChild(gameLoader);
-            } catch (err:Error) {
-                emit('error', 'loaded but could not show the game: ' + err.message);
-            }
-            emit('load', 'loaded ' + getQualifiedClassName(content));
-            emit('ready', game == null ? 'no game root' : 'game root available');
+            // Loader4 loads the current Game*.swf asynchronously and exposes its root as `Game`.
+            // It may not load that SWF until after the user signs in on Loader4's login screen.
+            gameRootWait = new Timer(1000);
+            gameRootWait.addEventListener(TimerEvent.TIMER, waitForGameRoot);
+            gameRootWait.start();
+        }
+
+        private function waitForGameRoot(e:TimerEvent):void {
+            captureGameRoot();
+        }
+
+        private function captureGameRoot():Boolean {
+            var loader:Object = gameLoader == null ? null : gameLoader.content;
+            var candidate:Object = loader == null ? null : loader['Game'];
+            if (candidate == null) return false;
+
+            game = candidate;
+            stopGameRootWait();
+            emit('load', 'loaded ' + getQualifiedClassName(game));
+            emit('ready', 'game root available');
+            return true;
+        }
+
+        private function stopGameRootWait():void {
+            if (gameRootWait == null) return;
+            gameRootWait.stop();
+            gameRootWait.removeEventListener(TimerEvent.TIMER, waitForGameRoot);
+            gameRootWait = null;
         }
 
         // ---------------------------------------------------------------- helpers

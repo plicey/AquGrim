@@ -1,11 +1,11 @@
 // Grimlite-Li parity. The plugin boots the game through its own loopback origin and loads the
-// bridge SWF there: page, bridge and game share one origin, which is what lets the bridge put the
-// game's classes in its own ApplicationDomain (docs/research/grimlite-bridge-spike.md).
+// bridge SWF there. The bridge runs Artix's Loader4 on that origin, so page, bridge, loader and
+// game share one origin and the bridge can reach the initialized Game root in its ApplicationDomain.
 //
 // Same-origin is not an optimization. PPAPI Flash inside Chromium grants no local-trusted
 // sandbox, so a bridge that loads the game cross-origin is denied every domain access. That is
-// why the game is served from loopback here rather than from game.aq.com: a live game URL would
-// mean a game with no bridge at all, so this plugin refuses to open one instead.
+// why the loader and game are served from loopback rather than from game.aq.com: a live game URL
+// would mean a game with no bridge at all, so this plugin refuses to open one instead.
 
 const path = require('path');
 

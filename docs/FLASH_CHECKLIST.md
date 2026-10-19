@@ -95,7 +95,7 @@ permission gate) is covered by `npm test`.
 
 - [ ] Set active plugin to **Grimlite Parity**, restart
 - [ ] The window shows the **game**, not a placeholder: the login screen renders (the bridge SWF
-      loads the game SWF itself from the loopback origin)
+      loads Loader4 on the loopback origin, which initializes and displays the current game SWF)
 - [ ] **Alt+Shift+D** (or Grimlite → Dev Test) opens the window: modes *Grimoire / Call Func /
       Get/Set Object*, Function defaulting to `world`, an Args box with its enable box, Call,
       Copy, Format JSON
@@ -107,8 +107,8 @@ permission gate) is covered by `npm test`.
       value back. (A write to a displayed field is visible in the UI; a write to a state field is
       overwritten by the next server frame)
 - [ ] **Format JSON** pretty-prints the result; **Copy** puts the result box on the clipboard
-- [ ] **A newer game or loader still works:** with no code change, the window boots on whatever
-      file `api/data/gameversion` currently names (that is what the bridge resolves at runtime)
+- [ ] **A newer game SWF still works:** with no code change, Loader4 boots on whatever file
+      `api/data/gameversion` currently names
 - [ ] **Permission gate:** temporarily remove `"game-bridge"` from `plugins/grimlite-parity/plugin.json`,
       restart, open Dev Test, Call → the app reports the missing permission and the game window is
       unaffected. Restore the manifest afterwards

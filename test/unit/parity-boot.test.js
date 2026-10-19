@@ -32,8 +32,8 @@ test('the parity plugin boots the game from its own origin, with the bridge serv
   const upstreamSeen = [];
   const upstream = http.createServer(function (req, res) {
     upstreamSeen.push(req.url);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end('{"sFile":"Game4000r5.swf","sVersion":"R0048"}');
+    res.writeHead(200, { 'Content-Type': 'application/x-shockwave-flash' });
+    res.end('CWS');
   });
   await new Promise(function (resolve) { upstream.listen(0, '127.0.0.1', resolve); });
   const upstreamOrigin = 'http://127.0.0.1:' + upstream.address().port;
@@ -75,8 +75,8 @@ test('the parity plugin boots the game from its own origin, with the bridge serv
     baseUrl = await host.declareGameOrigin({ routes: routes, files: files });
     assert.strictEqual(baseUrl.indexOf('http://127.0.0.1:'), 0, baseUrl);
 
-    // The bridge SWF is served from the same origin as the game's own paths: that is the
-    // property the whole bridge rests on.
+    // The bridge SWF is served from the same origin as Loader4 and the game's own paths: that is
+    // the property the whole bridge rests on.
     const bridgePath = Object.keys(files)[0];
     const bridge = await get(baseUrl + bridgePath);
     assert.strictEqual(bridge.status, 200, 'the bridge SWF must be served from the origin');
@@ -91,10 +91,10 @@ test('the parity plugin boots the game from its own origin, with the bridge serv
       'Flash is served its own content type, not the page one'
     );
 
-    // A game path from the same origin, proxied upstream: one origin, both files.
-    const version = await get(baseUrl + '/game/api/data/gameversion?ver=0.95');
-    assert.strictEqual(version.status, 200);
-    assert.ok(upstreamSeen.indexOf('/game/api/data/gameversion?ver=0.95') !== -1);
+    // Loader4 comes from the same origin, proxied upstream alongside the bridge.
+    const loader = await get(baseUrl + '/game/gamefiles/Loader4.swf?ver=b');
+    assert.strictEqual(loader.status, 200);
+    assert.ok(upstreamSeen.indexOf('/game/gamefiles/Loader4.swf?ver=b') !== -1);
     assert.ok(baseUrl.indexOf('127.0.0.1') !== -1);
   } finally {
     if (proxy) await proxy.close();
@@ -104,16 +104,14 @@ test('the parity plugin boots the game from its own origin, with the bridge serv
   }
 });
 
-test('the bridge is asked for no compiled-in game file, so a game update needs no rebuild', function () {
+test('the bridge starts Artix Loader4 so it can initialize the current game', function () {
   const source = fs.readFileSync(path.join(PARITY, 'bridge/AquaBridge.as'), 'utf8');
 
-  // The current game file is resolved from the host at runtime, the way the stock loader does it.
-  assert.ok(/api\/data\/gameversion/.test(source), 'the bridge must ask which game file is current');
-  assert.ok(/gamefiles\//.test(source), 'the bridge must build the game URL from that answer');
-  assert.ok(
-    !/Game\d+r\d+\.swf|Loader\d+\.swf/.test(source),
-    'no game or loader file name may be compiled into the bridge'
-  );
+  // Loader4 performs startup and resolves the current game file itself. Loading Game*.swf
+  // directly leaves it on its first frame without the login screen.
+  assert.ok(/gamefiles\/Loader4\.swf\?ver=b/.test(source), 'the bridge must start Loader4');
+  assert.ok(!/api\/data\/gameversion/.test(source), 'the bridge must not bypass Loader4 startup');
+  assert.ok(!/Game\d+r\d+\.swf/.test(source), 'the current game file stays runtime-selected');
 
   // The base comes from where the movie itself was served, because the platform's wrapper passes
   // `base` as an <object> param and not as a flashvar: a bridge that read it from
@@ -129,9 +127,15 @@ test('the bridge is asked for no compiled-in game file, so a game update needs n
 
   // Sharing the domain explicitly is the load-bearing half of the mechanism.
   assert.ok(
-    /new LoaderContext\(\s*true\s*,\s*ApplicationDomain\.currentDomain\s*\)/.test(source),
-    'the game must be loaded into the bridge\'s own ApplicationDomain'
+    /new LoaderContext\(\s*false\s*,\s*ApplicationDomain\.currentDomain\s*\)/.test(source),
+    'Loader4 must share the bridge\'s ApplicationDomain'
   );
+  assert.ok(/addChild\(gameLoader\)[\s\S]*?gameLoader\.load/.test(source),
+    'Loader4 must be on stage when it starts');
+  assert.ok(/new Timer\(1000\)/.test(source) && /TimerEvent\.TIMER/.test(source) &&
+    !/TIMER_COMPLETE|onGameRootTimeout/.test(source),
+    'the bridge must keep waiting for Game until the user signs in');
+  assert.ok(/loader\['Game'\]/.test(source), 'the bridge must attach to Loader4\'s Game root');
 
   // One event channel back to the plugin, and the reference loader's call names.
   ['getGameObject', 'getGameObjectS', 'setGameObject', 'callGameFunction',
@@ -198,4 +202,6 @@ test('the built bridge asset carries the call surface the manifest declares', fu
   manifest.bridgeCallbacks.forEach(function (name) {
     assert.ok(text.indexOf(name) !== -1, 'built bridge does not register ' + name);
   });
+  assert.ok(text.indexOf('Loader4.swf?ver=b') !== -1 && text.indexOf('game root available') !== -1,
+    'the built bridge must start Loader4 and wait for its initialized Game root');
 });
