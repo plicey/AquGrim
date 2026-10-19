@@ -95,6 +95,13 @@ test('the parity plugin boots the game from its own origin, with the bridge serv
     const loader = await get(baseUrl + '/game/gamefiles/Loader4.swf?ver=b');
     assert.strictEqual(loader.status, 200);
     assert.ok(upstreamSeen.indexOf('/game/gamefiles/Loader4.swf?ver=b') !== -1);
+
+    // PPAPI Flash can resolve the bridge's base to the loopback root, so Loader4 asks for the
+    // gamefiles root instead: it must reach the game host's real path, not a 301 off loopback.
+    const rooted = await get(baseUrl + '/gamefiles/Loader4.swf?ver=b');
+    assert.strictEqual(rooted.status, 200);
+    assert.ok(upstreamSeen.indexOf('/game/gamefiles/Loader4.swf?ver=b') !== -1,
+      'the root-level gamefiles path must mirror the game host path: ' + upstreamSeen.join(', '));
     assert.ok(baseUrl.indexOf('127.0.0.1') !== -1);
   } finally {
     if (proxy) await proxy.close();

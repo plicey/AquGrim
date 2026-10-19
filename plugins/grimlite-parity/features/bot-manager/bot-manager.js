@@ -30,6 +30,7 @@ function createBotManager(deps) {
     // window its own bot with its own variables, ints and index. A window handed no runtime
     // refuses to start rather than pretending to, so the control is never a silent no-op.
     const runtime = deps.runtime || null;
+    const options = deps.options || null;
     const windowKey = deps.windowKey || 'default';
     // Which window a request is for. One independent bot per game window (spec #19) means the
     // runtime is keyed by the window the caller is acting for, so `windowKeyFor` can derive it
@@ -56,6 +57,53 @@ function createBotManager(deps) {
     let editor = editorModel.create(botDocument);
     let currentPath = null;
     let loaded = false;
+    let optionsWatchers = [];
+
+    function optionsRunning() {
+        try {
+            return !!(options && options.state && options.state().applying === true);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function watchOptionsWindow(event) {
+        const sender = event && event.sender;
+        if (sender && optionsWatchers.indexOf(sender) === -1) optionsWatchers.push(sender);
+    }
+
+    function optionsStateChanged(running) {
+        const channel = 'plugin:' + ((deps.host && deps.host.pluginId) || 'grimlite-parity') +
+            ':botManagerOptionsState';
+        optionsWatchers = optionsWatchers.filter(function (sender) {
+            if (sender.isDestroyed && sender.isDestroyed()) return false;
+            try {
+                sender.send(channel, running === true);
+                return true;
+            } catch (error) {
+                return false;
+            }
+        });
+    }
+
+    function enableOptions(enabled, event) {
+        watchOptionsWindow(event);
+        if (!options || typeof options.setApplying !== 'function') {
+            return Promise.resolve(view({ error: 'the Options loop is not wired in this build' }));
+        }
+        let answer;
+        try {
+            answer = options.setApplying(enabled === true);
+        } catch (error) {
+            return Promise.resolve(view({ error: (error && error.message) || String(error) }));
+        }
+        return Promise.resolve(answer).then(function (result) {
+            const running = optionsRunning();
+            return view({ optionsRunning: running, error: result && result.ok === false ? result.error : null });
+        }, function (error) {
+            return view({ optionsRunning: optionsRunning(), error: (error && error.message) || String(error) });
+        });
+    }
 
     function resetDocument(bot, file) {
         botDocument = bot;
@@ -148,6 +196,7 @@ function createBotManager(deps) {
             labelsList: editor.labels(),
             style: style(),
             configuration: configuration,
+            optionsRunning: optionsRunning(),
             description: bots.description(botDocument),
             author: configuration.Author === null || configuration.Author === undefined ? '' : configuration.Author,
             merge: settings.ui('Merge') === true
@@ -244,7 +293,6 @@ function createBotManager(deps) {
 
     function save(options) {
         const where = options || {};
-        if (!loaded) return Promise.resolve({ canceled: true });
         // A save that already knows its file (the tab's Save bot, a tree load) writes back to it;
         // the header's Save and Ctrl+S ask, because the reference's own Ctrl+S always asks.
         if (where.path && where.ask !== true) {
@@ -498,10 +546,10 @@ function createBotManager(deps) {
         settings: settings,
 
         handle: function (channel, event, args) {
-            void event;
             const argv = args || [];
             switch (channel) {
             case 'botManagerSheet':
+                watchOptionsWindow(event);
                 return {
                     tabs: tabs.TABS,
                     column: tabs.COLUMN,
@@ -534,7 +582,8 @@ function createBotManager(deps) {
                         return out;
                     }, {}),
                     settings: actions.SETTINGS,
-                    numbers: actions.NUMBERS
+                    numbers: actions.NUMBERS,
+                    optionsRunning: optionsRunning()
                 };
             case 'botManagerStatements':
                 return { tags: catalog.STATEMENT_TAGS, statements: statements() };
@@ -572,9 +621,12 @@ function createBotManager(deps) {
                 if (argv[0] === 'Merge') settings.setUi('Merge', argv[1] === true);
                 else editor.setSetting(argv[0], argv[1]);
                 return view();
+            case 'botManagerOptionsEnable':
+                return enableOptions(argv[0], event);
             case 'botManagerEnable':
                 return enableBot(argv[0], event);
             case 'botManagerState':
+                watchOptionsWindow(event);
                 return (function () {
                     if (!runtime) return view({ bot: null, enabled: false });
                     const state = runtime.state(windowKeyFor(event));
@@ -610,7 +662,7 @@ function createBotManager(deps) {
             const channels = ['botManagerSheet', 'botManagerStatements', 'botManagerMessages',
                 'botManagerLoad', 'botManagerSave', 'botManagerAdd', 'botManagerAddList',
                 'botManagerSelect', 'botManagerKey', 'botManagerForm', 'botManagerEdit',
-                'botManagerRaw', 'botManagerSetting', 'botManagerStyle', 'botManagerTree',
+                'botManagerRaw', 'botManagerSetting', 'botManagerOptionsEnable', 'botManagerStyle', 'botManagerTree',
                 'botManagerChooseDirectory', 'botManagerAddFolder', 'botManagerTreeSelect',
                 'botManagerDrop', 'botManagerCopy', 'botManagerPaste', 'botManagerGame',
                 'botManagerBeep', 'botManagerEnable', 'botManagerState'];
@@ -620,7 +672,8 @@ function createBotManager(deps) {
                     return feature.handle(channel, event, rest);
                 });
             });
-        }
+        },
+        optionsStateChanged: optionsStateChanged
     };
 
     return feature;

@@ -53,7 +53,8 @@ const LOADER_ONLY = {
     SetWalkSpeed: true,
     CancelTarget: true,
     LoadHairShop: true,
-    LoadArmorCustomizer: true
+    LoadArmorCustomizer: true,
+    ShowBank: true
 };
 
 // How many times SetSkipCutscenes will empty the external movie before giving up. The loader's own
@@ -74,6 +75,11 @@ const CUTSCENE_TRIES = 100;
 // The step helper is what a route is handed: get(path), set(path, value), call(path, args),
 // call0(path). A route that throws is reported as a failure, never as success.
 const LOADER_ROUTE = {
+    // Bank.as:ShowBank - world.toggleBank().
+    ShowBank: function (g) {
+        return g.call0('world.toggleBank');
+    },
+
     // Settings.as:SetInfiniteRange - while i <= 5, world.actions.active[i].range = 20000.
     SetInfiniteRange: async function (g) {
         for (let i = 0; i <= 5; i++) {

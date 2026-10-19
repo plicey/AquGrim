@@ -58,7 +58,7 @@ function handlersFor(window) {
 function fakeFeature(answers) {
   const calls = [];
   answers = answers || {};
-  const state = Object.assign({ applying: true, results: {} }, answers.state || {});
+  const state = Object.assign({ applying: false, results: {} }, answers.state || {});
   toggles.TOGGLES.forEach(function (toggle) {
     if (state[toggle.id] === undefined) state[toggle.id] = false;
   });
@@ -83,11 +83,6 @@ function fakeFeature(answers) {
       calls.push({ setWalkSpeed: value });
       state.walkSpeedNumber = Number(value);
       return Promise.resolve({ ok: true, value: Number(value) });
-    },
-    toggleApplying: function () {
-      calls.push({ toggleApplying: true });
-      state.applying = !state.applying;
-      return Promise.resolve({ ok: true, applying: state.applying });
     }
   };
 }
@@ -240,15 +235,17 @@ test('the options window serves the reference\'s toggles in its order, with the 
   assert.strictEqual(view.walkSpeed, toggles.WALK_SPEED.default, 'the field ships at the reference value');
   assert.strictEqual(view.walkSpeedMin, toggles.WALK_SPEED.min);
   assert.strictEqual(view.walkSpeedMax, toggles.WALK_SPEED.max);
+  assert.strictEqual(view.applying, undefined, 'the Options window has no master start/stop control');
 
   await handlers.optionsSet({}, 'lagKiller', true);
   await handlers.optionsWalkSpeed({}, 33);
-  await handlers.optionsToggleApplying({});
   assert.deepStrictEqual(feature.calls, [
     { setToggle: ['lagKiller', true] },
-    { setWalkSpeed: 33 },
-    { toggleApplying: true }
+    { setWalkSpeed: 33 }
   ]);
+  assert.strictEqual(handlers.optionsToggleApplying, undefined);
+  const html = fs.readFileSync(path.join(pluginRoot, 'features/options/options.html'), 'utf8');
+  assert.ok(!/Stop applying|Start applying/.test(html), 'AquaGrim must not add a button Grimlite does not show');
 });
 
 test('an option the game refused reaches the window as a refusal, not as a tick that worked', async () => {
@@ -323,14 +320,10 @@ test('the two windows need no permission the manifest does not declare', async (
   });
 });
 
-// The reference's own control words live in the locale file, and the page reads them from the
-// window rather than carrying a second copy that a translation could not reach. Same shape as the
-// Cosmetics window: the view carries the strings, the page prints what it is handed.
-test('the pages take their own words from the locale, not from a second copy', async () => {
+// The hotkeys page takes its own words from the locale; the Options tick labels come straight
+// from the reference's control names in toggles.js.
+test('the hotkeys page takes its words from the locale', async () => {
   const locales = require(path.join(pluginRoot, 'locales/en-US.js'));
-  const optionsHandlers = handlersFor(createOptionsWindow({
-    feature: fakeFeature(), messages: locales.optionsMessages
-  }));
   const hotkeyFeature = {
     view: function () { return { actions: [], keys: [], bindings: [], taken: [] }; },
     list: function () { return []; }
@@ -339,17 +332,12 @@ test('the pages take their own words from the locale, not from a second copy', a
     feature: hotkeyFeature, messages: locales.hotkeysMessages
   }));
 
-  const optionsView = await optionsHandlers.optionsView({});
-  assert.strictEqual(optionsView.messages.walkSpeed, 'Walkspeed');
-  assert.strictEqual(optionsView.messages.start, locales.optionsMessages.start);
   const hotkeysView = await hotkeyHandlers.hotkeysView({});
   assert.strictEqual(hotkeysView.messages.empty, locales.hotkeysMessages.empty);
   assert.strictEqual(hotkeysView.messages.selectFirst, locales.hotkeysMessages.selectFirst);
   assert.strictEqual(hotkeysView.messages.saved, locales.hotkeysMessages.saved);
 
-  // ...and each page reads it: the literals it falls back to are defaults, never the only source.
-  const optionsHtml = fs.readFileSync(path.join(pluginRoot, 'features/options/options.html'), 'utf8');
-  assert.ok(/view\.messages\.stopped/.test(optionsHtml), 'the options page must read its own words');
+  // ...and the hotkeys page reads it: the literals it falls back to are defaults, never the only source.
   const hotkeysHtml = fs.readFileSync(path.join(pluginRoot, 'features/hotkeys/hotkeys.html'), 'utf8');
   ['empty', 'selectFirst', 'saved'].forEach(function (name) {
     assert.ok(hotkeysHtml.indexOf('words().' + name) !== -1,

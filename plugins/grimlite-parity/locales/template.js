@@ -208,14 +208,6 @@ exports.cosmeticsMessages = {
     }
 };
 
-exports.optionsMessages = {
-    title: "",
-    walkSpeed: "",
-    start: "",
-    stop: "",
-    stopped: ""
-};
-
 exports.hotkeysMessages = {
     title: "",
     add: "",

@@ -163,9 +163,9 @@ test('firing a bound key runs its action', async () => {
 
 test('an action whose window has not shipped yet is inert, and says so', async () => {
   const run = createHotkeys();
-  // "Show Bank" is the reference's action 13; the Bank window is another ticket's, and until it
-  // registers itself the action must not throw when the key is pressed.
-  run.feature.bind('K', 13);
+  // "Show Logs" is the reference's action 15; this port has no Logs window yet, so the action must
+  // not throw when the key is pressed.
+  run.feature.bind('K', 15);
   const result = await run.local.press('K');
   assert.strictEqual(result.ok, false);
   assert.ok(/not shipped/.test(result.error), result.error);
@@ -205,6 +205,11 @@ test('the actions this port can already do reach the game or the window they nam
   run.feature.bind('M', 18);
   await run.local.press('M');
   assert.deepStrictEqual(calls[2], ['callGameFunction0', ['LoadArmorCustomizer']]);
+
+  // Show Bank: Hotkeys.cs:408 calls Player.Bank.Show(), the game's own bank UI.
+  run.feature.bind('B', 13);
+  await run.local.press('B');
+  assert.deepStrictEqual(calls[3], ['callGameFunction0', ['ShowBank']]);
 
   // Show Hotkeys: the reference's own window, which this ticket ships.
   run.feature.bind('Q', 2);

@@ -50,10 +50,13 @@ function createCapture(options) {
         return direction === 'toServer' ? fromClient : fromServer;
     }
 
-    function matches(line) {
-        const needle = String(filter == null ? '' : filter).trim().toLowerCase();
-        if (!needle) return true;
-        return line.toLowerCase().indexOf(needle) !== -1;
+    // PacketTamperer.cs filters at capture time, on the packet text alone: the client side uses
+    // Contains (case-sensitive), the server side OrdinalIgnoreCase. Widening the filter later
+    // shows only what was appended from then on, which is what the reference box does too.
+    function matches(direction, text) {
+        if (filter === '') return true;
+        if (direction === 'toServer') return text.indexOf(filter) !== -1;
+        return text.toLowerCase().indexOf(filter.toLowerCase()) !== -1;
     }
 
     function write(direction, text) {
@@ -66,7 +69,7 @@ function createCapture(options) {
         accept: function (frame) {
             if (!frame || !wanted(frame.direction)) return false;
             const text = frameText(frame);
-            if (!text) return false;
+            if (!text || !matches(frame.direction, text)) return false;
             captured.push({ direction: frame.direction, text: text });
             return true;
         },
@@ -75,7 +78,7 @@ function createCapture(options) {
         lines: function () {
             return captured.map(function (entry) {
                 return linePrefix(entry.direction) + entry.text;
-            }).filter(matches);
+            });
         },
 
         /**

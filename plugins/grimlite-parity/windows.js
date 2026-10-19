@@ -33,8 +33,8 @@ const MAID_WINDOW_ID = 'grimlite-parity-maid';
 
 // Every one of these is a page inside this plugin: no Flash, no Node in the page, and IPC
 // through its own sandbox-safe preload (docs/PLUGINS.md §4.7/§4.8).
-function windowConfig(host, featureDir, preloadFile, size) {
-    return {
+function windowConfig(host, featureDir, preloadFile, size, extras) {
+    return Object.assign({
         width: size.width,
         height: size.height,
         useContentSize: true,
@@ -48,7 +48,7 @@ function windowConfig(host, featureDir, preloadFile, size) {
             plugins: false,
             contextIsolation: true
         }
-    };
+    }, extras || {});
 }
 
 function pageUrl(featureDir, file) {
@@ -163,7 +163,9 @@ function register(host, windowTitle) {
                 return windowTitle('packetLogger', 'Packet logger');
             },
             url: pageUrl('packets', 'logger.html'),
-            config: windowConfig(host, 'packets', 'preload_logger.js', { width: 620, height: 520 })
+            // PacketLogger.Designer.cs is TopMost with MinimizeBox = false.
+            config: windowConfig(host, 'packets', 'preload_logger.js', { width: 620, height: 520 },
+                { alwaysOnTop: true, minimizable: false })
         },
         {
             id: LOADERS_WINDOW_ID,
@@ -181,7 +183,9 @@ function register(host, windowTitle) {
                 return windowTitle('packetSpammer', 'Packet spammer');
             },
             url: pageUrl('packets', 'spammer.html'),
-            config: windowConfig(host, 'packets', 'preload_spammer.js', { width: 420, height: 400 })
+            // PacketSpammer.Designer.cs is TopMost with MinimizeBox and MaximizeBox false.
+            config: windowConfig(host, 'packets', 'preload_spammer.js', { width: 420, height: 400 },
+                { alwaysOnTop: true, minimizable: false, maximizable: false })
         },
         {
             // PacketTamperer.Designer.cs is 561x492: two rich boxes, the four buttons and the filter.
@@ -190,7 +194,9 @@ function register(host, windowTitle) {
                 return windowTitle('packetTamperer', 'Packet Tamperer');
             },
             url: pageUrl('packets', 'tamperer.html'),
-            config: windowConfig(host, 'packets', 'preload_tamperer.js', { width: 640, height: 520 })
+            // PacketTamperer.Designer.cs is TopMost.
+            config: windowConfig(host, 'packets', 'preload_tamperer.js', { width: 640, height: 520 },
+                { alwaysOnTop: true })
         },
         {
             // The editor: the reference's own window is the widest of them, because the eleven tabs

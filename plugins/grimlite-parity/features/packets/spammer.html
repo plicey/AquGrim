@@ -45,7 +45,7 @@
   <input id="packet" type="text" placeholder="%xt%zm%..." spellcheck="false">
 
   <div class="row">
-    <input id="delay" class="delay" type="number" min="100" max="61000" step="10" value="1000" title="Delay">
+    <input id="delay" class="delay" type="number" min="100" max="61000" step="1" value="1000" title="Delay">
     <button id="remove">Remove</button>
     <button id="clear">Clear</button>
     <button id="add">Add</button>
@@ -93,14 +93,16 @@
         item.addEventListener('click', function () { select(index); });
         list.appendChild(item);
       });
-      buttons.start.disabled = running || packets.length === 0;
-      buttons.stop.disabled = !running;
+      // PacketSpammer.SetButtonsEnabled only disables Start/Add/Clear/Load while the loop runs;
+      // Stop, Remove, Save and Send once stay live and a click with nothing to do no-ops.
+      buttons.start.disabled = running;
+      buttons.stop.disabled = false;
       buttons.add.disabled = running;
       buttons.clear.disabled = running;
       buttons.load.disabled = running;
       buttons.remove.disabled = running;
-      buttons.save.disabled = packets.length === 0;
-      buttons.sendOnce.disabled = packetBox.value.length === 0;
+      buttons.save.disabled = false;
+      buttons.sendOnce.disabled = false;
       buttons.start.classList.toggle('active', running);
       status.className = failed ? 'err' : (running ? 'ok' : '');
       status.textContent = running
@@ -122,7 +124,6 @@
       // btnAdd_Click: a non-empty box is appended and cleared.
       if (!packetBox.value.length) return;
       packets.push(packetBox.value);
-      selected = packets.length - 1;
       packetBox.value = '';
       draw();
     }
@@ -147,9 +148,6 @@
     }
 
     buttons.add.addEventListener('click', add);
-    packetBox.addEventListener('keydown', function (event) {
-      if (event.key === 'Enter') add();
-    });
     buttons.remove.addEventListener('click', function () {
       // btnRemove_Click: only a selected entry is removed.
       if (selected > -1) packets.splice(selected, 1);
@@ -164,6 +162,8 @@
     buttons.start.addEventListener('click', start);
     buttons.stop.addEventListener('click', stop);
     buttons.sendOnce.addEventListener('click', async function () {
+      if (!packetBox.value.length) return;
+      buttons.sendOnce.disabled = true;
       const answer = await api.sendOnce(packetBox.value);
       sent = answer.sent ? sent + 1 : sent;
       failed = answer.sent ? failed : failed + 1;

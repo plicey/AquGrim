@@ -53,7 +53,7 @@ test('each capture switch gates its own direction, and neither gates the other',
     'turning both switches off stops capture without clearing what was captured');
 });
 
-test('the filter selects what is drawn and never what is kept', () => {
+test('the filter is applied as frames arrive, on the reference\'s own terms', () => {
   const capture = tamperer.createCapture({ send: wire().send });
   capture.setCaptureFromClient(true);
   capture.setCaptureFromServer(true);
@@ -63,20 +63,21 @@ test('the filter selects what is drawn and never what is kept', () => {
   capture.accept(frame('toClient', "<msg t='sys'><body action='apiOK'/></msg>"));
   assert.strictEqual(capture.lines().length, 3, 'everything captured is drawn with no filter');
 
-  // PacketTamperer: `packet.IndexOf(tbFilter.Text, StringComparison.OrdinalIgnoreCase) >= 0`.
-  capture.setFilter('movetocell');
-  assert.deepStrictEqual(capture.lines(), ['From client: %xt%zm%MoveToCell%yulgar-1%'],
-    'the filter is case-insensitive, like the reference\'s');
+  // PacketTamperer.cs filters before AppendText: the client side uses Contains (case-sensitive,
+  // no trim), the server side OrdinalIgnoreCase. What was already captured stays as it was.
+  capture.setFilter('MoveToCell');
+  assert.strictEqual(capture.lines().length, 3, 'the filter is not retroactive');
+  capture.accept(frame('toServer', '%xt%zm%movetocell%lower%'));
+  capture.accept(frame('toServer', '%xt%zm%MoveToCell%exact%'));
+  capture.accept(frame('toClient', "<msg t='sys'><body action='movetocell'/></msg>"));
+  assert.deepStrictEqual(capture.lines().slice(3), [
+    'From client: %xt%zm%MoveToCell%exact%',
+    'From server: <msg t=\'sys\'><body action=\'movetocell\'/></msg>'
+  ], 'client matching is case-sensitive, server matching is not');
 
-  capture.setFilter('  apiok  ');
-  assert.deepStrictEqual(capture.lines(), ['From server: <msg t=\'sys\'><body action=\'apiOK\'/></msg>'],
-    'surrounding whitespace is not part of the filter');
-
-  capture.setFilter('nothing-matches-this');
-  assert.deepStrictEqual(capture.lines(), []);
-  // Widening it again shows what was there all along: the filter is a view.
-  capture.setFilter('');
-  assert.strictEqual(capture.lines().length, 3, 'the filter loses no frame');
+  capture.setFilter('  apiOK  ');
+  capture.accept(frame('toClient', "<msg t='sys'><body action='apiOK'/></msg>"));
+  assert.strictEqual(capture.lines().length, 5, 'whitespace is not trimmed out of the filter');
 });
 
 // The reference prints one captured packet per line, then a blank line

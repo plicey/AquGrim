@@ -238,8 +238,8 @@ test('every route is one of the names the loader provides and the game does not'
     // already answers would be dead code claiming otherwise.
     const routed = Object.keys(gameCallsModule.LOADER_ROUTE).sort();
     assert.deepStrictEqual(routed, [
-        'CancelTarget', 'LoadArmorCustomizer', 'LoadHairShop', 'SetEnemyMagnet', 'SetInfiniteRange',
-        'SetLagKiller', 'SetProvokeMonsters', 'SetSkipCutscenes', 'SetWalkSpeed'
+      'CancelTarget', 'LoadArmorCustomizer', 'LoadHairShop', 'SetEnemyMagnet', 'SetInfiniteRange',
+      'SetLagKiller', 'SetProvokeMonsters', 'SetSkipCutscenes', 'SetWalkSpeed', 'ShowBank'
     ]);
     routed.concat(Object.keys(gameCallsModule.NO_ROUTE)).forEach(function (name) {
         assert.strictEqual(gameCallsModule.LOADER_ONLY[name], true,

@@ -14,8 +14,5 @@ contextBridge.exposeInMainWorld('aquastarOptions', {
     },
     setWalkSpeed: function (value) {
         return ipcRenderer.invoke(CH('optionsWalkSpeed'), value);
-    },
-    toggleApplying: function () {
-        return ipcRenderer.invoke(CH('optionsToggleApplying'));
     }
 });

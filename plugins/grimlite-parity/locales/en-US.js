@@ -43,7 +43,7 @@ exports.menuMessages = {
     grimliteDrop: 'Drop Ui',
     grimliteTravels: 'Fast travels',
     grimlitePlaceholder: 'Parity placeholder window',
-    grimliteDevTest: 'Dev Test',
+    grimliteDevTest: 'Swf Dev Test',
     packetsMenu: 'Packets',
     packetsSniffer: 'Sniffer',
     packetsSpammer: 'Spammer',
@@ -68,17 +68,17 @@ exports.botFileMessages = {
 
 exports.windowTitles = {
     primary: 'AquaStar - Grimlite Parity',
-    botFile: 'Grimlite Parity - Bot File',
-    bank: 'Grimlite Parity - Bank',
-    loaders: 'Grimlite Parity - Loaders and grabbers',
-    sets: 'Grimlite Parity - Set',
+    botFile: 'Bot File',
+    bank: 'Bank',
+    loaders: 'Loaders and grabbers',
+    sets: 'Set',
     botManager: 'Bot Manager',
-    placeholder: 'Grimlite Parity - Placeholder',
-    eyedropper: 'Grimlite Parity - Eye Dropper',
-    notepad: 'Grimlite Parity - Notepad',
-    about: 'Grimlite Parity - About',
-    charSelect: 'Grimlite Parity - Char Select',
-    cosmetics: 'Grimlite Parity - SWF Cosmetics',
+    placeholder: 'Placeholder',
+    eyedropper: 'Eye Dropper',
+    notepad: 'Notepad',
+    about: 'About',
+    charSelect: 'Char Select',
+    cosmetics: 'SWF Cosmetics',
     options: 'Options',
     hotkeys: 'Hotkeys',
     drop: 'DropList',
@@ -216,16 +216,6 @@ exports.cosmeticsMessages = {
         cape: 'Grab Cape',
         misc: 'Grab Ground'
     }
-};
-
-// The Options window (ticket #34). The seven toggle labels and "Walkspeed" are the reference's
-// own (Root.cs:1007-1104); the rest is what a page needs to explain itself.
-exports.optionsMessages = {
-    title: 'Options',
-    walkSpeed: 'Walkspeed',
-    start: 'Start applying',
-    stop: 'Stop applying',
-    stopped: 'The option loop is stopped. Ticks are remembered and sent again when it starts.'
 };
 
 // The Hotkeys window (ticket #34). Hotkeys.cs's own words are Save / Add / Remove and the

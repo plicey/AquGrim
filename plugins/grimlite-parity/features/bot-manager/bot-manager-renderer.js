@@ -230,7 +230,14 @@
   }
 
   function applyConfiguration() {
-    if (!state || !state.configuration) return;
+    if (!state) return;
+    var enableOptions = document.getElementById('chkEnableSettings');
+    if (enableOptions) {
+      var running = state.optionsRunning;
+      if (running === undefined && sheet) running = sheet.optionsRunning;
+      enableOptions.checked = running === true;
+    }
+    if (!state.configuration) return;
     Object.keys(controlsById).forEach(function (id) {
       var node = document.getElementById(id);
       if (!node) return;
@@ -787,6 +794,13 @@
         });
       });
     }
+    var enableOptions = document.getElementById('chkEnableSettings');
+    if (enableOptions && !enableOptions.dataset.wired) {
+      enableOptions.dataset.wired = '1';
+      enableOptions.addEventListener('change', function () {
+        api.enableOptions(enableOptions.checked).then(applyState);
+      });
+    }
     // The label list: a plain double-click fills the label box, ctrl jumps to the command.
     var labels = document.getElementById('lbLabels');
     if (labels && !labels.dataset.wired) {
@@ -829,6 +843,12 @@
       labels.appendChild(option);
     });
   }
+
+  api.onOptionsState(function (running) {
+    if (sheet) sheet.optionsRunning = running;
+    if (state) state = Object.assign({}, state, { optionsRunning: running });
+    applyConfiguration();
+  });
 
   // ---------------------------------------------------------------- boot
 

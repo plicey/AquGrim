@@ -11,7 +11,6 @@ const toggles = require('./toggles.js');
 function createOptionsWindow(deps) {
     deps = deps || {};
     const feature = deps.feature;
-    const messages = deps.messages || {};
 
     function message(error) {
         return (error && error.message) || String(error);
@@ -36,9 +35,7 @@ function createOptionsWindow(deps) {
             walkSpeedOn: state.walkSpeedOn,
             walkSpeedMin: toggles.WALK_SPEED.min,
             walkSpeedMax: toggles.WALK_SPEED.max,
-            applying: state.applying,
-            results: state.results,
-            messages: messages
+            results: state.results
         };
     }
 
@@ -61,28 +58,15 @@ function createOptionsWindow(deps) {
         }
     }
 
-    /** The reference's own Start/Stop over the option loop (OptionsManager.Start/Stop). */
-    async function toggleApplying() {
-        try {
-            const answer = await feature.toggleApplying();
-            return { ok: answer.ok === true, error: answer.error || null, view: view() };
-        } catch (error) {
-            return { ok: false, error: message(error), view: view() };
-        }
-    }
-
     function handle(channel, args) {
         if (channel === 'optionsView') return Promise.resolve(view());
         if (channel === 'optionsSet') return set(args && args[0], args && args[1]);
         if (channel === 'optionsWalkSpeed') return setSpeed(args && args[0]);
-        if (channel === 'optionsToggleApplying') return toggleApplying();
         throw new Error('[AquaStar:grimlite-parity] unknown options channel "' + channel + '"');
     }
 
     function attachTo(host) {
-        [
-            'optionsView', 'optionsSet', 'optionsWalkSpeed', 'optionsToggleApplying'
-        ].forEach(function (channel) {
+        ['optionsView', 'optionsSet', 'optionsWalkSpeed'].forEach(function (channel) {
             host.ipc.handle(channel, function () {
                 return handle(channel, Array.prototype.slice.call(arguments, 1));
             });
@@ -98,9 +82,7 @@ function createFromHost(host, deps) {
     const feature = deps.feature || require('./options.js').createOptionsFeature(host, deps);
     feature.attach();
     const window = createOptionsWindow({
-        feature: feature,
-        messages: (typeof host.getLocaleStrings === 'function' &&
-            host.getLocaleStrings('optionsMessages')) || {}
+        feature: feature
     });
     window.attachTo(host);
     window.feature = feature;

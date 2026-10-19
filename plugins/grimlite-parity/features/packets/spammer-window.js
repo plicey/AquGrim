@@ -170,6 +170,10 @@ function createSpammerWindow(deps) {
             watcher.once('destroyed', function () {
                 const index = watchers.indexOf(watcher);
                 if (index !== -1) watchers.splice(index, 1);
+                // A destroyed page cannot press Stop, and the reference's window is only hidden,
+                // never destroyed. Leaving the loop sending would be an invisible spammer, so the
+                // last window to close stops it. Reopening starts idle, as the reference form does.
+                if (!watchers.length) loop.stop();
             });
         }
     }

@@ -164,6 +164,7 @@ async function activate(host) {
     // further down, beside its own window; the holder exists so the two can be wired in either
     // order without one reaching into the other's binding before it is set.
     let optionsFeature = null;
+    let botManager = null;
     // The auto-zone panel (#44), which lives with the Maid window beside its own handlers and is
     // read by CmdSpecialHandler through the accessor below. Held here for the same reason as the
     // options feature: the engine is built before the window that owns it.
@@ -308,7 +309,7 @@ async function activate(host) {
     setsWindow.createFromHost(host).attach();
     // The Bot Manager's main-process half: the sheet, the parsed document, the two dialogs and the
     // folder tree, all of which a sandboxed page cannot reach for itself.
-    const botManager = require('./features/bot-manager/bot-manager.js').createBotManager({
+    botManager = require('./features/bot-manager/bot-manager.js').createBotManager({
         host: host,
         // The engine (#37): the window's Enable Bot tick starts and stops this bot, and the window
         // reads its own running flag, pause and index back for its log. The bot's state is keyed by
@@ -328,7 +329,15 @@ async function activate(host) {
         },
         // The controls that act on the running game read through the generic bridge surface. A
         // name the stock game does not have reports the helper it waits for instead of a value.
-        bridge: host.bridge
+        bridge: host.bridge,
+        options: {
+            state: function () { return optionsFeature ? optionsFeature.state() : { applying: false }; },
+            setApplying: function (running) {
+                return optionsFeature
+                    ? optionsFeature.setApplying(running)
+                    : Promise.resolve({ ok: false, error: 'options are not ready' });
+            }
+        }
     });
     botManager.register(host);
 
@@ -356,7 +365,10 @@ async function activate(host) {
         gameCalls: gameCalls,
         // The ticks and the walkspeed value are the user's own and outlive the window.
         store: host.getStore('options'),
-        log: function (msg) { host.log(msg); }
+        log: function (msg) { host.log(msg); },
+        onApplyingChanged: function (running) {
+            if (botManager) botManager.optionsStateChanged(running);
+        }
     });
     optionsFeature = optionsWindow.feature;
     const hotkeys = createHotkeys({

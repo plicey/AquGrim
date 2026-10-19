@@ -29,6 +29,11 @@ const BRIDGE_PATH = '/game/aqua-bridge.swf';
 const ROUTES = [
     { prefix: '/proxy/content/', origin: 'https://content.aq.com' },
     { prefix: '/proxy/account/', origin: 'https://account.aq.com' },
+    // PPAPI Flash can answer loaderInfo.url with the page's own URL, which leaves the bridge's
+    // base at the loopback root. Loader4 then asks for /gamefiles/... and /api/... instead of
+    // the game host's /game/... paths. Mirror those two roots so either base loads the game.
+    { prefix: '/gamefiles/', origin: 'https://game.aq.com/game/gamefiles' },
+    { prefix: '/api/', origin: 'https://game.aq.com/game/api' },
     { prefix: '/', origin: GAME_HOST }
 ];
 

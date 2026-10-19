@@ -90,6 +90,7 @@ test('the two windows are the app\'s own kind: sandboxed pages, no Flash, each w
     assert.strictEqual(config.webPreferences.contextIsolation, true, pair[0] + ' isolates contexts');
     assert.strictEqual(config.webPreferences.nodeIntegration, false, pair[0] + ' must not expose Node');
     assert.strictEqual(config.useContentSize, true, pair[0] + ' sizes its content');
+    assert.strictEqual(config.alwaysOnTop, true, pair[0] + ' is TopMost in the reference designer');
     assert.ok(found[0].url.indexOf(pair[1]) !== -1, pair[0] + ' serves its own page: ' + found[0].url);
     assert.ok(fs.existsSync(require('url').fileURLToPath(found[0].url)), 'missing page ' + pair[1]);
     const preload = config.webPreferences.preload;
@@ -385,6 +386,58 @@ test('the tamperer window captures per switch and sends each side through the sa
   window_.destroyed = true;
   harness.emit('toServer', '%xt%zm%ignored%');
   assert.strictEqual(window_.sent.length, 1, 'a destroyed window is not written to');
+});
+
+// PacketTamperer.cs filters as frames arrive, before they are appended: the client side uses
+// Contains (case-sensitive) and the server side OrdinalIgnoreCase. A frame that does not match is
+// not kept at all, so widening the filter later shows nothing retroactively.
+test('the tamperer filter is applied when a frame arrives, with the reference\'s own casing', async () => {
+  const harness = tapHarness();
+  const state = (await activateParity({
+    getPacketTap: function () { return harness.tap; },
+    getPacketSender: function () { return function () { return true; }; }
+  })).host._getState();
+  const watch = handlerFor(state, 'tampererWatch');
+  const setFilter = handlerFor(state, 'tampererFilter');
+  const window_ = fakeWindow();
+
+  await watch({ sender: window_ }, { fromClient: true, fromServer: true });
+  await setFilter({ sender: window_ }, 'MiXeD');
+  harness.emit('toServer', '%xt%zm%mixed-case%');
+  harness.emit('toClient', "<msg t='sys'>MIXED-case</msg>");
+  assert.deepStrictEqual(window_.sent.map(function (item) { return item.payload.text; }), [
+    'From server: <msg t=\'sys\'>MIXED-case</msg>\n\n'
+  ], 'client traffic is case-sensitive, the server side is not: ' +
+    JSON.stringify(window_.sent.map(function (item) { return item.payload.text; })));
+
+  harness.emit('toServer', '%xt%zm%MiXeD-once%');
+  assert.strictEqual(window_.sent[1].payload.text,
+    'From server: <msg t=\'sys\'>MIXED-case</msg>\n\nFrom client: %xt%zm%MiXeD-once%\n\n',
+    'a client frame matching the exact casing is appended after what was already kept');
+});
+
+// The reference form is hidden on close, so its loop keeps its Stop button. Here the page is
+// destroyed: leaving the loop sending would be an invisible spammer with no way to stop it.
+test('a closed spammer window stops its loop instead of sending invisibly', async () => {
+  const sent = [];
+  const state = (await activateParity({
+    getPacketSender: function () {
+      return function (direction, text) { sent.push(direction + ' ' + text); return true; };
+    }
+  })).host._getState();
+  const start = handlerFor(state, 'spammerStart');
+  const window_ = fakeWindow();
+
+  const started = await start({ sender: window_ }, { packets: ['a'], delay: 100 });
+  assert.strictEqual(started.running, true);
+  await new Promise(function (resolve) { setTimeout(resolve, 120); });
+  const before = sent.length;
+  assert.ok(before > 0, 'the loop sent before the window closed');
+
+  window_.destroyed = true;
+  window_.handlers.destroyed();
+  await new Promise(function (resolve) { setTimeout(resolve, 160); });
+  assert.strictEqual(sent.length, before, 'a loop whose window is gone must stop sending');
 });
 
 // A closed tamperer window must not leave the tap subscribed: the reference unhooks its callbacks

@@ -75,6 +75,7 @@ function createOptions(deps) {
     gameCalls: calls,
     store: store,
     timers: timers,
+    onApplyingChanged: deps.onApplyingChanged,
     log: function () {}
   });
   feature.attach();
@@ -181,39 +182,39 @@ test('the walkspeed value is clamped to the reference\'s field, and only applies
   await run.feature.stop();
 });
 
-test('the loop re-applies the enabled toggles, and lag killer carries its own value either way', async () => {
+test('OptionsManager starts stopped, and Start follows Grimlite\'s immediate/one-second/two-second cadence', async () => {
   const run = createOptions();
-  assert.deepStrictEqual(run.timers.running(), [], 'nothing runs while every toggle is off');
+  assert.strictEqual(run.feature.state().applying, false);
+  assert.deepStrictEqual(run.timers.running(), [], 'OptionsManager starts stopped');
 
   await run.feature.setToggle('lagKiller', true);
   assert.deepStrictEqual(run.calls.calls, [['callGameFunction', ['SetLagKiller', 'True']]]);
-  assert.strictEqual(run.timers.intervals.length, 1);
-  assert.strictEqual(run.timers.intervals[0].ms, toggles.LOOP_MS);
-  assert.strictEqual(toggles.LOOP_MS, 1000, 'OptionsManager.Timer ships at 1000 ms');
-
   await run.feature.setToggle('enemyMagnet', true);
   await run.feature.setToggle('hidePlayers', true);
+  await run.feature.setToggle('provoke', true);
   run.calls.calls.length = 0;
-  // The first pass reaches the 1000 ms mark and skips the group (OptionsManager.cs:203-207:
-  // delay, add, then `if (timer < 2000) continue`).
-  await run.timers.pass();
-  assert.deepStrictEqual(run.calls.calls, []);
 
-  // The second pass reaches 2000 ms, so the group runs - in ApplySettings' own order, with
-  // lag killer called either way (OptionsManager.cs:208-214).
+  // ApplySettings sends Provoke as soon as Start() begins, before the first delay.
+  await run.feature.setApplying(true);
+  assert.deepStrictEqual(run.calls.calls, [['callGameFunction0', ['SetProvokeMonsters']]]);
+  assert.strictEqual(run.timers.running().length, 1);
+  assert.strictEqual(run.timers.running()[0].ms, toggles.LOOP_MS);
+  assert.strictEqual(toggles.LOOP_MS, 1000, 'OptionsManager.Timer ships at 1000 ms');
+
+  run.calls.calls.length = 0;
+  // The first pass reaches 1000 ms and skips the group (OptionsManager.cs:203-207).
+  await run.timers.pass();
+  assert.deepStrictEqual(run.calls.calls, [['callGameFunction0', ['SetProvokeMonsters']]]);
+
+  // The second pass reaches 2000 ms and runs the gated group in ApplySettings' order.
   run.calls.calls.length = 0;
   await run.timers.pass();
   assert.deepStrictEqual(run.calls.calls, [
+    ['callGameFunction0', ['SetProvokeMonsters']],
     ['callGameFunction0', ['SetEnemyMagnet']],
     ['callGameFunction0', ['DestroyPlayers']],
     ['callGameFunction', ['SetLagKiller', 'True']]
   ]);
-
-  // Provoke is the reference's one per-pass call.
-  await run.feature.setToggle('provoke', true);
-  run.calls.calls.length = 0;
-  await run.timers.pass();
-  assert.deepStrictEqual(run.calls.calls, [['callGameFunction0', ['SetProvokeMonsters']]]);
 
   await run.feature.setToggle('provoke', false);
   await run.feature.setToggle('enemyMagnet', false);
@@ -221,7 +222,9 @@ test('the loop re-applies the enabled toggles, and lag killer carries its own va
   run.calls.calls.length = 0;
   await run.feature.setToggle('lagKiller', false);
   assert.deepStrictEqual(run.calls.calls, [['callGameFunction', ['SetLagKiller', 'False']]]);
-  assert.deepStrictEqual(run.timers.running(), [], 'the loop is given back when nothing needs it');
+  assert.strictEqual(run.timers.running().length, 1, 'Start keeps running until explicitly stopped');
+  await run.feature.setApplying(false);
+  assert.deepStrictEqual(run.timers.running(), [], 'Stop ends only the OptionsManager loop');
 });
 
 test('a toggle the reference never had an off call for sends nothing when switched off', async () => {
@@ -376,30 +379,31 @@ test('a stored tick that no longer exists is ignored rather than fatal', async (
   await run.feature.stop();
 });
 
-// The ticks persist, so a restart must not quietly start re-sending them after the user has
-// pressed Stop applying: the choice to keep the loop stopped is the user's too. (The reference
-// keeps this flag in memory because it is running-state there; here the ticks outlive the app, so
-// the flag has to as well or the two disagree.)
-test('the Stop applying choice is the user\'s own, and is remembered across a restart', async () => {
-  const store = memoryStore(undefined);
-  const first = createOptions({ store: store });
-  await first.feature.setToggle('provoke', true);
-  await first.feature.toggleApplying();
-  assert.strictEqual(first.feature.state().applying, false);
-  await first.feature.stop();
+test('the OptionsManager running flag is temporary, while the option values remain saved', async () => {
+  const store = memoryStore({ toggles: { provoke: true }, walkSpeed: 35, applying: true });
+  const changes = [];
+  const run = createOptions({ store: store, onApplyingChanged: function (running) { changes.push(running); } });
+  assert.strictEqual(run.feature.state().applying, false,
+    'an old saved running flag must not override Grimlite\'s stopped-on-launch state');
+  assert.deepStrictEqual(run.timers.running(), []);
 
-  const second = createOptions({ store: store });
-  assert.strictEqual(second.feature.state().applying, false, 'a restart must not restart the loop by itself');
-  assert.deepStrictEqual(second.timers.running(), [], 'nothing may be re-sent while it stays stopped');
-  await second.feature.stop();
+  await run.feature.setApplying(true);
+  await run.feature.setApplying(true);
+  assert.deepStrictEqual(run.calls.calls, [['callGameFunction0', ['SetProvokeMonsters']]]);
+  assert.deepStrictEqual(changes, [true], 'the checkbox follows actual OptionsManager state changes');
+  await run.feature.setToggle('skipCutscenes', true);
+  const saved = store.read();
+  assert.strictEqual(saved.applying, undefined, 'running state is not persisted');
+  assert.strictEqual(saved.toggles.provoke, true);
+  assert.strictEqual(saved.toggles.skipCutscenes, true);
+  assert.strictEqual(saved.walkSpeed, 35);
+  await run.feature.setApplying(false);
+  assert.deepStrictEqual(changes, [true, false]);
+  await run.feature.stop();
 
-  // Starting it again is the user's call, and that choice persists in its turn.
-  await second.feature.toggleApplying();
-  assert.strictEqual(second.feature.state().applying, true);
-  await second.feature.stop();
-
-  const third = createOptions({ store: store });
-  assert.strictEqual(third.feature.state().applying, true);
-  assert.strictEqual(third.timers.running().length, 1, 'the tick that is on resumes when applying is on');
-  await third.feature.stop();
+  const restarted = createOptions({ store: store });
+  assert.strictEqual(restarted.feature.state().applying, false);
+  assert.strictEqual(restarted.feature.state().provoke, true);
+  assert.deepStrictEqual(restarted.timers.running(), []);
+  await restarted.feature.stop();
 });

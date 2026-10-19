@@ -49,13 +49,9 @@ function createOptionsFeature(host, deps) {
     let loop = null;
     let fastLoop = null;
     let pass = 0;
-    // The reference's master switch over its own loop (OptionsManager.Start/Stop, which the
-    // hidden "Enable Options" item and the "Toggle Options" hotkey both flip). Ticks and the
-    // walkspeed value are the user's; so is this, and it has to be stored with them. The reference
-    // can keep it in memory because *its* ticks reset on every launch (they are static bools), so
-    // there is nothing to resume; here the ticks outlive the app, and a restart that quietly
-    // re-sent them after the user pressed "Stop applying" would undo the user's own choice.
-    let applying = true;
+    // OptionsManager.IsRunning is runtime state: the hidden menu item and Toggle Options hotkey
+    // start/stop it, and a new Grimlite process starts stopped.
+    let applying = false;
 
     function load() {
         if (!store) return;
@@ -73,20 +69,15 @@ function createOptionsFeature(host, deps) {
             if (saved[toggle.id] !== undefined) state[toggle.id] = saved[toggle.id] === true;
         });
         values.walkSpeed = clampWalkSpeed(stored.walkSpeed, values.walkSpeed);
-        if (stored.applying !== undefined) applying = stored.applying === true;
     }
 
     function save() {
         if (!store) return;
         try {
-            store.write({ toggles: state, walkSpeed: values.walkSpeed, applying: applying });
+            store.write({ toggles: state, walkSpeed: values.walkSpeed });
         } catch (error) {
             log('could not save the options (' + (error && error.message ? error.message : error) + ')');
         }
-    }
-
-    function anyOn() {
-        return toggles.TOGGLES.some(function (toggle) { return state[toggle.id] === true; });
     }
 
     async function send(toggle, on) {
@@ -98,11 +89,12 @@ function createOptionsFeature(host, deps) {
     }
 
     async function eachPass() {
+        if (!applying) return;
         // ApplySettings' pass body: provoke while the tick is on (OptionsManager.cs:199-202).
         if (state.provoke) await send(toggles.byId('provoke'), true);
         pass += 1;
         // ...then its own gate: the group below runs on every second pass (OptionsManager.cs:205).
-        if (pass % 2 !== 0) return;
+        if (!applying || pass % 2 !== 0) return;
         for (let i = 0; i < toggles.SECOND_PASS_ORDER.length; i++) {
             const toggle = toggles.byId(toggles.SECOND_PASS_ORDER[i]);
             // Lag killer is called with its current value every pass either way; the rest only
@@ -117,62 +109,58 @@ function createOptionsFeature(host, deps) {
         await send(toggles.byId('walkSpeed'), true);
     }
 
-    function startLoops() {
-        if (!applying) return;
-        if (anyOn() && !loop) {
-            pass = 0;
-            // The callback returns its own promise: setInterval does not care, and a test that
-            // drives the loop by hand can wait for the pass it just started.
-            loop = timers.setInterval(function () {
-                return eachPass().catch(function (error) {
-                    log('option loop failed: ' + (error && error.message ? error.message : error));
-                });
-            }, toggles.LOOP_MS);
-        }
+    function startOptionsLoop() {
+        if (loop) return;
+        pass = 0;
+        loop = timers.setInterval(function () {
+            return eachPass().catch(function (error) {
+                log('option loop failed: ' + (error && error.message ? error.message : error));
+            });
+        }, toggles.LOOP_MS);
+    }
+
+    function stopOptionsLoop() {
+        if (loop) { timers.clearInterval(loop); loop = null; }
+    }
+
+    function settleWalkSpeedLoop() {
         if (state.walkSpeed && !fastLoop) {
             fastLoop = timers.setInterval(function () {
                 return fastPass().catch(function (error) {
                     log('walkspeed loop failed: ' + (error && error.message ? error.message : error));
                 });
             }, toggles.WALK_SPEED.intervalMs);
+        } else if (!state.walkSpeed && fastLoop) {
+            timers.clearInterval(fastLoop);
+            fastLoop = null;
         }
     }
 
-    function stopLoops() {
-        if (loop) { timers.clearInterval(loop); loop = null; }
-        if (fastLoop) { timers.clearInterval(fastLoop); fastLoop = null; }
-    }
-
-    /** The loops the current ticks ask for: the slow one while any toggle is on, the fast one
-     * only while walkspeed is on (so a plain toggle going off does not stop the walkspeed push). */
+    /** Grimlite's walk-speed timer is independent of OptionsManager.Start/Stop. */
     function settleLoops() {
-        if (!applying) { stopLoops(); return; }
-        if (!state.walkSpeed && fastLoop) { timers.clearInterval(fastLoop); fastLoop = null; }
-        if (anyOn()) startLoops();
-        else stopLoops();
+        if (applying) startOptionsLoop();
+        else stopOptionsLoop();
+        settleWalkSpeedLoop();
     }
 
-    /** The reference's Start/Stop over the option loop. The ticks stay as the user left them. */
+    /** The reference's OptionsManager.Start/Stop. Ticks stay as the user left them. */
     async function setApplying(wanted) {
-        applying = wanted === true;
-        save();
+        const next = wanted === true;
+        if (applying === next) return { ok: true, applying: applying };
+        applying = next;
         settleLoops();
-        if (!applying) return { ok: true, applying: false };
-        // Start() applies the current state straight away, which is the one pass a user expects
-        // to see the moment they switch it back on.
-        const answer = await eachPassOnce();
-        return { ok: answer.ok, error: answer.error || null, applying: true };
-    }
-
-    /** One immediate pass of everything currently on, in the loop's own order. */
-    async function eachPassOnce() {
-        if (state.provoke) await send(toggles.byId('provoke'), true);
-        for (let i = 0; i < toggles.SECOND_PASS_ORDER.length; i++) {
-            const toggle = toggles.byId(toggles.SECOND_PASS_ORDER[i]);
-            if (state[toggle.id] || toggle.id === 'lagKiller') await send(toggle, state[toggle.id] === true);
+        if (typeof deps.onApplyingChanged === 'function') {
+            try {
+                deps.onApplyingChanged(applying);
+            } catch (error) {
+                log('could not update the options running state (' +
+                    (error && error.message ? error.message : error) + ')');
+            }
         }
-        if (state.walkSpeed) await send(toggles.byId('walkSpeed'), true);
-        return { ok: true, error: null };
+        if (!applying) return { ok: true, applying: false };
+        // ApplySettings starts with its Provoke check, then waits before its next pass.
+        const answer = state.provoke ? await send(toggles.byId('provoke'), true) : { ok: true };
+        return { ok: answer.ok, error: answer.error || null, applying: true };
     }
 
     const feature = {
@@ -222,6 +210,9 @@ function createOptionsFeature(host, deps) {
             return setApplying(!applying);
         },
 
+        /** The Bot Manager's "Enable options without starting" checkbox. */
+        setApplying: setApplying,
+
         /** Everything the window needs to draw itself. */
         state: function () {
             const snapshot = { applying: applying, results: {} };
@@ -236,10 +227,7 @@ function createOptionsFeature(host, deps) {
             return snapshot;
         },
 
-        /**
-         * Start the loops the stored state asks for. Called when the window opens, so a restart
-         * resumes the user's own ticks (the reference re-applies nothing until it is running).
-         */
+        /** Load remembered ticks; OptionsManager itself starts stopped on a fresh app launch. */
         attach: function () {
             load();
             settleLoops();
@@ -248,7 +236,9 @@ function createOptionsFeature(host, deps) {
 
         /** Give the timers back: a plugin that is stopping must not leave a loop ticking. */
         stop: function () {
-            stopLoops();
+            stopOptionsLoop();
+            if (fastLoop) { timers.clearInterval(fastLoop); fastLoop = null; }
+            applying = false;
             return Promise.resolve();
         },
 

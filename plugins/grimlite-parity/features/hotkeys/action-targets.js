@@ -24,7 +24,6 @@ const WINDOW_BY_ACTION = {
     'Show Packet Tamperer': 'grimlite-parity-packet-tamperer',
     'Show Fast Travels': 'grimlite-parity-travels',
     'Show Maid': 'grimlite-parity-maid',
-    'Show Bank': 'grimlite-parity-bank',
     'Show Cosmetics form': 'grimlite-parity-cosmetics',
     'Show Logs': 'grimlite-parity-logs',
     'Show Notepad': 'grimlite-parity-notepad',
@@ -47,6 +46,9 @@ const APP_ACTIONS = {
 // the reference's own name is sent, and when the game says it has no such member, game-calls.js
 // runs the loader body that name stands for through the generic callbacks.
 const GAME_ACTIONS = {
+    // Hotkeys.cs:408 Show Bank -> Player.Bank.Show() -> the game's own bank UI. The separate
+    // Bank window stays reachable from the Tools menu; this action is the in-game control.
+    'Show Bank': { call: 'ShowBank', args: [] },
     'Cancel Target': { call: 'CancelTarget', args: [] },
     'Load Hair shop': { call: 'LoadHairShop', args: ['1'] },
     'Load Armor Customizer': { call: 'LoadArmorCustomizer', args: [] }

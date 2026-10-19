@@ -70,6 +70,12 @@ test('the page gets the sheet and the statement catalog it has to draw', () => {
   assert.deepStrictEqual(sheet.placeholders.txtMonster, 'Monster (* = random)');
   assert.deepStrictEqual(sheet.tags, catalog.STATEMENT_TAGS);
   assert.strictEqual(sheet.statements.length, 85);
+  assert.strictEqual(sheet.optionsRunning, false, 'OptionsManager starts stopped like Grimlite');
+  const hasOptionsControl = (control) => control.id === 'chkEnableSettings'
+    ? control.text.replace(/\r\n/g, '\n') === 'Enable options\nwithout starting'
+    : (control.children || []).some(hasOptionsControl);
+  assert.ok(sheet.tabs.some((tab) => (tab.controls || []).some(hasOptionsControl)),
+  'the reference exposes its loop control in Bot Manager');
   // The customiser's list, so the page can render it without the catalog.
   assert.deepStrictEqual(sheet.customisable.slice(0, 3), ['Index', 'Variable', 'ExtendedVariable']);
 });
@@ -236,6 +242,38 @@ test('a tab tickbox writes the Configuration key the reference binds it to, stra
   assert.strictEqual(o.feature.editor().object().WalkSpeed, 44);
 });
 
+test('the Bot Manager Options checkbox controls the same loop as Grimlite and reflects hotkey changes', async () => {
+  let applying = false;
+  let feature;
+  const options = {
+    state: function () { return { applying: applying }; },
+    setApplying: function (running) {
+      applying = running === true;
+      feature.optionsStateChanged(applying);
+      return Promise.resolve({ ok: true, applying: applying });
+    }
+  };
+  const sent = [];
+  const sender = {
+    isDestroyed: function () { return false; },
+    send: function (channel, running) { sent.push({ channel: channel, running: running }); }
+  };
+  const w = window({ options: options, host: { pluginId: 'grimlite-parity' } });
+  feature = w.feature;
+
+  const sheet = feature.handle('botManagerSheet', { sender: sender }, []);
+  assert.strictEqual(sheet.optionsRunning, false);
+  const started = await feature.handle('botManagerOptionsEnable', { sender: sender }, [true]);
+  assert.strictEqual(started.optionsRunning, true);
+  assert.deepStrictEqual(sent, [{
+    channel: 'plugin:grimlite-parity:botManagerOptionsState', running: true
+  }]);
+
+  // Grimlite's Toggle Options hotkey also moves the checkbox through OptionsManager.StateChanged.
+  feature.optionsStateChanged(false);
+  assert.strictEqual(sent[1].running, false);
+});
+
 test('the tabs read and write the same configuration the file has, defaults included', async () => {
   const o = await opened('legacy-keys.gbot');
   assert.strictEqual(o.state.configuration.DropDelay > 0 || o.state.configuration.DropDelay === undefined, true,
@@ -356,9 +394,18 @@ test('saving goes through the dialogs and the writer, and a bad path is reported
   assert.strictEqual(saved.path, '/tmp/out.gbot');
   assert.strictEqual(saves.length, 1);
 
-  const w = window();
-  const nothing = await w.feature.handle('botManagerSave', null, []);
-  assert.strictEqual(nothing.canceled, true, 'nothing open, nothing to save');
+  // A fresh Bot Manager holds an empty document, and the reference's Save writes it: building a
+  // bot from nothing is the ordinary way a bot starts.
+  const fresh = window({ dialogs: {
+    open: function () { return Promise.resolve({ canceled: true }); },
+    save: function (owner, bot, options) {
+      saves.push(options);
+      return Promise.resolve({ canceled: false, path: '/tmp/new.gbot', error: null });
+    }
+  } });
+  const nothing = await fresh.feature.handle('botManagerSave', null, []);
+  assert.strictEqual(nothing.path, '/tmp/new.gbot', 'a fresh document can be saved');
+  assert.strictEqual(saves.length, 2);
 });
 
 test('the window reaches its page only through its own namespaced channels', async () => {
@@ -371,7 +418,7 @@ test('the window reaches its page only through its own namespaced channels', asy
     'botManagerEdit', 'botManagerForm', 'botManagerKey', 'botManagerLoad', 'botManagerMessages',
     'botManagerRaw', 'botManagerSave', 'botManagerSelect', 'botManagerSetting', 'botManagerSheet',
     'botManagerStatements', 'botManagerStyle', 'botManagerTree', 'botManagerTreeSelect',
-    'botManagerEnable', 'botManagerState'
+    'botManagerEnable', 'botManagerOptionsEnable', 'botManagerState'
   ].sort());
 
   const featureRoot = path.join(__dirname, '../../plugins/grimlite-parity/features/bot-manager');

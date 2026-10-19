@@ -94,7 +94,7 @@ function register(host, windowTitle) {
                 },
                 {
                     // The reference keeps this under Tools -> Swf Dev Test (Grimlite/UI/Root.cs).
-                    label: labels.grimliteDevTest || 'Dev Test',
+                    label: labels.grimliteDevTest || 'Swf Dev Test',
                     accelerator: keybinds.grimliteParityDevTest,
                     registerAccelerator: false,
                     click: function () {
