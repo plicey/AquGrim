@@ -979,13 +979,16 @@ call, so that is what this section is for.
 
    ```sh
    cd /home/ammar/.codex/worktrees/integration-parity/aqugrim
-   npm start
+   npm start -- --no-sandbox
    ```
 
    This runs Electron from the `codex/grimlite-parity` source checkout; it does not create an
-   installer or run a build. In **Settings → Plugins**, verify **Grimlite Parity** is selected as
-   the active plugin; if not, select it, Save, and Restart. Sign in to AQW, open **Maid Remake**
-   with **Alt+Shift+R** and **Bot Manager** with **Alt+Shift+M**, and keep the terminal open.
+   installer or run a build. The CLI flag is needed for this Linux source run because the npm
+   Electron sandbox helper is not installed root-owned/setuid. It disables Chromium's sandbox for
+   this test launch, so use it only for local validation. In **Settings → Plugins**, verify
+   **Grimlite Parity** is selected as the active plugin; if not, select it, Save, and Restart. Sign
+   in to AQW, open **Maid Remake** with **Alt+Shift+R** and **Bot Manager** with **Alt+Shift+M**,
+   and keep the terminal open.
 
 #### Start a Misc 2 handler
 
