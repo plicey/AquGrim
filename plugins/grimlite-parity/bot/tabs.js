@@ -1170,6 +1170,7 @@ const TABS = [
           {
             id:  "txtDescription",
             kind:  "text",
+            multiline:  true,
             text:  "Description (Write in RTF)"
           }
         ]
@@ -1304,6 +1305,7 @@ const TABS = [
           {
             id:  "txtLog",
             kind:  "text",
+            multiline:  true,
             text:  "Text"
           },
           {
@@ -1789,6 +1791,8 @@ const TABS = [
       {
         id:  "txtSavedDesc",
         kind:  "text",
+        multiline:  true,
+        readonly:  true,
         text:  "Description"
       },
       {

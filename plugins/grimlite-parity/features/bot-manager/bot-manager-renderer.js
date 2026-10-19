@@ -95,10 +95,19 @@
     return node;
   }
 
+  /** A designer label's own \r\n line breaks, kept as real lines in the fixed layout. */
+  function appendText(host, text) {
+    String(text === undefined || text === null ? '' : text).split(/\r?\n/).forEach(function (line, at) {
+      if (at) host.appendChild(document.createElement('br'));
+      host.appendChild(document.createTextNode(line));
+    });
+  }
+
   function label(text, control, host) {
-    var wrap = el('label', control.kind === 'tick' || control.kind === 'radio' ? 'tick' : 'inline');
+    var tick = control && (control.type === 'checkbox' || control.type === 'radio');
+    var wrap = el('label', tick ? 'tick' : 'inline');
     wrap.appendChild(control);
-    if (text) wrap.appendChild(document.createTextNode(' ' + text));
+    if (text) appendText(wrap, ' ' + text);
     host.appendChild(wrap);
     return wrap;
   }
@@ -122,6 +131,9 @@
       node.style.height = position[3] + 'px';
       // The reference's group children are positioned from the group's client area.
       if (entry.kind === 'group') node.style.padding = '0';
+      if ((entry.kind === 'tick' || entry.kind === 'radio') && position[3] > 24) {
+        node.classList.add('wrap-text');
+      }
     }
     return node;
   }
@@ -168,10 +180,11 @@
       if (entry.title) wrapper.title = entry.title;
       return wrapper;
     case 'text':
-      node = el('input', 'sheet-text');
-      node.type = 'text';
+      node = entry.multiline ? el('textarea', 'sheet-text') : el('input', 'sheet-text');
+      if (!entry.multiline) node.type = 'text';
       node.id = entry.id;
       node.placeholder = entry.text || '';
+      if (entry.readonly) node.readOnly = true;
       restore(node, remembered[entry.id]);
       return node;
     case 'number':
@@ -197,7 +210,8 @@
       restore(node, remembered[entry.id]);
       return node;
     case 'label':
-      node = el('span', 'sheet-label', entry.text || '');
+      node = el('span', 'sheet-label');
+      appendText(node, entry.text || '');
       if (entry.id) node.id = entry.id;
       return node;
     case 'list':

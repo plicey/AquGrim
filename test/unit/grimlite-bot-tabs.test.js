@@ -116,6 +116,10 @@ test('the reference list selector values are the six lists the editor switches b
   });
   assert.strictEqual(find('numWalkSpeed').min, 1);
   assert.strictEqual(find('numWalkSpeed').max, 99);
+  assert.strictEqual(find('txtDescription').multiline, true);
+  assert.strictEqual(find('txtLog').multiline, true);
+  assert.strictEqual(find('txtSavedDesc').multiline, true);
+  assert.strictEqual(find('txtSavedDesc').readonly, true);
 });
 
 test('a command is built from the tab fields the reference reads', () => {
