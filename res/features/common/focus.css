@@ -15,8 +15,10 @@ a:focus,
 summary:focus,
 [role="button"]:focus,
 [tabindex]:focus {
-  outline: 2px solid #4da3ff;
-  outline-offset: 2px;
+  /* An inset shadow follows border-radius and adds no outside gap; an outline is rectangular in
+     Chromium 87 and looked wrong on rounded buttons and tabs. */
+  outline: none;
+  box-shadow: inset 0 0 0 2px #4da3ff;
 }
 
 /* Chromium's native scrollbar otherwise stays bright against AquaStar's dark

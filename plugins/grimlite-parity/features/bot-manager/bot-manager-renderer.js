@@ -538,8 +538,12 @@
           setStatus((result && result.error) || 'the game did not answer', true);
           return;
         }
+        if (result.state) applyState(result.state);
         if (id === 'cbBoosts') { fillBoosts(result.boosts || []); return; }
-        fillFromGame(id, result.values, modifiers);
+        // A control that acts without filling boxes (map item, access level, alignment, quest
+        // whitelist) has no values; it must not be sent through the read-fill path.
+        if (result.values) fillFromGame(id, result.values, modifiers);
+        if (result.message) setStatus(result.message, false);
       });
     }
     switch (id) {
@@ -1050,6 +1054,14 @@
   function wireChrome() {
     document.getElementById('open').addEventListener('click', function () { api.load(null).then(applyState); });
     document.getElementById('save').addEventListener('click', function () { save(true); });
+    // The left column is static markup, not a generated sheet control, so these buttons need
+    // their own click wiring. Without it Remove, Clear, Up, Down and Find were dead controls.
+    ['btnUp', 'btnDown', 'btnClear', 'btnRemove', 'btnSearchCmd'].forEach(function (id) {
+      var node = document.getElementById(id);
+      if (!node || node.dataset.wired) return;
+      node.dataset.wired = '1';
+      node.addEventListener('click', function () { press(id); });
+    });
     document.getElementById('menu').addEventListener('click', function (event) {
       event.stopPropagation();
       openMenu();

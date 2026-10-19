@@ -708,8 +708,100 @@ function createBotManager(deps) {
             });
         },
         btnGetInfo: function () { return readGame(['cell', 'map', 'pad']); },
-        cbBoosts: function () { return readServerUse(); }
+        cbBoosts: function () { return readServerUse(); },
+
+        // btnQAddToWhitelist_Click: load the quest, then add its rewards and/or requirements to
+        // Drops. The quest row is the loader's GetQuestTree row, the same one the item commands use.
+        btnQAddToWhitelist: async function (fields) {
+            const id = Number(fields.numQQuestId);
+            const game = deps.game;
+            if (!isFinite(id) || id <= 0) return { ok: false, error: 'give the quest an id first' };
+            if (!game || typeof game.loadQuest !== 'function') {
+                return { ok: false, error: 'this window has no quest access' };
+            }
+            try {
+                await game.loadQuest(id);
+            } catch (error) {
+                return { ok: false, error: (error && error.message) || String(error) };
+            }
+            let row = null;
+            for (let tries = 0; tries < 20 && !row; tries++) {
+                row = await game.quest(id).catch(function () { return null; });
+                if (!row) await new Promise(function (resolve) { setTimeout(resolve, 200); });
+            }
+            if (!row) return { ok: false, error: 'quest #' + id + ' did not load' };
+            const names = [];
+            function collect(list) {
+                (Array.isArray(list) ? list : []).forEach(function (item) {
+                    const name = item && (item.sName === undefined ? item.Name : item.sName);
+                    if (name) names.push(String(name));
+                });
+            }
+            if (fields.chkQRewards) collect(row.rewards || row.Rewards);
+            if (fields.chkQRequirements) collect(row.reqd || row.RequiredItems);
+            if (!names.length) {
+                return { ok: false, error: 'the quest has no rewards or requirements to add' };
+            }
+            fillLists([{ list: 'Drops', items: names, unique: true, insensitive: true }]);
+            return { ok: true, message: 'added ' + names.length + ' quest item/items to Drops', state: view() };
+        },
+
+        // btnLoadMap_Click: World.LoadMap(tbLoadMap.Text), when a .swf name was typed.
+        btnLoadMap: function (fields) {
+            const map = String(fields.tbLoadMap || '').trim();
+            if (!/\.swf$/i.test(map) || /\(\.swf\)/.test(map)) {
+                return Promise.resolve({ ok: false, error: 'type a .swf map name first' });
+            }
+            return callChannel('callGameFunction', ['world.loadMap', map]).then(function (answer) {
+                return answer.ok ? { ok: true, message: 'loading ' + map }
+                    : { ok: false, error: answer.error };
+            });
+        },
+
+        // Player.ChangeAccessLevel: the loader's own visible fields. Filters are live objects the
+        // generic bridge cannot carry; colour and upgrade/access fields are enough to show the
+        // change in the client and are what the reference writes beside them.
+        btnSetMem: function () { return setAccess('Member'); },
+        btnSetNonMem: function () { return setAccess('Non Member'); },
+        btnSetModerator: function () { return setAccess('Moderator'); },
+
+        // The four alignment buttons are the reference's own updateQuest frames.
+        btnSetGood: function () { return sendServerFrame('%xt%zm%updateQuest%218701%41%1%'); },
+        btnSetEvil: function () { return sendServerFrame('%xt%zm%updateQuest%218701%41%2%'); },
+        btnSetChaos: function () { return sendServerFrame('%xt%zm%updateQuest%218701%41%3%'); },
+        btnSetUndecided: function () { return sendServerFrame('%xt%zm%updateQuest%218701%41%5%'); }
     };
+
+    function setAccess(level) {
+        const colour = level === 'Member' ? 9229823 : level === 'Moderator' ? 16698168 : 16777215;
+        const writes = [
+            ['world.myAvatar.pMC.pname.ti.textColor', colour]
+        ];
+        if (level === 'Member') writes.push(['world.myAvatar.objData.iUpgDays', 30],
+            ['world.myAvatar.objData.iUpg', 1]);
+        else if (level === 'Non Member') writes.push(['world.myAvatar.objData.iUpgDays', -1],
+            ['world.myAvatar.objData.iUpg', 0]);
+        else writes.push(['world.myAvatar.objData.intAccessLevel', 60]);
+        return writes.reduce(function (chain, pair) {
+            return chain.then(function (state) {
+                if (!state.ok) return state;
+                return callChannel('setGameObject', pair).then(function (answer) {
+                    return answer.ok ? state : { ok: false, error: answer.error };
+                });
+            });
+        }, Promise.resolve({ ok: true })).then(function (state) {
+            return state.ok ? { ok: true, message: 'access level set to ' + level } : state;
+        });
+    }
+
+    function sendServerFrame(text) {
+        if (typeof deps.sendFrame !== 'function') {
+            return { ok: false, error: 'this window has no packet relay' };
+        }
+        const sent = deps.sendFrame({ direction: 'toServer', text: text });
+        return sent ? { ok: true, message: 'sent ' + text }
+            : { ok: false, error: 'the client is not connected to the relay' };
+    }
 
     /** A read's own value, with a member error kept apart from a value JSON cannot carry. */
     function decodeValue(raw) {

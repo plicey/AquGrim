@@ -524,6 +524,10 @@ async function activate(host) {
         // The controls that act on the running game read through the generic bridge surface. A
         // name the stock game does not have reports the helper it waits for instead of a value.
         bridge: host.bridge,
+        // The Bot Manager's quest whitelist button and its alignment packets need the same game
+        // access and relay the bot engine uses; they are not generic dot-path reads.
+        game: runtimeDependencies.createGame(),
+        sendFrame: function (frame) { return host.packets.send(frame); },
         specialHandler: function () { return zonePanel; },
         options: {
             state: function () { return optionsFeature ? optionsFeature.state() : { applying: false }; },

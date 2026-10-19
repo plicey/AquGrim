@@ -433,6 +433,17 @@ test('the window reaches its page only through its own namespaced channels', asy
   assert.strictEqual(preload.indexOf("require('../.."), -1, 'no project requires in a sandboxed preload');
 });
 
+test('the static left-column buttons are wired to the editor actions', () => {
+  const renderer = fs.readFileSync(path.join(__dirname,
+    '../../plugins/grimlite-parity/features/bot-manager/bot-manager-renderer.js'), 'utf8');
+  ['btnUp', 'btnDown', 'btnClear', 'btnRemove', 'btnSearchCmd'].forEach(function (id) {
+    assert.ok(renderer.indexOf("'" + id + "'") !== -1,
+      id + ' must be bound to a press action');
+  });
+  assert.ok(/\['btnUp', 'btnDown', 'btnClear', 'btnRemove', 'btnSearchCmd'\]/.test(renderer),
+    'the static column buttons are wired together');
+});
+
 test('the bots directory this window shows is the one the bot engine resolves against', async () => {
   // The engine's CmdLoadBot resolves a relative path against the bots directory (#40), and this
   // window is where the user picks that directory. Two settings objects would each cache their own
