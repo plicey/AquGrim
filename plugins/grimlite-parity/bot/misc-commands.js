@@ -10,9 +10,8 @@
 //   * calls into the game, every one of them by the reference loader own helper name through the
 //     session (loader-surface.js, #48). The module never spells a game path out, and the names it
 //     asks for are listed once in bot/misc.js and asserted against the surface.
-//   * the commands this build cannot carry out - the stage frame rate SetFPS sets, and the Maid
-//     handler CmdSpecialHandler drives - which report why and whose ticket owns them rather than
-//     pretending to work.
+//   * the commands that need a window seam - the Maid handler CmdSpecialHandler drives - which
+//     report why when that seam is absent rather than pretending to work.
 //
 // Where the reference holds a call with no counterpart at all (Console.Beep is the shell own
 // sound), the dependency is injected and the plugin shell provides it.
@@ -478,10 +477,9 @@ function createHandlers(deps) {
             if (result && result.ok === false) log("CmdReturn: " + result.error);
         },
 
-        CmdSetFPS: async function () {
-            // The loader own body is `this.stg.frameRate = parseInt(param1)`: its own stage, which
-            // no bridge callback can reach. Attempted anyway, so the refusal is the surface own,
-            // and the surface own row reason rides along with it.
+        CmdSetFPS: async function (ctx, command) {
+            // The loader own body is `this.stg.frameRate = parseInt(param1)`. The game root is a
+            // display object, so the surface writes its shared stage's frameRate.
             try {
                 await ask("SetFPS", [String(command.FPS === undefined ? 0 : command.FPS)]);
             } catch (error) {

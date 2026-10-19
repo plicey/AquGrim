@@ -49,6 +49,10 @@ function createOptionsFeature(host, deps) {
     let loop = null;
     let fastLoop = null;
     let pass = 0;
+    // OptionsManager.Timer: numOptionsTimer_ValueChanged writes it; the default is 1000.
+    let timerMs = toggles.LOOP_MS;
+    // BotManager's "Respawn Provoke": the reference's loop skips provoke while it is ticked.
+    let respawnProvoke = false;
     // OptionsManager.IsRunning is runtime state: the hidden menu item and Toggle Options hotkey
     // start/stop it, and a new Grimlite process starts stopped.
     let applying = false;
@@ -91,7 +95,7 @@ function createOptionsFeature(host, deps) {
     async function eachPass() {
         if (!applying) return;
         // ApplySettings' pass body: provoke while the tick is on (OptionsManager.cs:199-202).
-        if (state.provoke) await send(toggles.byId('provoke'), true);
+        if (state.provoke && !respawnProvoke) await send(toggles.byId('provoke'), true);
         pass += 1;
         // ...then its own gate: the group below runs on every second pass (OptionsManager.cs:205).
         if (!applying || pass % 2 !== 0) return;
@@ -116,7 +120,7 @@ function createOptionsFeature(host, deps) {
             return eachPass().catch(function (error) {
                 log('option loop failed: ' + (error && error.message ? error.message : error));
             });
-        }, toggles.LOOP_MS);
+        }, timerMs);
     }
 
     function stopOptionsLoop() {
@@ -158,7 +162,8 @@ function createOptionsFeature(host, deps) {
         }
         if (!applying) return { ok: true, applying: false };
         // ApplySettings starts with its Provoke check, then waits before its next pass.
-        const answer = state.provoke ? await send(toggles.byId('provoke'), true) : { ok: true };
+        const answer = state.provoke && !respawnProvoke
+            ? await send(toggles.byId('provoke'), true) : { ok: true };
         return { ok: answer.ok, error: answer.error || null, applying: true };
     }
 
@@ -217,6 +222,23 @@ function createOptionsFeature(host, deps) {
 
         /** The Bot Manager's "Enable options without starting" checkbox. */
         setApplying: setApplying,
+
+        /** numOptionsTimer_ValueChanged: the loop's own delay, live while it runs. */
+        setTimer: function (value) {
+            const ms = Number(value);
+            timerMs = isFinite(ms) && ms >= 100 && ms <= 10000 ? Math.round(ms) : 1000;
+            if (loop) {
+                stopOptionsLoop();
+                startOptionsLoop();
+            }
+            return { ok: true, timer: timerMs };
+        },
+
+        /** chkRespawnProvoke_CheckedChanged and ApplySettings' own guard. */
+        setRespawnProvoke: function (on) {
+            respawnProvoke = on === true;
+            return { ok: true, respawnProvoke: respawnProvoke };
+        },
 
         /** Everything the window needs to draw itself. */
         state: function () {

@@ -175,6 +175,7 @@ function createEngine(deps) {
     let externallyPaused = false;
     let index = 0;
     let document = null;      // the parsed .gbot, mutated the way the editor mutates it
+    let editorControls = {};  // the form-only values (invent on start, quest delay, auto-correct)
     let config = null;        // the Configuration view: the document plus the C# defaults
     const vars = {};          // Configuration.Tempvariable, per engine
     const ints = {};          // Configuration.Tempvalues, per engine
@@ -405,11 +406,16 @@ function createEngine(deps) {
 
     /** Editor-only start option; a running bot gets it from the document, never from config. */
     function inventOnStart() {
+        if (editorControls.inventOnStart !== undefined) return editorControls.inventOnStart !== false;
         return !(document && document.InventOnStart === false);
     }
 
     /** The Bot Manager's numQuestDelay, carried on the document. */
     function questDelay() {
+        if (editorControls.questDelay !== undefined) {
+            const live = Number(editorControls.questDelay);
+            if (isFinite(live) && live >= 0) return live;
+        }
         const raw = document && (document.QuestDelay !== undefined
             ? document.QuestDelay : document.numQuestDelay);
         if (raw === undefined || raw === null || raw === '') return 1000;
@@ -1305,7 +1311,14 @@ function createEngine(deps) {
             if (itemName !== want) continue;
             if (String(qty) === '*') return true;
             const have = Number(item.iQty === undefined ? item.Quantity : item.iQty) || 0;
-            return have >= (Number(qty) || 1);
+            let needed = Number(qty) || 1;
+            // ClientConfig.AutoCorrect: an Item's own MaxStack is the ceiling, except Class items.
+            const stack = Number(item.iStk === undefined ? item.MaxStack : item.iStk);
+            const category = String(item.sType === undefined ? item.Category || '' : item.sType);
+            if (editorControls.autoCorrect !== false && category !== 'Class' && isFinite(stack) && stack > 0 && needed > stack) {
+                needed = stack;
+            }
+            return have >= needed;
         }
         return false;
     }
@@ -2743,7 +2756,7 @@ function createEngine(deps) {
      * an empty list or nobody signed in, and ActiveBotEngine's own "already running").
      * @returns {Promise<{ok: boolean, error?: string}>}
      */
-    async function start(bot) {
+    async function start(bot, editor) {
         if (running) return { ok: false, error: ERRORS.alreadyRunning };
         const parsed = bots.configuration(bot);
         const list = Array.isArray(parsed.Commands) ? parsed.Commands : [];
@@ -2758,6 +2771,7 @@ function createEngine(deps) {
         username = name.ok && name.value !== null && name.value !== undefined ? String(name.value) : '';
 
         document = bot;
+        editorControls = editor && typeof editor === 'object' ? editor : {};
         config = parsed;
         index = 0;
         running = true;

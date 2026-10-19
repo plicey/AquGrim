@@ -71,6 +71,14 @@ function create(deps) {
         return Math.min(MAX_SIZE, Math.max(MIN_SIZE, Math.round(value)));
     }
 
+    /** CommandColorForm_Load's combo: the three extras, then every IBotCommand type. */
+    function customisable() {
+        const names = EXTRA_NAMES.slice();
+        Object.keys(catalog.GROUPS).forEach(function (className) { names.push(className); });
+        catalog.STATEMENTS.forEach(function (row) { names.push(row.className); });
+        return names;
+    }
+
     return {
         colour: function (name) {
             const stored = state().colours[storeKey(name) + 'Color'];
@@ -87,6 +95,24 @@ function create(deps) {
             state().centered[storeKey(name) + 'Centered'] = value === true;
             save();
         },
+        /** CommandColorForm's Random Colors: a random colour mixed halfway towards RGB. */
+        randomColours: function (mixR, mixG, mixB) {
+            const r = Number(mixR) || 0;
+            const g = Number(mixG) || 0;
+            const b = Number(mixB) || 0;
+            const names = customisable();
+            for (let i = 0; i < names.length; i++) {
+                const red = Math.floor((Math.random() * 256 + r) / 2);
+                const green = Math.floor((Math.random() * 256 + g) / 2);
+                const blue = Math.floor((Math.random() * 256 + b) / 2);
+                state().colours[storeKey(names[i]) + 'Color'] = 'FF' + [red, green, blue].map(function (n) {
+                    return n.toString(16).padStart(2, '0');
+                }).join('').toUpperCase();
+            }
+            save();
+        },
+        /** btnReloadColors_Click clears the form's caches; here that is the store cache. */
+        reload: function () { cache = null; },
         /** Every colour the lists need, so a row never asks for one at a time. */
         colours: function () {
             const out = {};
@@ -135,13 +161,7 @@ function create(deps) {
             state().botsDirectory = directory == null ? '' : String(directory);
             save();
         },
-        /** CommandColorForm_Load's combo: the three extras, then every IBotCommand type. */
-        customisableNames: function () {
-            const names = EXTRA_NAMES.slice();
-            Object.keys(catalog.GROUPS).forEach(function (className) { names.push(className); });
-            catalog.STATEMENTS.forEach(function (row) { names.push(row.className); });
-            return names;
-        }
+        customisableNames: customisable
     };
 }
 

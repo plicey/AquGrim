@@ -768,7 +768,7 @@ const TABS = [
       {
         id:  "btnClearVarInt",
         kind:  "button",
-        text:  "Clear Var&Int"
+        text:  "Clear VarInt"
       },
       {
         id:  "darkGroupBox28",
@@ -811,7 +811,8 @@ const TABS = [
         children:  [
           {
             id:  "lbLabels",
-            kind:  "?"
+            kind:  "list",
+            single:  true
           }
         ]
       },
@@ -1271,6 +1272,7 @@ const TABS = [
           {
             id:  "lstLogText",
             kind:  "list",
+            single:  true,
             options:  [
               "{USERNAME}",
               "{MAP}",
@@ -1346,7 +1348,8 @@ const TABS = [
       },
       {
         id:  "lstSoundItems",
-        kind:  "list"
+        kind:  "list",
+        single:  true
       },
       {
         id:  "label9",
@@ -1840,6 +1843,7 @@ const TABS = [
   {
     id:  "info",
     title:  "Info",
+    tooltip:  "The Info about the bot you've loaded",
     controls:  [
       {
         id:  "panel5",
@@ -1976,5 +1980,47 @@ const COLUMN = [
     ]
   }
 ];
+
+// BotManager.Designer.cs's own spinner floors and ceilings. The reference refuses a number
+// outside these, so the page's inputs carry the same bounds.
+const LIMITS = {
+  numSkillCmd: { max: 5 },
+  numSkill: { max: 5 },
+  numSafe: { min: 1 },
+  numSkillD: { max: 9000 },
+  numJoinTry: { min: 1, max: 2000 },
+  numWalkX: { min: 1, max: 2000 },
+  numWalkY: { min: 1, max: 2000 },
+  numMapItem: { min: 1, max: 100000 },
+  numBuyQty: { min: 1, max: 100000 },
+  numQQuestId: { min: 1, max: 100000 },
+  numQuestListID: { min: 1, max: 100000 },
+  numQuestDelay: { min: 100, max: 10000 },
+  numQuestListItem: { min: 1, max: 100000 },
+  numQuestID: { min: 1, max: 100000 },
+  numQuestItem: { min: 1, max: 100000 },
+  numEnsureTries: { min: 1 },
+  numSpamTimes: { min: 1, max: 2000 },
+  numIndexCmd: { max: 10000 },
+  numBeepTimes: { min: 1 },
+  numDelay: { min: 100, max: 71000 },
+  numBotDelay: { max: 9000 },
+  numBSDelay: { min: 500, max: 100000 },
+  numOptionsTimer: { min: 100, max: 10000 },
+  numWalkSpeed: { min: 1, max: 99 },
+  numRelogDelay: { min: 1000, max: 20000 },
+  numSaveProgress: { min: 1, max: 1440 }
+};
+
+(function applyLimits(list) {
+  (list || []).forEach(function (control) {
+    const limit = LIMITS[control.id];
+    if (limit) {
+      if (limit.min !== undefined) control.min = limit.min;
+      if (limit.max !== undefined) control.max = limit.max;
+    }
+    applyLimits(control.children);
+  });
+})(TABS.reduce(function (all, tab) { return all.concat(tab.controls); }, []).concat(COLUMN));
 
 module.exports = { TABS: TABS, COLUMN: COLUMN };

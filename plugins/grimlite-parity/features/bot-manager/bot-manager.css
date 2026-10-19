@@ -29,7 +29,6 @@ main { flex: 1; display: flex; min-height: 0; }
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px;
   line-height: 1.45;
 }
-#list.multiline .row { white-space: pre-wrap; }
 #list .row { padding: 1px 4px; cursor: default; white-space: pre; }
 #list .row.centered { text-align: center; }
 #list .row.picked { background: #2b3a55; outline: 1px solid #3a7fe0; }
@@ -66,8 +65,12 @@ fieldset.group > legend { color: #9f9f9f; padding: 0 4px; font-size: 11px; }
 .sheet-tree li.bot > span { color: #a8d8a8; }
 .sheet-tree .loading { color: #6d6d6d; font-style: italic; }
 .sheet-rtf { width: 100%; min-height: 80px; white-space: pre-wrap; color: #d6d6d6; background: #161616; border: 1px solid #242424; padding: 6px; }
-textarea.sheet-rtf.test-rtf { width: 120px; min-height: 22px; height: 22px; resize: vertical; }
-.sheet-rtf.info-pane { flex: 1 1 auto; min-height: 0; overflow: auto; }
+/* panel5: rtbInfo fills the page and "Test here" sits over its bottom-left corner. */
+#panel5 { position: relative; min-height: 292px; width: 100%; }
+#panel5 .info-pane { position: absolute; inset: 0; min-height: 0; }
+textarea.sheet-rtf.test-rtf { position: absolute; left: 0; bottom: 0; z-index: 1; width: 72px; min-height: 22px; height: 22px; resize: vertical; }
+.sheet-rtf.info-pane { flex: 1 1 auto; min-height: 0; overflow: auto; font-family: "Microsoft Sans Serif", sans-serif; font-size: 19px; font-weight: 700; }
+.sheet-rtf.info-pane .info-link { color: #7fb3ff; }
 
 input[type=text], input[type=number], select, textarea {
   background: #1b1b1b; color: #e6e6e6; border: 1px solid #2c2c2c; border-radius: 4px;

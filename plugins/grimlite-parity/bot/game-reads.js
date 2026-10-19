@@ -50,13 +50,11 @@ const GAME_BUTTONS = {
         plain: { txtCell: 'cell', txtPad: 'pad' },
         alt: { append: { txtCell: 'cell', txtPad: 'pad' } }
     },
-    // btnGetMapF_Click: the Hunt tab's Get. The plain branch reads map, cell and pad; both the ctrl
-    // and the alt branch append "-[room]", which is the loader's RoomNumber and nothing else.
+    // btnGetMapF_Click: the Hunt tab's Get. The plain branch reads map, cell and pad; ctrl appends
+    // the literal "-[room]" and alt also appends the two cells (bot-manager.js's own transform).
     btnGetMapF: {
         reads: ['map', 'cell', 'pad'],
-        plain: { tbMapF: 'map', tbCellF: 'cell', tbPadF: 'pad' },
-        ctrl: { needs: 'RoomNumber' },
-        alt: { needs: 'RoomNumber' }
+        plain: { tbMapF: 'map', tbCellF: 'cell', tbPadF: 'pad' }
     },
 
     // btnWalkCur_Click: Player.Position, which the loader composes for itself.

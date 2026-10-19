@@ -232,12 +232,17 @@ function createChrome(deps) {
         if (!runtime) return { ok: false, error: ERRORS.noEngine };
         if (checked !== true) {
             return Promise.resolve(runtime.stop(windowKey())).then(function () {
+                if (typeof deps.onEngineChange === 'function') deps.onEngineChange();
                 return { ok: true, error: null };
             }, function (error) {
                 return { ok: false, error: message(error) };
             });
         }
-        return Promise.resolve(runtime.start(windowKey(), deps.bot())).then(function (answer) {
+        const started = deps.editor
+            ? runtime.start(windowKey(), deps.bot(), deps.editor())
+            : runtime.start(windowKey(), deps.bot());
+        return Promise.resolve(started).then(function (answer) {
+            if (typeof deps.onEngineChange === 'function') deps.onEngineChange();
             return { ok: !!(answer && answer.ok), error: (answer && answer.error) || null };
         }, function (error) {
             return { ok: false, error: message(error) };

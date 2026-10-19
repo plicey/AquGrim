@@ -694,11 +694,14 @@ const SURFACE = {
     ResetServers: { why: 'the reference loader clears its own server list; ticket #35 owns this' },
     AreServersLoaded: { why: 'the reference loader reads its own server list; ticket #35 owns this' },
     IsTemporarilyKicked: { why: 'the reference loader reads its own login movie; ticket #35 owns this' },
-    SetFPS: { why: 'the reference sets the SWF stage frame rate; the bridge has no stage path' },
+    // Root.as:SetFPS - this.stg.frameRate = parseInt(param1). The game root is a display object,
+    // so its own `stage` is the shared stage the wrapper and the game run on.
+    SetFPS: { set: 'stage.frameRate', value: function (p) { return parseInt(p[0], 10); } },
     SetTitle: { why: 'the reference writes its own login movie chrome; the game has no equivalent' },
     SendMessage: { why: 'the reference writes into its own chat box; the game has no such member' },
     GetConnMC: { why: 'the reference reads its own connection dialog, which the game does not expose' },
-    HideConnMC: { why: 'the reference hides its own connection dialog, not the game\'s' },
+    // Root.as:HideConnMC - Game.mcConnDetail.hideConn(), where Game is the game root.
+    HideConnMC: { call: 'mcConnDetail.hideConn' },
     IsConnMCBackButtonVisible: { why: 'the reference reads its own connection dialog control' },
     Buff: { why: 'the reference writes god-mode values onto itself; not a game call' },
     DestroyPlayers: { why: 'the reference calls destroyAvatar per live avatar object' },
@@ -735,7 +738,14 @@ const SURFACE = {
     ChangeColorName: { set: 'world.myAvatar.pMC.pname.ti.textColor' },
     GetShops: { why: 'the reference keeps its own list of shops it has seen (LoadedShops)' },
     LoadBankItems: { why: 'the loader sends its own loadBank frame; ticket #29\'s window uses the game path' },
-    MuteToggle: { why: 'the reference mutes its own chat box; not a game call' },
+    // Player.as:MuteToggle - true unmutes, false mutes the chat box for five minutes.
+    MuteToggle: {
+        compute: function (ctx, p) {
+            return truthy(p[0])
+                ? ctx.call('chatF.unmuteMe', [])
+                : ctx.call('chatF.muteMe', [300000]);
+        }
+    },
     // The one pair the reference never uses for its own statements: #42 derives aura state from
     // the packet tap instead (bot/auras.js), because the reference's statements read a cache the
     // frames fill rather than a lookup, and a lookup answers a packet stale. Kept named so a

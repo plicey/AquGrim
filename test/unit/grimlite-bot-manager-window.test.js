@@ -433,7 +433,8 @@ test('the window reaches its page only through its own namespaced channels', asy
     'botManagerEdit', 'botManagerForm', 'botManagerKey', 'botManagerLoad', 'botManagerMessages',
     'botManagerRaw', 'botManagerSave', 'botManagerSelect', 'botManagerSetting', 'botManagerSheet',
     'botManagerStatements', 'botManagerStyle', 'botManagerTree', 'botManagerTreeSelect',
-    'botManagerEnable', 'botManagerOptionsEnable', 'botManagerSpecial', 'botManagerState'
+    'botManagerEnable', 'botManagerOptionsEnable', 'botManagerSpecial', 'botManagerState',
+    'botManagerOpenLink', 'botManagerPickBot'
   ].sort());
 
   const featureRoot = path.join(__dirname, '../../plugins/grimlite-parity/features/bot-manager');
@@ -483,4 +484,91 @@ test('the bots directory this window shows is the one the bot engine resolves ag
   await w2.feature.handle('botManagerChooseDirectory', null, []);
   assert.strictEqual(shared.botsDirectory(), other,
     'the tree control writes the instance the engine resolves against');
+});
+
+test('the editor-only Client tab values travel with Start without entering the bot file', async () => {
+  const starts = [];
+  const w = window({
+    runtime: {
+      start: function (key, bot, editor) { starts.push(editor); return Promise.resolve({ ok: true }); },
+      state: function () { return { running: true }; },
+      stop: function () { return Promise.resolve({ ok: true }); }
+    },
+    currentWindowKey: function () { return 'game-window-1'; }
+  });
+  await w.feature.handle('botManagerSetting', null, ['InventOnStart', false]);
+  await w.feature.handle('botManagerSetting', null, ['QuestDelay', 250]);
+  await w.feature.handle('botManagerSetting', null, ['AutoCorrect', false]);
+  await w.feature.handle('botManagerEnable', null, [true]);
+  assert.strictEqual(starts.length, 1);
+  assert.strictEqual(starts[0].inventOnStart, false);
+  assert.strictEqual(starts[0].questDelay, 250);
+  assert.strictEqual(starts[0].autoCorrect, false);
+  assert.strictEqual(w.feature.bot().InventOnStart, undefined,
+    'the save must not grow an InventOnStart key the reference never writes');
+  assert.strictEqual(w.feature.bot().QuestDelay, undefined);
+});
+
+test('anti-mod watches staff frames only while a bot runs, then stops and logs out', async () => {
+  let listener = null;
+  const loggedOut = [];
+  const stopped = [];
+  const w = window({
+    runtime: {
+      start: function () { return Promise.resolve({ ok: true }); },
+      state: function () { return { running: true }; },
+      stop: function (key) { stopped.push(key); return Promise.resolve({ ok: true }); }
+    },
+    currentWindowKey: function () { return 'game-window-1'; },
+    packets: {
+      on: function (event, fn) {
+        assert.strictEqual(event, 'frame');
+        listener = fn;
+        return function () { listener = null; };
+      }
+    },
+    loaderCall: function (name) {
+      if (name === 'Logout') loggedOut.push(name);
+      return Promise.resolve(true);
+    },
+    logDebug: function () {}
+  });
+  await w.feature.handle('botManagerEnable', null, [true]);
+  assert.ok(listener, 'starting a bot with anti-mod on subscribes to the tap');
+  listener({ data: JSON.stringify({ params: { type: 'json', dataObj: {
+    cmd: 'initUserDatas',
+    a: [{ data: { strUsername: 'NotStaff', intAccessLevel: 10 } }]
+  } } }) });
+  assert.deepStrictEqual(stopped, [], 'an access level under 30 is not staff');
+  listener({ data: JSON.stringify({ params: { type: 'json', dataObj: {
+    cmd: 'initUserDatas',
+    a: [{ data: { strUsername: 'StaffName', intAccessLevel: 60 } }]
+  } } }) });
+  assert.deepStrictEqual(stopped, ['game-window-1']);
+  assert.deepStrictEqual(loggedOut, ['Logout']);
+});
+
+test('an Info link opens in the browser, and only web or mail links do', async () => {
+  const opened = [];
+  const w = window({ shell: { openExternal: function (url) { opened.push(url); return Promise.resolve(); } } });
+  const web = await w.feature.handle('botManagerOpenLink', null, ['https://example.com/guide']);
+  assert.deepStrictEqual(web, { ok: true });
+  assert.deepStrictEqual(opened, ['https://example.com/guide']);
+  const local = await w.feature.handle('botManagerOpenLink', null, ['file:///etc/passwd']);
+  assert.strictEqual(local.ok, false);
+  assert.deepStrictEqual(opened, ['https://example.com/guide'], 'a local file is refused');
+});
+
+test('Load (cmd) picks a file without loading it, and writes the reference relative path', async () => {
+  const w = window({
+    dialogs: {
+      open: function () { return Promise.resolve({ canceled: false, path: path.join(w.dir, 'sub', 'x.gbot') }); },
+      save: function () { return Promise.resolve({ canceled: true }); }
+    }
+  });
+  const picked = await w.feature.handle('botManagerPickBot', null, []);
+  assert.deepStrictEqual(picked, {
+    canceled: false, path: path.join(w.dir, 'sub', 'x.gbot'),
+    fileName: 'x.gbot', filePath: path.join('Bots', 'sub', 'x.gbot')
+  });
 });

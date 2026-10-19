@@ -24,6 +24,11 @@ const { createFromHost } = require('../../bot/bot-dialogs.js');
 // against the statement row's Text).
 const FORM_SKIP = ['Tag', 'Description1', 'Description2', '$type'];
 
+// The Bot Manager controls whose state is the window's rather than a Configuration member.
+const SPECIAL_SETTINGS = ['InventOnStart', 'QuestDelay', 'AutoCorrect', 'AntiMod', 'AntiModStopBot',
+    'AntiModLogout', 'WalkSpeedOn', 'SaveProgress', 'SaveProgressMinutes', 'GenderSwap', 'ToggleMute',
+    'MapSpoofName', 'MapSpoofer'];
+
 // The class an InventoryItem row carries in a .gbot (bots.js's LIST_TYPES names it for a list).
 const INVENTORY_ITEM_TYPE = 'Grimoire.Game.Data.InventoryItem, Grimoire';
 // Grimoire.Game.Data.InventoryItem's own JsonProperty names (InventoryItem.cs): the keys the
@@ -66,10 +71,34 @@ function createBotManager(deps) {
     let currentPath = null;
     let loaded = false;
     let optionsWatchers = [];
+    // The Bot Manager's own editor-only controls. None of these is a Configuration member, so
+    // they live here rather than in the document: a save must not add keys a .gbot never had.
+    const ui = {
+        inventOnStart: true,
+        questDelay: 1000,
+        autoCorrect: true,
+        saveProgress: false,
+        saveProgressMinutes: 60,
+        antiMod: true,
+        antiModStopBot: true,
+        antiModLogout: true
+    };
+    let saveTimer = null;
+    let antiModRelease = null;
+    let spoofRelease = null;
+    let realArea = null;
 
     function optionsRunning() {
         try {
             return !!(options && options.state && options.state().applying === true);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function optionsWalkSpeed() {
+        try {
+            return !!(options && options.state && options.state().walkSpeedOn === true);
         } catch (error) {
             return false;
         }
@@ -92,6 +121,223 @@ function createBotManager(deps) {
                 return false;
             }
         });
+    }
+
+    /** The editor-only values the engine reads: none of them is written into a .gbot. */
+    function editorOptions() {
+        return ui;
+    }
+
+    function currentKey() {
+        return typeof deps.currentWindowKey === 'function' ? deps.currentWindowKey() : windowKeyFor(null);
+    }
+
+    function logDebug(line) {
+        if (typeof deps.logDebug === 'function') deps.logDebug(line);
+    }
+
+    /** One tap frame's text, whichever shape the relay hands it in. */
+    function frameText(data) {
+        if (typeof data === 'string') return data;
+        if (typeof Buffer !== 'undefined' && Buffer.isBuffer(data)) return data.toString('utf8');
+        if (data === null || data === undefined) return '';
+        return String(data);
+    }
+
+    function jsonFrame(data) {
+        const text = frameText(data).trim();
+        if (text.charAt(0) !== '{') return null;
+        try {
+            return JSON.parse(text);
+        } catch (error) {
+            return null;
+        }
+    }
+
+    const STAFF_COLOURS = { 30: 'Dark Green', 40: 'Light Green', 50: 'Purple', 60: 'Yellow', 100: 'Dark Green' };
+
+    /** AntiMODHandler: any access level at or above 30 is staff. */
+    function staffFound(username, accessLevel) {
+        const level = Number(accessLevel);
+        const name = String(username === undefined || username === null ? '' : username);
+        if (!name || !isFinite(level) || level < 30) return;
+        const colour = STAFF_COLOURS[level] || 'Unknown';
+        const line = '==> [STAFF  | ' + level + '/' + colour + ' | ' + name + '] <==';
+        const strip = new Array(line.length + 1).join('-');
+        logDebug(strip + '\n ' + line + ' \n' + strip);
+        // modAction(): the two boxes decide what seeing a staff member does.
+        if (ui.antiModStopBot && runtime) {
+            try {
+                Promise.resolve(runtime.stop(currentKey())).then(syncAntiMod, function () {});
+            } catch (error) {
+                logDebug('could not stop the bot: ' + ((error && error.message) || error));
+            }
+        }
+        if (ui.antiModLogout) {
+            callLoader('Logout').catch(function (error) {
+                logDebug('could not log out: ' + ((error && error.message) || error));
+            });
+        }
+    }
+
+    function observeAntiMod(frame) {
+        if (!ui.antiMod || !botRunning(currentKey())) return;
+        const packet = jsonFrame(frame && frame.data);
+        if (!packet || !packet.params || packet.params.type !== 'json') return;
+        const data = packet.params.dataObj;
+        if (!data) return;
+        if (data.cmd === 'initUserDatas') {
+            const rows = data.a && (Array.isArray(data.a) ? data.a : data.a.$values);
+            (Array.isArray(rows) ? rows : []).forEach(function (row) {
+                const player = row && row.data ? row.data : row;
+                if (player) staffFound(player.strUsername, player.intAccessLevel);
+            });
+        } else if (data.cmd === 'uotls' && data.unm) {
+            callLoader('GetAccessLevel', [data.unm]).then(function (level) {
+                staffFound(data.unm, level);
+            }).catch(function () {});
+        }
+    }
+
+    /** Anti-mod listens only while this window's bot runs, as toggleAntiMod does. */
+    function syncAntiMod() {
+        const on = ui.antiMod && botRunning(currentKey());
+        if (on && !antiModRelease && deps.packets && typeof deps.packets.on === 'function') {
+            antiModRelease = deps.packets.on('frame', observeAntiMod);
+        } else if (!on && antiModRelease) {
+            antiModRelease();
+            antiModRelease = null;
+        }
+    }
+
+    function syncSaveProgress() {
+        if (saveTimer && typeof saveTimer !== 'number') {
+            try { saveTimer.unref(); } catch (error) { /* a browser timer has no unref */ }
+        }
+        if (saveTimer) {
+            (deps.clearInterval || clearInterval)(saveTimer);
+            saveTimer = null;
+        }
+        if (!ui.saveProgress) return;
+        const minutes = isFinite(ui.saveProgressMinutes) && ui.saveProgressMinutes > 0
+            ? ui.saveProgressMinutes : 60;
+        saveTimer = (deps.setInterval || setInterval)(function () {
+            callLoader('IsLoggedIn').then(function (signed) {
+                if (signed !== true) return null;
+                return callLoader('Logout');
+            }).then(function (done) {
+                if (done === null) return;
+                logDebug('[' + new Date().toTimeString().slice(0, 8) + '] Progress saved.');
+            }).catch(function (error) {
+                logDebug('Progress save failed: ' + ((error && error.message) || error));
+            });
+        }, minutes * 60000);
+        if (saveTimer && typeof saveTimer !== 'number' && typeof saveTimer.unref === 'function') {
+            saveTimer.unref();
+        }
+    }
+
+    /** chkGender_CheckedChanged: both directions of the tick send a swap. */
+    function genderSwap() {
+        return Promise.all([callLoader('UserID'), callLoader('Gender')]).then(function (answers) {
+            const gender = String(answers[1] || '').toUpperCase() === 'M' ? 'F' : 'M';
+            const packet = JSON.stringify({
+                t: 'xt',
+                b: { r: -1, o: {
+                    cmd: 'genderSwap', bitSuccess: 1, gender: gender, intCoins: 0,
+                    uid: String(answers[0]), strHairFileName: '', HairID: '', strHairName: ''
+                } }
+            });
+            return callChannel('sendClientPacket', [packet, 'xt']);
+        }).then(function (answer) {
+            return answer && answer.ok ? { ok: true } : { ok: false, error: (answer && answer.error) || 'the game did not answer' };
+        });
+    }
+
+    /** World.spoofMap: write world.strAreaName, then ask the game to redraw the area name. */
+    function observeArea(frame) {
+        if (!ui.mapSpoofing) return;
+        const packet = jsonFrame(frame && frame.data);
+        const data = packet && packet.params && packet.params.dataObj;
+        // Flash.ProcessPext keeps realmap current from every moveToArea frame.
+        if (data && data.cmd === 'moveToArea' && data.areaName) realArea = String(data.areaName);
+    }
+
+    function setMapSpoofer(on, name) {
+        ui.mapSpoofing = on;
+        ui.mapSpoofName = String(name === undefined || name === null ? (ui.mapSpoofName || 'ThisIsCool') : name);
+        if (on) {
+            if (!spoofRelease && deps.packets && typeof deps.packets.on === 'function') {
+                spoofRelease = deps.packets.on('frame', observeArea);
+            }
+            return callChannel('getGameObject', ['world.strAreaName']).then(function (area) {
+                realArea = area.ok && area.value !== undefined ? String(area.value) : null;
+                return callChannel('setGameObject', ['world.strAreaName', ui.mapSpoofName]);
+            }).then(function (written) {
+                if (!written.ok) return written;
+                return callChannel('callGameFunction0', ['updateAreaName']);
+            });
+        }
+        if (spoofRelease) {
+            spoofRelease();
+            spoofRelease = null;
+        }
+        if (realArea === null) return Promise.resolve({ ok: true });
+        return callChannel('setGameObject', ['world.strAreaName', realArea]).then(function (written) {
+            if (!written.ok) return written;
+            return callChannel('callGameFunction0', ['updateAreaName']);
+        });
+    }
+
+    /** One special control's own action; the caller turns a refusal into the window's status. */
+    function specialSetting(name, value) {
+        switch (name) {
+        case 'InventOnStart': ui.inventOnStart = value === true; return Promise.resolve({ ok: true });
+        case 'QuestDelay': {
+            const delay = Number(value);
+            ui.questDelay = isFinite(delay) && delay > 0 ? delay : 1000;
+            return Promise.resolve({ ok: true });
+        }
+        case 'AutoCorrect': ui.autoCorrect = value === true; return Promise.resolve({ ok: true });
+        case 'AntiMod':
+        case 'AntiModStopBot':
+        case 'AntiModLogout':
+            ui[name.charAt(0).toLowerCase() + name.slice(1)] = value === true;
+            syncAntiMod();
+            return Promise.resolve({ ok: true });
+        case 'WalkSpeedOn':
+            if (!options || typeof options.setToggle !== 'function') {
+                return Promise.resolve({ ok: false, error: 'the Options loop is not wired in this build' });
+            }
+            return Promise.resolve(value && value.value !== undefined && typeof options.setWalkSpeed === 'function'
+                ? options.setWalkSpeed(Number(value.value))
+                : null).then(function () {
+                return options.setToggle('walkSpeed', value === true || (value && value.on === true));
+            });
+        case 'SaveProgress':
+            ui.saveProgress = value === true;
+            syncSaveProgress();
+            return Promise.resolve({ ok: true });
+        case 'SaveProgressMinutes': {
+            const minutes = Number(value);
+            ui.saveProgressMinutes = isFinite(minutes) && minutes > 0 ? minutes : 60;
+            syncSaveProgress();
+            return Promise.resolve({ ok: true });
+        }
+        case 'GenderSwap': return genderSwap();
+        case 'ToggleMute':
+            // Player.ToggleMute(!checked): ticking "Toggle Mute" mutes the chat box.
+            return callLoader('MuteToggle', [value !== true]).then(function () {
+                return { ok: true };
+            });
+        case 'MapSpoofName':
+            ui.mapSpoofName = String(value === undefined || value === null ? '' : value);
+            return Promise.resolve({ ok: true });
+        case 'MapSpoofer':
+            return setMapSpoofer(value && value.on === true, value && value.name);
+        default:
+            return Promise.resolve({ ok: false, error: 'no such editor control: ' + name });
+        }
     }
 
     function enableOptions(enabled, event) {
@@ -139,14 +385,18 @@ function createBotManager(deps) {
         }
         if (enabled === false) {
             return Promise.resolve(runtime.stop(key)).then(function () {
+                syncAntiMod();
                 return view({ enabled: false, error: null });
             });
         }
-        return Promise.resolve(runtime.start(key, botDocument)).then(function (result) {
+        return Promise.resolve(runtime.start(key, botDocument, editorOptions())).then(function (result) {
             if (!result || result.ok !== true) {
                 // A refused start leaves the tick off; the reason is what the window shows.
                 return view({ enabled: false, error: (result && result.error) || 'the bot did not start' });
             }
+            // chkEnableBot_CheckedChanged unticks Hide players once anti-mod is running.
+            if (ui.antiMod) editor.setSetting('HidePlayers', false);
+            syncAntiMod();
             // chkEnableBot_CheckedChanged: with a zone selected the start switches the live
             // handler on (`if (cmbSpecials.SelectedIndex != -1 && !chkSpecial.Checked)
             // chkSpecial.Checked = true`). A build without the panel is told, not shown a tick.
@@ -213,6 +463,7 @@ function createBotManager(deps) {
             style: style(),
             configuration: configuration,
             optionsRunning: optionsRunning(),
+            optionsWalkSpeed: optionsWalkSpeed(),
             description: bots.description(botDocument),
             author: configuration.Author === null || configuration.Author === undefined ? '' : configuration.Author,
             merge: settings.ui('Merge') === true
@@ -287,6 +538,13 @@ function createBotManager(deps) {
             // numWalkSpeed.Value = (config.WalkSpeed <= 0) ? 8 : config.WalkSpeed.
             const value = key === 'WalkSpeed' && !(config.WalkSpeed > 0) ? 8 : config[key];
             editor.setSetting(key, value);
+            // numOptionsTimer_ValueChanged: loading a bot moves the loop's own delay too.
+            if (key === 'optionDelay' && options && typeof options.setTimer === 'function') {
+                options.setTimer(Number(value));
+            }
+            if (key === 'respawnProvoke' && options && typeof options.setRespawnProvoke === 'function') {
+                options.setRespawnProvoke(value === true);
+            }
         });
     }
 
@@ -607,6 +865,8 @@ function createBotManager(deps) {
         case 'centered': settings.setCentered(options.name, options.value); break;
         case 'size': settings.setCommandsSize(options.value); break;
         case 'font': settings.setFont(options.value); break;
+        case 'random': settings.randomColours(options.r, options.g, options.b); break;
+        case 'reload': settings.reload(); break;
         case 'read': break;
         default:
             throw new Error('[AquaStar:grimlite-parity] unknown bot manager style action "' + options.action + '"');
@@ -673,6 +933,23 @@ function createBotManager(deps) {
      * rest report the helper they wait for, so a press is never a silent no-op.
      */
     function gameAction(id, modifiers) {
+        // btnGetMapF_Click: the ctrl branch appends the literal "-[room]" and the alt branch also
+        // appends the current cells; both transforms happen before the page fills the boxes.
+        if (id === 'btnGetMapF') {
+            return readGame(['map', 'cell', 'pad']).then(function (result) {
+                if (!result.ok) return result;
+                const mods = modifiers || {};
+                const fields = mods.fields || {};
+                if (mods.alt === true || mods.ctrl === true) {
+                    result.values.map = String(result.values.map) + '-[room]';
+                }
+                if (mods.alt === true) {
+                    result.values.cell = String(fields.tbCellF || '') + ',' + result.values.cell;
+                    result.values.pad = String(fields.tbPadF || '') + ',' + result.values.pad;
+                }
+                return result;
+            });
+        }
         if (GAME_ACTIONS[id]) {
             let answer;
             try {
@@ -713,7 +990,7 @@ function createBotManager(deps) {
             }
             return callChannel('callGameFunction', ['world.getMapItem', id]).then(function (answer) {
                 return answer.ok
-                    ? { ok: true, message: 'got the map item' }
+                    ? { ok: true }
                     : { ok: false, error: answer.error };
             });
         },
@@ -741,12 +1018,37 @@ function createBotManager(deps) {
         },
         btnSetSpawn2: function () {
             return callLoader('SetSpawnPoint').then(function () {
-                return { ok: true, message: 'spawn point set' };
+                return Promise.all([callLoader('Cell'), callLoader('Pad')]);
+            }).then(function (where) {
+                // btnSetSpawn2_Click's own confirmation, sent to the client as %xt%server%.
+                return callChannel('sendClientPacket', [
+                    '%xt%server%-1%Spawnpoint set: ' + where[0] + ', ' + where[1] + '%', 'str'
+                ]);
+            }).then(function (answer) {
+                return answer.ok ? { ok: true } : { ok: false, error: answer.error };
             });
         },
         btnReloadMap: function () {
             return callLoader('ReloadMap').then(function () {
-                return { ok: true, message: 'map reload requested' };
+                return { ok: true };
+            });
+        },
+        btnHideLoading: function () {
+            return callLoader('HideConnMC').then(function () { return { ok: true }; });
+        },
+        btnSetFPS: function (fields) {
+            const fps = Number(fields.numSetFPS);
+            if (!isFinite(fps) || fps <= 0) return Promise.resolve({ ok: false, error: 'give the FPS box a number first' });
+            return callLoader('SetFPS', [fps]).then(function () { return { ok: true }; });
+        },
+        btnchangeName: function (fields) {
+            return callLoader('ChangeName', [String(fields.txtUsername || '')]).then(function () {
+                return { ok: true };
+            });
+        },
+        btnchangeGuild: function (fields) {
+            return callLoader('ChangeGuild', [String(fields.txtGuild || '')]).then(function () {
+                return { ok: true };
             });
         },
         btnSetLevel: function (fields) {
@@ -754,7 +1056,7 @@ function createBotManager(deps) {
             if (!/^[0-9]+$/.test(level)) return { ok: false, error: 'type a level number first' };
             const packet = '{"t":"xt","b":{"r":-1,"o":{"cmd":"levelUp","intExpToLevel":"2000","intLevel":' + level + '}}}';
             return callChannel('sendClientPacket', [packet, 'xt']).then(function (answer) {
-                return answer.ok ? { ok: true, message: 'level packet sent' }
+                return answer.ok ? { ok: true }
                     : { ok: false, error: answer.error };
             });
         },
@@ -990,11 +1292,6 @@ function createBotManager(deps) {
                     // are waiting. The page draws them either way; none is a dead button. The
                     // three this window serves itself (GAME_ACTIONS) travel with them.
                     gameButtons: gameReads.ids().concat(Object.keys(GAME_ACTIONS)),
-                    gameReasons: gameReads.ids().reduce(function (out, id) {
-                        const spec = gameReads.GAME_BUTTONS[id];
-                        if (!spec.reads) out[id] = gameReads.why(spec, id);
-                        return out;
-                    }, {}),
                     // The reachable controls' own field branches, so the page fills the boxes the
                     // reference fills rather than guessing at them.
                     gameRows: Object.assign(gameReads.ids().reduce(function (out, id) {
@@ -1021,6 +1318,18 @@ function createBotManager(deps) {
                     return view(Object.assign({ canceled: false }, failure || { error: null }));
                 }
                 return loadDialog(windowKeyFor(event));
+            case 'botManagerPickBot':
+                // btnLoadCmd_Click: the dialog chooses a bot to embed as a CmdLoadBot; it does
+                // not load that bot into this window.
+                return Promise.resolve(dialogs.open(null, { title: 'Select bot to load' })).then(function (result) {
+                    if (!result || result.canceled || !result.path) return { canceled: true };
+                    const root = settings.botsDirectory() || deps.defaultBotsDirectory || '';
+                    const made = botTree.loadCommand(root, result.path);
+                    return {
+                        canceled: false, path: result.path,
+                        fileName: made.BotFileName, filePath: made.BotFilePath
+                    };
+                });
             case 'botManagerSave':
                 return save(argv[0]);
             case 'botManagerAdd':
@@ -1047,7 +1356,23 @@ function createBotManager(deps) {
                 if (argv[0] === 'Merge') settings.setUi('Merge', argv[1] === true);
                 // The server combo holds a Server object in Configuration, not its name.
                 else if (argv[0] === 'Server') setServer(argv[1]);
-                else editor.setSetting(argv[0], argv[1]);
+                else if (argv[0] === 'optionDelay') {
+                    editor.setSetting('optionDelay', Number(argv[1]));
+                    if (options && typeof options.setTimer === 'function') options.setTimer(Number(argv[1]));
+                }
+                else if (argv[0] === 'respawnProvoke') {
+                    editor.setSetting('respawnProvoke', argv[1] === true);
+                    if (options && typeof options.setRespawnProvoke === 'function') {
+                        options.setRespawnProvoke(argv[1] === true);
+                    }
+                }
+                else if (SPECIAL_SETTINGS.indexOf(argv[0]) !== -1) {
+                    return specialSetting(argv[0], argv[1]).then(function (answer) {
+                        return view({ error: answer && answer.ok === false ? answer.error : null });
+                    }, function (error) {
+                        return view({ error: (error && error.message) || String(error) });
+                    });
+                } else editor.setSetting(argv[0], argv[1]);
                 return view();
             case 'botManagerOptionsEnable':
                 return enableOptions(argv[0], event);
@@ -1055,6 +1380,7 @@ function createBotManager(deps) {
                 return enableBot(argv[0], event);
             case 'botManagerState':
                 watchOptionsWindow(event);
+                syncAntiMod();
                 return (function () {
                     if (!runtime) return view({ bot: null, enabled: false });
                     const state = runtime.state(windowKeyFor(event));
@@ -1086,6 +1412,24 @@ function createBotManager(deps) {
                 return true;
             case 'botManagerPaste':
                 return String(clipboard.read() == null ? '' : clipboard.read());
+            case 'botManagerOpenLink': {
+                const target = String(argv[0] == null ? '' : argv[0]);
+                let parsed;
+                try {
+                    parsed = new URL(target);
+                } catch (error) {
+                    return { ok: false, error: 'not a link: ' + target };
+                }
+                if (['http:', 'https:', 'mailto:'].indexOf(parsed.protocol) === -1) {
+                    return { ok: false, error: 'this link cannot be opened: ' + target };
+                }
+                const shell = deps.shell || require('electron').shell;
+                return Promise.resolve(shell.openExternal(target)).then(function () {
+                    return { ok: true };
+                }, function (error) {
+                    return { ok: false, error: (error && error.message) || String(error) };
+                });
+            }
             default:
                 throw new Error('[AquaStar:grimlite-parity] unknown bot manager channel "' + channel + '"');
             }
@@ -1098,7 +1442,8 @@ function createBotManager(deps) {
                 'botManagerRaw', 'botManagerSetting', 'botManagerOptionsEnable', 'botManagerStyle', 'botManagerTree',
                 'botManagerChooseDirectory', 'botManagerAddFolder', 'botManagerTreeSelect',
                 'botManagerDrop', 'botManagerCopy', 'botManagerPaste', 'botManagerGame',
-                'botManagerBeep', 'botManagerEnable', 'botManagerState', 'botManagerSpecial'];
+                'botManagerBeep', 'botManagerEnable', 'botManagerState', 'botManagerSpecial',
+                'botManagerOpenLink', 'botManagerPickBot'];
             channels.forEach(function (channel) {
                 host.ipc.handle(channel, function (event) {
                     const rest = Array.prototype.slice.call(arguments, 1);
@@ -1106,7 +1451,11 @@ function createBotManager(deps) {
                 });
             });
         },
-        optionsStateChanged: optionsStateChanged
+        optionsStateChanged: optionsStateChanged,
+        /** Chrome's Start Bot drives the same engine; this keeps anti-mod's watch in step. */
+        engineStateChanged: function () { syncAntiMod(); },
+        /** The editor-only values a second Start path (the chrome strip) must hand the engine. */
+        editorOptions: editorOptions
     };
 
     return feature;

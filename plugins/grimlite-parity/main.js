@@ -525,6 +525,10 @@ async function activate(host) {
         // name the stock game does not have reports the helper it waits for instead of a value.
         bridge: host.bridge,
         loaderCall: gameAccess.loaderCall,
+        // The Bot Manager's Client tab reads the game's own staff frames and the area packet.
+        packets: host.packets,
+        currentWindowKey: gameWindowKey,
+        logDebug: function (line) { logs.append(line); },
         // The Bot Manager's quest whitelist button and its alignment packets need the same game
         // access and relay the bot engine uses; they are not generic dot-path reads.
         game: runtimeDependencies.createGame(),
@@ -536,6 +540,21 @@ async function activate(host) {
                 return optionsFeature
                     ? optionsFeature.setApplying(running)
                     : Promise.resolve({ ok: false, error: 'options are not ready' });
+            },
+            setToggle: function (id, on) {
+                return optionsFeature
+                    ? optionsFeature.setToggle(id, on)
+                    : Promise.resolve({ ok: false, error: 'options are not ready' });
+            },
+            setTimer: function (ms) {
+                return optionsFeature
+                    ? optionsFeature.setTimer(ms)
+                    : { ok: false, error: 'options are not ready' };
+            },
+            setRespawnProvoke: function (on) {
+                return optionsFeature
+                    ? optionsFeature.setRespawnProvoke(on)
+                    : { ok: false, error: 'options are not ready' };
             }
         }
     });
@@ -697,6 +716,8 @@ async function activate(host) {
         runtime: runtime,
         windowKey: gameWindowKey,
         bot: function () { return botManager.bot(); },
+        editor: function () { return botManager.editorOptions(); },
+        onEngineChange: function () { botManager.engineStateChanged(); },
         // Auto Attack's SS.<CLASS> presets: ClientConfig.cfg in the app data directory, with the
         // autoAttackPresets store object winning over the file when the user edits that instead.
         presets: skillPresets.createPresetSource({
