@@ -6,7 +6,7 @@
   "main": "main.js",
   "description": "Template AquaStar plugin — copy this folder and rename the id.",
   "author": "Your Name",
-  "minAppVersion": "1.12.2",
+  "minAppVersion": "0.0.1",
   "permissions": ["flash-trust", "persistent-store"],
   "capabilities": ["game-launch", "keybinds", "menus"]
 }

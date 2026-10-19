@@ -1,7 +1,8 @@
 {
   "name": "AquaStar",
-  "version": "2.0.0",
-  "description": "Flash companion launcher with Adventure Quest Worlds plugin support",
+  "version": "0.0.1",
+  "productName": "AquGrim",
+  "description": "AquGrim alpha - Flash companion launcher for Adventure Quest Worlds",
   "homepage": "https://github.com/plicey/AquGrim",
   "main": "main.js",
   "scripts": {
@@ -44,6 +45,7 @@
       "!squashfs-root/**"
     ],
     "appId": "aquastar",
+    "artifactName": "AquGrim-${version}-${arch}.${ext}",
     "mac": {
       "category": "Games",
       "target": [
