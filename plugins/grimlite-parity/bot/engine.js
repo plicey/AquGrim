@@ -163,6 +163,10 @@ function createEngine(deps) {
         return new Promise(function (resolve) { setTimeout(resolve, ms); });
     };
     const log = deps.log || function () {};
+    // The item and quest access (#39), for the flow commands that need a quest row or an accept
+    // rather than a whole command. Absent in a build with no game access, in which case the
+    // quest branches report that rather than pretending to run.
+    const game = deps.game || null;
 
     let running = false;
     let paused = false;
@@ -764,9 +768,13 @@ function createEngine(deps) {
         if (!attacked.ok) return attacked.error;
 
         const list = config && Array.isArray(config.Skills) ? config.Skills : [];
-        const rounds = opts.rounds === undefined ? 1 : opts.rounds;
+        // CmdKill.cs rotates the whole set while the target lives; the reference has no round
+        // count. `untilDead` is that loop, and the cap is only a runaway guard that reports.
+        const untilDead = opts.untilDead === true;
+        const rounds = untilDead ? Infinity : (opts.rounds === undefined ? 1 : opts.rounds);
+        let round = 0;
         if (list.length && rounds > 0) {
-            for (let round = 0; round < rounds; round++) {
+            for (; round < (untilDead ? KILL_ROUND_CAP : rounds); round++) {
                 if (!running) break;
                 const signedNow = await read('signedIn');
                 const target = await read('hasTarget');
@@ -778,6 +786,9 @@ function createEngine(deps) {
                 if (opts.killPriority) await killPriority(opts.killPriority);
                 await sleep(Number(config.SkillDelay) || 0);
                 await rotateSkills('kill', { waitForSkill: !!(config && config.WaitForSkill) });
+            }
+            if (untilDead && round >= KILL_ROUND_CAP) {
+                return 'the target survived ' + KILL_ROUND_CAP + ' rotation pass(es), so the kill was stopped';
             }
         }
 
@@ -793,6 +804,44 @@ function createEngine(deps) {
         }
         return undefined;
     }
+    /**
+     * CmdKillFor's quest mode: accept until in progress, then kill until CanComplete. The two
+     * questions are the loader's own and the accept is the same call CmdAcceptQuest uses.
+     */
+    async function killForQuest(questId, killOptions, delayAfter) {
+        let accepted = false;
+        for (let tries = 0; tries < QUEST_ACCEPT_TRIES && running; tries++) {
+            const inProgress = await read1('questInProgress', String(questId));
+            if (inProgress.ok && inProgress.value === true) { accepted = true; break; }
+            if (!game || typeof game.accept !== 'function') {
+                return 'killing for quest #' + questId + ' needs this build\'s quest access';
+            }
+            try {
+                await game.accept(questId);
+            } catch (error) {
+                return 'could not accept quest #' + questId + ': ' + message(error);
+            }
+            await sleep(1000);
+        }
+        if (!accepted) {
+            const again = await read1('questInProgress', String(questId));
+            if (!(again.ok && again.value === true)) {
+                return 'quest #' + questId + ' never entered progress';
+            }
+        }
+        for (let round = 0; round < HUNT_SAFETY_ROUNDS && running; round++) {
+            const done = await read1('questCanComplete', String(questId));
+            if (done.ok && done.value === true) return undefined;
+            const reason = await killOnce(killOptions);
+            if (reason) return reason;
+            await sleep(delayAfter);
+        }
+        const done = await read1('questCanComplete', String(questId));
+        if (done.ok && done.value === true) return undefined;
+        return 'quest #' + questId + ' still cannot be completed after ' +
+            HUNT_SAFETY_ROUNDS + ' kill(s)';
+    }
+
     // A feature ticket's own vocabulary (#38-#42), dispatched after this table. Kept apart so the
     // loop's flow commands cannot be shadowed by a feature that happens to name one the same.
     const extraHandlers = deps.handlers && typeof deps.handlers === 'object' ? deps.handlers : {};
@@ -957,13 +1006,13 @@ function createEngine(deps) {
         },
 
         CmdKill: async function (ctx, command) {
-            // CmdKill.cs. The kill itself is one body; the loop around it is the caller's, because
-            // a bot that kills "for" an item or a quest is a different command (#39/#41).
+            // CmdKill.cs rotates the whole skill set while the target lives; the caller only wraps
+            // it for item/quest conditions (CmdKillFor and the hunts).
             const reason = await killOnce({
                 monster: varOf(command.Monster),
                 killPriority: command.KillPriority,
                 antiCounter: command.AntiCounter === true,
-                rounds: 1
+                untilDead: true
             });
             return reason;
         },
@@ -1246,39 +1295,39 @@ function createEngine(deps) {
         },
 
         CmdKillFor: async function (ctx, command) {
-            // CmdKillFor.cs: kill until the item (or the quest) is done. The loop is bounded here
-            // because this build cannot guarantee a kill lands - see the note in killOnce - and a
-            // bound that is reported reads better than a bot that silently runs all night.
+            // CmdKillFor.cs: kill until the item (or the quest) is done. The reference's own loop
+            // has no bound; the safety cap below only exists so a session that never changes can
+            // report instead of spinning forever in this process.
             const monster = varOf(command.Monster);
             const questId = parseInt(String(command.QuestId === undefined ? '' : command.QuestId), 10);
+            const delayAfter = Number(command.DelayAfterKill === undefined ? 500 : command.DelayAfterKill) || 0;
+            const killOptions = {
+                monster: monster,
+                killPriority: command.KillPriority,
+                antiCounter: command.AntiCounter === true,
+                untilDead: true
+            };
+
+            // The quest mode: accept until it is in progress, then kill until CanComplete.
             if (!isNaN(questId)) {
-                return 'killing for a quest (#' + questId + ') needs the quest reads of ticket #39; ' +
-                    'the kill itself is wired, the "until the quest is complete" half is not';
+                return await killForQuest(questId, killOptions, delayAfter);
             }
+
             const itemType = Number(command.ItemType) || 0;
             const names = varOf(command.ItemName).trim();
             const quantities = varOf(command.Quantity);
             const start = await collected(names, quantities, itemType);
             if (!start.ok) return 'could not read the inventory: ' + start.error;
             if (start.value) return undefined;
-            let last = null;
-            for (let round = 0; round < HUNT_ROUNDS && running; round++) {
-                last = await killOnce({
-                    monster: monster,
-                    killPriority: command.KillPriority,
-                    antiCounter: command.AntiCounter === true,
-                    rounds: 1
-                });
-                if (last) break;
+            for (let round = 0; round < HUNT_SAFETY_ROUNDS && running; round++) {
+                const reason = await killOnce(killOptions);
+                if (reason) return reason;
+                await sleep(delayAfter);
                 const now = await collected(names, quantities, itemType);
                 if (!now.ok) return 'could not read the inventory: ' + now.error;
-                if (now.value) break;
-                await sleep(Number(command.DelayAfterKill === undefined ? 500 : command.DelayAfterKill) || 0);
+                if (now.value) return undefined;
             }
-            const done = await collected(names, quantities, itemType);
-            if (done.ok && done.value) return undefined;
-            if (last) return last;
-            return 'stopped after ' + HUNT_ROUNDS + ' kill(s) without ' + names + ' ' + quantities + 'x';
+            return 'stopped after ' + HUNT_SAFETY_ROUNDS + ' kill(s) without ' + names + ' ' + quantities + 'x';
         },
 
         CmdShortHunt: async function (ctx, command) {
@@ -1295,7 +1344,7 @@ function createEngine(deps) {
             const mapName = written.split('-')[0];
             const cells = String(varOf(command.Cell)).split(',');
             const pads = String(varOf(command.Pad)).split(',');
-            for (let round = 0; round < HUNT_JOIN_ROUNDS && running; round++) {
+            for (let round = 0; round < HUNT_SAFETY_ROUNDS && running; round++) {
                 const here = await read('map');
                 if (here.ok && String(here.value).toLowerCase() === mapName) break;
                 if (command.BlankFirst) {
@@ -1313,11 +1362,23 @@ function createEngine(deps) {
             if (!(arrived.ok && String(arrived.value).toLowerCase() === mapName)) {
                 return 'could not reach ' + mapName + ' to hunt in';
             }
-            // The reference also holds the cells it was given while the kill runs. That is another
-            // background task (CmdMoveToCell2's shape), so the hunt here fights where it landed.
+            const questId = parseInt(String(command.QuestId === undefined ? '' : command.QuestId), 10);
+            const delayAfter = command.DelayAfterKill === undefined ? 50 : command.DelayAfterKill;
+            if (!isNaN(questId)) {
+                return await killForQuest(questId, {
+                    monster: varOf(command.Monster),
+                    killPriority: command.KillPriority,
+                    antiCounter: command.AntiCounter === true,
+                    untilDead: true
+                }, delayAfter);
+            }
+            // The reference runs its cell lock in the background while the kill-for runs: it walks
+            // the cells it was given and waits out a monster in one before moving on.
+            const token = { cancelled: false };
+            runCellJump(ctx, token, cells, pads, cells.length, String(varOf(command.Monster)));
             const reason = await huntRounds(command, items, qty, itemType, varOf(command.Monster),
-                command.DelayAfterKill === undefined ? 50 : command.DelayAfterKill, command.KillPriority,
-                command.AntiCounter);
+                delayAfter, command.KillPriority, command.AntiCounter);
+            token.cancelled = true;
             return reason;
         },
 
@@ -1354,6 +1415,20 @@ function createEngine(deps) {
                         const now = await read('map');
                         return now.ok && String(now.value).toLowerCase() === mapName;
                     }, {});
+                    const named = String(names[i]).trim();
+                    if (/^[0-9]+$/.test(named) && game && typeof game.getMapItem === 'function') {
+                        // CmdQuestHunt's own branch: a numeric item name is a map item id.
+                        try {
+                            await game.getMapItem(Number(named));
+                        } catch (error) {
+                            return 'could not get map item ' + named + ': ' + message(error);
+                        }
+                        await waitUntil(async function () {
+                            const now = await collected(names[i], quantities[i] === undefined ? '1' : quantities[i], itemType);
+                            return now.ok && now.value === true;
+                        }, {});
+                        continue;
+                    }
                     const reason = await huntRounds(command, names[i],
                         quantities[i] === undefined ? '1' : quantities[i], itemType,
                         monsters[i] === undefined ? '*' : monsters[i], 50, command.KillPriority,
@@ -1362,49 +1437,142 @@ function createEngine(deps) {
                 }
                 return undefined;
             }
-            return 'quest hunt #' + qid + ' reads the quest\'s own required items, which is the ' +
-                'quest surface of ticket #39; its map, cell and kill halves are wired';
+            if (!game || typeof game.quest !== 'function') {
+                return 'quest hunt #' + qid + ' needs this build\'s quest access';
+            }
+            let row = await game.quest(qid).catch(function () { return null; });
+            if (!row && typeof game.loadQuest === 'function') {
+                try {
+                    await game.loadQuest(qid);
+                } catch (error) {
+                    return 'could not load quest #' + qid + ': ' + message(error);
+                }
+                for (let tries = 0; tries < QUEST_ACCEPT_TRIES && !row && running; tries++) {
+                    row = await game.quest(qid).catch(function () { return null; });
+                    if (row) break;
+                    await sleep(200);
+                }
+            }
+            if (!row) return 'quest #' + qid + ' is not loaded, so its required items cannot be read';
+            const slot = Number(row.iSlot === undefined ? row.ISlot : row.iSlot) || 0;
+            const value = Number(row.iValue === undefined ? row.IValue : row.iValue) || 0;
+            const oneShot = row.bOnce === true || row.IsNotRepeatable === true;
+            if (slot > 0 && oneShot && typeof game.questProgress === 'function') {
+                const progress = await game.questProgress(slot).catch(function () { return 0; });
+                if (Number(progress) >= value) return undefined;
+            }
+            const inProgress = await Promise.resolve(game.isInProgress(qid)).catch(function () { return false; });
+            if (!(inProgress === true)) {
+                try {
+                    await game.accept(qid);
+                } catch (error) {
+                    return 'could not accept quest #' + qid + ': ' + message(error);
+                }
+                await waitUntil(async function () {
+                    const now = await Promise.resolve(game.isInProgress(qid)).catch(function () { return false; });
+                    return now === true;
+                }, {});
+            } else if (typeof game.ghostAccept === 'function') {
+                await game.ghostAccept(qid).catch(function () {});
+            }
+            const required = Array.isArray(row.reqd) ? row.reqd
+                : (Array.isArray(row.RequiredItems) ? row.RequiredItems : []);
+            const monsters = String(varOf(command.Monster)).split(',');
+            for (let i = 0; i < required.length && running; i++) {
+                const need = required[i] || {};
+                const name = String(need.sName === undefined ? (need.Name === undefined ? '' : need.Name) : need.sName);
+                const quantity = String(need.iQty === undefined ? (need.Quantity === undefined ? '1' : need.Quantity) : need.iQty);
+                if (!name) continue;
+                const held = await collected(name, quantity, Number(need.bTemp) === 1 || need.bTemp === true ? 1 : 0);
+                if (held.ok && held.value) continue;
+                const joined = await readN('join', [written, String(cells[0]), String(pads[0])]);
+                if (!joined.ok) return 'could not reach ' + mapName + ': ' + joined.error;
+                await waitUntil(async function () {
+                    const now = await read('map');
+                    return now.ok && String(now.value).toLowerCase() === mapName;
+                }, {});
+                const writtenItem = String(items.split(',')[i] === undefined ? '' : items.split(',')[i]).trim();
+                if (/^[0-9]+$/.test(writtenItem) && typeof game.getMapItem === 'function') {
+                    try {
+                        await game.getMapItem(Number(writtenItem));
+                    } catch (error) {
+                        return 'could not get map item ' + writtenItem + ': ' + message(error);
+                    }
+                } else {
+                    const reason = await huntRounds(command, name, quantity,
+                        Number(need.bTemp) === 1 || need.bTemp === true ? 1 : 0,
+                        monsters[i] === undefined || monsters[i] === '' ? '*' : monsters[i], 50,
+                        command.KillPriority, command.AntiCounter);
+                    if (reason) return reason;
+                }
+            }
+            await sleep(500);
+            const canComplete = await Promise.resolve(game.canComplete(qid)).catch(function () { return false; });
+            if (canComplete === true && typeof game.complete === 'function') {
+                await game.complete(qid).catch(function (error) {
+                    log('quest #' + qid + ' complete failed: ' + message(error));
+                });
+                await waitUntil(async function () {
+                    const now = await Promise.resolve(game.isInProgress(qid)).catch(function () { return false; });
+                    return now === false;
+                }, { interval: 600, timeout: 5 });
+            }
+            return undefined;
         },
 
         CmdFollow: async function (ctx, command) {
-            // CmdFollow.cs: while the player follows, if the followed player is not in the map then
-            // step to Blank, GoToPlayer, and count the tries out at MaxGotoTry; otherwise set the
-            // spawn point and kill whatever is targeted. The packet tap that moves the bot to a
-            // followed player's cell as they walk (uotls) is not available in this build, so the
-            // follow is the coarser GoTo + kill loop and says so.
+            // CmdFollow.cs: while the followed player is present, set the spawn and kill; when they
+            // leave the map, step to Blank, wait out combat, GoToPlayer and count the tries out at
+            // MaxGotoTry. The uotls tap that follows their cell live is not in this engine, so the
+            // coarser GoTo loop is what runs and says so once.
             const who = String(varOf(command.PlayerName)).toLowerCase();
-            const maxTry = Number(command.MaxGotoTry) || 999;
+            const written = command.MaxGotoTry;
+            const maxTry = written === 0 ? 999 : (written === undefined ? 5 : (Number(written) || 5));
             let gotoTry = 0;
-            for (let round = 0; round < HUNT_ROUNDS && running; round++) {
+            let following = true;
+            let gotoDelay = 2000;
+            reportOnce('follow-tap', 'following a player reads their cell off the uotls packet, ' +
+                'which this engine has no tap for; the bot walks with GoTo and fights what it finds there');
+            // The reference's own loop condition includes `&& (following && !WaitForever)`, so a
+            // WaitForever tick stops the loop before its first pass. That is upstream behaviour.
+            while (running && following && command.WaitForever !== true) {
                 const alive = await read('alive');
                 if (!(alive.ok && alive.value === true)) {
                     await sleep(1000);
                     continue;
                 }
-                const here = await read('map');
-                void here;
-                if (gotoTry >= maxTry) {
-                    return 'could not find ' + who + ' after ' + maxTry + ' goto(s)';
-                }
-                reportOnce('follow-tap', 'following a player reads their cell off the uotls ' +
-                    'packet, which this engine has no tap for; the bot walks with GoTo and fights ' +
-                    'what it finds there');
-                const went = await read1('goTo', who);
-                if (!went.ok) return 'could not goto ' + who + ': ' + went.error;
-                gotoTry++;
-                await read('setSpawnPointHere');
-                const reason = await killOnce({
-                    monster: '*',
-                    killPriority: command.KillPriority,
-                    antiCounter: command.AntiCounter === true,
-                    rounds: 1
+                const signed = await read('signedIn');
+                if (!(signed.ok && signed.value === true)) break;
+                const listed = await read('playersInMap');
+                const names = (listed.ok && Array.isArray(listed.value) ? listed.value : []).map(function (name) {
+                    return String(name).toLowerCase();
                 });
-                if (reason) return reason;
+                if (names.indexOf(who) === -1) {
+                    await readN('jump', ['Blank', '']);
+                    await waitUntil(async function () {
+                        const state = await read('state');
+                        return !(state.ok && Number(state.value) === 2);
+                    }, {});
+                    await sleep(gotoDelay);
+                    const went = await read1('goTo', who);
+                    if (!went.ok) return 'could not goto ' + who + ': ' + went.error;
+                    gotoTry++;
+                    following = gotoTry < maxTry;
+                    gotoDelay = command.WaitForever === true && !following ? 10000 : 2000;
+                } else {
+                    gotoTry = 0;
+                    await read('setSpawnPointHere');
+                    const reason = await killOnce({
+                        monster: '*',
+                        killPriority: command.KillPriority,
+                        antiCounter: command.AntiCounter === true,
+                        untilDead: true
+                    });
+                    if (reason) return reason;
+                }
                 await sleep(500);
-                if (command.WaitForever === true) continue;
-                return undefined;
             }
-            return undefined;
+            return following ? undefined : 'could not find ' + who + ' after ' + maxTry + ' goto(s)';
         }
     };
 
@@ -1456,17 +1624,23 @@ function createEngine(deps) {
     Object.assign(handlers, require('./statements-auras.js').handlers);
     /** How many kills one hunt command attempts before it reports rather than loops forever. */
     const HUNT_ROUNDS = 10;
+    /** A runaway guard for CmdKill's own unbounded rotation; the reference has no bound. */
+    const KILL_ROUND_CAP = 10000;
+    /** The hunt loops are unbounded upstream; this is the safety valve that reports instead. */
+    const HUNT_SAFETY_ROUNDS = 1000;
+    /** How many one-second accept attempts CmdKillFor makes before giving up on a quest. */
+    const QUEST_ACCEPT_TRIES = 10;
     /** And how many map joins, which is the reference's own Try shape for a hunt. */
     const HUNT_JOIN_ROUNDS = 3;
 
     /** The kill half both hunt commands share: kill once, then look at the item again. */
     async function huntRounds(command, names, quantities, itemType, monster, delay, killPriority, antiCounter) {
-        for (let round = 0; round < HUNT_ROUNDS && running; round++) {
+        for (let round = 0; round < HUNT_SAFETY_ROUNDS && running; round++) {
             const reason = await killOnce({
                 monster: monster === undefined || monster === '' ? '*' : monster,
                 killPriority: killPriority,
                 antiCounter: antiCounter === true,
-                rounds: 1
+                untilDead: true
             });
             if (reason) return reason;
             const done = await collected(names, quantities, itemType);
@@ -1474,7 +1648,7 @@ function createEngine(deps) {
             if (done.value) return undefined;
             await sleep(Number(delay) || 0);
         }
-        return 'stopped after ' + HUNT_ROUNDS + ' kill(s) without ' + names + ' ' + quantities + 'x';
+        return 'stopped after ' + HUNT_SAFETY_ROUNDS + ' kill(s) without ' + names + ' ' + quantities + 'x';
     }
 
     /**
@@ -1668,20 +1842,16 @@ function createEngine(deps) {
             if (!running) return { ok: true, stopped: true };
         }
 
-        // A reload, or a character that is not in the world: a pause, with the index held. A
-        // window that has gone away for good is not a pause - it is the end of that window's bot.
+        // The reference does not pause the whole loop on a map reload: commands that need the map
+        // wait for it themselves. Only a window that has gone away ends the bot.
         const ready = await read('ready');
+        if (!ready.ok && ready.windowGone) {
+            log('the game window went away; stopping this window\'s bot: ' + ready.error);
+            stop();
+            return { ok: true, stopped: true };
+        }
         if (!ready.ok || ready.value !== true) {
-            if (!ready.ok && ready.windowGone) {
-                log('the game window went away; stopping this window\'s bot: ' + ready.error);
-                stop();
-                return { ok: true, stopped: true };
-            }
-            paused = true;
-            if (!ready.ok) log('paused: ' + ready.error);
-            else log('paused: ' + PAUSE_NEEDED);
-            await sleep(PAUSE_POLL_MS);
-            return { ok: true, paused: true };
+            reportOnce('map-load', 'the map is reloading; commands that need it will wait');
         }
         paused = false;
 

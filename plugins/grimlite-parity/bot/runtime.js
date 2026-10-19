@@ -66,6 +66,9 @@ function createRuntimeManager(deps) {
             // The item and quest vocabulary (#39), built on this window's own game access so a
             // command acts on the game the bot is driving rather than on whichever one is nearest.
             handlers: deps.createGame ? items.handlers(deps.createGame(id)) : {},
+            // The same access, for the flow commands that need a quest row or an accept rather
+            // than a whole command: CmdKillFor's quest mode and CmdQuestHunt's required items.
+            game: deps.createGame ? deps.createGame(id) : null,
             sleep: deps.sleep,
             log: deps.log
         }, seams()));
