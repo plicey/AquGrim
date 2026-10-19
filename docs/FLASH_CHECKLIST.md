@@ -971,20 +971,85 @@ call, so that is what this section is for.
 
 ### Per-boss handlers, Auto Zone and taunt cycles (ticket #44)
 
+#### Run this branch without packaging
+
+1. Close any running AquaStar window first. AquaStar has a single-instance lock, so an older
+   installed copy could otherwise take focus instead of loading this checkout.
+2. In a terminal run:
+
+   ```sh
+   cd /home/ammar/.codex/worktrees/integration-parity/aqugrim
+   npm start
+   ```
+
+   This runs Electron from the `codex/grimlite-parity` source checkout; it does not create an
+   installer or run a build. In **Settings → Plugins**, verify **Grimlite Parity** is selected as
+   the active plugin; if not, select it, Save, and Restart. Sign in to AQW, open **Maid Remake**
+   with **Alt+Shift+R** and **Bot Manager** with **Alt+Shift+M**, and keep the terminal open.
+
+#### Start a Misc 2 handler
+
+1. Copy [`docs/fixtures/maid-auto-zone-smoke.gbot`](fixtures/maid-auto-zone-smoke.gbot) somewhere
+   writable. In the copy, replace both `Zone` values with the exact handler name you are testing
+   (the default is **Auto Zone - Ultradage**). Leave `Mode: 0` and `Mode: 1` as they are.
+2. In **Bot Manager → Load bot**, open that copy and tick **Enable Bot**. It starts the selected
+   **Misc 2 → Special handlers** entry, waits three minutes, then stops it and the bot.
+3. Repeat for each entry you can reach, in its matching live encounter. If you need to stop early,
+   copy [`docs/fixtures/maid-handler-stop.gbot`](fixtures/maid-handler-stop.gbot), set its single
+   `Zone` value to the active handler name, load it, and tick **Enable Bot**. Mark inaccessible
+   encounters **NOT AVAILABLE** rather than travelling or spending anything you do not want to.
+
+#### Test the taunt-cycle paths
+
+1. In Bot Manager, load [`docs/fixtures/maid-bot-pause-probe.gbot`](fixtures/maid-bot-pause-probe.gbot)
+   and tick **Enable Bot**. Its only action is a “Bot pause probe” log line every second. In an
+   Ultra Speaker encounter, run the matching Speaker handler from **Misc 2**; check that the log
+   pauses during a skill-5 taunt and resumes after it. Untick **Enable Bot** when done.
+2. In Ultra Gramiel, load [`docs/fixtures/maid-tauntcycle-smoke.gbot`](fixtures/maid-tauntcycle-smoke.gbot)
+   while **Gramiel** is present and set as the current target. Note the current target, tick
+   **Enable Bot**, then check that skill 5 runs and the prior target is restored. The fixture stops
+   its taunt cycle and bot after one minute.
+3. For Maid's separate `tc;` path, untick Maid **Enable**, turn on **Special animation actions**,
+   set **SpecialMsg** to `tc;2;Gramiel;12` and **SpecialAct** to `5`, then enable Maid in the Ultra
+   Gramiel encounter. Confirm the Maid cycle uses skill 5 and yields while the bot has a command in
+   flight. Restore your previous Maid settings afterward if you want to keep them.
+
+#### Check the behavior
+
 - [ ] **UltraBossExtra** selects each reference mode; changing a boss mode fills its SpecialMsg,
       SpecialAct and AttackPriority fields, and Save/Load preserves the choices
 - [ ] **Auto Potion** uses the first equipped, stocked potion and waits for that potion's aura to
-      expire before forcing skill 5
+      expire before forcing skill 5. Skip if you do not want to consume a potion.
 - [ ] On Ultra Gramiel, Maid balances the two Grace Crystals at the reference's 150 HP and 50 HP
-      gates, and its forced-skill pass returns to the priority target
-- [ ] Each of the 15 **Auto Zone** entries in Misc 2 starts, switches and stops independently; the
-      matching boss animation drives its movement, position, taunt or crystal action
-- [ ] Ultra Speaker DPS, LR, LOO and AP respond to their role's animation, maintain their zone
-      positions, perform role-specific heals, and resume after death/respawn
+      gates, and its forced-skill pass returns to the priority target. Test with both crystals
+      alive: when one reaches 150 HP while the other is above 150 it switches sides; repeat at 50
+      HP while the other is above 50.
+- [ ] In Bot Manager → **Misc 2 → Special handlers**, test each entry one at a time using the
+      three-minute fixture above. Check that its matching game event triggers the action. Mark an
+      encounter **NOT AVAILABLE** if you cannot reach it:
+      **Auto Zone - Ultradage**, **Auto Zone - Dark Carnax**, **Auto Zone - Astral Empyrean**,
+      **Auto Zone - Astral Empyrean P1**, **Auto Zone - Astral Empyrean P2**,
+      **Auto Zone - Queen Iona**, **Auto Zone - Colossal Vordred**, **Gramiel P1**, **Gramiel P2**,
+      **Gramiel P3**, **Gramiel P4**, **Ultra Speaker DPS**, **Ultra Speaker LR**,
+      **Ultra Speaker LOO**, **Ultra Speaker AP**.
+- [ ] For Gramiel P1–P4, `defense shattering` acts on the selected crystal and that preset's odd/even
+      turn. For Speaker DPS/LR/LOO/AP, the role follows `truth`/`listen`, moves to its assigned
+      position, and heals below 70% only when that role has a heal.
+- [ ] With the harmless pause-probe fixture running, a Speaker skill-5 taunt pauses its log during
+      the cast and lets it resume afterward; a death/respawn returns the role to its start position.
 - [ ] Maid `SpecialMsg` beginning `tc;` cycles with the configured **SpecialAct** and yields when
       the bot has a command in flight
 - [ ] Bot Manager **Tauntcycle** uses skill 5, pauses/resumes only that window's bot, restores its
       previous target, and stops without stopping Maid's separate `tc;` cycle
+
+#### What to send back
+
+Reply with the status for these checks: mode/config and Auto Potion; each of the 15 Misc 2 names;
+Gramiel crystal switching; Speaker pause/position/respawn; Maid `tc;`; and bot Tauntcycle target
+restore. Use `PASS`, `FAIL`, or `NOT AVAILABLE` for each. For a failure, give the selected
+handler/role, map, and expected versus actual result. Attach a screenshot only for a visual or
+movement problem. If the terminal reports an error, include about 30 nearby lines. Do not send full
+logs, account details, or edit/commit the checklist.
 
 The Speaker and Gramiel reference loops run at their own intervals; this port services their
 health, position and taunt work from the existing Maid scheduler instead of starting another
