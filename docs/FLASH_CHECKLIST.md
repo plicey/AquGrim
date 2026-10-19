@@ -1271,8 +1271,8 @@ What needs a real client: everything below.
 
 ### Bank
 
-- [ ] **Bank** opens this plugin's Bank window, which is what the reference's `Player.Bank.Show()`
-      is in this port
+- [ ] The game-window **Bank** button opens the game's in-game Bank UI via `Player.Bank.Show()`
+- [ ] **Tools → Bank** opens the Grimlite transfer window for banking by category and AC status
 
 ### The menu toggle
 

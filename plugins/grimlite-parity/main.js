@@ -446,7 +446,6 @@ async function activate(host) {
         bot: function () { return botManager.bot(); },
         // Read live: this plugin's catalog is merged into the platform's after activate().
         messages: function () { return host.getLocaleStrings('chromeMessages') || {}; },
-        openWindow: function (id) { return host.windows.openFeatureWindow(id); },
         log: function (line) { host.log('chrome: ' + line); }
     });
     host.registerGameChrome({

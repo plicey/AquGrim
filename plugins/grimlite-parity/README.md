@@ -180,7 +180,7 @@ name or pretending the tick worked.
 ## Windows
 
 - **Bot file** (Alt+Shift+B) — open, edit and save a `.gbot` (#24).
-- **Bank** (Alt+Shift+K) — transfer by category and AC-ness, plus Bank All (#29).
+- **Bank (Tools menu, Alt+Shift+K)** — the separate transfer window: bank by category and AC-ness, plus Bank All (#29).
 - **Sets** — save, list, load, clear and equip `.gset` sets (#29).
 - **Options** (Alt+Shift+O) — the reference's seven option toggles and the walkspeed field (#34).
 - **Hotkeys** (Alt+Shift+H) — bind one key to one action from the reference's vocabulary (#34).
@@ -345,7 +345,8 @@ away mid-command reports what it saw rather than spinning the app.
 `features/chrome/chrome.js` is the reference's own toolbar - `splitContainer1`, 27 px, above the
 Flash panel (`Root.cs:620`) - as the six controls it draws, in its own order and with its own
 words: Start Bot, Auto Attack, the pad and cell pickers, the **x** refresh control and Bank. The
-pad list is the reference's own eight cells (`Root.cs:691`-`699`).
+pad list is the reference's own eight cells (`Root.cs:691`-`699`). The strip's Bank button opens
+the game's own Bank UI; the Grimlite transfer window remains under Tools → Bank.
 
 The strip's box, its height, the window geometry that goes with it and the page that draws it are
 the **platform's** (`res/windows/game-chrome.js`, `res/swf_wrapper.html`), because the platform

@@ -22,7 +22,6 @@
 // to answered in ticket #49, which the strip needs no change for: it asks for the name either way.
 
 const engine = require('../../bot/engine.js');
-const windows = require('../../windows.js');
 
 /** splitContainer1's own height in Root.cs, which is the strip's height here. */
 const HEIGHT = 27;
@@ -91,7 +90,6 @@ function message(error) {
  * @param {Function|object} deps.session the game session this window reads through (bot/session.js),
  *        or a getter for it: the strip asks each time, because a window's session is made with the
  *        bot registry's entry rather than at activation
- * @param {Function} deps.openWindow host.windows.openFeatureWindow
  * @param {object|Function} [deps.messages] locale strings, or a getter read at draw time (the
  *        platform merges a plugin's catalog after activate(), so the getter is what a translated
  *        build needs)
@@ -107,7 +105,6 @@ function createChrome(deps) {
         return told || {};
     }
     const log = typeof deps.log === 'function' ? deps.log : function () {};
-    const openWindow = deps.openWindow || function () { return null; };
     const timers = deps.timers || {
         setInterval: function (fn, ms) { return setInterval(fn, ms); },
         clearInterval: function (id) { clearInterval(id); }
@@ -422,7 +419,8 @@ function createChrome(deps) {
             else if (id === 'pad') answer = await moveTo({ pad: picked.value });
             else if (id === 'refreshCell') answer = await refreshCell();
             else if (id === 'bank') {
-                answer = { ok: true, error: null, opened: openWindow(windows.BANK_WINDOW_ID) };
+                const shown = await read('showBank');
+                answer = { ok: !shown.error, error: shown.error };
             } else return { ok: false, error: ERRORS.unknownControl(id), view: await state() };
         } catch (error) {
             answer = { ok: false, error: message(error) };
@@ -450,7 +448,7 @@ function createChrome(deps) {
  * bot never disagree about which game they are looking at.
  *
  * @param {object} host the plugin Host
- * @param {object} deps {runtime, windowKey, bot, messages, session, openWindow, log}
+ * @param {object} deps {runtime, windowKey, bot, messages, session, log}
  */
 function createFromHost(host, deps) {
     deps = deps || {};
@@ -470,7 +468,6 @@ function createFromHost(host, deps) {
             const entry = runtime.forWindow(windowKey());
             return entry && entry.engine ? entry.engine.session : null;
         },
-        openWindow: deps.openWindow || function (id) { return host.windows.openFeatureWindow(id); },
         messages: deps.messages || {},
         log: deps.log || function (line) { host.log('chrome: ' + line); },
         sleep: deps.sleep,

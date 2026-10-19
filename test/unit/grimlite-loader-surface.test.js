@@ -186,6 +186,15 @@ test('a call hands the game the arguments the loader shapes for it', () => {
     });
 });
 
+test('ShowBank calls the game own bank UI toggle', () => {
+    const bridge = fakeBridge({}, { 'world.toggleBank': 'shown' });
+    const game = access(bridge);
+    return game.call('ShowBank', []).then(() => {
+        assert.strictEqual(bridge.made[0].path, 'world.toggleBank');
+        assert.deepStrictEqual(bridge.made[0].args, []);
+    });
+});
+
 test('a transfer resolves the item by name, then hands the item object over', () => {
     // Bank.TransferToBank: Inventory.GetItemByName(name), then world.sendBankFromInvRequest(item).
     const inv = [{ sName: 'Sword', ItemID: 7, CharItemID: 70 }];

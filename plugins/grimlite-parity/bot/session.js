@@ -558,6 +558,8 @@ function createSession(deps) {
         // surface reaches the path that helper's body reads.
         inventory: function () { return listFrom('GetInventoryItems', loaderCall('GetInventoryItems')); },
         bank: function () { return listFrom('GetBankItems', loaderCall('GetBankItems')); },
+        /** Player.Bank.Show(), used by the game-window toolbar to open the in-game bank UI. */
+        showBank: function () { return loaderCall('ShowBank'); },
         tempInventory: function () { return listFrom('GetTempItems', loaderCall('GetTempItems')); },
         house: function () { return listFrom('GetHouseItems', loaderCall('GetHouseItems')); },
         factions: function () { return listFrom('GetFactions', loaderCall('GetFactions')); },

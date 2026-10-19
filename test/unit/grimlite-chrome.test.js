@@ -12,7 +12,6 @@ const platform = require('../../res/platform');
 const { createChrome, HEIGHT, PADS, DEFAULT_SKILLS } = require('../../plugins/grimlite-parity/features/chrome/chrome.js');
 const engine = require('../../plugins/grimlite-parity/bot/engine.js');
 const catalog = require('../../plugins/grimlite-parity/bot/command-catalog.js');
-const windows = require('../../plugins/grimlite-parity/windows.js');
 
 const repoRoot = path.join(__dirname, '../..');
 const pluginRoot = path.join(repoRoot, 'plugins/grimlite-parity');
@@ -30,7 +29,6 @@ function botWith(commands) {
 function harness(options) {
   options = options || {};
   const calls = [];
-  const opened = [];
   const reads = options.reads || {};
   const answers = options.answers || {};
   const running = { value: !!options.running };
@@ -64,6 +62,7 @@ function harness(options) {
     cell: member('cell', 'battleon'),
     pad: member('pad', 'Spawn'),
     cells: member('cells', ['battleon', 'yulgar']),
+    showBank: member('showBank', null),
     ready: member('ready', true),
     jump: member('jump', null),
     hasTarget: member('hasTarget', true),
@@ -105,7 +104,6 @@ function harness(options) {
     },
     windowKey: function () { return 'game-window-1'; },
     bot: function () { return bot.document; },
-    openWindow: function (id) { opened.push(id); return { id: id }; },
     messages: options.messages || {},
     log: function () {},
     sleep: function () { return Promise.resolve(); },
@@ -115,7 +113,6 @@ function harness(options) {
   return {
     chrome: chrome,
     calls: calls,
-    opened: opened,
     running: running,
     bot: bot,
     session: session,
@@ -427,11 +424,11 @@ test('a cell list that cannot be read is reported rather than answered with an e
 
 // ----------------------------------------------------------------------------------------- Bank
 
-test('Bank opens the Bank window, which is what Player.Bank.Show() is in this port', async () => {
+test('toolbar Bank opens the game Bank UI through the session', async () => {
   const h = harness();
   const answer = await h.chrome.action('bank', {});
   assert.strictEqual(answer.ok, true);
-  assert.deepStrictEqual(h.opened, [windows.BANK_WINDOW_ID]);
+  assert.strictEqual(h.count('showBank'), 1);
 });
 
 test('an unknown control is refused by name rather than silently ignored', async () => {

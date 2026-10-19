@@ -128,6 +128,13 @@ test('SetSpawnPoint, Rest and exit-combat are the loader own helper names', asyn
   assert.deepStrictEqual(bridge.asked(), ['SetSpawnPoint', 'Rest', 'CancelTarget']);
 });
 
+test('the in-game Bank button asks the loader to show the game bank UI', async () => {
+  const bridge = fakeBridge({ ShowBank: undefined });
+  const session = sessionModel.createSession({ bridge: bridge });
+  await session.showBank();
+  assert.deepStrictEqual(bridge.asked(), ['ShowBank']);
+});
+
 test('ready follows the game own map-load flag, which is what MapLoadComplete tests first', async () => {
   // grimoire/game/World.as: MapLoadComplete() returns False while world.mapLoadInProgress. The
   // surface refuses the name because its second half reads the loader's own display list (#41), so
