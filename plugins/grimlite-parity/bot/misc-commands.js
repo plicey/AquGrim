@@ -101,6 +101,30 @@ function createHandlers(deps) {
         return Promise.resolve(session.username()).then(null, function () { return undefined; });
     }
 
+    /**
+     * This character's one-based place in the map's player list, which is what a dynamic
+     * `CmdTauntcycle` order resolves to: `World.PlayersInMap?.IndexOf(Player.Username.ToLower()) + 1`
+     * (TauntCycle.cs's caller does the lookup, CmdTauntcycle.cs:23-25). The reference's `?? 1` on a
+     * missing list means a character it cannot place is order 1 rather than an error.
+     */
+    async function characterPlace() {
+        if (!session || typeof session.loaderCall !== "function") return 1;
+        let names = null;
+        let me = null;
+        try {
+            names = await session.loaderCall("PlayersInMap", []);
+            me = await characterName();
+        } catch (error) {
+            return 1;
+        }
+        const list = Array.isArray(names) ? names : [];
+        const mine = String(me === undefined || me === null ? "" : me).toLowerCase();
+        const at = list.map(function (one) {
+            return String(one === null || one === undefined ? "" : one).toLowerCase();
+        }).indexOf(mine);
+        return at === -1 ? 1 : at + 1;
+    }
+
     function stopBackground() {
         background.labels.length = 0;
         if (background.timer !== null) {
@@ -449,34 +473,69 @@ function createHandlers(deps) {
             const zone = String(command.Zone === undefined ? "" : command.Zone);
             if (!zone) return; // the reference own `if (string.IsNullOrEmpty(Zone)) return;`
             const mode = SPECIAL_MODES[number(command.Mode, 0)] || "Special";
-            // SetSpecialHandlerFromScript drives the Misc 2 "Auto Zone" panel: a combo of boss
-            // handlers (Auto Zone - Ultradage, Gramiel P1-P4, Ultra Speaker DPS/LR/LOO/AP, ...),
-            // each of which is a packet handler that moves a party through a multi-part run. That
-            // set is the auto-zone half of #44, so this names it rather than pretending to switch
-            // a handler this build does not have.
-            log("CmdSpecialHandler: " + mode + " for " + zone + " - the auto-zone handlers are " +
-                "#44 and this build has none to switch");
+            // SetSpecialHandlerFromScript (BotManager.cs:3442-3467) drives the Misc 2 "Auto Zone"
+            // panel: it finds the combo entry by exact name, sets `chkSpecial.Checked` only when the
+            // mode has an opinion (`enabled` is null for Switch, which keeps the box as it is), and
+            // then calls UpdateSpecialHandler. That method lives with the handlers themselves
+            // (features/maid/zones.js), so the shell hands this command the seam that reaches it -
+            // the engine has no business knowing what an auto-zone handler is.
+            // The seam is an accessor rather than the panel itself: the engine is built before the
+            // Maid window that owns the handlers, so the shell hands in a function that reads it
+            // when a command runs (the same shape the options seam uses above).
+            const panel = typeof deps.specialHandler === "function" ? deps.specialHandler() : null;
+            if (!panel) {
+                log("CmdSpecialHandler: " + mode + " for " + zone +
+                    " - this window has no auto-zone panel wired");
+                return;
+            }
+            const known = panel.names ? panel.names() : [];
+            const knownName = known.indexOf(zone) !== -1;
+            // `enabled`: Start is true, Stop is false, Switch is null - keep the box as it is.
+            const wanted = number(command.Mode, 0) === 0 ? true
+                : (number(command.Mode, 0) === 1 ? false : null);
+            const answer = panel.set(zone, wanted);
+            const effect = knownName
+                ? (answer || zone)
+                : "existing selection " + (answer || "(none)");
+            log("CmdSpecialHandler: " + mode + " for " + zone + " - " + effect +
+                (wanted === null ? " (the box was left as it was)" : ""));
         },
 
         CmdTauntcycle: function (ctx, command) {
-            // TauntCycle.StartTaunt(cycle, target, second, order - 1) is a background rotation:
-            // every `second / cycle` seconds it pauses the bot, AttackMonster(target), waits for
-            // skill 5 and uses it, then restores the previous target. The rotation itself is small
-            // enough to run here, but its first move is AttackMonster - which resolves a live
-            // monster object for world.setTarget, and a live Avatar cannot cross the JSON bridge
-            // (loader-surface.js). Reported rather than half-run, because a taunt that never
-            // re-targets is worse than no taunt.
+            // TauntCycle.cs:22-60, one rotation per process (`TauntCycle.Instance`). StartTaunt
+            // runs it in the background - every `second / cycle` seconds: pause the engine,
+            // AttackMonster(target), wait skill 5 out, use it, restore the previous target - and
+            // Stop cancels it. Its own two calls answer since #49 lifted the JSON-boundary
+            // refusals, so the rotation is real; it belongs to the maid half (#44), which owns the
+            // SpecialMsg box and the cycle's token, and is reached through the same accessor seam
+            // CmdSpecialHandler uses for the auto-zone panel.
             const start = number(command.type, 0) === 0;
-            const order = number(command.order, -1);
+            const panel = typeof deps.specialHandler === "function" ? deps.specialHandler() : null;
+            if (!panel || typeof panel.startTaunt !== "function") {
+                log("CmdTauntcycle: " + (start ? "start" : "stop") +
+                    " - this window has no maid rotation wired");
+                return;
+            }
+            if (!start) {
+                const stopped = panel.stopTaunt();
+                log("CmdTauntcycle: stop - " + ((stopped && stopped.stopped)
+                    ? "the rotation stopped" : "no rotation was running"));
+                return;
+            }
+            const cycle = number(command.cycle, 2);
             const who = String(command.target === undefined ? "*" : command.target);
             const pace = number(command.second, 14);
-            const shape = start
-                ? "start for " + who + " every " + pace + "s, " +
-                    (order <= 0 ? "dynamic order" : "order " + order)
-                : "stop";
-            log("CmdTauntcycle: " + shape + " - the rotation needs AttackMonster, which this " +
-                "build cannot call: it hands world.setTarget a live monster object and a live " +
-                "Avatar cannot cross the bridge");
+            const order = number(command.order, -1);
+            // `if (order <= 0) _order = World.PlayersInMap?.IndexOf(Player.Username.ToLower()) + 1`,
+            // then `StartTaunt(..., _order - 1)`: a dynamic order is this character's own place in
+            // the map's player list, and it is read here rather than assumed.
+            return Promise.resolve(order > 0 ? order : characterPlace()).then(function (place) {
+                const answer = panel.startTaunt(cycle, who,
+                    pace, (order > 0 ? order : place) - 1);
+                log("CmdTauntcycle: start for " + who + " every " + pace + "s, " +
+                    (order > 0 ? "order " + order : "dynamic order (" + place + ")") + " - " +
+                    ((answer && answer.ok) ? "the rotation is running" : "the rotation did not start"));
+            });
         },
 
         CmdLog: async function (ctx, command) {

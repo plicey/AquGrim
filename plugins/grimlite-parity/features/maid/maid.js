@@ -50,7 +50,10 @@ const HELPERS = {
     AttackMonsterByMonMapId: true,
     Jump: true,
     GoTo: true,
-    UseSkill: true
+    UseSkill: true,
+    // The forced cast the Maid's own phrase handler arms (SpecialAct, ticket #44). The reference
+    // forces the cast through ForceUseSkill rather than UseSkill, so both are named here.
+    ForceUseSkill: true
 };
 
 // The names this module calls that the surface cannot drive, with the reason to show. It is empty
@@ -81,6 +84,12 @@ const TIMING = {
     firstJoinPollMs: 2000
 };
 
+// The three numbers in the reference's own waitSkill (MaidRemake.cs:370-382): the cooldown wait is
+// capped at 1500 ms, then twenty 50 ms polls decide whether the cast took.
+const FORCE_WAIT_CAP_MS = 1500;
+const FORCE_COOLDOWN_TRIES = 20;
+const FORCE_COOLDOWN_POLL_MS = 50;
+
 const STATUS = {
     off: 'off',
     waitingSignIn: 'waiting for a character to sign in',
@@ -108,6 +117,8 @@ function message(error) {
  * @param {() => {count: number, command: string|null}} [deps.engineActivity]  the bot engine (#37)
  * @param {() => boolean} [deps.engineRunning]
  * @param {(frame: string) => boolean} [deps.send]  host.packets.send, for the goto frame
+ * @param {() => boolean} [deps.specialsHolding] the per-boss handlers' own run locks (#44),
+ *                              which is doPriorityAttack's first line
  */
 function createMaid(deps) {
     deps = deps || {};
@@ -120,6 +131,13 @@ function createMaid(deps) {
     const engineActivity = typeof deps.engineActivity === 'function' ? deps.engineActivity : null;
     const engineRunning = typeof deps.engineRunning === 'function' ? deps.engineRunning : function () { return false; };
     const send = typeof deps.send === 'function' ? deps.send : function () { return false; };
+    // Misc 2's non-packet actions share this scheduler rather than starting a second polling loop.
+    const auxiliaryActive = typeof deps.auxiliaryActive === 'function' ? deps.auxiliaryActive : function () { return false; };
+    const auxiliaryTick = typeof deps.auxiliaryTick === 'function' ? deps.auxiliaryTick : null;
+    // taunt()'s own door (MaidRemake.cs:295-296): the rotation a `tc;` SpecialMsg starts lives with
+    // the per-boss half (#44), which owns the SpecialMsg box and the cycle's own token. Injected
+    // for the same reason the two run locks are: the scheduler does not own that state.
+    const taunt = typeof deps.taunt === 'function' ? deps.taunt : function () { return null; };
     // Called once per loop pass, so the window can show a state that changes on its own (the
     // reference's own window is repainted by its loop for the same reason). Settable after the
     // fact, because the window that watches it is built around this scheduler.
@@ -133,6 +151,9 @@ function createMaid(deps) {
     let firstJoinDone = false;
     let gotoTries = 0;
     let skillIndex = 0;
+    // The skill a phrase hit asked to force (MaidRemake.cs's `forceSkill`/`numSkillAct`): set by
+    // armSkill from the AnimsMsgHandler subscription, spent by the next fighting pass.
+    let forcedSkill = null;
     let safeIndex = 0;
     let buffIndex = 0;
     let collisions = 0;
@@ -196,6 +217,24 @@ function createMaid(deps) {
         return status;
     }
 
+    function hasAuxiliaryWork() {
+        try {
+            return auxiliaryActive() === true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async function runAuxiliaryTick(context) {
+        if (!hasAuxiliaryWork() || !auxiliaryTick) return null;
+        try {
+            return await auxiliaryTick(context || {});
+        } catch (error) {
+            log('maid: a scheduled handler failed (' + message(error) + ')');
+            return null;
+        }
+    }
+
     /** Is the engine holding the current command? Answers the collision line when it is. */
     function engineCollision() {
         if (!engineActivity || !engineRunning()) return null;
@@ -225,7 +264,9 @@ function createMaid(deps) {
     async function tick() {
         if (!enabled) {
             status = STATUS.off;
-            return { ok: true, status: status };
+            if (!hasAuxiliaryWork()) return { ok: true, status: status };
+            const scheduled = await runAuxiliaryTick({ maidEnabled: false });
+            return { ok: true, status: status, scheduled: scheduled };
         }
 
         const collision = engineCollision();
@@ -234,6 +275,11 @@ function createMaid(deps) {
             status = STATUS.collision;
             return { ok: true, status: status, collision: collision };
         }
+
+        // These effects belong to a selected Misc 2 handler, whose source polling loops are being
+        // folded into the existing scheduler. Run them once per pass, before follow/stop-attack
+        // branches can return early, just as the separate reference handlers did.
+        const scheduled = await runAuxiliaryTick({ maidEnabled: true });
 
         const signedIn = asBool(await call('IsLoggedIn'));
         if (signedIn !== true) {
@@ -304,8 +350,31 @@ function createMaid(deps) {
         }
 
         status = STATUS.fighting;
-        if (config.AttackPriority === true) await priorityTarget();
-        if (asBool(await call('HasTarget')) !== true) await attack('*');
+        if (config.AttackPriority === true && forcedSkill === null) await priorityTarget();
+        let hasTarget = asBool(await call('HasTarget')) === true;
+        if (!hasTarget && !(scheduled && scheduled.wildcardAttempted === true)) {
+            await attack('*');
+            hasTarget = asBool(await call('HasTarget')) === true;
+        }
+
+        // The reference's own pair, in its own order (MaidRemake.cs:294-296): `await SpecialCombo();
+        // if (tauntTask == null) taunt();`, inside the same `if (Player.HasTarget)` branch. Only the
+        // second half is ported here - SpecialCombo is the class-preset half and #43 read its own
+        // part of it - and the guard is the rotation's own: `taunt()` starts nothing while a cycle
+        // it started is still running, so this asks every pass and only the first one starts one.
+        if (hasTarget) taunt();
+
+        // The reference's own forced cast (MaidRemake.cs:596-610): while `forceSkill` stands it
+        // waits the skill out, forces it, clears the flag and pauses, instead of running the list.
+        // `waitSkill` is its own helper: SkillAvailable capped at 1500 ms, force the cast, then up
+        // to twenty 50 ms checks for the cooldown to appear, forcing once more if it never does.
+        if (forcedSkill !== null && hasTarget) {
+            const slot = forcedSkill;
+            forcedSkill = null;
+            await waitSkill(slot);
+            status = STATUS.fighting;
+            return { ok: true, status: status, cast: slot, forced: true };
+        }
 
         const list = skills('SkillList', ['1', '2', '3', '4']);
         const slot = list[skillIndex % list.length];
@@ -363,16 +432,36 @@ function createMaid(deps) {
         return { ok: true, value: got };
     }
 
+    /**
+     * The two run locks the per-boss handlers own (#44), read through an injected seam: `locktarget`
+     * is set while Gramiel's drain or a counter-attack warning holds the target, and `balance` while
+     * the crystal-HP walk has taken it. Neither flag lives here - they belong to the handlers that
+     * set them - so the scheduler asks rather than assumes.
+     */
+    function specialsHolding() {
+        const read = deps.specialsHolding;
+        if (typeof read !== 'function') return false;
+        try {
+            return read() === true;
+        } catch (error) {
+            return false;
+        }
+    }
+
     /** The reference's doPriorityAttack: the first entry that is there gets the attack. */
     async function priorityTarget() {
+        // The reference's own first line (MaidRemake.cs:838-840): `if (balance || locktarget)
+        // return;`. While a handler holds the target the walk does not run at all - not even the
+        // list walk, which is what the early return means.
+        if (specialsHolding()) return { ok: true, held: true };
         const configured = configOf().AttackPriorityMonster;
         const entries = String(configured === undefined || configured === null ? '' : configured)
             .split(',').map(function (part) { return part.trim(); })
             .filter(function (part) { return part !== ''; });
         // The reference steps aside when its current target is already one of these
         // (MaidRemake.cs:854-856, the CSH no-autoattack case): it compares the target's own name
-        // and MonMapID, and returns without attacking again. `balance` and `locktarget` are the
-        // special-combo flags #44's own handlers own, so they are not modelled here.
+        // and MonMapID, and returns without attacking again. The two run-lock flags that guard the
+        // walk as a whole are read at its top, above.
         const held = await readPath(TARGET_NAME_PATH);
         const heldName = held.ok && held.value !== null && held.value !== undefined
             ? String(held.value) : '';
@@ -406,6 +495,33 @@ function createMaid(deps) {
     async function use(slot) {
         const answer = await call('UseSkill', [String(slot)]);
         if (!answer.ok) lastNote = 'skill ' + slot + ': ' + answer.error;
+        return answer;
+    }
+
+    /**
+     * The reference's own waitSkill (MaidRemake.cs:370-382), which is how its forced cast lands:
+     * read the cooldown, wait at most 1500 ms of it, force the skill, then poll twenty times at
+     * 50 ms for the cooldown to appear and force once more if it never did. `useSkill(index, true)`
+     * is Player.ForceUseSkill, and the second call is what tells "the cast was refused" from "the
+     * skill never went on cooldown".
+     */
+    async function waitSkill(slot) {
+        const first = await call('SkillAvailable', [String(slot)]);
+        const cooldown = first.ok ? Number(first.value) : 0;
+        await sleep(Math.min(isFinite(cooldown) ? cooldown : 0, FORCE_WAIT_CAP_MS));
+        const forced = await force(slot);
+        for (let i = 0; i < FORCE_COOLDOWN_TRIES; i++) {
+            await sleep(FORCE_COOLDOWN_POLL_MS);
+            const ready = await call('SkillAvailable', [String(slot)]);
+            if (ready.ok && Number(ready.value) > 0) return forced;
+        }
+        return force(slot);
+    }
+
+    /** Player.ForceUseSkill, on its own log line so a refusal is never counted as a cast. */
+    async function force(slot) {
+        const answer = await call('ForceUseSkill', [String(slot)]);
+        if (!answer.ok) lastNote = 'forced skill ' + slot + ': ' + answer.error;
         return answer;
     }
 
@@ -497,9 +613,12 @@ function createMaid(deps) {
     // ------------------------------------------------------------------ the loop
 
     async function run() {
-        while (enabled) {
+        while (enabled || hasAuxiliaryWork()) {
             try {
                 await tick();
+                // An active Misc 2 handler may need servicing while the Maid checkbox is off.
+                // Keep its cadence on this same scheduler, with no second timer/loop.
+                if (!enabled && hasAuxiliaryWork()) await sleep(TIMING.waitStepMs);
             } catch (error) {
                 log('maid: ' + message(error));
                 await sleep(TIMING.waitStepMs);
@@ -524,6 +643,20 @@ function createMaid(deps) {
             status = STATUS.waitingSignIn;
         }
         return enabled;
+    }
+
+    function ensureLoop() {
+        if (running || !(enabled || hasAuxiliaryWork())) return loop;
+        running = true;
+        loop = Promise.resolve(run()).then(function () {
+            running = false;
+            // If a handler became active as the previous loop was exiting, do not lose its wake.
+            if (enabled || hasAuxiliaryWork()) ensureLoop();
+        }, function () {
+            running = false;
+            if (enabled || hasAuxiliaryWork()) ensureLoop();
+        });
+        return loop;
     }
 
     return {
@@ -586,6 +719,16 @@ function createMaid(deps) {
         follow: follow,
         attack: attack,
         use: use,
+        /**
+         * The Maid's own AnimsMsgHandler hands its phrase hit here (MaidRemake.cs:713-714): the
+         * forced skill is `numSkillAct`, the box the mode's selection writes (SpecialAct, #44).
+         * The next fighting pass spends it through waitSkill, which is the reference's order: the
+         * handler only sets `forceSkill = true` and its loop does the cast.
+         */
+        armSkill: function (slot) {
+            forcedSkill = slot === null || slot === undefined || slot === '' ? null : String(slot);
+            return forcedSkill;
+        },
         /** The pass-by-pass watcher, for the window: see `onTick` above. */
         setOnTick: function (watcher) {
             onTick = typeof watcher === 'function' ? watcher : null;
@@ -594,10 +737,10 @@ function createMaid(deps) {
         start: function () {
             if (enabled && running) return loop;
             enabled = true;
-            running = true;
-            loop = Promise.resolve(run()).then(function () { running = false; }, function () { running = false; });
-            return loop;
+            return ensureLoop();
         },
+        /** Wake the same loop when a Misc 2 handler starts or stops. */
+        wake: ensureLoop,
         stop: stop,
         idle: function () { return loop || Promise.resolve(); },
         collisions: function () { return collisions; },

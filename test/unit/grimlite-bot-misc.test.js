@@ -92,6 +92,8 @@ function engine(options) {
       setTimeout: function (fn, ms) { rec.timers.push({ fn: fn, ms: ms }); return rec.timers.length; },
       clearTimeout: function (id) { rec.timers.push({ cleared: id }); }
     },
+    // The auto-zone panel (#44), which the plugin shell wires and a test here may stand in for.
+    specialHandler: opts.specialHandler,
     sleep: function (ms) { rec.waited.push(ms); return Promise.resolve(); },
     log: function (line) { rec.records.push(line); },
     logDebug: function (line) { rec.debug.push(line); },
@@ -699,18 +701,84 @@ test('a command whose own call this build cannot make says so and names the owne
   assert.ok(fps.records.some(function (l) { return /CmdSetFPS/.test(l) && /stage|frame rate/.test(l); }),
     'CmdSetFPS carries the surface own reason: ' + fps.records.join('|'));
 
-  const special = await run(engine(), 'CmdSpecialHandler', { Zone: 'Auto Zone', Mode: 0 });
-  assert.ok(special.records.some(function (l) { return /Auto Zone/.test(l) && /#44/.test(l); }),
-    'CmdSpecialHandler names the auto-zone ticket: ' + special.records.join('|'));
-
   const taunt = await run(engine(), 'CmdTauntcycle', { type: 0 });
-  assert.ok(taunt.records.some(function (l) { return /taunt/i.test(l) && /AttackMonster/.test(l); }),
-    'CmdTauntcycle names the call the rotation needs: ' + taunt.records.join('|'));
+  assert.ok(taunt.records.some(function (l) { return /taunt/i.test(l) && /maid rotation/.test(l); }),
+    'CmdTauntcycle reports a window with no maid rotation to start: ' + taunt.records.join('|'));
+});
+
+test('CmdTauntcycle starts and stops the rotation the reference starts there', async () => {
+  // TauntCycle.cs:22-60, which the Misc 2 buttons and the .gbot file both reach: StartTaunt
+  // resolves a dynamic order from the character's own place in the map's player list, then runs
+  // the rotation; Stop cancels it. The rotation itself is the maid half's (#44), handed in the
+  // way SetSpecialHandlerFromScript hands the auto-zone panel: an accessor, because the engine
+  // is built before the maid it drives.
+  const started = [];
+  const panel = {
+    startTaunt: function (cycle, mon, second, count) {
+      started.push({ cycle: cycle, mon: mon, second: second, count: count });
+      return { ok: true, running: true };
+    },
+    stopTaunt: function () { started.push({ stop: true }); return { ok: true, stopped: true }; }
+  };
+  const session = fakeSession({ state: { players: ['master', 'me'], username: 'me' } });
+  const specialHandler = function () { return panel; };
+  const made = await run(engine({ session: session, specialHandler: specialHandler }),
+    'CmdTauntcycle', { type: 0, cycle: 4, target: 'Gramiel', second: 20, order: -1 });
+  assert.deepStrictEqual(started, [{ cycle: 4, mon: 'Gramiel', second: 20, count: 1 }],
+    'order <= 0 resolves to this character\'s own index in the player list');
+  assert.ok(made.records.some(function (l) { return /CmdTauntcycle/.test(l) && /Gramiel/.test(l); }),
+    'and the shape is reported: ' + made.records.join('|'));
+
+  started.length = 0;
+  await run(engine({ session: session, specialHandler: specialHandler }),
+    'CmdTauntcycle', { type: 1 });
+  assert.deepStrictEqual(started, [{ stop: true }], 'Stop cancels the rotation');
 });
 
 test('a special handler with no zone is the reference own silent return', async () => {
   const made = await run(engine(), 'CmdSpecialHandler', { Mode: 0 });
   assert.deepStrictEqual(made.records.filter(function (l) { return /SpecialHandler/.test(l); }), []);
+});
+
+test('CmdSpecialHandler drives the auto-zone panel the way SetSpecialHandlerFromScript does', async () => {
+  // BotManager.cs:3442-3467: find the combo entry by exact name, set `chkSpecial.Checked` only when
+  // the mode has an opinion (Switch passes null, so the box is left as it is), then run
+  // UpdateSpecialHandler. The panel itself is features/maid/zones.js and is handed in as a seam, so
+  // what this measures is the command's own three branches.
+  const set = [];
+  const panel = {
+    names: function () { return ['Auto Zone - Ultradage', 'Gramiel P1']; },
+    set: function (zone, wanted) { set.push({ zone: zone, wanted: wanted }); return zone; }
+  };
+  // The seam is the accessor the shell passes, which reads the panel when a command runs.
+  const accessor = { specialHandler: function () { return panel; } };
+  const withPanel = function () { return engine(accessor); };
+
+  await run(withPanel(), 'CmdSpecialHandler', { Zone: 'Auto Zone - Ultradage', Mode: 0 });
+  await run(withPanel(), 'CmdSpecialHandler', { Zone: 'Gramiel P1', Mode: 2 });
+  assert.deepStrictEqual(set, [
+    { zone: 'Auto Zone - Ultradage', wanted: true },
+    { zone: 'Gramiel P1', wanted: null }
+  ], 'Start enables, Stop disables, Switch leaves the box as it was');
+
+  // Stop, and the same panel call with the box turned off.
+  set.length = 0;
+  await run(withPanel(), 'CmdSpecialHandler', { Zone: 'Gramiel P1', Mode: 1 });
+  assert.deepStrictEqual(set, [{ zone: 'Gramiel P1', wanted: false }]);
+
+  // A name the combo does not carry leaves the selection alone, but the reference still changes
+  // the checkbox and runs UpdateSpecialHandler on that existing selection.
+  set.length = 0;
+  const unknown = await run(withPanel(), 'CmdSpecialHandler', { Zone: 'Auto Zone - Utgarde', Mode: 1 });
+  assert.deepStrictEqual(set, [{ zone: 'Auto Zone - Utgarde', wanted: false }],
+    'the stale name still sends Stop to the current selection');
+  assert.ok(unknown.records.some(function (l) { return /existing selection/.test(l); }),
+    'and reports what it affected: ' + unknown.records.join('|'));
+
+  // With no panel wired the command reports that too, rather than looking like it worked.
+  const bare = await run(engine(), 'CmdSpecialHandler', { Zone: 'Gramiel P1', Mode: 0 });
+  assert.ok(bare.records.some(function (l) { return /no auto-zone panel wired/.test(l); }),
+    'a window without the panel says so: ' + bare.records.join('|'));
 });
 
 test('every loader name these commands ask for is one the surface answers', () => {

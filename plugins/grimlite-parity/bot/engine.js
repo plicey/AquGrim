@@ -218,7 +218,7 @@ function createEngine(deps) {
 
     /** Bot.GetVar: the key inside the brackets, with quotes stripped. */
     function getVar(value) {
-        return String(value).replace(/[\[\]']+/g, '');
+        return String(value).split('[').join('').split(']').join('').split("'").join('');
     }
 
     /**
@@ -1183,7 +1183,7 @@ function createEngine(deps) {
             return undefined;
         },
 
-        CmdYulgar: async function (ctx, command) {
+        CmdYulgar: async function (_ctx, _command) {
             // CmdYulgar.cs: wait for the transfer lock, leave combat, join yulgar's Enter/Spawn if
             // that is not where the player is, walk somewhere random, and stop the bot.
             await waitUntil(async function () {
@@ -1417,6 +1417,10 @@ function createEngine(deps) {
         beep: deps.beep,
         spammer: deps.spammer,
         timers: deps.timers,
+        // The auto-zone panel (#44): CmdSpecialHandler drives the Misc 2 combo through this, the
+        // same way SetSpecialHandlerFromScript does. Absent in a build without the Maid's panel,
+        // in which case the command reports that rather than appearing to switch a handler.
+        specialHandler: deps.specialHandler,
         sleep: sleep,
         log: log,
         logDebug: deps.logDebug,

@@ -164,6 +164,10 @@ async function activate(host) {
     // further down, beside its own window; the holder exists so the two can be wired in either
     // order without one reaching into the other's binding before it is set.
     let optionsFeature = null;
+    // The auto-zone panel (#44), which lives with the Maid window beside its own handlers and is
+    // read by CmdSpecialHandler through the accessor below. Held here for the same reason as the
+    // options feature: the engine is built before the window that owns it.
+    let zonePanel = null;
     // What the bot session reads the game through. The session wants both halves of the bridge:
     // the platform's raw channel (`attach()`, `call(name, args)` - #28) for the two paths it owns
     // itself, and this plugin's game access (bridge.js) for the loader's own helper names (#48),
@@ -201,6 +205,10 @@ async function activate(host) {
             },
             state: function () { return optionsFeature ? optionsFeature.state() : {}; }
         },
+        // CmdSpecialHandler drives the Bot Manager's Misc 2 "Auto Zone" combo (#44) through the
+        // handler panel, which the Maid window owns and which is built below. An accessor rather
+        // than the panel itself for the same reason as `options` above: the engine is made first.
+        specialHandler: function () { return zonePanel; },
         // The item and quest commands' own access (#39), built per window from the same game
         // access the session uses. The frames the drop and ghost-accept paths need are a raw send
         // through the relay, which is the same packet-send permission the packet tools hold.
@@ -414,6 +422,10 @@ async function activate(host) {
         }
     });
     maid.attach();
+    // The handlers the auto-zone combo switches on, handed to CmdSpecialHandler through the seam
+    // the engine was given above. The Maid's own boxes (#44's five config keys) travel with it:
+    // the phrase list and the per-boss mode are the form's, and the handlers read them live.
+    zonePanel = maid.zones;
 
     host.registerLocales({
         'en-US': require('./locales/en-US.js')

@@ -54,7 +54,9 @@ function fakeMaid(game, options) {
     sleep: function () { return Promise.resolve(); },
     send: function (frame) { sent.push(frame); return opts.writes === false ? false : true; },
     engineActivity: opts.engineActivity,
-    engineRunning: opts.engineRunning
+    engineRunning: opts.engineRunning,
+    specialsHolding: opts.specialsHolding,
+    taunt: opts.taunt
   });
   return { maid: maid, logs: logs, sent: sent };
 }
@@ -631,4 +633,119 @@ test('a party command the game refuses answers with the reason instead of a valu
   const half = await partial.party.run(party.parseLine('.turnin 1,2'));
   assert.strictEqual(half.ok, false);
   assert.deepStrictEqual(half.completed, []);
+});
+test('the priority walk steps aside while a per-boss handler holds the target', async () => {
+  // The reference's own first line in doPriorityAttack (MaidRemake.cs:838-840): `if (balance ||
+  // locktarget) return;`. `locktarget` belongs to two of the per-boss handlers (#44) - the
+  // counter-attack warning and Gramiel's drain - and `balance` to the crystal-HP walk. The walk
+  // therefore has to ask the handler half before it attacks anything, and the two flags are read
+  // through a seam because the scheduler does not own them.
+  const game = fakeGame(standing({
+    HasTarget: false,
+    AttackMonster: true,
+    'world.myAvatar.target.objData.strMonName': '',
+    'world.myAvatar.target.objData.MonMapID': ''
+  }));
+  let holding = false;
+  const fake = fakeMaid(game, {
+    config: config.stateFrom({
+      RelogDelay: 0, AttackPriority: true, AttackPriorityMonster: 'id.3,Boss', SkillDelay: 0
+    }),
+    specialsHolding: function () { return holding; }
+  });
+  fake.maid.setTarget('master');
+  fake.maid.setEnabled(true);
+  await settledTicks(fake);
+  assert.strictEqual(game.count('AttackMonsterByMonMapId'), 1,
+    'with nothing holding, the walk runs: its own first entry is attacked');
+
+  // The drain holds the target on Gramiel for four seconds; while it does, the walk is silent.
+  // (The wildcard below is the loop's own separate line in the reference, deliberately outside
+  // doPriorityAttack, so it is not what this guard covers - and during a real drain the held
+  // target means it does not fire anyway.)
+  holding = true;
+  game.calls.length = 0;
+  await settledTicks(fake);
+  assert.strictEqual(game.count('AttackMonsterByMonMapId'), 0,
+    'while the target is held the walk does not run: the early return is before the list');
+  assert.deepStrictEqual(game.calls.filter(function (one) {
+    return one.name === 'AttackMonster';
+  }).map(function (one) { return one.args[0]; }).filter(function (name) { return name === 'Boss'; }),
+    [], 'nor does it reach the list\'s own later entries');
+});
+test('the fighting pass starts the tc; cycle the reference starts there', async () => {
+  // MaidRemake.cs:294-296, inside the loop's own `if (Player.HasTarget)` branch, in this order:
+  // `await SpecialCombo(); if (tauntTask == null) taunt();`. `taunt()` is the only thing that
+  // reads a `tc;` SpecialMsg and starts the rotation, so a fighting pass that never reaches it
+  // leaves the whole taunt-cycle feature unreachable however complete its own body is.
+  const game = fakeGame(standing({
+    HasTarget: true, IsMonsterAvailable: true, AttackMonster: true,
+    SkillAvailable: 0, UseSkill: true
+  }));
+  const calls = [];
+  const fake = fakeMaid(game, {
+    config: config.stateFrom({ RelogDelay: 0, SkillDelay: 0, SpecialMsg: 'tc;2;Gramiel;12' }),
+    taunt: function () { calls.push('taunt'); return { ok: true, running: true }; }
+  });
+  fake.maid.setTarget('master');
+  fake.maid.setEnabled(true);
+  await settledTicks(fake);
+  assert.deepStrictEqual(calls, ['taunt'],
+    'the fighting pass asks the taunt once, the way the reference does while no cycle runs');
+  await fake.maid.stop();
+});
+
+test('a SpecialAct waits for a target and suppresses AttackPriority until its forced cast', async () => {
+  const game = fakeGame(standing({
+    HasTarget: false, IsMonsterAvailable: true, AttackMonster: true,
+    AttackMonsterByMonMapId: true, SkillAvailable: 0, UseSkill: true, ForceUseSkill: true
+  }));
+  const fake = fakeMaid(game, {
+    config: config.stateFrom({
+      RelogDelay: 0, SkillDelay: 0, AttackPriority: true,
+      AttackPriorityMonster: 'Boss', SkillList: '1'
+    })
+  });
+  fake.maid.setTarget('master');
+  fake.maid.setEnabled(true);
+  await fake.maid.tick();
+  fake.maid.armSkill('5');
+  await fake.maid.tick();
+  const bossAttacks = function () {
+    return game.calls.filter(function (one) {
+      return one.name === 'AttackMonster' && one.args[0] === 'Boss';
+    }).length;
+  };
+  assert.strictEqual(game.count('ForceUseSkill'), 0,
+    'the phrase action remains armed until the reference has a target');
+  assert.strictEqual(bossAttacks(), 0,
+    'AttackPriority is skipped while forceSkill is waiting to be spent');
+
+  game.set('HasTarget', true);
+  await fake.maid.tick();
+  assert.strictEqual(bossAttacks(), 0,
+    'a pending forced action still suppresses the configured priority walk');
+  assert.strictEqual(game.count('ForceUseSkill'), 2,
+    'waitSkill forces once, then retries after twenty cooldown checks');
+  await fake.maid.stop();
+});
+
+test('the existing Maid scheduler services active Misc 2 handlers without enabling Maid mode', async () => {
+  let active = true;
+  let passes = 0;
+  const maid = maidModel.createMaid({
+    game: fakeGame(standing()),
+    sleep: function () { return Promise.resolve(); },
+    auxiliaryActive: function () { return active; },
+    auxiliaryTick: function () {
+      passes++;
+      active = false;
+      return Promise.resolve({ ok: true });
+    }
+  });
+  assert.strictEqual(maid.state().enabled, false, 'the ordinary Maid checkbox stays off');
+  maid.wake();
+  await maid.idle();
+  assert.strictEqual(passes, 1, 'one existing-scheduler pass services the active handler');
+  assert.strictEqual(maid.state().enabled, false, 'handler service does not start Maid follow/combat');
 });
