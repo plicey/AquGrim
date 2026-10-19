@@ -17,22 +17,27 @@
 
   <main>
     <section id="left">
-      <div class="selector">
-        <select id="cbLists"></select>
-        <label class="tick"><input type="checkbox" id="chkAll"> all</label>
-        <button id="btnUp" title="Move up (Ctrl+Up)">&#9650;</button>
-        <button id="btnDown" title="Move down (Ctrl+Down)">&#9660;</button>
-        <button id="btnClear">Clear</button>
-      </div>
       <ul id="list" tabindex="0"></ul>
-      <div class="selector">
-        <input type="text" id="txtSearchCmd" placeholder="Command Text">
-        <button id="btnSearchCmd">Find</button>
-      </div>
-      <div class="selector">
-        <label class="tick"><input type="checkbox" id="chkEnable"> Enable Bot</label>
-        <div class="grow"></div>
-        <button id="btnRemove">Remove</button>
+      <div id="leftBottom">
+        <div id="listControls">
+          <div id="moveRow">
+            <button id="btnDown" title="Move down (Ctrl+Down)">&#9660;</button>
+            <button id="btnUp" title="Move up (Ctrl+Up)">&#9650;</button>
+          </div>
+          <div id="clearRow">
+            <button id="btnClear">Clear</button>
+            <label class="tick"><input type="checkbox" id="chkAll"> all</label>
+          </div>
+          <select id="cbLists"></select>
+        </div>
+        <div id="editControls">
+          <div id="searchRow">
+            <input type="text" id="txtSearchCmd" placeholder="Command Text">
+            <button id="btnSearchCmd">Find</button>
+          </div>
+          <button id="btnRemove">Remove</button>
+          <label class="tick"><input type="checkbox" id="chkEnable"> Enable Bot</label>
+        </div>
       </div>
     </section>
 

@@ -20,8 +20,15 @@ main { flex: 1; display: flex; min-height: 0; }
 #right { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #right[hidden] { display: none; }
 
-.selector { display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-wrap: wrap; }
-.selector select { flex: 1; }
+#leftBottom { display: flex; border-top: 1px solid #232323; background: #24242e; }
+#listControls { width: 44%; display: flex; flex-direction: column; gap: 3px; padding: 4px; border-right: 1px solid #1c1c1c; }
+#editControls { flex: 1; display: flex; flex-direction: column; gap: 3px; padding: 4px; }
+#moveRow, #clearRow, #searchRow { display: flex; align-items: center; gap: 3px; }
+#moveRow button { flex: 1; }
+#clearRow button { flex: 0 0 52px; }
+#clearRow .tick { margin-left: auto; }
+#searchRow input { flex: 1; min-width: 0; }
+#cbLists, #editControls > #btnRemove { width: 100%; }
 
 #list {
   flex: 1; margin: 0; padding: 4px; list-style: none; overflow: auto;
@@ -44,7 +51,7 @@ main { flex: 1; display: flex; min-height: 0; }
 
 #tabHost { flex: 1; overflow: auto; padding: 8px; border-top: 1px solid #2c2c2c; }
 .tabpage { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
-.tabpage.fixed-layout { display: block; }
+.tabpage.fixed-layout { display: block; margin: 0 auto; }
 .tabpage.fixed-layout, .tabpage.fixed-layout * { box-sizing: border-box; }
 .tabpage.fixed-layout fieldset.group { display: block; }
 .tabpage.fixed-layout .sheet-button { padding: 1px 3px; }
@@ -71,11 +78,8 @@ fieldset.group > legend { color: #9f9f9f; padding: 0 4px; font-size: 11px; }
 .sheet-tree li.bot > span { color: #a8d8a8; }
 .sheet-tree .loading { color: #6d6d6d; font-style: italic; }
 .sheet-rtf { width: 100%; min-height: 80px; white-space: pre-wrap; color: #d6d6d6; background: #161616; border: 1px solid #242424; padding: 6px; }
-/* panel5: rtbInfo fills the page and "Test here" sits over its bottom-left corner. */
-#panel5 { position: relative; min-height: 292px; width: 100%; }
-#panel5 .info-pane { position: absolute; inset: 0; min-height: 0; }
-textarea.sheet-rtf.test-rtf { position: absolute; left: 0; bottom: 0; z-index: 1; width: 72px; min-height: 22px; height: 22px; resize: vertical; }
-.sheet-rtf.info-pane { flex: 1 1 auto; min-height: 0; overflow: auto; font-family: "Microsoft Sans Serif", sans-serif; font-size: 19px; font-weight: 700; }
+textarea.sheet-rtf.test-rtf { min-height: 22px; resize: vertical; }
+.sheet-rtf.info-pane { overflow: auto; font-family: "Microsoft Sans Serif", sans-serif; font-size: 19px; font-weight: 700; }
 .sheet-rtf.info-pane .info-link { color: #7fb3ff; }
 
 input[type=text], input[type=number], select, textarea {
