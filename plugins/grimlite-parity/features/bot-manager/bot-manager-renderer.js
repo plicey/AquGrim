@@ -179,7 +179,13 @@
       });
       return node;
     case 'rtf':
-      node = el('div', 'sheet-rtf', entry.text || '');
+      if (entry.editable) {
+        node = el('textarea', 'sheet-rtf test-rtf');
+        node.placeholder = entry.text || '';
+      } else {
+        node = el('div', 'sheet-rtf' + (entry.id === 'rtbInfo' ? ' info-pane' : ''));
+        if (entry.text) node.textContent = entry.text;
+      }
       node.id = entry.id;
       return node;
     case 'tree':
@@ -523,6 +529,13 @@
   // ---------------------------------------------------------------- buttons
 
   function press(id, modifiers) {
+    // ">" is the local half of the Map tab's cell/pad pair; it needs no game read.
+    if (id === 'button2') {
+      setValue('txtCell', value('txtJoinCell'));
+      setValue('txtPad', value('txtJoinPad'));
+      setStatus('Copied join cell and pad to Cell and Pad.', false);
+      return Promise.resolve(null);
+    }
     // Add Skill Set writes a label into the Skills list, not the Commands list the page is
     // usually showing. Say where it went so the reference's split workflow is not a silent click.
     if (id === 'btnAddSkillSet' || id === 'btnUseSkillSet') {
@@ -773,7 +786,31 @@
 
   function drawInfo() {
     var info = document.getElementById('rtbInfo');
-    if (info && state && state.description) info.textContent = String(state.description);
+    if (!info) return;
+    var description = state && state.description ? String(state.description) : '';
+    info.textContent = description ? richText(description) :
+      'This is where information about a bot will be shown in RichTextFormat';
+  }
+
+  // A small RTF-to-text view. The reference hands rtbInfo.Rtf to WinForms, which Chromium does
+  // not have; stripping the control words gives the same readable description and lets the Test
+  // here box preview RTF without a converter dependency.
+  function richText(value) {
+    var text = String(value || '');
+    if (!/^\s*\{\\rtf/i.test(text)) return text;
+    return text
+      .replace(/\\u(-?\d+)\??/g, function (_match, code) {
+        var n = Number(code);
+        return String.fromCharCode((n + 65536) % 65536);
+      })
+      .replace(/\\par[d]?\b/g, '\n')
+      .replace(/\\line\b/g, '\n')
+      .replace(/\\tab\b/g, '\t')
+      .replace(/\\'[0-9a-f]{2}/gi, '')
+      .replace(/\\[a-zA-Z]+-?\d* ?/g, '')
+      .replace(/[{}]/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   // ---------------------------------------------------------------- dialogs
@@ -1191,6 +1228,14 @@
     wireStatements();
     wireBoosts();
     wireSaved();
+    var testInfo = document.getElementById('richTextBox2');
+    if (testInfo && !testInfo.dataset.wired) {
+      testInfo.dataset.wired = '1';
+      testInfo.addEventListener('input', function () {
+        var info = document.getElementById('rtbInfo');
+        if (info) info.textContent = richText(testInfo.value);
+      });
+    }
     var special = document.getElementById('chkSpecial');
     if (special && !special.dataset.wired) {
       special.dataset.wired = '1';

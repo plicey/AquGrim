@@ -207,10 +207,6 @@ test('a bridge that cannot answer at all says so instead of reading as empty', a
 test('a control that needs the reference loader names the exact helper call it waits for', async () => {
   const feature = window();
   const expected = {
-    btnWalkCur: 'Position',
-    btnCellSwap: 'RoomNumber',
-    btnSetSpawn2: 'SetSpawnPoint',
-    btnReloadMap: 'ReloadMap',
     btnHideLoading: 'HideConnMC',
     btnSetFPS: 'SetFPS'
   };
@@ -230,4 +226,29 @@ test('the sheet hands the page the game controls and their reasons, so none is a
     assert.ok(sheet.gameButtons.indexOf(id) !== -1, id + ' travels with the sheet');
   });
   assert.ok(RENDERER.indexOf('gameButtons') !== -1, 'the page reads that list');
+});
+
+test('loader-backed controls act through the loader surface instead of reporting a reason', async () => {
+  const calls = [];
+  const feature = window({
+    loaderCall: function (name, args) {
+      calls.push([name, args || []]);
+      if (name === 'Position') return Promise.resolve([12, 34]);
+      if (name === 'Map') return Promise.resolve('yulgar');
+      if (name === 'RoomNumber') return Promise.resolve('1');
+      return Promise.resolve(true);
+    }
+  });
+
+  const walked = await feature.handle('botManagerGame', null, ['btnWalkCur', {}]);
+  assert.deepStrictEqual(walked.values, { x: 12, y: 34 });
+
+  const swapped = await feature.handle('botManagerGame', null,
+    ['btnCellSwap', { fields: { txtCell: 'Enter', txtPad: 'Spawn' } }]);
+  assert.deepStrictEqual(swapped.values, { join: 'yulgar-1', cell: 'Enter', pad: 'Spawn' });
+
+  assert.strictEqual((await feature.handle('botManagerGame', null, ['btnSetSpawn2', {}])).ok, true);
+  assert.strictEqual((await feature.handle('botManagerGame', null, ['btnReloadMap', {}])).ok, true);
+  assert.ok(calls.some(function (one) { return one[0] === 'SetSpawnPoint'; }));
+  assert.ok(calls.some(function (one) { return one[0] === 'ReloadMap'; }));
 });

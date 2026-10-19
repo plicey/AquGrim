@@ -673,7 +673,17 @@ function createBotManager(deps) {
      * rest report the helper they wait for, so a press is never a silent no-op.
      */
     function gameAction(id, modifiers) {
-        if (GAME_ACTIONS[id]) return GAME_ACTIONS[id]((modifiers && modifiers.fields) || {});
+        if (GAME_ACTIONS[id]) {
+            let answer;
+            try {
+                answer = GAME_ACTIONS[id]((modifiers && modifiers.fields) || {});
+            } catch (error) {
+                return Promise.resolve({ ok: false, error: (error && error.message) || String(error) });
+            }
+            return Promise.resolve(answer).catch(function (error) {
+                return { ok: false, error: (error && error.message) || String(error) };
+            });
+        }
         const spec = gameReads.GAME_BUTTONS[id];
         if (!spec) return Promise.resolve({ ok: false, error: 'not a game control: ' + id });
         const variant = gameReads.variantOf(spec, modifiers);
@@ -709,6 +719,45 @@ function createBotManager(deps) {
         },
         btnGetInfo: function () { return readGame(['cell', 'map', 'pad']); },
         cbBoosts: function () { return readServerUse(); },
+
+        // These loader helpers were already implemented by the bridge after game-reads.js was
+        // written. Route them through the same loader surface instead of refusing them.
+        btnWalkCur: function () {
+            return callLoader('Position').then(function (position) {
+                return { ok: true, values: { x: position && position[0], y: position && position[1] } };
+            });
+        },
+        btnCellSwap: function (fields) {
+            return Promise.all([callLoader('Map'), callLoader('RoomNumber')]).then(function (answers) {
+                return {
+                    ok: true,
+                    values: {
+                        join: String(answers[0] || '') + '-' + String(answers[1] || ''),
+                        cell: fields.txtCell,
+                        pad: fields.txtPad
+                    }
+                };
+            });
+        },
+        btnSetSpawn2: function () {
+            return callLoader('SetSpawnPoint').then(function () {
+                return { ok: true, message: 'spawn point set' };
+            });
+        },
+        btnReloadMap: function () {
+            return callLoader('ReloadMap').then(function () {
+                return { ok: true, message: 'map reload requested' };
+            });
+        },
+        btnSetLevel: function (fields) {
+            const level = String(fields.tbLevel === undefined ? '' : fields.tbLevel).trim();
+            if (!/^[0-9]+$/.test(level)) return { ok: false, error: 'type a level number first' };
+            const packet = '{"t":"xt","b":{"r":-1,"o":{"cmd":"levelUp","intExpToLevel":"2000","intLevel":' + level + '}}}';
+            return callChannel('sendClientPacket', [packet, 'xt']).then(function (answer) {
+                return answer.ok ? { ok: true, message: 'level packet sent' }
+                    : { ok: false, error: answer.error };
+            });
+        },
 
         // btnQAddToWhitelist_Click: load the quest, then add its rewards and/or requirements to
         // Drops. The quest row is the loader's GetQuestTree row, the same one the item commands use.
@@ -771,6 +820,19 @@ function createBotManager(deps) {
         btnSetChaos: function () { return sendServerFrame('%xt%zm%updateQuest%218701%41%3%'); },
         btnSetUndecided: function () { return sendServerFrame('%xt%zm%updateQuest%218701%41%5%'); }
     };
+
+    /** The field bindings for the action rows above; the page's read-fill path uses these. */
+    const ACTION_ROWS = {
+        btnWalkCur: { plain: { numWalkX: 'x', numWalkY: 'y' } },
+        btnCellSwap: { plain: { txtJoin: 'join', txtJoinCell: 'cell', txtJoinPad: 'pad' } }
+    };
+
+    function callLoader(name, args) {
+        if (typeof deps.loaderCall !== 'function') {
+            return Promise.reject(new Error('this window has no loader surface'));
+        }
+        return Promise.resolve(deps.loaderCall(name, args || []));
+    }
 
     function setAccess(level) {
         const colour = level === 'Member' ? 9229823 : level === 'Moderator' ? 16698168 : 16777215;
@@ -935,7 +997,7 @@ function createBotManager(deps) {
                     }, {}),
                     // The reachable controls' own field branches, so the page fills the boxes the
                     // reference fills rather than guessing at them.
-                    gameRows: gameReads.ids().reduce(function (out, id) {
+                    gameRows: Object.assign(gameReads.ids().reduce(function (out, id) {
                         const spec = gameReads.GAME_BUTTONS[id];
                         if (spec.reads) {
                             out[id] = {};
@@ -944,7 +1006,7 @@ function createBotManager(deps) {
                             });
                         }
                         return out;
-                    }, {}),
+                    }, {}), ACTION_ROWS),
                     settings: actions.SETTINGS,
                     numbers: actions.NUMBERS,
                     optionsRunning: optionsRunning()

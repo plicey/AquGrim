@@ -66,6 +66,8 @@ fieldset.group > legend { color: #9f9f9f; padding: 0 4px; font-size: 11px; }
 .sheet-tree li.bot > span { color: #a8d8a8; }
 .sheet-tree .loading { color: #6d6d6d; font-style: italic; }
 .sheet-rtf { width: 100%; min-height: 80px; white-space: pre-wrap; color: #d6d6d6; background: #161616; border: 1px solid #242424; padding: 6px; }
+textarea.sheet-rtf.test-rtf { width: 120px; min-height: 22px; height: 22px; resize: vertical; }
+.sheet-rtf.info-pane { flex: 1 1 auto; min-height: 0; overflow: auto; }
 
 input[type=text], input[type=number], select, textarea {
   background: #1b1b1b; color: #e6e6e6; border: 1px solid #2c2c2c; border-radius: 4px;

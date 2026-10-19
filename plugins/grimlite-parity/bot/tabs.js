@@ -1848,6 +1848,7 @@ const TABS = [
           {
             id:  "richTextBox2",
             kind:  "rtf",
+            editable: true,
             text:  "Test here"
           },
           {
