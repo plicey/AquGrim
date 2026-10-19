@@ -25,6 +25,8 @@
   var boosts = [];
   // The Bots tab's tree: its root, count and one level of nodes (UpdateTree's own state).
   var botTreeState = null;
+  // The tab's own Location/Size table while its page is being built (tabs.js's Combat layout).
+  var currentLayout = null;
   var list = document.getElementById('list');
   var tabHost = document.getElementById('tabHost');
 
@@ -110,6 +112,21 @@
   // ---------------------------------------------------------------- the sheet
 
   function control(entry, groupName) {
+    var node = makeControl(entry, groupName);
+    var position = currentLayout && entry.id ? currentLayout.positions[entry.id] : null;
+    if (position) {
+      node.style.position = 'absolute';
+      node.style.left = position[0] + 'px';
+      node.style.top = position[1] + 'px';
+      node.style.width = position[2] + 'px';
+      node.style.height = position[3] + 'px';
+      // The reference's group children are positioned from the group's client area.
+      if (entry.kind === 'group') node.style.padding = '0';
+    }
+    return node;
+  }
+
+  function makeControl(entry, groupName) {
     var node;
     switch (entry.kind) {
     case 'group':
@@ -258,7 +275,15 @@
     });
     tabHost.textContent = '';
     var page = el('div', 'tabpage');
+    currentLayout = tab.layout || null;
+    if (currentLayout) {
+      page.classList.add('fixed-layout');
+      page.style.position = 'relative';
+      page.style.width = currentLayout.width + 'px';
+      page.style.height = currentLayout.height + 'px';
+    }
     (tab.controls || []).forEach(function (entry) { page.appendChild(control(entry)); });
+    currentLayout = null;
     tabHost.appendChild(page);
     index(tab.controls);
     applyConfiguration();

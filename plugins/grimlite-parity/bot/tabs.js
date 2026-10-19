@@ -8,10 +8,70 @@
 // (the six list views, the list selector, Remove / up / down / Clear / all, the search box, the
 // Enable Bot tickbox), which the reference builds in splitContainer1.
 
+// BotManager.Designer.cs tabCombat: every control at its own Location/Size, so the page keeps
+// Grimlite's arrangement instead of reflowing the groups into a different order. Positions are
+// relative to the tab page for direct children and to their group for the nested ones.
+const COMBAT_LAYOUT = {
+  width: 544, height: 298,
+  positions: {
+    darkGroupBox20: [360, 6, 136, 97],
+    txtSkillSet: [7, 17, 118, 20],
+    btnAddSkillSet: [7, 40, 118, 22],
+    btnUseSkillSet: [7, 64, 118, 22],
+    darkGroupBox19: [360, 109, 136, 99],
+    btnRest: [6, 15, 44, 22],
+    btnRestF: [53, 15, 71, 22],
+    label12: [4, 40, 37, 13],
+    chkHP: [8, 56, 56, 17],
+    numRest: [73, 52, 34, 20],
+    label10: [109, 58, 15, 13],
+    chkMP: [8, 73, 57, 17],
+    numRestMP: [73, 72, 34, 20],
+    label11: [109, 78, 15, 13],
+    darkGroupBox17: [6, 57, 152, 163],
+    rbItems: [6, 19, 50, 17],
+    rbTemp: [61, 19, 79, 17],
+    chkAddToWhiteList: [6, 42, 99, 17],
+    txtKillFMon: [6, 68, 140, 20],
+    txtKillFItem: [6, 90, 140, 20],
+    txtKillFQ: [6, 112, 140, 20],
+    btnKillF: [6, 136, 140, 22],
+    darkGroupBox18: [164, 141, 186, 93],
+    txtMonsterSkillCmd: [8, 19, 110, 20],
+    cbSkillCmdWait: [124, 20, 48, 17],
+    numSkillCmd: [8, 42, 44, 20],
+    btnSkillCmd: [55, 42, 63, 20],
+    chkForceSkill: [124, 43, 53, 17],
+    btnStopAttack: [8, 65, 78, 22],
+    btnLeaveCombat: [89, 65, 88, 22],
+    boxSkillSet: [164, 6, 186, 128],
+    numSkill: [9, 20, 44, 20],
+    btnAddSkill: [54, 20, 58, 20],
+    btnAllSkill: [114, 20, 29, 20],
+    btnAddSafe: [9, 43, 66, 22],
+    chkSafeMp: [113, 46, 42, 17],
+    label17: [78, 48, 34, 13],
+    cbSafeType: [9, 71, 88, 21],
+    numSafe: [100, 71, 34, 20],
+    label2: [135, 77, 15, 13],
+    label13: [9, 102, 54, 13],
+    numSkillD: [65, 99, 52, 20],
+    darkLabel7: [117, 105, 20, 13],
+    txtMonster: [10, 5, 143, 20],
+    btnKill: [10, 29, 70, 22],
+    btnAttack: [83, 29, 70, 22],
+    chkSkillCD: [6, 254, 144, 17],
+    chkExitRest: [244, 254, 148, 17],
+    chkAllSkillsCD: [6, 278, 165, 17],
+    chkExistQuest: [244, 278, 197, 17]
+  }
+};
+
 const TABS = [
   {
     id:  "combat",
     title:  "Combat",
+    layout:  COMBAT_LAYOUT,
     controls:  [
       {
         id:  "darkGroupBox20",

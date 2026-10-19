@@ -85,6 +85,18 @@ test('each tab holds the controls the reference puts in it', () => {
   assert.ok(/once/i.test(find('btnRest').title), 'Rest is the one-shot command');
   assert.ok(/full/i.test(find('btnRestF').title), 'Rest fully is the full-rest command');
 
+  // The Combat page keeps the designer's coordinates for every control, not just the groups.
+  const layoutTab = tabs[0];
+  assert.deepStrictEqual([layoutTab.layout.width, layoutTab.layout.height], [544, 298]);
+  const missing = [];
+  (function walk(list) {
+    (list || []).forEach(function (control) {
+      if (control.id && !layoutTab.layout.positions[control.id]) missing.push(control.id);
+      walk(control.children);
+    });
+  })(combat.controls);
+  assert.deepStrictEqual(missing, [], 'these Combat controls have no reference position');
+
   assert.deepStrictEqual(find('cbCategories').options,
     ['Aura', 'Item', 'This player', 'Player', 'Map', 'Monster', 'Quest', 'Misc']);
   assert.deepStrictEqual(find('lstLogText').options.slice(0, 3), ['{USERNAME}', '{MAP}', '{GOLD}']);
