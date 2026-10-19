@@ -138,6 +138,7 @@ function createMaid(deps) {
     // the per-boss half (#44), which owns the SpecialMsg box and the cycle's own token. Injected
     // for the same reason the two run locks are: the scheduler does not own that state.
     const taunt = typeof deps.taunt === 'function' ? deps.taunt : function () { return null; };
+    const specialCombo = typeof deps.specialCombo === 'function' ? deps.specialCombo : function () { return false; };
     // Called once per loop pass, so the window can show a state that changes on its own (the
     // reference's own window is repainted by its loop for the same reason). Settable after the
     // fact, because the window that watches it is built around this scheduler.
@@ -357,12 +358,11 @@ function createMaid(deps) {
             hasTarget = asBool(await call('HasTarget')) === true;
         }
 
-        // The reference's own pair, in its own order (MaidRemake.cs:294-296): `await SpecialCombo();
-        // if (tauntTask == null) taunt();`, inside the same `if (Player.HasTarget)` branch. Only the
-        // second half is ported here - SpecialCombo is the class-preset half and #43 read its own
-        // part of it - and the guard is the rotation's own: `taunt()` starts nothing while a cycle
-        // it started is still running, so this asks every pass and only the first one starts one.
-        if (hasTarget) taunt();
+        // MaidRemake.cs:294-296 awaits SpecialCombo before asking taunt() inside HasTarget.
+        if (hasTarget) {
+            if (await specialCombo()) await waitSkill('5');
+            taunt();
+        }
 
         // The reference's own forced cast (MaidRemake.cs:596-610): while `forceSkill` stands it
         // waits the skill out, forces it, clears the flag and pauses, instead of running the list.

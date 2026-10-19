@@ -365,6 +365,40 @@ test('a selected Speaker role uses the shared scheduler while Maid mode stays of
     'stopping the selected handler releases its frame subscription and scheduler work');
 });
 
+test('the Auto Potion mode reaches waitSkill through the wired Maid scheduler', async () => {
+  const calls = [];
+  let skillReads = 0;
+  const values = {
+    IsLoggedIn: true, Map: 'yulgar', Cell: 'Enter', Health: 100, HealthMax: 100,
+    PlayersInMap: ['master'], GetCellPlayers: true, HasTarget: true,
+    GetInventoryItems: [{ sName: 'Felicitous Philtre', bEquip: 1, iQty: 1 }],
+    UserID: 7, ForceUseSkill: true, UseSkill: true,
+    SkillAvailable: function () { return ++skillReads === 1 ? 0 : 1; }
+  };
+  const game = {
+    loaderCall: function (name, args) {
+      calls.push({ name: name, args: args || [] });
+      const value = values[name];
+      return Promise.resolve(typeof value === 'function' ? value(args) : value);
+    },
+    read: function () { return Promise.resolve({ value: null }); },
+    sendServerFrame: function () { return true; },
+    sleep: function () { return Promise.resolve(); }
+  };
+  const made = maidWindow.createFromHost(fakeZoneHost(), { game: game, party: null });
+  made.window.set({ config: {
+    UltraBossExtra: maidZones.MODES.indexOf('Auto Potion'), RelogDelay: 0, SkillDelay: 1
+  } });
+  made.maid.setTarget('master');
+  made.maid.setEnabled(true);
+  await made.maid.tick();
+  await made.maid.tick();
+  assert.ok(calls.some(function (one) { return one.name === 'GetInventoryItems'; }));
+  assert.ok(calls.some(function (one) { return one.name === 'ForceUseSkill' && one.args[0] === '5'; }),
+    'an equipped, stocked potion without its aura forces skill 5');
+  await made.maid.stop();
+});
+
 test('the Maid view exposes per-boss modes and applies their reference defaults', async () => {
   const made = maidWindow.createFromHost(fakeZoneHost());
   assert.deepStrictEqual(made.window.view().modes, maidZones.MODES,

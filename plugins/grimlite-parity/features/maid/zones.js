@@ -67,6 +67,7 @@ const MODES = [
     'Gramiel R1',
     'Gramiel R2'
 ];
+const AUTO_POTION_NAMES = ['Felicitous Philtre', 'Potent Malice', 'Potent Honor'];
 
 // What picking a mode writes into the form (MaidRemake.cs:1269-1320, cmbUltraBoss_SelectedIndex-
 // Changed): the attack-priority list, the phrase list and the forced skill. The mode itself is only
@@ -321,11 +322,6 @@ const SPEAKER_TAUNT_GAP_MS = 30;
 // per Maid pass instead of adding HandlerUltraSpeakerMechanics' separate 50 ms timer.
 const GRAMIEL_POLL_MS = { orb: 1000, absent: 2000, grace: 1000, taunt: 5000 };
 
-// How many passes a tc; cycle runs before it stops itself. The reference's own loop is open-ended
-// (its CancellationToken comes from the form), so this is the one bound this build adds: at the
-// shipped default line `tc;2;*;12` it is six seconds per pass for over eleven minutes of rotation.
-const TAUNT_CYCLE_MAX_PASSES = 120;
-
 // The game's own map-load flag. Not a loader name: the surface's MapLoadComplete row is a reason
 // row (ticket #41 owns the display-list half) while world.mapLoadInProgress is the half a reload
 // actually trips, which is the path bot/session.js reads for the same reason.
@@ -334,6 +330,7 @@ const MAP_LOADING_PATH = 'world.mapLoadInProgress';
 // The field an attack by MonMapID is confirmed against, and the target's own name - the two the
 // reference's doPriorityAttack reads off objData.
 const TARGET_ID_PATH = 'world.myAvatar.target.objData.MonMapID';
+const PLAYER_USERNAME_PATH = 'world.myAvatar.objData.strUsername';
 
 function message(error) {
     return (error && error.message) || String(error);
@@ -452,6 +449,8 @@ function createZoneHandlers(deps) {
     const sleep = typeof deps.sleep === 'function'
         ? deps.sleep
         : function (ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); };
+    const schedule = typeof deps.setTimeout === 'function' ? deps.setTimeout : setTimeout;
+    const clearTimer = typeof deps.clearTimeout === 'function' ? deps.clearTimeout : clearTimeout;
     const random = typeof deps.random === 'function' ? deps.random : Math.random;
     const store = deps.auras || auras.createAuraStore();
     const configOf = typeof deps.config === 'function' ? deps.config : function () { return {}; };
@@ -562,6 +561,37 @@ function createZoneHandlers(deps) {
     function configured(key) {
         const value = (configOf() || {})[key];
         return value === undefined || value === null ? DESIGNER[key] : value;
+    }
+
+    function defaultCycleOrder() {
+        return Promise.all([attempt('PlayersInMap'), readPath(PLAYER_USERNAME_PATH)]).then(function (answers) {
+            const username = String(answers[1].value || '').toLowerCase();
+            const players = listValue(answers[0].value).map(function (one) {
+                return one && typeof one === 'object' ? (one.strUsername || one.uoName || '') : one;
+            }).map(function (one) { return String(one || '').toLowerCase(); });
+            return players.indexOf(username);
+        });
+    }
+
+    /** SpecialCombo's Auto Potion branch, queried by the Maid's HasTarget pass. */
+    function autoPotionNeeded() {
+        if (Number(configured('UltraBossExtra')) !== MODES.indexOf('Auto Potion')) {
+            return Promise.resolve(false);
+        }
+        return attempt('GetInventoryItems').then(function (answer) {
+            const potion = listValue(answer.value).filter(function (item) {
+                if (!item || typeof item !== 'object') return false;
+                const name = String(item.Name || item.sName || '').toLowerCase();
+                const equipped = item.IsEquipped === undefined ? item.bEquip : item.IsEquipped;
+                const quantity = item.Quantity === undefined ? item.iQty : item.Quantity;
+                return (equipped === true || Number(equipped) === 1) && Number(quantity) >= 1 &&
+                    AUTO_POTION_NAMES.some(function (one) { return name.indexOf(one.toLowerCase()) !== -1; });
+            })[0];
+            if (!potion) return false;
+            const name = String(potion.Name || potion.sName || '').toLowerCase();
+            const aura = name.indexOf('potent') !== -1 ? 'Potent Honor Malice' : 'Felicitous Philtre';
+            return selfStacks(aura).then(function (stacks) { return stacks === 0; });
+        });
     }
 
     // ---------------------------------------------------------------- movement and attacks
@@ -1088,27 +1118,24 @@ function createZoneHandlers(deps) {
      * mode's own counter decides whether this one is its turn, and a hit arms the forced skill
      * SpecialAct names.
      */
-    function onMaidAnims(payload) {
+    async function onMaidAnims(payload) {
         const mode = MODES[Number(configured('UltraBossExtra')) || 0] || MODES[0];
         const phrases = String(configured('SpecialMsg')).toLowerCase()
             .split(',').map(function (one) { return one.trim(); })
             .filter(function (one) { return one !== ''; });
         const anims = animationsOf(payload);
-        return anims.reduce(function (chain, anim) {
-            return chain.then(function (done) {
-                if (done) return done;
-                const hit = phrases.filter(function (phrase) {
-                    return contains(anim.lower, phrase);
-                })[0];
-                if (!hit) return null;
-                return maidBoss(mode, anim).then(function (act) {
-                    if (!act || !act.arm) return null;
-                    const slot = String(configured('SpecialAct'));
-                    if (maid && typeof maid.armSkill === 'function') maid.armSkill(slot);
-                    return { ok: true, mode: mode, phrase: hit, arm: slot };
-                });
-            });
-        }, Promise.resolve(null));
+        const results = [];
+        for (let i = 0; i < anims.length; i++) {
+            const anim = anims[i];
+            const hit = phrases.filter(function (phrase) { return contains(anim.lower, phrase); })[0];
+            if (!hit) continue;
+            const act = await maidBoss(mode, anim);
+            if (!act || !act.arm) continue;
+            const slot = String(configured('SpecialAct'));
+            if (maid && typeof maid.armSkill === 'function') maid.armSkill(slot);
+            results.push({ ok: true, mode: mode, phrase: hit, arm: slot });
+        }
+        return frameResults(results);
     }
 
     /**
@@ -1401,33 +1428,64 @@ function createZoneHandlers(deps) {
         return startCycle(slot, parsed.spec);
     }
 
+    function finishCycle(run) {
+        run.stopped = true;
+        if (run.cancelWait) run.cancelWait();
+        if (cycles.get(run.key) === run) cycles.delete(run.key);
+    }
+
     /**
      * cycleTaunt (MaidRemake.cs:644-671), which is a paced attack loop: while the monster is still
      * there, hand off every `second / cycle` seconds - on the pass where the count reaches zero,
      * attack the monster and reset the count; on every pass, step the count down. The reference
      * debug-logs each pass, so the run keeps its own `log` of the paces it took.
      *
-     * BOUNDED, deliberately: the reference holds a loop open until its token is cancelled, and this
-     * build has no window to cancel it from when the Maid's form is closed mid-run. Each pass
-     * schedules the next and stops at TAUNT_CYCLE_MAX_PASSES, and the run also stops itself the
-     * moment the monster is gone - which is the reference's own while condition.
+     * The reference holds the loop until cancellation or the monster disappears. Its waits use
+     * cancellable timers here so stopping a run releases the outstanding handle immediately.
      */
     function startCycle(key, spec) {
         const cycle = Number(spec.cycle) || 2;
         const second = Number(spec.second) || 12;
         const step = Math.max(0, Math.floor((second / cycle) * 1000));
-        let count = spec.order === -1 ? 0 : spec.order;
-        if (count > cycle) count %= cycle;
-        const run = { key: key, spec: spec, passes: 0, stopped: false, log: [] };
+        let count = spec.order;
+        const run = { key: key, spec: spec, passes: 0, stopped: false, log: [], cancelWait: null };
         cycles.set(key, run);
+        function waitCycle(ms) {
+            return new Promise(function (resolve, reject) {
+                let active = true;
+                let timer;
+                function finish() {
+                    if (!active) return;
+                    active = false;
+                    if (run.cancelWait === cancel) run.cancelWait = null;
+                    resolve();
+                }
+                function cancel() {
+                    if (!active) return;
+                    active = false;
+                    clearTimer(timer);
+                    if (run.cancelWait === cancel) run.cancelWait = null;
+                    resolve();
+                }
+                run.cancelWait = cancel;
+                try {
+                    timer = schedule(finish, ms);
+                } catch (error) {
+                    active = false;
+                    run.cancelWait = null;
+                    reject(error);
+                }
+            });
+        }
         /** One pass of the reference's while body, then the next one `step` ms later. */
         function pass() {
             if (run.stopped || cycles.get(key) !== run) return;
             run.passes++;
             monsterThere(spec.mon).then(function (there) {
+                if (run.stopped || cycles.get(key) !== run) return;
                 if (!there) {
-                    run.stopped = true;
                     run.log.push('monster no longer detected, stopping taunt cycle');
+                    finishCycle(run);
                     return;
                 }
                 if (count <= 0) {
@@ -1445,16 +1503,29 @@ function createZoneHandlers(deps) {
                 return null;
             }).then(function () {
                 count--;
-                if (run.stopped || run.passes >= TAUNT_CYCLE_MAX_PASSES) return;
+                if (run.stopped || cycles.get(key) !== run) return;
                 // The reference's own `await Task.Delay(second / cycle * 1000)`; a zero-length step
-                // would spin, so the next pass is deferred through the injected sleep either way.
-                return sleep(step).then(pass);
+                // still yields through the timer queue, so an open-ended cycle cannot starve it.
+                return waitCycle(step).then(pass);
             }).catch(function (error) {
-                run.stopped = true;
+                finishCycle(run);
                 log('maid: the taunt cycle stopped: ' + message(error));
             });
         }
-        pass();
+        function begin(order) {
+            if (run.stopped || cycles.get(key) !== run) return;
+            count = order;
+            if (count > cycle) count %= cycle;
+            pass();
+        }
+        if (count === -1) {
+            defaultCycleOrder().then(begin).catch(function (error) {
+                finishCycle(run);
+                log('maid: the taunt cycle stopped: ' + message(error));
+            });
+        } else {
+            begin(count);
+        }
         return { ok: true, running: true, spec: spec, step: step, key: key };
     }
 
@@ -1462,9 +1533,18 @@ function createZoneHandlers(deps) {
     function stopCycle(key) {
         const run = cycles.get(key);
         if (!run) return { ok: false, error: 'no taunt cycle is running under ' + key };
-        run.stopped = true;
-        cycles.delete(key);
+        finishCycle(run);
         return { ok: true, stopped: true, passes: run.passes };
+    }
+
+    function frameResults(values) {
+        const results = [];
+        values.forEach(function (value) {
+            if (Array.isArray(value)) {
+                value.forEach(function (one) { if (one !== null && one !== undefined) results.push(one); });
+            } else if (value !== null && value !== undefined) results.push(value);
+        });
+        return results.length > 1 ? results : (results[0] === undefined ? null : results[0]);
     }
 
     // ---------------------------------------------------------------- the dispatcher
@@ -1503,35 +1583,32 @@ function createZoneHandlers(deps) {
         const zone = zoneOf(payload);
         const spec = active === null ? null : SPECS[active];
         const trigger = String(payload.cmd === undefined || payload.cmd === null ? '' : payload.cmd).toLowerCase();
-        if (zone !== null && spec && spec.triggers.indexOf('event') !== -1) return onZone(active, zone);
-
         const anims = animationsOf(payload);
-        let chain = Promise.resolve(null);
-        if (spec && anims.length && spec.triggers.indexOf(trigger) !== -1) {
-            anims.forEach(function (anim) {
-                chain = chain.then(function (done) {
-                    if (done) return done;
-                    if (spec.monId) return onGramiel(active, anim);
-                    if (spec.role) return onSpeaker(active, anim);
-                    if (spec.phrase) return onStarfire(active, anim);
-                    return null;
-                });
-            });
+        const work = [];
+        if (zone !== null && spec && spec.triggers.indexOf('event') !== -1) {
+            work.push(onZone(active, zone));
         }
-        if (!maidOn) return chain;
+        if (spec && anims.length && spec.triggers.indexOf(trigger) !== -1) {
+            work.push(anims.reduce(function (chain, anim) {
+                return chain.then(function (results) {
+                    let reaction;
+                    if (spec.monId) reaction = onGramiel(active, anim);
+                    else if (spec.role) reaction = onSpeaker(active, anim);
+                    else if (spec.phrase) reaction = onStarfire(active, anim);
+                    else reaction = null;
+                    return Promise.resolve(reaction).then(function (answer) {
+                        if (answer !== null && answer !== undefined) results.push(answer);
+                        return results;
+                    });
+                });
+            }, Promise.resolve([])));
+        }
         // The Maid's own two subscriptions (Flash.FlashCall2, MaidRemake.cs:98-99 and :160-161) see
         // every frame from the server rather than only the animation ones, which is why the counter
         // handler asks for its payload's own shape instead of an anims list.
-        const counter = configured('AntiCounter') === false
-            ? Promise.resolve(null)
-            : onAntiCounter(payload);
-        return chain.then(function (done) {
-            return counter.then(function () {
-                if (done) return done;
-                if (!specialAnimsOn || !anims.length) return null;
-                return onMaidAnims(payload);
-            });
-        });
+        if (maidOn && configured('AntiCounter') !== false) work.push(onAntiCounter(payload));
+        if (maidOn && specialAnimsOn && anims.length) work.push(onMaidAnims(payload));
+        return Promise.all(work).then(frameResults);
     }
 
     function counters() {
@@ -1660,6 +1737,7 @@ function createZoneHandlers(deps) {
         resetSpecials: resetSpecials,
         /** The two run-lock flags doPriorityAttack steps aside on (MaidRemake.cs:838-840). */
         holding: function () { return countering || locktarget; },
+        autoPotionNeeded: autoPotionNeeded,
         tauntCycle: tauntCycle,
         stopCycle: stopCycle,
         /**

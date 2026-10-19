@@ -89,8 +89,10 @@ function runtime(game, options) {
   const made = zones.createZoneHandlers({
     game: game,
     log: function (line) { logs.push(line); },
-    sleep: function (ms) { slept.push(ms); return Promise.resolve(); },
+    sleep: opts.sleep || function (ms) { slept.push(ms); return Promise.resolve(); },
     random: opts.random,
+    setTimeout: opts.setTimeout,
+    clearTimeout: opts.clearTimeout,
     config: opts.config,
     maid: opts.maid,
     auras: opts.auras
@@ -120,6 +122,29 @@ async function settle(made) {
 }
 
 const SETTLE_TURNS = 8;
+
+function controlledTimers() {
+  const timers = [];
+  return {
+    setTimeout: function (fn, ms) {
+      const timer = { fn: fn, ms: ms, active: true };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimeout: function (timer) { timer.active = false; },
+    pending: function () { return timers.filter(function (timer) { return timer.active; }); },
+    runNext: function () {
+      const timer = timers.filter(function (one) { return one.active; })[0];
+      assert.ok(timer, 'a cycle wait is scheduled');
+      timer.active = false;
+      timer.fn();
+    }
+  };
+}
+
+function nextTurn() {
+  return new Promise(function (resolve) { setImmediate(resolve); });
+}
 
 /** An `event` frame with a zone letter, which is the auto-zone trigger. */
 function zoneFrame(zone) {
@@ -297,21 +322,27 @@ test('a tc; line parses with the reference\'s defaults and its own error sentenc
   assert.strictEqual(zones.parseTauntCycle('converge,truth').ok, false);
 });
 
-test('a tc; SpecialMsg starts the reference\'s own cycle, paced and bounded', async () => {
-  const made = maidRuntime({ IsMonsterAvailable: true }, { SpecialMsg: 'tc;2;Gramiel;12;1' });
+test('a tc; SpecialMsg starts the reference\'s own paced cycle', async () => {
+  const timers = controlledTimers();
+  const made = maidRuntime({ IsMonsterAvailable: true }, { SpecialMsg: 'tc;2;Gramiel;12;1' }, timers);
   const answer = made.zones.tauntCycle();
   assert.strictEqual(answer.ok, true);
   assert.deepStrictEqual(answer.spec, { cycle: 2, mon: 'Gramiel', second: 12, order: 1 });
   assert.strictEqual(answer.running, true, 'the rotation runs: its two calls are live (#49)');
   assert.strictEqual(answer.step, 6000, 'every second/cycle seconds, which is the reference\'s own');
-  await settle(made);
+  await nextTurn();
+  assert.strictEqual(timers.pending()[0].ms, 6000, 'the initial order waits one cycle interval');
+  timers.runNext();
+  await nextTurn();
   // The cycle\'s own body: the first pass forces the taunt, and every pass attacks the monster
   // before stepping the count down (MaidRemake.cs:655-668).
   assert.ok(made.game.count('IsMonsterAvailable') >= 1, 'the loop\'s own while condition is read');
   assert.deepStrictEqual(made.game.payload('AttackMonster'), ['Gramiel']);
   assert.deepStrictEqual(made.game.payload('UseSkill'), ['5'],
     'skill 5, which is the index the cycle hard-codes');
-  assert.ok(made.slept.indexOf(6000) !== -1, 'and the pace is the reference\'s own second/cycle');
+  assert.strictEqual(timers.pending()[0].ms, 6000, 'and the pace is the reference\'s own second/cycle');
+  made.zones.stopCycle(answer.key);
+  assert.strictEqual(timers.pending().length, 0, 'stopping clears the pending timer');
   // A line that is not one is refused with the parse\'s own words rather than started.
   const plain = maidRuntime({}, { SpecialMsg: 'sun converges' });
   assert.strictEqual(plain.zones.tauntCycle().ok, false);
@@ -319,23 +350,112 @@ test('a tc; SpecialMsg starts the reference\'s own cycle, paced and bounded', as
 
 test('a tc; cycle stops when the monster is gone, and on its own ask', async () => {
   // The reference\'s own while condition: World.IsMonsterAvailable(mon) failing ends the loop.
-  const gone = maidRuntime({ IsMonsterAvailable: false }, { SpecialMsg: 'tc;2;Gramiel;12' });
+  const goneTimers = controlledTimers();
+  const gone = maidRuntime({ IsMonsterAvailable: false }, { SpecialMsg: 'tc;2;Gramiel;12' }, goneTimers);
   gone.zones.tauntCycle();
-  await settle(gone);
+  await nextTurn();
   assert.strictEqual(gone.game.count('AttackMonster'), 0, 'nothing to attack means nothing is attacked');
   assert.ok(gone.game.count('IsMonsterAvailable') >= 1);
+  assert.strictEqual(goneTimers.pending().length, 0, 'a disappeared monster leaves no wait timer');
 
-  const made = maidRuntime({ IsMonsterAvailable: true }, { SpecialMsg: 'tc;2;Gramiel;12' });
+  const timers = controlledTimers();
+  const made = maidRuntime({ IsMonsterAvailable: true }, { SpecialMsg: 'tc;2;Gramiel;12' }, timers);
   const started = made.zones.tauntCycle();
   const stopped = made.zones.stopCycle(started.key);
   assert.strictEqual(stopped.ok, true);
-  await settle(made);
+  await nextTurn();
   const after = made.game.count('AttackMonster');
-  await settle(made);
+  await nextTurn();
   assert.strictEqual(made.game.count('AttackMonster'), after,
     'a stopped cycle makes no further passes');
+  assert.strictEqual(timers.pending().length, 0, 'cancellation leaves no timer behind');
   assert.strictEqual(made.zones.stopCycle(started.key).ok, false,
     'and stopping one that is not running says so rather than reporting a stop');
+});
+
+test('a disappeared monster releases the cycle key for the next encounter', async () => {
+  const timers = controlledTimers();
+  const made = maidRuntime({ IsMonsterAvailable: false }, { SpecialMsg: 'tc;2;Gramiel;12' }, timers);
+  const first = made.zones.tauntCycle('encounter');
+  assert.strictEqual(first.ok, true);
+  await nextTurn();
+  assert.strictEqual(timers.pending().length, 0);
+
+  made.game.set('IsMonsterAvailable', true);
+  const next = made.zones.tauntCycle('encounter');
+  assert.strictEqual(next.ok, true, 'the next encounter can start under the same key');
+  await nextTurn();
+  assert.strictEqual(made.game.count('AttackMonster'), 1);
+  made.zones.stopCycle('encounter');
+  assert.strictEqual(timers.pending().length, 0);
+});
+
+test('a cycle timer error releases its key for a later start', async () => {
+  const made = maidRuntime({ IsMonsterAvailable: true }, { SpecialMsg: 'tc;2;Gramiel;12' }, {
+    setTimeout: function () { throw new Error('timer unavailable'); },
+    clearTimeout: function () {}
+  });
+  assert.strictEqual(made.zones.tauntCycle('timer-error').ok, true);
+  await nextTurn();
+  assert.ok(made.logs.some(function (line) { return line.indexOf('timer unavailable') !== -1; }));
+  assert.strictEqual(made.zones.tauntCycle('timer-error').ok, true,
+    'an error cannot strand the rotation key');
+  made.zones.stopCycle('timer-error');
+});
+
+test('an omitted taunt order uses this character\'s position in PlayersInMap', async () => {
+  const timers = controlledTimers();
+  const made = maidRuntime({
+    IsMonsterAvailable: true,
+    PlayersInMap: ['leader', 'PeArL', 'third'],
+    strUsername: 'pearl'
+  }, { SpecialMsg: 'tc;2;*;12' }, timers);
+  const started = made.zones.tauntCycle();
+  assert.strictEqual(started.ok, true);
+  await nextTurn();
+  assert.strictEqual(made.game.count('PlayersInMap'), 1);
+  assert.deepStrictEqual(made.game.calls.filter(function (one) { return one.name === 'read'; })
+    .map(function (one) { return one.args[0]; }), ['world.myAvatar.objData.strUsername']);
+  assert.strictEqual(made.game.count('AttackMonster'), 0,
+    'the second party member waits one cycle interval before their first taunt');
+  timers.runNext();
+  await nextTurn();
+  assert.strictEqual(made.game.count('AttackMonster'), 1);
+  made.zones.stopCycle(started.key);
+
+  const explicitTimers = controlledTimers();
+  const explicit = maidRuntime({
+    IsMonsterAvailable: true, PlayersInMap: ['leader', 'pearl'], strUsername: 'pearl'
+  }, { SpecialMsg: 'tc;2;*;12;1' }, explicitTimers);
+  const ordered = explicit.zones.tauntCycle();
+  assert.strictEqual(ordered.spec.order, 1);
+  await nextTurn();
+  assert.strictEqual(explicit.game.count('PlayersInMap'), 0,
+    'an explicit order avoids the party-position lookup');
+  assert.strictEqual(explicit.game.calls.filter(function (one) { return one.name === 'read'; }).length, 0);
+  assert.strictEqual(explicit.game.count('AttackMonster'), 0);
+  explicitTimers.runNext();
+  await nextTurn();
+  assert.strictEqual(explicit.game.count('AttackMonster'), 1);
+  explicit.zones.stopCycle(ordered.key);
+});
+
+test('a tc; cycle continues past 120 passes and cancellation clears its timer', async () => {
+  const timers = controlledTimers();
+  const made = maidRuntime({ IsMonsterAvailable: true }, {}, timers);
+  const started = made.zones.startTaunt(1, 'Gramiel', 1, 0);
+  assert.strictEqual(started.step, 1000);
+  await nextTurn();
+  for (let pass = 0; pass < 121; pass++) {
+    timers.runNext();
+    await nextTurn();
+  }
+  const stopped = made.zones.stopTaunt();
+  assert.ok(stopped.passes > 120, 'the reference has no pass-count cutoff');
+  assert.strictEqual(timers.pending().length, 0, 'cancellation removes the only pending handle');
+  const attacks = made.game.count('AttackMonster');
+  await nextTurn();
+  assert.strictEqual(made.game.count('AttackMonster'), attacks, 'a cancelled run cannot restart itself');
 });
 
 test('picking a mode writes the priority list, the phrase list and the skill it forces', () => {
@@ -361,6 +481,37 @@ test('picking a mode writes the priority list, the phrase list and the skill it 
   assert.strictEqual(zones.MODE_FILLS['Asc.Solstice P1'].SpecialMsg, 'sun converges');
   assert.strictEqual(zones.MODE_FILLS['Asc.Midnight P1'].SpecialMsg, 'moon converges');
   assert.strictEqual(zones.MODE_FILLS['Ast.Empyrean P1'].SpecialMsg, 'behold our starfire');
+});
+
+test('Auto Potion uses the first equipped potion with stock and its matching self aura', async () => {
+  const store = require('../../plugins/grimlite-parity/bot/auras.js').createAuraStore();
+  const items = [
+    { sName: 'Potent Malice', bEquip: 0, iQty: 3 },
+    { sName: 'Felicitous Philtre', bEquip: 1, iQty: 0 },
+    { sName: 'Potent Honor', bEquip: 1, iQty: 2 }
+  ];
+  const game = fakeGame({ UserID: 7, GetInventoryItems: items });
+  const made = runtime(game, {
+    auras: store,
+    config: function () { return { UltraBossExtra: zones.MODES.indexOf('Auto Potion') }; }
+  });
+  assert.strictEqual(await made.zones.autoPotionNeeded(), true,
+    'the equipped, stocked Potent potion needs its shared self aura');
+  assert.strictEqual(game.count('GetInventoryItems'), 1);
+
+  store.observe(auraFrame('Potent Honor Malice', 'p:7', true));
+  assert.strictEqual(await made.zones.autoPotionNeeded(), false,
+    'the matching self aura suppresses another skill-5 cast');
+
+  items.unshift({ sName: 'Felicitous Philtre', bEquip: 1, iQty: 1 });
+  assert.strictEqual(await made.zones.autoPotionNeeded(), true,
+    'the first qualifying item decides which aura is checked');
+
+  const disabled = runtime(game, { config: function () { return { UltraBossExtra: 0 }; } });
+  assert.strictEqual(await disabled.zones.autoPotionNeeded(), false,
+    'other Maid modes do not query Auto Potion state');
+  assert.strictEqual(zones.MODES.indexOf('Auto Potion'), 1,
+    'Auto Potion remains selectable in the user-facing mode list');
 });
 
 test('every coordinate table is the reference\'s own values', () => {
@@ -465,6 +616,23 @@ test('a frame that is not the active handler\'s trigger moves nobody', async () 
   assert.strictEqual(await made.zones.handleFrame({ direction: 'toServer', data: '{"t":"xt"}' }), null,
     'the client\'s own frames are not the server\'s');
   assert.strictEqual(game.count('WalkToPoint'), 0);
+});
+
+test('an auto-zone event and Maid animation handlers both process the same frame', async () => {
+  const made = maidRuntime({}, {
+    AntiCounter: true, UltraBossExtra: 0, SpecialMsg: 'flare', SpecialAct: 4
+  });
+  made.zones.setActive('Auto Zone - Ultradage');
+  const answer = await made.zones.handleFrame(jsonFrame({
+    cmd: 'event', args: { zoneSet: 'A' },
+    anims: [{ msg: 'flare' }, { msg: 'the boss prepares a counter attack' }]
+  }));
+  assert.ok(made.game.payload('WalkToPoint'), 'the selected auto-zone handler still walks');
+  assert.deepStrictEqual(made.maid.armed, ['4'], 'the Maid animation listener still arms its skill');
+  assert.deepStrictEqual(made.slept, [1500, 6000], 'AntiCounter sees the warning in the same frame');
+  assert.ok(Array.isArray(answer), 'the frame result retains both successful handlers');
+  assert.ok(answer.some(function (one) { return one && one.zone === 'Auto Zone - Ultradage'; }));
+  assert.ok(answer.some(function (one) { return one && one.arm === '4'; }));
 });
 
 test('each family fires on its own HandledCommands, which is the packet event it registers for', async () => {
@@ -983,6 +1151,32 @@ test('the Maid\'s own phrase list arms the skill the mode names', async () => {
   assert.deepStrictEqual(made.maid.armed, ['5']);
 });
 
+test('a boss result does not suppress later boss or Maid animation records in its packet', async () => {
+  const made = maidRuntime({ IsMonsterAvailable: true }, {
+    AntiCounter: true, UltraBossExtra: 0,
+    SpecialMsg: 'defense shattering,prepares a counter attack', SpecialAct: 4
+  });
+  made.zones.setActive('Gramiel P1');
+  const answer = await made.zones.handleFrame(jsonFrame({
+    cmd: 'ct', anims: [
+      { msg: 'defense shattering', tInf: 'id:2' },
+      { msg: 'defense shattering', tInf: 'id:2' },
+      { msg: 'the boss prepares a counter attack' }
+    ]
+  }));
+  assert.strictEqual(made.zones.counters().crystal, 2,
+    'the active boss handler sees both matching records after its first successful result');
+  assert.deepStrictEqual(made.maid.armed, ['4', '4', '4'],
+    'the Maid listener handles every matching animation record');
+  assert.deepStrictEqual(made.slept.slice().sort(function (a, b) { return a - b; }),
+    [300, 300, 300, 500, 500, 500, 1500, 6000],
+    'boss and AntiCounter subscriptions both finish their own waits');
+  assert.ok(Array.isArray(answer), 'all non-null handler results are preserved');
+  assert.ok(answer.some(function (one) { return one && one.crystal === 1; }));
+  assert.ok(answer.some(function (one) { return one && one.crystal === 2; }));
+  assert.strictEqual(answer.filter(function (one) { return one && one.arm === '4'; }).length, 3);
+});
+
 test('the Special Anims tick gates the Maid\'s per-boss animation handler', async () => {
   const made = maidRuntime({}, {
     UltraBossExtra: 2, SpecialMsg: 'sun converges', SpecialAct: 5
@@ -1310,7 +1504,8 @@ test('a running rotation is not started twice, which is the reference\'s own gua
   // `if (tauntTask == null && World.IsMonsterAvailable(mon))` (MaidRemake.cs:432) sits around the
   // whole start, and the fighting pass reaches taunt() on every single pass - so without the guard
   // a tc; line would start a second rotation on the very next tick and the two would stack.
-  const made = maidRuntime({ IsMonsterAvailable: true }, { SpecialMsg: 'tc;2;Gramiel;12' });
+  const timers = controlledTimers();
+  const made = maidRuntime({ IsMonsterAvailable: true }, { SpecialMsg: 'tc;2;Gramiel;12' }, timers);
   const first = made.zones.tauntCycle('pass');
   assert.strictEqual(first.ok, true);
   const again = made.zones.tauntCycle('pass');
@@ -1318,16 +1513,18 @@ test('a running rotation is not started twice, which is the reference\'s own gua
   assert.strictEqual(again.running, undefined);
   assert.ok(/running/.test(again.error), 'and the refusal names the reason: ' + again.error);
   // The refusal is not fatal to the running cycle: it is still there and still attacking.
-  await settle(made);
+  await nextTurn();
   assert.ok(made.game.count('AttackMonster') >= 1, 'the first rotation kept running');
   made.zones.stopCycle('pass');
+  assert.strictEqual(timers.pending().length, 0);
   assert.strictEqual(made.zones.tauntCycle('pass').ok, true,
     'and once it stops the same key can start a fresh one');
   made.zones.stopCycle('pass');
 });
 
 test('disabling the Maid stops its own taunt cycle but leaves the bot cycle alone', () => {
-  const made = maidRuntime({ IsMonsterAvailable: true }, { SpecialMsg: 'tc;2;Gramiel;12' });
+  const timers = controlledTimers();
+  const made = maidRuntime({ IsMonsterAvailable: true }, { SpecialMsg: 'tc;2;Gramiel;12' }, timers);
   assert.strictEqual(made.zones.tauntCycle().ok, true);
   assert.strictEqual(made.zones.startTaunt(2, 'Gramiel', 12, -1).ok, true);
   made.zones.setMaid(false);
@@ -1335,4 +1532,5 @@ test('disabling the Maid stops its own taunt cycle but leaves the bot cycle alon
   const botCycle = made.zones.stopCycle('bot');
   assert.strictEqual(maidCycle.ok, false, 'the Maid disable already canceled its own cycle');
   assert.strictEqual(botCycle.ok, true, 'CmdTauntcycle owns a separate stop path');
+  assert.strictEqual(timers.pending().length, 0, 'both cancellation paths release their timer handles');
 });

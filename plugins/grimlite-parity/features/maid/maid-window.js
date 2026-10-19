@@ -483,6 +483,7 @@ function createFromHost(host, deps) {
         // the handler half, so the scheduler reads them across this seam. The closure is safe to
         // define before `zones` exists: it is only read from a tick, long afterwards.
         specialsHolding: function () { return zones.holding(); },
+        specialCombo: function () { return zones.autoPotionNeeded(); },
         // taunt()'s own door: the reference calls it once per fighting pass while no rotation is
         // running (MaidRemake.cs:295-296), and the cycle it starts reads the SpecialMsg box the
         // handler half owns. Read lazily for the same reason as the seam above.

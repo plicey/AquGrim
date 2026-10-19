@@ -51,11 +51,12 @@ function fakeMaid(game, options) {
     game: game,
     config: function () { return opts.config || config.stateFrom({}); },
     log: function (line) { logs.push(line); },
-    sleep: function () { return Promise.resolve(); },
+    sleep: opts.sleep || function () { return Promise.resolve(); },
     send: function (frame) { sent.push(frame); return opts.writes === false ? false : true; },
     engineActivity: opts.engineActivity,
     engineRunning: opts.engineRunning,
     specialsHolding: opts.specialsHolding,
+    specialCombo: opts.specialCombo,
     taunt: opts.taunt
   });
   return { maid: maid, logs: logs, sent: sent };
@@ -693,6 +694,40 @@ test('the fighting pass starts the tc; cycle the reference starts there', async 
   assert.deepStrictEqual(calls, ['taunt'],
     'the fighting pass asks the taunt once, the way the reference does while no cycle runs');
   await fake.maid.stop();
+});
+
+test('Auto Potion runs its skill-5 wait inside the target branch before taunt', async () => {
+  const waits = [];
+  const order = [];
+  let cooldownReads = 0;
+  const game = fakeGame(standing({
+    HasTarget: true,
+    SkillAvailable: function () { return ++cooldownReads === 1 ? 2300 : 1; },
+    ForceUseSkill: true,
+    UseSkill: true
+  }));
+  const fake = fakeMaid(game, {
+    config: config.stateFrom({ RelogDelay: 0, SkillDelay: 0 }),
+    sleep: function (ms) { waits.push(ms); return Promise.resolve(); },
+    specialCombo: function () { order.push('special'); return true; },
+    taunt: function () { order.push('taunt'); }
+  });
+  fake.maid.setTarget('master');
+  fake.maid.setEnabled(true);
+  await settledTicks(fake);
+  assert.deepStrictEqual(order, ['special', 'taunt'], 'the reference awaits SpecialCombo before taunt');
+  assert.deepStrictEqual(game.payload('ForceUseSkill'), ['5'], 'Auto Potion forces skill 5');
+  assert.deepStrictEqual(waits.slice(0, 2), [1500, 50], 'waitSkill caps cooldown then polls after 50 ms');
+  await fake.maid.stop();
+
+  const noTarget = fakeMaid(fakeGame(standing({ HasTarget: false, AttackMonster: true })), {
+    config: config.stateFrom({ RelogDelay: 0 }),
+    specialCombo: function () { throw new Error('Auto Potion requires a target'); }
+  });
+  noTarget.maid.setTarget('master');
+  noTarget.maid.setEnabled(true);
+  await settledTicks(noTarget);
+  await noTarget.maid.stop();
 });
 
 test('a SpecialAct waits for a target and suppresses AttackPriority until its forced cast', async () => {
