@@ -385,6 +385,8 @@ function createBotManager(deps) {
         }
         if (enabled === false) {
             return Promise.resolve(runtime.stop(key)).then(function () {
+                // The reference's stop unticks its live zone handler when one is selected.
+                if (botDocument.AutoZone) specialZone(botDocument.AutoZone, false);
                 syncAntiMod();
                 return view({ enabled: false, error: null });
             });

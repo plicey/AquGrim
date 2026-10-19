@@ -66,6 +66,19 @@ function playerIn(tree, username) {
     return null;
 }
 
+/** Player.GetAccessLevel walks world.avatars, matching dataLeaf.strUsername. */
+function avatarIn(avatars, username) {
+    const want = String(username === null || username === undefined ? '' : username).toLowerCase();
+    const keys = avatars && typeof avatars === 'object' ? Object.keys(avatars) : [];
+    for (let i = 0; i < keys.length; i++) {
+        const player = avatars[keys[i]];
+        const leaf = player && player.dataLeaf;
+        const name = leaf && typeof leaf.strUsername === 'string' ? leaf.strUsername : null;
+        if (name && name.toLowerCase() === want) return player;
+    }
+    return null;
+}
+
 // ---------------------------------------------------------------- monsters (ticket #38)
 
 /**
@@ -632,7 +645,7 @@ const SURFACE = {
     GetAccessLevel: {
         compute: function (ctx, p) {
             return ctx.get('world.avatars').then(function (avatars) {
-                const player = playerIn(avatars, p[0]);
+                const player = avatarIn(avatars, p[0]);
                 return player ? Number(player.objData && player.objData.intAccessLevel) : undefined;
             });
         }

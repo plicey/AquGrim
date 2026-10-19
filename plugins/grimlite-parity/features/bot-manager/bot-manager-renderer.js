@@ -557,6 +557,10 @@
     if (next.clipboard !== undefined) api.clipboardWrite(next.clipboard);
     drawList();
     applyConfiguration();
+    if (next.enabled !== undefined) {
+      var special = document.getElementById('chkSpecial');
+      if (special) special.checked = next.enabled === true && !!value('cmbSpecials');
+    }
     if (next.optionsWalkSpeed !== undefined) {
       var walk = document.getElementById('chkWalkSpeed');
       if (walk) walk.checked = next.optionsWalkSpeed === true;

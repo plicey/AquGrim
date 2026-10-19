@@ -560,3 +560,15 @@ test('SetFPS writes the shared stage and HideConnMC hides the game connection di
         assert.deepStrictEqual(made[1], { callback: 'callGameFunction0', args: ['mcConnDetail.hideConn'] });
     });
 });
+
+test('GetAccessLevel matches the loader\'s dataLeaf username, not the tree username', () => {
+    const bridge = fakeBridge({
+        'world.avatars': {
+            1: { uid: '7', dataLeaf: { strUsername: 'ModName' }, objData: { intAccessLevel: 60 } },
+            2: { uid: '8', dataLeaf: { strUsername: 'Player' }, objData: { intAccessLevel: 0 } }
+        }
+    }, {});
+    return access(bridge).call('GetAccessLevel', ['modname']).then((level) => {
+        assert.strictEqual(level, 60);
+    });
+});
