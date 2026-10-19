@@ -8,7 +8,10 @@ function createBankWindow(deps) {
     const game = deps.game;
     // The reference's refusals are the logic's own words; everything the page draws (labels,
     // status lines) arrives from the plugin's locale catalog through the same channel.
-    const messages = Object.assign({}, bank.MESSAGES, deps.messages || {});
+    function messages() {
+        const supplied = typeof deps.messages === 'function' ? deps.messages() : deps.messages;
+        return Object.assign({}, bank.MESSAGES, supplied || {});
+    }
 
     function handle(channel, event, args) {
         void event;
@@ -25,7 +28,7 @@ function createBankWindow(deps) {
             return bankTransfer(bank.bankAll, (args && args[0]) || {});
         }
         if (channel === 'bankMessages') {
-            return Promise.resolve(messages);
+            return Promise.resolve(messages());
         }
         throw new Error('[AquaStar:grimlite-parity] unknown bank channel "' + channel + '"');
     }
@@ -69,8 +72,10 @@ function createFromHost(host, deps) {
     return createBankWindow({
         host: host,
         game: deps.game || require('../../bridge.js').createGameAccess(host),
-        messages: (typeof host.getLocaleStrings === 'function' &&
-            host.getLocaleStrings('bankMessages')) || {}
+        messages: function () {
+            return typeof host.getLocaleStrings === 'function' &&
+                host.getLocaleStrings('bankMessages');
+        }
     });
 }
 

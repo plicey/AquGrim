@@ -571,9 +571,31 @@ package {
         }
 
         private function captureGameRoot():Boolean {
-            var loader:Object = gameLoader == null ? null : gameLoader.content;
-            var candidate:Object = loader == null ? null : loader['Game'];
+            var candidate:Object = null;
+            try {
+                // Use the same longest-domain-prefix lookup as getGameObjectS; Loader4.Game may
+                // be only a placeholder, and Game.root is not itself a class named Game.
+                candidate = resolveStatic('Game.root');
+            } catch (e:Error) {
+                candidate = null;
+            }
+            if (candidate == null) {
+                // Loader4 may not expose Game; the shared-domain root can arrive later.
+                var loader:Object = gameLoader == null ? null : gameLoader.content;
+                try {
+                    candidate = loader == null ? null : loader['Game'];
+                } catch (e2:Error) {
+                    candidate = null;
+                }
+            }
             if (candidate == null) return false;
+
+            // Login and server screens can have a Game root before its live world is ready.
+            try {
+                if (candidate['world'] == null) return false;
+            } catch (e:Error) {
+                return false;
+            }
 
             game = candidate;
             stopGameRootWait();

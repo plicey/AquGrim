@@ -9,7 +9,10 @@ const path = require('path');
 const url = require('url');
 
 const platform = require('../../res/platform');
-const { createBankWindow } = require('../../plugins/grimlite-parity/features/bank/bank-window.js');
+const {
+  createBankWindow,
+  createFromHost: createBankWindowFromHost
+} = require('../../plugins/grimlite-parity/features/bank/bank-window.js');
 const { createSetsWindow } = require('../../plugins/grimlite-parity/features/sets/sets-window.js');
 const bridge = require('../../plugins/grimlite-parity/bridge.js');
 
@@ -139,6 +142,22 @@ test('the Bank window reaches its logic through the window\'s own channels', asy
   ]);
   assert.deepStrictEqual(result, { transferred: 1, total: 1, error: null });
   assert.deepStrictEqual(calls, ['readInventory', 'transfer:Sword of Awe']);
+});
+
+test('the Bank window reads plugin messages after activation has merged its locale', async () => {
+  let messages = {};
+  const window = createBankWindowFromHost({
+    getLocaleStrings: function (namespace) {
+      assert.strictEqual(namespace, 'bankMessages');
+      return messages;
+    }
+  }, { game: {} });
+
+  messages = require('../../plugins/grimlite-parity/locales/en-US.js').bankMessages;
+  const loaded = await window.handle('bankMessages');
+
+  assert.strictEqual(loaded.title, 'Bank');
+  assert.strictEqual(loaded.bankAll, 'Bank All');
 });
 
 test('a Bank window with no game access reports that, instead of pretending to transfer', async () => {

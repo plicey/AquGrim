@@ -69,8 +69,8 @@ The Notepad's `debugskill` and `mapitems` helpers read the equipped class and th
 history. Those reads land with the bridge (ticket #28); until then the source reports nothing
 rather than a stand-in value, so a dump never claims state the app has not read.
 The plugin boots through its own loopback origin and loads **the bridge** there: a small SWF
-(`bridge/AquaBridge.as`, built to `assets/aqua-bridge.swf`) that runs Artix's Loader4, waits for its
-initialized `Game` root, and registers the call surface the reference's features drive. Page,
+(`bridge/AquaBridge.as`, built to `assets/aqua-bridge.swf`) that runs Artix's Loader4, waits for the
+in-world `Game.root`, and registers the call surface the reference's features drive. Page,
 bridge, loader and game share one origin, which is what makes that domain access legal under PPAPI Flash at all
 (`docs/research/grimlite-bridge-spike.md`).
 

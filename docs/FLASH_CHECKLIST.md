@@ -96,6 +96,8 @@ permission gate) is covered by `npm test`.
 - [ ] Set active plugin to **Grimlite Parity**, restart
 - [ ] The window shows the **game**, not a placeholder: the login screen renders (the bridge SWF
       loads Loader4 on the loopback origin, which initializes and displays the current game SWF)
+- [ ] After entering the game world, Grimlite → Dev Test → Get Object `world.strFrame` returns the
+      current cell, confirming the bridge captured `Game.root`
 - [ ] **Alt+Shift+D** (or Grimlite → Dev Test) opens the window: modes *Grimoire / Call Func /
       Get/Set Object*, Function defaulting to `world`, an Args box with its enable box, Call,
       Copy, Format JSON

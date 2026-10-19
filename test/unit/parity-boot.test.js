@@ -135,7 +135,14 @@ test('the bridge starts Artix Loader4 so it can initialize the current game', fu
   assert.ok(/new Timer\(1000\)/.test(source) && /TimerEvent\.TIMER/.test(source) &&
     !/TIMER_COMPLETE|onGameRootTimeout/.test(source),
     'the bridge must keep waiting for Game until the user signs in');
-  assert.ok(/loader\['Game'\]/.test(source), 'the bridge must attach to Loader4\'s Game root');
+  assert.ok(/candidate = resolveStatic\('Game\.root'\)/.test(source),
+    'the bridge must resolve Game.root through the same domain lookup as static reads');
+  assert.ok(/candidate = loader == null \? null : loader\['Game'\]/.test(source),
+    'Loader4\'s Game is only the fallback before the class loads');
+  assert.ok(/try\s*\{\s*candidate = loader == null \? null : loader\['Game'\];\s*\}\s*catch\s*\([A-Za-z_$][\w$]*:Error\)\s*\{\s*candidate = null;\s*\}/.test(source),
+    'an absent Loader4 Game property must not prevent the retry timer from starting');
+  assert.ok(/candidate\['world'\]\s*==\s*null/.test(source),
+    'the bridge must wait until the live world exists before reporting ready');
 
   // One event channel back to the plugin, and the reference loader's call names.
   ['getGameObject', 'getGameObjectS', 'setGameObject', 'callGameFunction',
