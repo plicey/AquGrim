@@ -43,30 +43,28 @@ const TABS = [
           {
             id:  "btnRest",
             kind:  "button",
-            text:  "Rest"
-          },
-          {
-            id:  "chkHP",
-            kind:  "tick",
-            text:  "HP <="
-          },
-          {
-            id:  "numRest",
-            kind:  "number",
-            value:  60
-          },
-          {
-            id:  "chkMP",
-            kind:  "tick",
-            text:  "MP <="
+            text:  "Rest",
+            title:  "Adds a Rest command to the bot list: the bot rests once when it reaches that row."
           },
           {
             id:  "btnRestF",
             kind:  "button",
-            text:  "Rest fully"
+            text:  "Rest fully",
+            title:  "Adds a Rest fully command: the bot keeps resting until HP and MP are full."
           },
           {
-            id:  "numRestMP",
+            id:  "label12",
+            kind:  "label",
+            text:  "Rest if"
+          },
+          {
+            id:  "chkHP",
+            kind:  "tick",
+            text:  "HP <=",
+            title:  "Auto-rest: before each command, rest when HP is at or below this percent."
+          },
+          {
+            id:  "numRest",
             kind:  "number",
             value:  60
           },
@@ -76,9 +74,15 @@ const TABS = [
             text:  "%"
           },
           {
-            id:  "label12",
-            kind:  "label",
-            text:  "Rest if"
+            id:  "chkMP",
+            kind:  "tick",
+            text:  "MP <=",
+            title:  "Auto-rest: before each command, rest when MP is at or below this percent."
+          },
+          {
+            id:  "numRestMP",
+            kind:  "number",
+            value:  60
           },
           {
             id:  "label11",

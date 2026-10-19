@@ -50,6 +50,10 @@ fieldset.group {
   display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
 }
 fieldset.group > legend { color: #9f9f9f; padding: 0 4px; font-size: 11px; }
+/* Grimlite's Rest box: two command buttons, then "Rest if" on its own row, then HP/MP. */
+#darkGroupBox19 { width: 152px; }
+#darkGroupBox19 .sheet-number { width: 34px; }
+#darkGroupBox19 > #label12 { flex: 1 0 100%; }
 .sheet-button { min-width: 24px; }
 .sheet-number { width: 62px; }
 .sheet-text { width: 130px; }

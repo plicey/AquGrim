@@ -132,6 +132,7 @@
     case 'button':
       node = el('button', 'sheet-button', entry.text || entry.id);
       node.id = entry.id;
+      if (entry.title) node.title = entry.title;
       node.addEventListener('click', function (event) {
         press(entry.id, { alt: event.altKey, ctrl: event.ctrlKey || event.metaKey });
       });
@@ -144,8 +145,11 @@
       if (entry.kind === 'radio') node.name = groupName || entry.id;
       node.id = entry.id;
       node.checked = entry.checked === true;
+      if (entry.title) node.title = entry.title;
       restore(node, remembered[entry.id]);
-      return label(entry.text, node, el('span'));
+      var wrapper = label(entry.text, node, el('span'));
+      if (entry.title) wrapper.title = entry.title;
+      return wrapper;
     case 'text':
       node = el('input', 'sheet-text');
       node.type = 'text';
@@ -176,7 +180,9 @@
       restore(node, remembered[entry.id]);
       return node;
     case 'label':
-      return el('span', 'sheet-label', entry.text || '');
+      node = el('span', 'sheet-label', entry.text || '');
+      if (entry.id) node.id = entry.id;
+      return node;
     case 'list':
       node = el('select', 'sheet-list');
       node.id = entry.id;

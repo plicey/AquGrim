@@ -78,6 +78,13 @@ test('each tab holds the controls the reference puts in it', () => {
   assert.ok(textsOf(tabs[9]).indexOf('Number of Bots:') !== -1, 'Bots tab');
   assert.ok(textsOf(tabs[10]).indexOf('Test here') !== -1, 'Info tab');
 
+  // The reference's Rest box rows: Rest / Rest fully, then "Rest if", then HP and MP.
+  assert.deepStrictEqual(find('darkGroupBox19').children.map(function (control) { return control.id; }), [
+    'btnRest', 'btnRestF', 'label12', 'chkHP', 'numRest', 'label10', 'chkMP', 'numRestMP', 'label11'
+  ]);
+  assert.ok(/once/i.test(find('btnRest').title), 'Rest is the one-shot command');
+  assert.ok(/full/i.test(find('btnRestF').title), 'Rest fully is the full-rest command');
+
   assert.deepStrictEqual(find('cbCategories').options,
     ['Aura', 'Item', 'This player', 'Player', 'Map', 'Monster', 'Quest', 'Misc']);
   assert.deepStrictEqual(find('lstLogText').options.slice(0, 3), ['{USERNAME}', '{MAP}', '{GOLD}']);
