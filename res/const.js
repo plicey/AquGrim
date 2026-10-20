@@ -223,15 +223,15 @@ exports.ruffleUpdateChannelChoices = Object.keys(ruffleUpdateChannels).map((id) 
     { id: id, label: ruffleUpdateChannels[id].label }
 ));
 
-// Flash quality affects the PPAPI renderer, not bot timing. "high" keeps smoothing while
-// avoiding BEST's extra video work; users can trade more appearance for speed in Settings.
+// Flash quality affects the PPAPI renderer, not bot timing. "medium" is the performance-first
+// default; users can trade more appearance for speed in Settings.
 const gameQualities = {
     'low': { label: 'Low (Fastest)' },
-    'medium': { label: 'Medium' },
-    'high': { label: 'High (Default)' },
+    'medium': { label: 'Medium (Default)' },
+    'high': { label: 'High' },
     'best': { label: 'Best (Highest Quality)' }
 };
-exports.defaultGameQuality = 'high';
+exports.defaultGameQuality = 'medium';
 exports.gameQualityChoices = Object.keys(gameQualities).map((id) => (
     { id: id, label: gameQualities[id].label }
 ));
