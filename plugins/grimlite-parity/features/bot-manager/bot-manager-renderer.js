@@ -27,6 +27,8 @@
   var botTreeState = null;
   // The tab's own Location/Size table while its page is being built (tabs.js's Combat layout).
   var currentLayout = null;
+  // Give the desktop designer's compact coordinates room for browser controls.
+  var layoutScale = 1.25;
   var list = document.getElementById('list');
   var tabHost = document.getElementById('tabHost');
 
@@ -107,7 +109,11 @@
     var tick = control && (control.type === 'checkbox' || control.type === 'radio');
     var wrap = el('label', tick ? 'tick' : 'inline');
     wrap.appendChild(control);
-    if (text) appendText(wrap, ' ' + text);
+    if (text) {
+      var caption = el('span');
+      appendText(caption, text);
+      wrap.appendChild(caption);
+    }
     host.appendChild(wrap);
     return wrap;
   }
@@ -125,10 +131,10 @@
     var position = currentLayout && entry.id ? currentLayout.positions[entry.id] : null;
     if (position) {
       node.style.position = 'absolute';
-      node.style.left = position[0] + 'px';
-      node.style.top = position[1] + 'px';
-      node.style.width = position[2] + 'px';
-      node.style.height = position[3] + 'px';
+      node.style.left = position[0] * layoutScale + 'px';
+      node.style.top = position[1] * layoutScale + 'px';
+      node.style.width = position[2] * layoutScale + 'px';
+      node.style.height = position[3] * layoutScale + 'px';
       // The reference's group children are positioned from the group's client area.
       if (entry.kind === 'group') node.style.padding = '0';
       if ((entry.kind === 'tick' || entry.kind === 'radio') && position[3] > 24) {
@@ -293,8 +299,8 @@
     if (currentLayout) {
       page.classList.add('fixed-layout');
       page.style.position = 'relative';
-      page.style.width = currentLayout.width + 'px';
-      page.style.height = currentLayout.height + 'px';
+      page.style.width = currentLayout.width * layoutScale + 'px';
+      page.style.height = currentLayout.height * layoutScale + 'px';
     }
     (tab.controls || []).forEach(function (entry) { page.appendChild(control(entry)); });
     currentLayout = null;

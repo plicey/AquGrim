@@ -88,7 +88,7 @@ test('each tab holds the controls the reference puts in it', () => {
   // Every page keeps the designer's coordinates for every control, not just the Combat tab.
   tabs.forEach(function (tab) {
     assert.ok(tab.layout, tab.id + ' has a designer layout');
-    assert.deepStrictEqual([tab.layout.width, tab.layout.height], [544, 298]);
+    assert.deepStrictEqual([tab.layout.width, tab.layout.height], [544, tab.id === 'bots' ? 314 : 298]);
     const missing = [];
     (function walk(list) {
       (list || []).forEach(function (control) {

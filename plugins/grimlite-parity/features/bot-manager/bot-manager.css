@@ -49,14 +49,25 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 .tab.active { background: #2a2a2a; color: #fff; border-color: #3a3a3a; }
 
-#tabHost { flex: 1; overflow: auto; padding: 8px; border-top: 1px solid #2c2c2c; }
+#tabHost { flex: 1; min-height: 0; overflow: auto; padding: 8px; border-top: 1px solid #2c2c2c; }
 .tabpage { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
-.tabpage.fixed-layout { display: block; margin: 0 auto; font-size: 11px; }
+.tabpage.fixed-layout { display: block; margin: 0 auto; font-size: 12px; }
 .tabpage.fixed-layout, .tabpage.fixed-layout * { box-sizing: border-box; }
-.tabpage.fixed-layout fieldset.group { display: block; }
+/* Native legends shift the fieldset's absolute-positioning origin below the title.
+   Keep titles out of flow so children retain the designer's client coordinates. */
+.tabpage.fixed-layout fieldset.group { display: block; min-width: 0; }
+.tabpage.fixed-layout fieldset.group > legend {
+  position: absolute; top: -7px; left: 4px; background: #121212;
+  max-width: calc(100% - 8px); white-space: nowrap;
+}
+.tabpage.fixed-layout .tick { line-height: 1.2; }
+.tabpage.fixed-layout .tick input { flex: 0 0 auto; margin: 0; }
+.tabpage.fixed-layout .tick > span { min-width: 0; }
+.tabpage.fixed-layout .sheet-label { line-height: 1.2; }
+.tabpage.fixed-layout .counter-label { white-space: pre-line; overflow-wrap: anywhere; }
 .tabpage.fixed-layout .sheet-button { padding: 1px 3px; }
 .tabpage.fixed-layout .sheet-tree { max-height: none; }
-.tabpage.fixed-layout select { font-size: 10px; }
+.tabpage.fixed-layout select { font-size: 12px; }
 .tabpage.fixed-layout textarea { resize: none; }
 .tabpage.fixed-layout .tick.wrap-text { white-space: normal; line-height: 1.15; }
 .tabpage.fixed-layout input[type=text], .tabpage.fixed-layout input[type=number],
@@ -82,7 +93,7 @@ fieldset.group > legend { color: #9f9f9f; padding: 0 4px; font-size: 11px; }
 .sheet-tree li.bot > span { color: #a8d8a8; }
 .sheet-tree .loading { color: #6d6d6d; font-style: italic; }
 .sheet-rtf { width: 100%; min-height: 80px; white-space: pre-wrap; color: #d6d6d6; background: #161616; border: 1px solid #242424; padding: 6px; }
-textarea.sheet-rtf.test-rtf { z-index: 2; min-height: 22px; padding: 1px 2px; font-size: 10px; resize: none; }
+textarea.sheet-rtf.test-rtf { min-height: 22px; padding: 4px 6px; resize: none; }
 .sheet-rtf.info-pane { overflow: auto; font-family: "Microsoft Sans Serif", sans-serif; font-size: 19px; font-weight: 700; }
 .sheet-rtf.info-pane .info-link { color: #7fb3ff; }
 
@@ -108,6 +119,7 @@ button:hover { background: #303030; }
   background: #1e1e1e; border: 1px solid #333; border-radius: 5px; padding: 4px; min-width: 170px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
 }
+.popup[hidden] { display: none; }
 .popup .menu-item { background: none; border: none; text-align: left; padding: 6px 8px; border-radius: 3px; }
 .popup .menu-item:hover { background: #2f2f2f; }
 

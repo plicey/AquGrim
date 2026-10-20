@@ -1,6 +1,7 @@
 // BotManager.Designer.cs: every tab control at its own Location/Size. Generated from the
 // reference designer, not hand-placed: the tab pages are 544x298 and group children are
 // relative to their group. Split panels are the reference splitter distances.
+// Browser-only spacing corrections below keep the same controls and groups.
 const LAYOUTS = {
   "combat": {
     width: 544, height: 298,
@@ -267,7 +268,7 @@ const LAYOUTS = {
       "label5": [9, 124, 115, 13],
       "label6": [215, 275, 72, 13],
       "numOptionsTimer": [168, 271, 46, 20],
-      "chkEnableSettings": [169, 241, 97, 30],
+      "chkEnableSettings": [169, 241, 137, 30],
       "chkDisableAnims": [168, 218, 122, 17],
       "txtSoundItem": [3, 249, 153, 20],
       "btnSoundAdd": [55, 271, 50, 22],
@@ -295,7 +296,7 @@ const LAYOUTS = {
   "client": {
     width: 544, height: 298,
     positions: {
-      "darkGroupBox27": [196, 99, 124, 64],
+      "darkGroupBox27": [196, 106, 124, 64],
       "tbLoadMap": [6, 16, 112, 20],
       "btnLoadMap": [6, 38, 112, 21],
       "darkLabel11": [57, 199, 27, 13],
@@ -314,7 +315,7 @@ const LAYOUTS = {
       "btnSetSpawn2": [326, 100, 94, 23],
       "chkGender": [12, 221, 89, 17],
       "chkCorrection": [12, 245, 127, 17],
-      "darkGroupBox23": [196, 164, 124, 59],
+      "darkGroupBox23": [196, 178, 124, 59],
       "tbMapSpoof": [6, 16, 112, 20],
       "chkMapSpoofer": [6, 39, 99, 17],
       "numSetFPS": [10, 195, 44, 20],
@@ -363,19 +364,19 @@ const LAYOUTS = {
     }
   }, 
   "bots": {
-    width: 544, height: 298,
+    width: 544, height: 314,
     positions: {
       "treeBots": [4, 27, 335, 232],
       "btnSetBotsDir": [465, 4, 73, 20],
       "txtSavedDesc": [345, 90, 193, 169],
-      "lblBoosts": [254, 282, 42, 13],
-      "lblDrops": [198, 282, 38, 13],
-      "lblQuests": [140, 282, 43, 13],
-      "lblSkills": [87, 282, 34, 13],
-      "lblCommands": [6, 269, 62, 26],
-      "lblItems": [316, 282, 35, 13],
+      "lblBoosts": [364, 269, 82, 40],
+      "lblDrops": [276, 269, 82, 40],
+      "lblQuests": [188, 269, 82, 40],
+      "lblSkills": [100, 269, 82, 40],
+      "lblCommands": [6, 269, 82, 40],
+      "lblItems": [452, 269, 82, 40],
       "txtSavedAuthor": [345, 64, 193, 20],
-      "lblBots": [341, 50, 83, 13],
+      "lblBots": [345, 50, 193, 13],
       "txtSavedAdd": [345, 27, 118, 20],
       "btnSavedAdd": [465, 27, 73, 20],
       "txtSaved": [4, 4, 459, 20]
@@ -385,8 +386,8 @@ const LAYOUTS = {
     width: 544, height: 298,
     positions: {
       "panel5": [3, 3, 538, 292],
-      "richTextBox2": [0, 273, 54, 22],
-      "rtbInfo": [0, 0, 538, 292]
+      "richTextBox2": [0, 264, 538, 28],
+      "rtbInfo": [0, 0, 538, 258]
     }
   }
 };
