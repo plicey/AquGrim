@@ -29,6 +29,7 @@
   var currentLayout = null;
   // Give the desktop designer's compact coordinates room for browser controls.
   var layoutScale = 1.25;
+  var rowScale = 1.5;
   var list = document.getElementById('list');
   var tabHost = document.getElementById('tabHost');
 
@@ -130,11 +131,16 @@
     var node = makeControl(entry, groupName);
     var position = currentLayout && entry.id ? currentLayout.positions[entry.id] : null;
     if (position) {
+      var container = ['group', 'split', 'panel', 'grid'].indexOf(entry.kind) !== -1;
+      var inset = entry.kind === 'group' ? 2 : container ? 0 : 3;
+      // Open gutters without enlarging controls or widening the page.
       node.style.position = 'absolute';
-      node.style.left = position[0] * layoutScale + 'px';
-      node.style.top = position[1] * layoutScale + 'px';
-      node.style.width = position[2] * layoutScale + 'px';
-      node.style.height = position[3] * layoutScale + 'px';
+      node.style.left = position[0] * layoutScale + inset + 'px';
+      node.style.top = position[1] * rowScale + 'px';
+      node.style.width = position[2] * layoutScale - inset * 2 + 'px';
+      var stretch = container || (['text', 'list', 'tree', 'rtf'].indexOf(entry.kind) !== -1 && position[3] > 40);
+      var bottomInset = entry.kind === 'group' || (!container && stretch) ? 6 : 0;
+      node.style.height = position[3] * (stretch ? rowScale : layoutScale) - bottomInset + 'px';
       // The reference's group children are positioned from the group's client area.
       if (entry.kind === 'group') node.style.padding = '0';
       if ((entry.kind === 'tick' || entry.kind === 'radio') && position[3] > 24) {
@@ -300,7 +306,7 @@
       page.classList.add('fixed-layout');
       page.style.position = 'relative';
       page.style.width = currentLayout.width * layoutScale + 'px';
-      page.style.height = currentLayout.height * layoutScale + 'px';
+      page.style.height = currentLayout.height * rowScale + 'px';
     }
     (tab.controls || []).forEach(function (entry) { page.appendChild(control(entry)); });
     currentLayout = null;
