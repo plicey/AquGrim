@@ -117,7 +117,8 @@ function createFromHost(host, deps) {
         host.getLocaleStrings('cosmeticsMessages')) || {};
     return createCosmeticsDialogs({
         store: host.getStore(STORE_NAMESPACE),
-        defaultDirectory: path.join(host.appDataDirectory, 'Sets'),
+        defaultDirectory: path.join(
+            host.persistentAppDataDirectory || host.appDataDirectory, 'Sets'),
         // The reference leaves both dialog titles at their own defaults. Only the filter's name
         // is the plugin's word.
         messages: { filterName: strings.filterName },

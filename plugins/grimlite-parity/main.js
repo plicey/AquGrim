@@ -273,7 +273,8 @@ async function activate(host) {
     // The same default the Bot Manager declares below, hoisted so the two cannot drift: a
     // CmdLoadBot that resolved against one directory while the tree listed another would be a
     // file the user can see and the engine cannot reach.
-    const defaultBotsDirectory = path.join(host.appDataDirectory, 'Bots');
+    const defaultBotsDirectory = path.join(
+        host.persistentAppDataDirectory || host.appDataDirectory, 'Bots');
     // And the directory the user actually chose, which is the Bot Manager's own setting: a bot
     // saved from the tree with a relative path resolves against the same root the tree lists.
     const botSettings = require('./bot/display-settings.js').create({

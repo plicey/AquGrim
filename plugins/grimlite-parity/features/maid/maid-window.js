@@ -724,7 +724,7 @@ function createFromHost(host, deps) {
 
     window = deps.window || createMaidWindow({
         host: host,
-        appDataDirectory: host.appDataDirectory,
+        appDataDirectory: host.persistentAppDataDirectory || host.appDataDirectory,
         maid: maid,
         party: party,
         game: bridge,

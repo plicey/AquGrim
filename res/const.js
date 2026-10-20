@@ -22,7 +22,9 @@ const appVersion  = require('electron').app.getVersion();
 const appName     = "AquaStar";
 // Keep mutable data outside the installation. This also works for portable/readonly
 // installs and avoids replacing files that an older AquaStar still expects.
-const appDataDirectory = path.join(app.getPath("appData"), appName);
+const persistentAppDataDirectory = path.join(app.getPath("appData"), appName);
+// An extra instance runs from a temporary copy of the main data directory.
+const appDataDirectory = app.aquaStarDataDirectory || persistentAppDataDirectory;
 if (!fs.existsSync(appDataDirectory)) fs.mkdirSync(appDataDirectory, { recursive: true });
 // A downloaded update is staged as ruffle-next while the app is running. Promote
 // it only on the next launch, so no browser process ever reads files mid-replace.
@@ -58,6 +60,7 @@ exports.appVersion       = appVersion;
 exports.appRootPath      = appRoot;
 exports.appDirectoryPath = appCurrentDirectory;
 exports.appDataDirectory = appDataDirectory;
+exports.persistentAppDataDirectory = persistentAppDataDirectory;
 exports.sshotPath        = sshotPath;
 
 /// Icon Stuff

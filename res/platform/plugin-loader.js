@@ -263,6 +263,7 @@ function activatePlugin(plugin, options) {
             appVersion: options.appVersion,
             appRootPath: options.appRootPath,
             appDataDirectory: options.appDataDirectory,
+            persistentAppDataDirectory: options.persistentAppDataDirectory,
             pluginDataDirectory: options.pluginDataDirectory ||
                 path.join(options.appDataDirectory || '', 'plugins', plugin.manifest.id),
             platformSettings: settings,

@@ -1,23 +1,73 @@
-// Extra AquGrim processes share one app-data configuration. Chromium still needs a private
-// userData directory per process so each open account has separate cookies and Flash state;
-// that session lives in the OS temp directory and carries no profile name or saved config.
+// Extra AquGrim processes start from a copy of the main instance's data, then run entirely in a
+// temporary directory. Settings and login changes disappear with that instance; explicit file
+// save dialogs still default to the main data folders.
 const childProcess = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
 const INSTANCE_FLAG = '--aquastar-instance';
+const SKIP = {
+    'Cache': true,
+    'Code Cache': true,
+    'GPUCache': true,
+    'ShaderCache': true,
+    'GrShaderCache': true,
+    'GraphiteDawnCache': true,
+    'Crash Reports': true,
+    'Dictionaries': true,
+    'blob_storage': true,
+    'SingletonLock': true,
+    'SingletonCookie': true,
+    'SingletonSocket': true,
+    'DevToolsActivePort': true,
+    'profiles': true,
+    'SS': true
+};
 let current = null;
 
+function seedCopy(source, destination) {
+    let entries;
+    try {
+        entries = fs.readdirSync(source, { withFileTypes: true });
+    } catch (error) {
+        if (error.code === 'ENOENT') return;
+        throw error;
+    }
+    entries.forEach(function (entry) {
+        if (SKIP[entry.name] || entry.name.indexOf('.org.chromium.Chromium.') === 0) return;
+        const from = path.join(source, entry.name);
+        const to = path.join(destination, entry.name);
+        try {
+            if (entry.isDirectory()) {
+                fs.mkdirSync(to, { recursive: true });
+                seedCopy(from, to);
+            } else if (entry.isFile()) {
+                fs.copyFileSync(from, to);
+            }
+        } catch (error) {
+            console.error('[AquaStar] Could not seed instance file ' + from + ': ' + error.message);
+        }
+    });
+}
+
 function configure(app, argv) {
-    const appData = path.join(app.getPath('appData'), 'AquaStar');
+    const persistent = path.join(app.getPath('appData'), 'AquaStar');
     const additional = (argv || []).slice(1).indexOf(INSTANCE_FLAG) !== -1;
-    fs.mkdirSync(appData, { recursive: true });
-    const userData = additional
+    fs.mkdirSync(persistent, { recursive: true });
+    const appData = additional
         ? fs.mkdtempSync(path.join(os.tmpdir(), 'aquagrim-instance-'))
-        : appData;
-    app.setPath('userData', userData);
-    current = { appData: appData, userData: userData, additional: additional };
+        : persistent;
+    if (additional) seedCopy(persistent, appData);
+    app.setPath('userData', appData);
+    app.aquaStarDataDirectory = appData;
+    app.aquaStarPersistentDataDirectory = persistent;
+    current = {
+        appData: appData,
+        userData: appData,
+        persistentAppData: persistent,
+        additional: additional
+    };
     return current;
 }
 

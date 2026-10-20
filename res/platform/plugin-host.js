@@ -213,6 +213,8 @@ function createPluginHost(options) {
         appVersion: options.appVersion || '0.0.0',
         appRootPath: options.appRootPath || '',
         appDataDirectory: options.appDataDirectory || '',
+        persistentAppDataDirectory: options.persistentAppDataDirectory ||
+            options.appDataDirectory || '',
         pluginId: pluginId,
         pluginRoot: options.pluginRoot,
         pluginDataDirectory: options.pluginDataDirectory ||

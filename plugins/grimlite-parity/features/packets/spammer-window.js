@@ -209,7 +209,8 @@ function createFromHost(host, deps) {
         store: host.getStore(STORE_NAMESPACE),
         // The reference has no Spammer/ folder beside the exe; here it is the app's own data
         // directory, beside the store the plugin already keeps there.
-        defaultDirectory: path.join(host.appDataDirectory, 'Spammer'),
+        defaultDirectory: path.join(
+            host.persistentAppDataDirectory || host.appDataDirectory, 'Spammer'),
         indexChannel: 'plugin:' + host.pluginId + ':spammerIndex',
         // Off means the relay is not there to write through (steering-notice.js says why).
         steering: function () { return steeringNotice.notice(host); },

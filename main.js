@@ -96,6 +96,7 @@ function activatePlugins() {
         appVersion: constant.appVersion || app.getVersion(),
         appRootPath: constant.appRootPath,
         appDataDirectory: constant.appDataDirectory,
+        persistentAppDataDirectory: constant.persistentAppDataDirectory,
         // Saved settings first so plugins can read their own options at activate();
         // boot flags then win for the platform keys.
         safeMode: safeMode,
