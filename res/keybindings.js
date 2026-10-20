@@ -329,6 +329,7 @@ ipcMain.handle('getKeybindings', () => {
             (platform.pluginRuntime.getState() && platform.pluginRuntime.getState().optionDefaults) || {}),
         recordingFormatChoices: constant.recordingFormatChoices,
         renderModeChoices: constant.renderModeChoices,
+        gameQualityChoices: constant.gameQualityChoices,
         ruffleUpdateChannelChoices: constant.ruffleUpdateChannelChoices,
         appLanguageChoices: constant.appLanguageChoices,
         visibleKeybindIds: visibleIds,

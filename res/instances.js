@@ -89,14 +89,20 @@ function newBrowserWindow(new_path, isMainWin=false){
     // Explicit wrap options (e.g. wmode=opaque + scale=showall for a game whose relative
     // loads break under wmode=direct from file://). Applies even with useDirectWmode off.
     else if (_looksLikeSwfUrl(originalPath) && wrap && (wrap.wmode || wrap.scale)) {
-        new_path = constant.wrapSwfUrl(new_path, { wmode: wrap.wmode, scale: wrap.scale });
+        new_path = constant.wrapSwfUrl(new_path, {
+            wmode: wrap.wmode,
+            scale: wrap.scale,
+            quality: keybinds.keybinds && keybinds.keybinds.gameQuality
+        });
         wrappedForChrome = true;
     }
     // Default: wrap Flash SWFs of non-standalone games in an HTML page with wmode=direct.
     else if (constant.useDirectWmode && _looksLikeSwfUrl(originalPath) &&
         gameEntry && !gameEntry.standalone &&
         !(wrap && wrap.preferDirectWmode === false)) {
-        new_path = constant.wrapSwfUrl(new_path);
+        new_path = constant.wrapSwfUrl(new_path, {
+            quality: keybinds.keybinds && keybinds.keybinds.gameQuality
+        });
         wrappedForChrome = true;
     }
 

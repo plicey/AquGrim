@@ -37,6 +37,8 @@
     // Optional overrides, set from a plugin's wrap config (e.g. wmode=opaque&scale=showall).
     var wmode = params.get('wmode') || 'direct';
     var scale = params.get('scale') || 'showall';
+    var quality = params.get('quality') || 'high';
+    if (['low', 'medium', 'high', 'best'].indexOf(quality) === -1) quality = 'high';
 
     // Base directory of the SWF so relative ActionScript loads resolve against the
     // game origin, not this file:// wrapper page (critical for DFLoader.swf).
@@ -58,7 +60,7 @@
       {name:'salign', value: 't'},
       {name:'allowscriptaccess', value:'always'},
       {name:'allowfullscreen', value:'true'},
-      {name:'quality', value:'best'},
+      {name:'quality', value: quality},
       {name:'bgcolor', value:'#000000'},
       {name:'base', value: swfBase},
       {name:'allownetworking', value:'all'}

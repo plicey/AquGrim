@@ -191,6 +191,7 @@
     localOrigin:       'boolean',
     recordingFormat:   'select',
     renderMode:        'select',
+    gameQuality:       'select',
     ruffleUpdateChannel: 'select',
     ruffleAutoUpdate:  'boolean',
     showGameMenu:      'boolean',
@@ -1118,7 +1119,8 @@
         return { id: c.id, label: localized || c.label };
       }),
       recordingFormat: kb.recordingFormatChoices || [],
-      renderMode:      kb.renderModeChoices || []
+      renderMode:      kb.renderModeChoices || [],
+      gameQuality:     kb.gameQualityChoices || []
     };
     updateChannelChoices = kb.ruffleUpdateChannelChoices || [];
 

@@ -113,7 +113,7 @@ let swfWrapperBase = '';
 exports.setSwfWrapperBase = function (base) {
     swfWrapperBase = typeof base === 'string' ? base : '';
 };
-// opts: optional { wmode, scale } forwarded to swf_wrapper.html query string.
+// opts: optional { wmode, scale, quality } forwarded to swf_wrapper.html query string.
 // Plugins pick the options per game through their wrap config; the default is wmode=direct.
 // The wrapper's base= param keeps relative loads resolving against the game's own origin.
 exports.wrapSwfUrl = function(swfUrl, opts) {
@@ -121,6 +121,7 @@ exports.wrapSwfUrl = function(swfUrl, opts) {
     var q = '?swf=' + encodeURIComponent(swfUrl);
     if (opts && opts.wmode) q += '&wmode=' + encodeURIComponent(opts.wmode);
     if (opts && opts.scale) q += '&scale=' + encodeURIComponent(opts.scale);
+    if (opts && opts.quality) q += '&quality=' + encodeURIComponent(opts.quality);
     return (swfWrapperBase || swfWrapperUrl) + q;
 }
 
@@ -222,6 +223,19 @@ exports.ruffleUpdateChannelChoices = Object.keys(ruffleUpdateChannels).map((id) 
     { id: id, label: ruffleUpdateChannels[id].label }
 ));
 
+// Flash quality affects the PPAPI renderer, not bot timing. "high" keeps smoothing while
+// avoiding BEST's extra video work; users can trade more appearance for speed in Settings.
+const gameQualities = {
+    'low': { label: 'Low (Fastest)' },
+    'medium': { label: 'Medium' },
+    'high': { label: 'High (Default)' },
+    'best': { label: 'Best (Highest Quality)' }
+};
+exports.defaultGameQuality = 'high';
+exports.gameQualityChoices = Object.keys(gameQualities).map((id) => (
+    { id: id, label: gameQualities[id].label }
+));
+
 exports.appLanguageChoices = [
     { id: 'system', label: 'System default' },
     { id: 'en-US', label: 'English' },
@@ -243,6 +257,7 @@ const originalOptions = {
     localOrigin:       false,
     recordingFormat:   exports.defaultRecordingFormat,
     renderMode:        exports.defaultRenderMode,
+    gameQuality:       exports.defaultGameQuality,
     ruffleUpdateChannel: 'latest',
     ruffleAutoUpdate:  true,
     // Native menu bar on game windows (mirrors shortcuts). Default on.
