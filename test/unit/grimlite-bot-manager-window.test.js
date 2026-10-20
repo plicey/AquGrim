@@ -143,6 +143,22 @@ test('a button that needs a field it has not got contributes nothing', async () 
   assert.strictEqual(hunt.refused, true, 'the page is told the button did nothing');
 });
 
+test('Kill for keeps its untouched quantity wildcard and whitelists the item', async () => {
+  // The page shows "Quantity (* = any)" as a placeholder, so an untouched box sends no value.
+  // The reference reads that visible text as "*", so the command and its Drops entry both stay.
+  const o = await opened('plain.gbot');
+  const state = await o.feature.handle('botManagerAdd', null, ['btnKillF', {
+    txtKillFItem: 'Dragon Scale', txtKillFQ: '', txtKillFMon: '',
+    rbItems: true, rbTemp: false, chkAddToWhiteList: true
+  }, {}]);
+  assert.strictEqual(state.refused, false);
+  const last = o.feature.editor().items().pop();
+  assert.strictEqual(catalog.classNameOf(last), 'CmdKillFor');
+  assert.strictEqual(last.ItemType, 0, 'Items is the normal inventory');
+  assert.strictEqual(last.Quantity, '*');
+  assert.deepStrictEqual(o.feature.editor().object().Drops, ['Dragon Scale']);
+});
+
 test('a list button fills one of the other five lists, deduped where the reference dedupes', async () => {
   const o = await opened('plain.gbot');
   await o.feature.handle('botManagerAddList', null, ['btnWhitelist', { txtWhitelist: 'rusted key' }, {}]);

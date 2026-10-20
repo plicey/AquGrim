@@ -93,10 +93,11 @@ const COMMAND_BUTTONS = {
     btnRest: () => command('CmdRest', {}),
     btnRestF: () => command('CmdRest', { Full: true }),
     btnKillF: function (v) {
-        // btnKillF_Click guards the item and the quantity first: either box empty, no command.
+        // The designer's Quantity text is rendered as a placeholder here, so an untouched box is
+        // empty; the reference turns that visible "* = any" text into the wildcard.
         const item = field(v, 'txtKillFItem');
-        const quantity = field(v, 'txtKillFQ');
-        if (item === undefined || quantity === undefined) return null;
+        if (item === undefined) return null;
+        const quantity = fieldOr(v, 'txtKillFQ', '*');
         return command('CmdKillFor', {
             ItemType: v.rbTemp ? 1 : 0,
             Monster: monster(v, 'txtKillFMon', true),
