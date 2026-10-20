@@ -3,42 +3,46 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const profiles = require('../../res/profiles.js');
+const instanceSession = require('../../res/instance-session.js');
 
-test('profile flags resolve to safe, separate instance names', () => {
-  assert.strictEqual(profiles.fromArgs(['electron', '.']), profiles.DEFAULT_PROFILE);
-  assert.strictEqual(profiles.fromArgs(['electron', '.', '--profile=Account Two']), 'account-two');
-  assert.strictEqual(profiles.fromArgs(['electron', '.', '--profile', 'Healer']), 'healer');
-  assert.throws(() => profiles.fromArgs(['electron', '.', '--profile']), /needs an instance name/);
-  assert.throws(() => profiles.normalize('../escape'), /cannot contain slashes/);
-});
-
-test('a named profile isolates Electron userData while appData stays shared', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aquagrim-profile-'));
+test('the main instance uses the one shared app-data configuration', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aquagrim-instance-test-'));
   const paths = {};
-  const state = profiles.configure({
+  const state = instanceSession.configure({
     getPath: function (name) { return name === 'appData' ? root : ''; },
     setPath: function (name, value) { paths[name] = value; }
-  }, ['electron', '.', '--profile=second'], {});
+  }, ['electron', '.']);
   assert.strictEqual(state.appData, path.join(root, 'AquaStar'));
-  assert.strictEqual(state.userData, path.join(root, 'AquaStar', 'profiles', 'second'));
+  assert.strictEqual(state.userData, state.appData);
   assert.strictEqual(paths.userData, state.userData);
   assert.ok(fs.existsSync(state.userData));
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('another instance gets the next unused account profile', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aquagrim-profile-next-'));
-  fs.mkdirSync(path.join(root, 'profiles', 'account-2'), { recursive: true });
-  assert.strictEqual(profiles.createNext(root), 'account-3');
-  assert.ok(fs.existsSync(path.join(root, 'profiles', 'account-3')));
+test('an extra instance gets a temporary unnamed session and shares app data', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aquagrim-instance-test-'));
+  const app = {
+    getPath: function () { return root; },
+    setPath: function () {}
+  };
+  const state = instanceSession.configure(app, ['electron', '.', instanceSession.INSTANCE_FLAG]);
+  assert.strictEqual(state.appData, path.join(root, 'AquaStar'));
+  assert.notStrictEqual(state.userData, state.appData);
+  assert.ok(state.userData.indexOf('aquagrim-instance-') !== -1);
+  assert.ok(fs.existsSync(state.userData));
+  instanceSession.cleanup();
+  assert.ok(!fs.existsSync(state.userData));
+
+  const second = instanceSession.configure(app, ['electron', '.', instanceSession.INSTANCE_FLAG]);
+  assert.notStrictEqual(second.userData, state.userData);
+  instanceSession.cleanup();
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('launching a second instance carries its profile and sandbox flag', () => {
+test('launching a second instance uses the unnamed session flag', () => {
   let seen = null;
   const fakeChild = { unref: function () { seen.unrefed = true; } };
-  const result = profiles.launch('Account Two', {
+  const result = instanceSession.launch({
     appPath: '/app',
     argv: ['electron', '/app', '--no-sandbox'],
     defaultApp: true,
@@ -48,7 +52,7 @@ test('launching a second instance carries its profile and sandbox flag', () => {
       return fakeChild;
     }
   });
-  assert.deepStrictEqual(result.args, ['/app', '--profile=account-two', '--no-sandbox']);
+  assert.deepStrictEqual(result.args, ['/app', instanceSession.INSTANCE_FLAG, '--no-sandbox']);
   assert.strictEqual(seen.executable, '/electron');
   assert.strictEqual(seen.options.detached, true);
   assert.strictEqual(seen.unrefed, true);
@@ -56,7 +60,7 @@ test('launching a second instance carries its profile and sandbox flag', () => {
 
 test('an AppImage instance launches through the AppImage itself', () => {
   let seen = null;
-  profiles.launch('second', {
+  instanceSession.launch({
     appImage: '/tmp/AquaGrim.AppImage',
     execPath: '/tmp/.mount/AquaGrim/aquastar',
     defaultApp: false,
@@ -66,12 +70,13 @@ test('an AppImage instance launches through the AppImage itself', () => {
     }
   });
   assert.strictEqual(seen.executable, '/tmp/AquaGrim.AppImage');
-  assert.deepStrictEqual(seen.args, ['--profile=second']);
+  assert.deepStrictEqual(seen.args, [instanceSession.INSTANCE_FLAG]);
 });
 
-test('profiles are configured before the instance lock is requested', () => {
+test('sessions are configured before the instance lock is requested', () => {
   const main = fs.readFileSync(path.join(__dirname, '../../main.js'), 'utf8');
-  assert.ok(main.indexOf('profiles.configure') < main.indexOf('requestSingleInstanceLock'));
+  assert.ok(main.indexOf('instanceSession.configure') < main.indexOf('requestSingleInstanceLock'));
+  assert.strictEqual(main.indexOf("profile.name"), -1);
   assert.ok(fs.readFileSync(path.join(__dirname, '../../res/windows/menu.js'), 'utf8')
-    .indexOf('profiles.launch') !== -1);
+    .indexOf('instanceSession.launch') !== -1);
 });

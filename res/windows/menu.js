@@ -132,11 +132,9 @@ function pluginContributorMenus(keybinds) {
 function platformAquaStarMenu(menuMessages, keybinds) {
     function openAnotherInstance() {
         const electron = require('electron');
-        const profiles = require('../profiles.js');
+        const instanceSession = require('../instance-session.js');
         try {
-            const here = profiles.current();
-            const name = profiles.createNext(here.appData);
-            profiles.launch(name, {
+            instanceSession.launch({
                 appImage: process.env.APPIMAGE,
                 appPath: electron.app.getAppPath(),
                 argv: process.argv,

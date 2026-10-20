@@ -1,9 +1,8 @@
 const {app, session, Menu, BrowserWindow, dialog}  = require('electron')
 
-const profiles = require('./res/profiles.js');
-let profile;
+const instanceSession = require('./res/instance-session.js');
 try {
-    profile = profiles.configure(app, process.argv, process.env);
+    instanceSession.configure(app, process.argv);
 } catch (error) {
     dialog.showErrorBox('AquaStar', error.message);
     app.exit(1);
@@ -216,14 +215,6 @@ async function createWindow () {
     let win = inst.newBrowserWindow(bootGameUrl, true);
     // Re-apply after setApplicationMenu so the first window keeps plugin menu entries.
     inst.applyWindowMenu(win, bootGameUrl);
-    if (!profile.isDefault) {
-        const suffix = ' - ' + profile.name;
-        win.on('page-title-updated', (event, title) => {
-            event.preventDefault();
-            win.setTitle(title + suffix);
-        });
-        if (win.getTitle().indexOf(suffix) === -1) win.setTitle(win.getTitle() + suffix);
-    }
     
     win.once('ready-to-show', () => {win.show()});  //show launcher only when ready
     
@@ -308,7 +299,7 @@ async function applySessionRules() {
 //app.enableSandbox();
 
 app.on('second-instance', () => {
-  // A second launch of this profile focuses its existing window. Another profile has its own lock.
+  // A duplicate launch of the main session focuses it. Extra instances get their own lock.
   const win = BrowserWindow.getAllWindows()[0];
   if (win) {
     if (win.isMinimized()) win.restore();
@@ -330,6 +321,7 @@ app.on('will-quit', () => {
     catch (e) { console.log('[AquaStar:plugins] deactivate error: ' + e.message); }
   }
 })
+app.on('quit', instanceSession.cleanup)
 app.on('window-all-closed', () => {
   // On macOS it is common for applications and their menu bar
   // to stay active until the user quits explicitly with Cmd + Q
