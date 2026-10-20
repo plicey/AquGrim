@@ -20,14 +20,18 @@
   #chrome select, #chrome button {
     background:#272727; color:#c8c8c8; border:1px solid #3a3a44; border-radius:2px;
   }
+  #chrome .render-scale { display:inline-flex; align-items:center; gap:4px; }
+  #chrome .render-scale input[type=range] { width:96px; height:21px; padding:0; margin:0; }
+  #chrome .render-scale output { min-width:32px; text-align:right; color:#c8c8c8; }
   #chrome span.status { margin-left:auto; overflow:hidden; text-overflow:ellipsis; }
   #stage { flex:1 1 auto; position:relative; min-height:0; }
+  #surface { position:absolute; left:0; top:0; width:100%; height:100%; transform-origin:0 0; }
   object { display:block; width:100%; height:100%; border:none; outline:none; }
 </style>
 </head>
 <body>
 <div id="chrome" role="toolbar"></div>
-<div id="stage"></div>
+<div id="stage"><div id="surface"></div></div>
 <script>
   (function() {
     var params = new URLSearchParams(window.location.search);
@@ -39,6 +43,7 @@
     var scale = params.get('scale') || 'showall';
     var quality = params.get('quality') || 'medium';
     if (['low', 'medium', 'high', 'best'].indexOf(quality) === -1) quality = 'medium';
+    var renderScale = 100;
 
     // Base directory of the SWF so relative ActionScript loads resolve against the
     // game origin, not this file:// wrapper page (critical for DFLoader.swf).
@@ -73,7 +78,27 @@
       obj.appendChild(el);
     });
 
-    document.getElementById('stage').appendChild(obj);
+    var stage = document.getElementById('stage');
+    var surface = document.getElementById('surface');
+    surface.appendChild(obj);
+
+    /** Render fewer pixels and let the browser scale the surface back to the stage. */
+    function applyRenderScale(percent) {
+      var pct = Number(percent);
+      if (!isFinite(pct)) pct = 100;
+      renderScale = Math.max(25, Math.min(100, Math.round(pct / 5) * 5));
+      if (renderScale >= 100) {
+        surface.style.width = '100%';
+        surface.style.height = '100%';
+        surface.style.transform = 'none';
+        return;
+      }
+      var factor = renderScale / 100;
+      surface.style.width = Math.max(1, stage.clientWidth * factor) + 'px';
+      surface.style.height = Math.max(1, stage.clientHeight * factor) + 'px';
+      surface.style.transform = 'scale(' + (1 / factor) + ')';
+    }
+    window.addEventListener('resize', function () { applyRenderScale(renderScale); });
 
     // The chrome strip (ticket #45). The page knows nothing about a game: the platform answers
     // what to draw, from whatever the active plugin declared, and reports back what was pressed.
@@ -145,17 +170,44 @@
       return button;
     }
 
+    /** The platform's render percentage, on the same strip as the plugin's controls. */
+    function renderScaleControl() {
+      var label = el('label', 'render-scale');
+      label.appendChild(el('span', null, 'Scale'));
+      var slider = el('input');
+      slider.type = 'range';
+      slider.min = '25';
+      slider.max = '100';
+      slider.step = '5';
+      slider.value = String(renderScale);
+      slider.setAttribute('aria-label', 'Game render scale');
+      var readout = el('output', null, renderScale + '%');
+      slider.addEventListener('input', function () {
+        applyRenderScale(slider.value);
+        readout.textContent = renderScale + '%';
+        if (typeof api.setRenderScale !== 'function') return;
+        Promise.resolve(api.setRenderScale(renderScale)).catch(function (error) {
+          show(String(error && error.message ? error.message : error));
+        });
+      });
+      label.appendChild(slider);
+      label.appendChild(readout);
+      return label;
+    }
+
     function draw(view) {
       current = view;
       // The strip is hidden and the surface keeps the whole page: that is the no-chrome mode the
       // screenshot and recording paths size their capture from.
       strip.style.display = view && view.enabled ? 'flex' : 'none';
       strip.style.height = view && view.enabled ? (view.height + 'px') : '0';
+      if (view && view.renderScale !== undefined) applyRenderScale(view.renderScale);
       while (strip.firstChild) strip.removeChild(strip.firstChild);
       if (!view || !view.enabled) return;
       (view.controls || []).forEach(function (entry) {
         strip.appendChild(control(entry, view));
       });
+      strip.appendChild(renderScaleControl());
       strip.appendChild(el('span', 'status', view.error || ''));
       strip.lastChild.id = 'chromeStatus';
     }

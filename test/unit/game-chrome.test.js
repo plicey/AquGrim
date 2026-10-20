@@ -80,6 +80,17 @@ test('the strip takes its height from the plugin and the game surface keeps its 
     'the default capture region is the surface, not the window');
 });
 
+test('the render scale is per-window, bounded, and travels with the page view', async () => {
+  const on = harness(DECLARATION);
+  assert.strictEqual(on.chrome.renderScale(on.win), 100, 'the game starts at full resolution');
+  assert.strictEqual(on.chrome.setRenderScale(on.win, 52), 50, 'the slider snaps to five-point steps');
+  const view = await on.chrome.pageView(on.win);
+  assert.strictEqual(view.renderScale, 50, 'the wrapper can apply the saved scale when it redraws');
+  assert.strictEqual(on.chrome.setRenderScale(on.win, 1), 25, 'a quarter resolution is the floor');
+  assert.strictEqual(on.chrome.setRenderScale(on.win, 101), 100, 'and 100% is the ceiling');
+  assert.strictEqual(on.chrome.setRenderScale(on.win, 'nonsense'), 100);
+});
+
 test('toggling returns the window to exactly the plain size and back, and says so on the page', async () => {
   const on = harness(DECLARATION);
   assert.deepStrictEqual(on.chrome.setEnabled(on.win, false), { enabled: false, height: 27 });
@@ -294,4 +305,10 @@ test('the wrapper page carries the strip above the surface and asks the platform
   assert.ok(page.indexOf('aquastarChrome') !== -1, 'the page reads the platform API, not a game');
   // A page with no strip in it must not ask for one: the same wrapper serves plugins that want none.
   assert.ok(page.indexOf('view.enabled') !== -1 || page.indexOf('view && view.enabled') !== -1);
+  assert.ok(page.indexOf('type="range"') === -1 || page.indexOf("slider.type = 'range'") !== -1,
+    'the render scale is a slider');
+  assert.ok(page.indexOf("slider.min = '25'") !== -1 && page.indexOf("slider.max = '100'") !== -1);
+  assert.ok(page.indexOf("surface.style.transform = 'scale('") !== -1,
+    'the smaller backing surface is scaled back up to fill the stage');
+  assert.ok(page.indexOf('api.setRenderScale') !== -1, 'the slider stores its value per window');
 });

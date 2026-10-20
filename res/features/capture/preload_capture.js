@@ -6,6 +6,7 @@ const { ipcRenderer, contextBridge } = require("electron");
 contextBridge.exposeInMainWorld("aquastarChrome", {
   getView: function () { return ipcRenderer.invoke("getGameChromeView"); },
   action: function (id, args) { return ipcRenderer.invoke("gameChromeAction", id, args); },
+  setRenderScale: function (value) { return ipcRenderer.invoke("setGameRenderScale", value); },
   onView: function (listener) {
     const wrapped = function (_event, view) { listener(view); };
     ipcRenderer.on("gameChromeView", wrapped);

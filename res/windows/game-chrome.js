@@ -108,12 +108,29 @@ function createGameChrome(deps) {
         });
     }
 
+    /** The window's render percentage: 25-100, in five-point steps. */
+    function renderScale(win) {
+        const asked = Number(win && win.aquaStarRenderScale);
+        if (!isFinite(asked) || asked <= 0) return 100;
+        return Math.max(25, Math.min(100, Math.round(asked / 5) * 5));
+    }
+
+    function setRenderScale(win, value) {
+        const asked = Number(value);
+        const next = isFinite(asked)
+            ? Math.max(25, Math.min(100, Math.round(asked / 5) * 5))
+            : 100;
+        if (win) win.aquaStarRenderScale = next;
+        return next;
+    }
+
     /** Everything the page needs to draw the strip, including the plugin's live values. */
     function pageView(win) {
         const view = {
             enabled: isEnabled(win),
             height: height(),
             controls: controls(),
+            renderScale: renderScale(win),
             values: {},
             options: {}
         };
@@ -228,6 +245,8 @@ function createGameChrome(deps) {
         available: available,
         height: height,
         controls: controls,
+        renderScale: renderScale,
+        setRenderScale: setRenderScale,
         isEnabled: isEnabled,
         stripHeight: stripHeight,
         contentSize: contentSize,

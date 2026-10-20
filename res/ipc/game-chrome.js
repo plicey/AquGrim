@@ -17,3 +17,9 @@ ipcMain.handle('getGameChromeView', function (event) {
 ipcMain.handle('gameChromeAction', function (event, id, args) {
     return gameChrome().dispatch(windowOf(event), id, args);
 });
+
+ipcMain.handle('setGameRenderScale', function (event, value) {
+    const win = windowOf(event);
+    if (!win) return { ok: false, error: 'this page has no game window' };
+    return { ok: true, value: gameChrome().setRenderScale(win, value) };
+});
