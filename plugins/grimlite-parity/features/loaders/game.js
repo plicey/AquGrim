@@ -95,6 +95,18 @@ function createGameAccess(bridge, log) {
     const note = typeof log === 'function' ? log : function () {};
 
     let attached = false;
+    // World.LoadedShops: the reference accumulates each shop the client reports, keyed by id.
+    const loadedShops = [];
+
+    function rememberShops(payload) {
+        const shops = Array.isArray(payload) ? payload
+            : (payload && Array.isArray(payload.$values) ? payload.$values : [payload]);
+        shops.forEach(function (shop) {
+            if (!shop || typeof shop !== 'object' || shop.ShopID === undefined || shop.ShopID === null) return;
+            if (loadedShops.some(function (held) { return String(held.ShopID) === String(shop.ShopID); })) return;
+            loadedShops.push(shop);
+        });
+    }
 
     /** Attach once, and retry after a failure: the game window may open later, or reopen. */
     function ensure() {
@@ -212,6 +224,7 @@ function createGameAccess(bridge, log) {
         /** The inventory: the game's own getInventory, then its own inventory tree. */
         readInventory: function () {
             return firstOf('the inventory', [
+                { name: 'GetInventoryItems', kind: 'loader' },
                 { name: 'world.getInventory', kind: 'call' },
                 { name: 'world.invTree', kind: 'read' }
             ]).then(function (payload) {
@@ -222,6 +235,7 @@ function createGameAccess(bridge, log) {
         /** The bank, from the game's own bank information object. */
         readBankItems: function () {
             return firstOf('the bank', [
+                { name: 'GetBankItems', kind: 'loader' },
                 { name: 'world.bankinfo', kind: 'read' }
             ]).then(function (payload) {
                 return asList(payload && payload.items !== undefined ? payload.items : payload);
@@ -231,6 +245,7 @@ function createGameAccess(bridge, log) {
         /** The temporary (quest) items, from the game's own temporary inventory object. */
         readTempItems: function () {
             return firstOf('the temporary inventory', [
+                { name: 'GetTempItems', kind: 'loader' },
                 { name: 'world.tempitems', kind: 'read' }
             ]).then(function (payload) {
                 return asList(payload && payload.items !== undefined ? payload.items : payload);
@@ -255,7 +270,20 @@ function createGameAccess(bridge, log) {
         readShopInfo: function () {
             return firstOf('the shop', [
                 { name: 'world.shopinfo', kind: 'read' }
-            ]);
+            ]).then(function (payload) {
+                rememberShops(payload);
+                return payload;
+            });
+        },
+
+        /** World.LoadedShops: every shop this loaders window has seen, in load order. */
+        readLoadedShops: function () {
+            return access.readShopInfo().then(function () {
+                return loadedShops.slice();
+            }, function (error) {
+                if (loadedShops.length) return loadedShops.slice();
+                throw error;
+            });
         },
 
         /** The monsters standing in the player's own frame. */
@@ -319,25 +347,35 @@ function createGameAccess(bridge, log) {
 
         /** Shop.Load(id): the loader's ResetShopInfo then LoadShop, then the game's own request. */
         loadShop: function (id) {
-            return loadTarget('shop ' + id, [
-                { name: 'ResetShopInfo' },
-                { name: 'LoadShop', args: [String(id)] },
-                { name: 'world.sendLoadShopRequest', args: [Number(id)] }
-            ]);
+            // Reset is a preparation step, not a route that counts as the load. On channels with
+            // the loader surface it answers first, so treating it as "the target loaded" would
+            // stop before LoadShop is ever asked.
+            return loaderCall('ResetShopInfo').catch(function () { return null; }).then(function () {
+                return loadTarget('shop ' + id, [
+                    { name: 'LoadShop', kind: 'loader', args: [String(id)] },
+                    { name: 'world.sendLoadShopRequest', args: [Number(id)] }
+                ]);
+            }).then(function (answer) {
+                if (!answer.ok) return answer;
+                return access.readShopInfo().then(function () { return answer; }, function () { return answer; });
+            });
         },
 
         /** Shop.LoadHairShop(id), then the game's own request for the same thing. */
         loadHairShop: function (id) {
             return loadTarget('the hair shop ' + id, [
-                { name: 'LoadHairShop', args: [String(id)] },
+                { name: 'LoadHairShop', kind: 'loader', args: [String(id)] },
                 { name: 'world.sendLoadHairShopRequest', args: [Number(id)] }
-            ]);
+            ]).then(function (answer) {
+                if (!answer.ok) return answer;
+                return access.readShopInfo().then(function () { return answer; }, function () { return answer; });
+            });
         },
 
         /** Shop.LoadArmorCustomizer(), then the game's own openArmorCustomize. */
         loadArmorCustomizer: function () {
             return loadTarget('the armour customizer', [
-                { name: 'LoadArmorCustomizer' },
+                { name: 'LoadArmorCustomizer', kind: 'loader' },
                 { name: 'world.openArmorCustomize' }
             ]);
         },

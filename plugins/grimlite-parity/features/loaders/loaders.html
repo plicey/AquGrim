@@ -10,7 +10,7 @@
     margin: 0; height: 100%; background: #2e2e38; color: #dcdcdc;
     font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 12px;
   }
-  body { padding: 6px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; }
+  body { position: relative; overflow: hidden; box-sizing: border-box; }
   select, input[type=text], input[type=number] {
     background: #1b1b1b; color: #dcdcdc; border: 1px solid #3a3a45; border-radius: 3px;
     padding: 2px 4px; font: inherit; min-width: 0; box-sizing: border-box;
@@ -21,11 +21,22 @@
   }
   button:hover:not(:disabled) { background: #4a4a58; }
   button:disabled { opacity: .45; cursor: default; }
-  /* The reference's own layout: a stacked panel above and below the tree. */
-  .panel { display: grid; grid-template-columns: 1fr 62px; gap: 3px; align-items: center; }
-  .panel .wide { grid-column: 1 / span 2; }
+  /* Loaders.cs's own 271x367 client layout. The two columns are 156/67px at the default
+     width; the left column stretches and the right-side controls keep their 67px width. */
+  #top {
+    position: absolute; left: 12px; right: 12px; top: 12px; height: 76px;
+    display: grid; grid-template-columns: minmax(0, 1fr) 67px;
+    grid-template-rows: 20px 23px 23px; column-gap: 24px; row-gap: 5px;
+    align-items: center;
+  }
+  #loaderValue, #questCount, #loadTarget, #forceAccept, #load, #ghost {
+    grid-column: 1; width: 100%;
+  }
+  #questCount, #forceAccept, #ghost { grid-column: 2; }
+  #ghost { justify-self: start; }
   #treeWrap {
-    flex: 1 1 auto; min-height: 90px; background: #2e2e38; border: 1px solid #3a3a45;
+    position: absolute; left: 12px; right: 12px; top: 94px; bottom: 93px;
+    background: #2e2e38; border: 1px solid #3a3a45;
     overflow: auto; padding: 2px;
   }
   #tree { list-style: none; margin: 0; padding: 0; white-space: nowrap; }
@@ -35,7 +46,26 @@
   #tree .kids { list-style: none; margin: 0; padding-left: 14px; }
   #tree .collapsed > .kids { display: none; }
   #tree .twisty { display: inline-block; width: 10px; color: #9a9a9a; cursor: pointer; }
-  #status { min-height: 15px; color: #9a9a9a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #searchRow, #grabRow {
+    position: absolute; left: 12px; right: 12px; height: 23px;
+    display: grid; grid-template-columns: minmax(0, 1fr) 67px; column-gap: 6px;
+  }
+  #searchRow { bottom: 64px; }
+  #grabRow { bottom: 40px; height: 21px; }
+  #searchRow > *, #grabRow > * { width: 100%; min-width: 0; }
+  #buttons {
+    position: absolute; left: 12px; right: 12px; bottom: 8px; height: 26px;
+    display: flex; gap: 1px;
+  }
+  #save { flex: 1 1 auto; }
+  #grab { flex: 0 0 125px; }
+  #status {
+    position: absolute; left: 12px; right: 12px; top: 96px; z-index: 4; display: none;
+    padding: 3px 5px; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; background: rgba(30, 30, 36, .94); border: 1px solid #3a3a45;
+    color: #9a9a9a; pointer-events: none;
+  }
+  #status.visible { display: block; }
   #status.err { color: #ff8a80; }
   #menu {
     position: absolute; z-index: 10; display: none; background: #242430; color: #dcdcdc;
@@ -55,29 +85,32 @@
     ("Search"), btnSearchGrab ("Search"), cbGrab (the eight grabbers), cbOrderBy ("Name", "Id"),
     btnSave ("Save") and btnGrab ("Grab").
   -->
-  <div class="panel">
+  <div id="top">
     <input id="loaderValue" type="text" title="The id, or a comma separated list of quest ids">
     <input id="questCount" type="number" min="1" max="30" value="1" title="numTQuests">
-    <select id="loadTarget" class="wide"></select>
-    <button id="load" class="wide">Load</button>
-    <button id="forceAccept" class="wide" title="Ghost accept the quest">F Accept</button>
-    <label class="check wide"><input id="ghost" type="checkbox" checked>Ghost</label>
+    <select id="loadTarget"></select>
+    <button id="forceAccept" title="Ghost accept the quest">F Accept</button>
+    <button id="load">Load</button>
+    <label class="check" id="ghost"><input type="checkbox" checked>Ghost</label>
   </div>
 
   <div id="treeWrap">
     <ul id="tree"></ul>
   </div>
 
-  <div class="panel">
+  <div id="searchRow">
     <input id="search" type="text" placeholder="Search">
     <button id="searchButton">Search</button>
-    <select id="grabTarget" class="wide"></select>
-    <select id="orderBy" class="wide">
+  </div>
+  <div id="grabRow">
+    <select id="grabTarget"></select>
+    <select id="orderBy">
       <option value="Name">Name</option>
       <option value="Id">Id</option>
     </select>
+  </div>
+  <div id="buttons">
     <button id="save">Save</button>
-    <button id="open">Open</button>
     <button id="grab">Grab</button>
   </div>
 
@@ -102,6 +135,7 @@
   function say(text, isError) {
     status.textContent = text == null ? '' : String(text);
     status.className = isError ? 'err' : '';
+    status.classList.toggle('visible', !!status.textContent);
   }
 
   function fill(select, labels) {
@@ -348,12 +382,11 @@
   el('forceAccept').addEventListener('click', function () { load(true); });
   el('grab').addEventListener('click', grab);
   el('save').addEventListener('click', save);
-  el('open').addEventListener('click', open);
   el('searchButton').addEventListener('click', search);
   el('search').addEventListener('keydown', function (event) {
     if (event.key === 'Enter') search();
   });
-  sheets().then(function () { say('Ready.'); });
+  sheets();
 })();
 </script>
 </body>

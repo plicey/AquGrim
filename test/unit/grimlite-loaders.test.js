@@ -420,6 +420,47 @@ test('a read falls back to the game\'s other object when the first one refuses',
   assert.strictEqual(access.lastRead.answeredBy, 'world.invTree');
 });
 
+test('the shop grabber accumulates loaded shops like World.LoadedShops', async () => {
+  let current = { ShopID: 1, sName: 'First Shop', Location: 'Here', items: [] };
+  const bridge = {
+    call: function (name, args) {
+      if (name === 'getGameObject' && args[0] === 'world.shopinfo') {
+        return Promise.resolve({ ok: true, value: JSON.stringify(current) });
+      }
+      return Promise.resolve({ ok: false, error: 'not asked in this test' });
+    }
+  };
+  const access = game.createGameAccess(bridge);
+  await access.readShopInfo();
+  current = { ShopID: 2, sName: 'Second Shop', Location: 'There', items: [] };
+  await access.readShopInfo();
+  current = { ShopID: 2, sName: 'Second Shop', Location: 'There', items: [] };
+  const shops = await access.readLoadedShops();
+  assert.deepStrictEqual(shops.map(function (shop) { return shop.ShopID; }), [1, 2]);
+  assert.deepStrictEqual(texts(grabbers.buildRows('shopItems', shops)), ['First Shop', 'Second Shop']);
+});
+
+test('shop and inventory operations prefer the implemented loader surface', async () => {
+  const loaderCalls = [];
+  const bridge = {
+    call: function (name, args) {
+      if (name === 'getGameObject' && args[0] === 'world.shopinfo') {
+        return Promise.resolve({ ok: true, value: JSON.stringify({ ShopID: 4, sName: 'Loaded', items: [] }) });
+      }
+      return Promise.resolve({ ok: false, error: 'generic fallback should not be used' });
+    },
+    loaderCall: function (name) {
+      loaderCalls.push(name);
+      if (name === 'GetInventoryItems') return Promise.resolve([{ ItemID: 7, sName: 'Rock', iQty: 1, iStk: 9 }]);
+      return Promise.resolve(true);
+    }
+  };
+  const access = game.createGameAccess(bridge);
+  assert.deepStrictEqual(await access.readInventory(), [{ ItemID: 7, sName: 'Rock', iQty: 1, iStk: 9 }]);
+  assert.strictEqual((await access.loadShop(4)).via, 'LoadShop');
+  assert.deepStrictEqual(loaderCalls.slice(0, 3), ['GetInventoryItems', 'ResetShopInfo', 'LoadShop']);
+});
+
 test('a read that nobody answers reports every attempt\'s own words, never an empty list', async () => {
   const access = game.createGameAccess(bridgeStub({}));
   await assert.rejects(function () { return access.readQuestTree(); },
@@ -476,12 +517,12 @@ test('a loaded target asks the reference\'s own name first, then the game\'s own
   assert.strictEqual(result.ok, true);
   assert.strictEqual(result.via, 'world.sendLoadShopRequest');
   assert.deepStrictEqual(bridge.calls.map(function (c) { return c.name + ':' + c.args[0]; }), [
-    // Shop.Load resets the shop info first, then loads.
-    'callGameFunction0:ResetShopInfo',
-    'callGameFunction:LoadShop',
-    'callGameFunction:world.sendLoadShopRequest'
+    // The stock game cannot answer the loader-only reset/load names on this channel.
+    'callGameFunction:world.sendLoadShopRequest',
+    // The loaded answer is remembered for the shop grabber's accumulated list.
+    'getGameObject:world.shopinfo'
   ]);
-  assert.deepStrictEqual(bridge.calls[2].args, ['world.sendLoadShopRequest', 42]);
+  assert.deepStrictEqual(bridge.calls[0].args, ['world.sendLoadShopRequest', 42]);
 });
 
 test('every loader target has the game-side call the stock SWF actually has', async () => {
@@ -852,13 +893,16 @@ test('the parity plugin registers the loaders window in the app\'s window conven
   ['grab', 'load', 'save', 'open', 'act', 'messages'].forEach(function (name) {
     assert.ok(exposed.indexOf(name) !== -1, 'the preload must expose ' + name);
   });
-  // cbGrab opens with no choice, the node text is editable (TreeView.LabelEdit), a search
-  // expands collapsed ancestors, and Open is a visible control rather than a hidden dblclick.
+  // cbGrab opens with no choice, the node text is editable (TreeView.LabelEdit), and a search
+  // expands collapsed ancestors. The reference's form has only Save and Grab at the bottom.
   assert.ok(/grabTarget'\)\.selectedIndex = -1/.test(html), 'the grabber combo must open unselected');
   assert.ok(html.indexOf('contentEditable') !== -1, 'a tree node text must be editable');
   assert.ok(html.indexOf("classList.remove('collapsed')") !== -1,
     'a search result must expand its collapsed ancestors');
-  assert.ok(/<button id="open"/.test(html), 'Open must be a visible control');
+  assert.ok(!/<button id="open"/.test(html), 'the reference has no Open button');
+  assert.ok(html.indexOf('id="top"') !== -1 && html.indexOf('id="searchRow"') !== -1 &&
+    html.indexOf('id="grabRow"') !== -1 && html.indexOf('id="buttons"') !== -1,
+  'the form uses the reference\'s absolute rows');
   (html.match(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g) || []).forEach(function (block) {
     const source = block.replace(/^<script[^>]*>/, '').replace(/<\/script>$/, '');
     assert.doesNotThrow(function () { new (require('vm').Script)(source); });
