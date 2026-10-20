@@ -313,7 +313,7 @@ test('AttackPriority steps aside when the target it already holds is the one it 
   assert.strictEqual(game.count('AttackMonster'), 0, 'nor is the held name');
 });
 
-test('the wildcard attack is the last resort and a target that did not change is reported', async () => {
+test('the wildcard acquires through AttackMonster even when the availability probe disagrees', async () => {
   const game = fakeGame(standing({
     HasTarget: false,
     AttackMonster: true,
@@ -327,15 +327,15 @@ test('the wildcard attack is the last resort and a target that did not change is
   assert.deepStrictEqual(game.payload('AttackMonster'), ['*']);
   assert.ok(fake.maid.note() === null || !/not /.test(fake.maid.note()),
     'the wildcard does not compare names');
-  // The wildcard is only asked for when World.IsMonsterAvailable("*") says there is one: with
-  // the cell empty, no attack is sent at all (MaidRemake.cs:246).
+  // AutoAttack acquires through this same callback. The weaker availability probe can disagree
+  // with the live-object callback, so it must not be allowed to suppress target acquisition.
   const quiet = fakeGame(standing({ HasTarget: false, AttackMonster: true, IsMonsterAvailable: false }));
   const empty = fakeMaid(quiet, { config: config.stateFrom({ RelogDelay: 0, SkillDelay: 0 }) });
   empty.maid.setTarget('master');
   empty.maid.setEnabled(true);
   await settledTicks(empty);
-  assert.strictEqual(quiet.count('AttackMonster'), 0,
-    'no wildcard attack while World.IsMonsterAvailable("*") is false');
+  assert.deepStrictEqual(quiet.payload('AttackMonster'), ['*'],
+    'the working live-object callback still gets the wildcard');
   assert.ok(game.calls.some(function (one) {
     return one.name === 'read' && one.args[0] === maidModel.TARGET_NAME_PATH;
   }), 'the read-back is the one documented path read');
