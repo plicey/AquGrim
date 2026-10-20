@@ -440,6 +440,26 @@ test('the shop grabber accumulates loaded shops like World.LoadedShops', async (
   assert.deepStrictEqual(texts(grabbers.buildRows('shopItems', shops)), ['First Shop', 'Second Shop']);
 });
 
+test('loadShop frames fill the shop cache before the Loaders window is used', async () => {
+  let handler = null;
+  const packets = {
+    on: function (name, next) {
+      if (name === 'frame') handler = next;
+      return function () {};
+    }
+  };
+  const bridge = {
+    call: function () { return Promise.resolve({ ok: false, error: 'no current shop' }); }
+  };
+  const access = game.createGameAccess(bridge, function () {}, { packets: packets });
+  assert.strictEqual(typeof handler, 'function');
+  handler({ data: JSON.stringify({ b: { o: {
+    cmd: 'loadShop', shopinfo: { ShopID: 9, sName: 'Frame Shop', Location: 'Here', items: [] }
+  } } }) });
+  const shops = await access.readLoadedShops();
+  assert.deepStrictEqual(shops.map(function (shop) { return shop.ShopID; }), [9]);
+});
+
 test('shop and inventory operations prefer the implemented loader surface', async () => {
   const loaderCalls = [];
   const bridge = {

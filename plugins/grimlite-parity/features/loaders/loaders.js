@@ -35,10 +35,10 @@ const FILTER = { name: 'XML files', extensions: ['xml'] };
  */
 function createBotLists(deps) {
     const document = deps && deps.bot && typeof deps.bot === 'object' ? deps.bot : null;
+    function unwired() {
+        return { added: 0, wired: false, reason: ERRORS.noLists };
+    }
     if (!document) {
-        function unwired() {
-            return { added: 0, wired: false, reason: ERRORS.noLists };
-        }
         return {
             addDrops: unwired,
             addItems: unwired,
@@ -455,7 +455,7 @@ function createFromHost(host, deps) {
     return createLoadersFeature(host, Object.assign({
         game: deps.game || require('./game.js').createGameAccess(host.bridge, function (msg) {
             host.log(msg);
-        }),
+        }, { packets: host.packets }),
         openUrl: deps.openUrl || function (url, mode) { host.windows.openUrl(url, mode); },
         clipboard: deps.clipboard || {
             writeText: function (value) { electron.clipboard.writeText(String(value)); }

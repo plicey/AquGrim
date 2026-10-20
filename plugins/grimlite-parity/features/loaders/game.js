@@ -90,9 +90,12 @@ function plain(raw) {
 /**
  * @param {object} bridge host.bridge, or a stand-in with the same two members (attach, call).
  * @param {(msg: string) => void} [log]
+ * @param {{packets?: object}} [options] the packet tap, so loaded shops accumulate even before
+ *        this window is opened (World.OnShopLoaded's global LoadedShops list)
  */
-function createGameAccess(bridge, log) {
+function createGameAccess(bridge, log, options) {
     const note = typeof log === 'function' ? log : function () {};
+    options = options || {};
 
     let attached = false;
     // World.LoadedShops: the reference accumulates each shop the client reports, keyed by id.
@@ -106,6 +109,26 @@ function createGameAccess(bridge, log) {
             if (loadedShops.some(function (held) { return String(held.ShopID) === String(shop.ShopID); })) return;
             loadedShops.push(shop);
         });
+    }
+
+    // HandlerLoadShop: every loadShop frame names its shopinfo. This is the reference's
+    // World.OnShopLoaded feed, independent of whether the Loaders window is open.
+    if (options.packets && typeof options.packets.on === 'function') {
+        const auras = require('../../bot/auras.js');
+        try {
+            options.packets.on('frame', function (frame) {
+                try {
+                    const parsed = JSON.parse(auras.frameText(frame && frame.data));
+                    const payload = auras.payloadOf(parsed);
+                    if (payload && payload.cmd === 'loadShop' && payload.shopinfo) {
+                        rememberShops(payload.shopinfo);
+                    }
+                } catch (error) { /* a non-loadShop frame is not this cache's business */ }
+            });
+        } catch (error) {
+            note('shop cache could not subscribe to loadShop frames: ' +
+                ((error && error.message) || String(error)));
+        }
     }
 
     /** Attach once, and retry after a failure: the game window may open later, or reopen. */
