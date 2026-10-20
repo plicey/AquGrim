@@ -79,6 +79,7 @@ global.test = function (name, fn) {
   './unit/aqw-menus.test.js',
   './unit/namespaced-store.test.js',
   './unit/settings-resolve.test.js',
+  './unit/multi-instance.test.js',
   './unit/pack-plugins.test.js',
   './unit/grimlite-cosmetics.test.js',
   './unit/grimlite-bot-engine.test.js',

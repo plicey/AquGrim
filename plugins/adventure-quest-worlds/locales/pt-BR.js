@@ -59,6 +59,7 @@ exports.dialogMessages = {
 };
 
 exports.menuMessages = {
+    menuNewInstance: "Abrir Outra Instância",
     menuOtherPages: "Páginas úteis",
     menuOtherPages2: "Outras páginas úteis",
     menuSocialMedia: "Redes sociais",

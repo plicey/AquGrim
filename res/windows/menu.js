@@ -130,10 +130,31 @@ function pluginContributorMenus(keybinds) {
 }
 
 function platformAquaStarMenu(menuMessages, keybinds) {
+    function openAnotherInstance() {
+        const electron = require('electron');
+        const profiles = require('../profiles.js');
+        try {
+            const here = profiles.current();
+            const name = profiles.createNext(here.appData);
+            profiles.launch(name, {
+                appImage: process.env.APPIMAGE,
+                appPath: electron.app.getAppPath(),
+                argv: process.argv,
+                defaultApp: process.defaultApp,
+                execPath: process.execPath,
+                onError: function (error) {
+                    electron.dialog.showErrorBox('Open another instance', error.message);
+                }
+            });
+        } catch (error) {
+            electron.dialog.showErrorBox('Open another instance', error.message);
+        }
+    }
     return {
         label: 'AquaStar',
         submenu: [
             command(menuMessages.menuSettings || 'Settings', 'settings', keybinds.settings),
+            { label: menuMessages.menuNewInstance || 'Open Another Instance', click: openAnotherInstance },
             { type: 'separator' },
             command(menuMessages.menuHelp || 'Help', 'help', keybinds.help),
             command(menuMessages.menuAbout || 'About', 'about', keybinds.about)

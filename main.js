@@ -1,5 +1,15 @@
 const {app, session, Menu, BrowserWindow, dialog}  = require('electron')
 
+const profiles = require('./res/profiles.js');
+let profile;
+try {
+    profile = profiles.configure(app, process.argv, process.env);
+} catch (error) {
+    dialog.showErrorBox('AquaStar', error.message);
+    app.exit(1);
+    return;
+}
+
 // Helper processes (host.windows.spawnHelperProcess): a plugin script that needs its own
 // Electron process. The platform runs it instead of the normal app and knows nothing else.
 const helper = require('./res/platform/helper-process.js').resolveHelperScript(process.argv, __dirname);
@@ -206,6 +216,14 @@ async function createWindow () {
     let win = inst.newBrowserWindow(bootGameUrl, true);
     // Re-apply after setApplicationMenu so the first window keeps plugin menu entries.
     inst.applyWindowMenu(win, bootGameUrl);
+    if (!profile.isDefault) {
+        const suffix = ' - ' + profile.name;
+        win.on('page-title-updated', (event, title) => {
+            event.preventDefault();
+            win.setTitle(title + suffix);
+        });
+        if (win.getTitle().indexOf(suffix) === -1) win.setTitle(win.getTitle() + suffix);
+    }
     
     win.once('ready-to-show', () => {win.show()});  //show launcher only when ready
     
@@ -290,7 +308,7 @@ async function applySessionRules() {
 //app.enableSandbox();
 
 app.on('second-instance', () => {
-  // Someone tried to run a second AquaStar - focus the existing one instead.
+  // A second launch of this profile focuses its existing window. Another profile has its own lock.
   const win = BrowserWindow.getAllWindows()[0];
   if (win) {
     if (win.isMinimized()) win.restore();

@@ -41,6 +41,7 @@ exports.logsMessages = {
 };
 
 exports.menuMessages = {
+    menuNewInstance: "",
     grimliteMenu: "",
     grimliteBot: "",
     grimliteBotManager: "",
