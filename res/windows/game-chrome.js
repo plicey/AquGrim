@@ -108,17 +108,17 @@ function createGameChrome(deps) {
         });
     }
 
-    /** The window's render percentage: 25-100, in five-point steps. */
+    /** The window's render percentage: 25-100, continuous. */
     function renderScale(win) {
         const asked = Number(win && win.aquaStarRenderScale);
         if (!isFinite(asked) || asked <= 0) return 100;
-        return Math.max(25, Math.min(100, Math.round(asked / 5) * 5));
+        return Math.max(25, Math.min(100, Math.round(asked * 10) / 10));
     }
 
     function setRenderScale(win, value) {
         const asked = Number(value);
         const next = isFinite(asked)
-            ? Math.max(25, Math.min(100, Math.round(asked / 5) * 5))
+            ? Math.max(25, Math.min(100, Math.round(asked * 10) / 10))
             : 100;
         if (win) win.aquaStarRenderScale = next;
         return next;

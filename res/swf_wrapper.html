@@ -86,7 +86,7 @@
     function applyRenderScale(percent) {
       var pct = Number(percent);
       if (!isFinite(pct)) pct = 100;
-      renderScale = Math.max(25, Math.min(100, Math.round(pct / 5) * 5));
+      renderScale = Math.max(25, Math.min(100, Math.round(pct * 10) / 10));
       if (renderScale >= 100) {
         surface.style.width = '100%';
         surface.style.height = '100%';
@@ -178,18 +178,26 @@
       slider.type = 'range';
       slider.min = '25';
       slider.max = '100';
-      slider.step = '5';
+      slider.step = 'any';
       slider.value = String(renderScale);
       slider.setAttribute('aria-label', 'Game render scale');
-      var readout = el('output', null, renderScale + '%');
-      slider.addEventListener('input', function () {
+      var readout = el('output', null, Math.round(renderScale) + '%');
+      var saveTimer = null;
+      function commit() {
+        window.clearTimeout(saveTimer);
+        saveTimer = null;
         applyRenderScale(slider.value);
-        readout.textContent = renderScale + '%';
         if (typeof api.setRenderScale !== 'function') return;
         Promise.resolve(api.setRenderScale(renderScale)).catch(function (error) {
           show(String(error && error.message ? error.message : error));
         });
+      }
+      slider.addEventListener('input', function () {
+        readout.textContent = Math.round(Number(slider.value)) + '%';
+        window.clearTimeout(saveTimer);
+        saveTimer = window.setTimeout(commit, 120);
       });
+      slider.addEventListener('change', commit);
       label.appendChild(slider);
       label.appendChild(readout);
       return label;

@@ -83,9 +83,9 @@ test('the strip takes its height from the plugin and the game surface keeps its 
 test('the render scale is per-window, bounded, and travels with the page view', async () => {
   const on = harness(DECLARATION);
   assert.strictEqual(on.chrome.renderScale(on.win), 100, 'the game starts at full resolution');
-  assert.strictEqual(on.chrome.setRenderScale(on.win, 52), 50, 'the slider snaps to five-point steps');
+  assert.strictEqual(on.chrome.setRenderScale(on.win, 52.4), 52.4, 'the slider is continuous');
   const view = await on.chrome.pageView(on.win);
-  assert.strictEqual(view.renderScale, 50, 'the wrapper can apply the saved scale when it redraws');
+  assert.strictEqual(view.renderScale, 52.4, 'the wrapper can apply the saved scale when it redraws');
   assert.strictEqual(on.chrome.setRenderScale(on.win, 1), 25, 'a quarter resolution is the floor');
   assert.strictEqual(on.chrome.setRenderScale(on.win, 101), 100, 'and 100% is the ceiling');
   assert.strictEqual(on.chrome.setRenderScale(on.win, 'nonsense'), 100);
@@ -308,6 +308,9 @@ test('the wrapper page carries the strip above the surface and asks the platform
   assert.ok(page.indexOf('type="range"') === -1 || page.indexOf("slider.type = 'range'") !== -1,
     'the render scale is a slider');
   assert.ok(page.indexOf("slider.min = '25'") !== -1 && page.indexOf("slider.max = '100'") !== -1);
+  assert.ok(page.indexOf("slider.step = 'any'") !== -1, 'the slider has no percentage snapping');
+  assert.ok(page.indexOf('saveTimer = window.setTimeout(commit, 120)') !== -1,
+    'dragging debounces the scale application');
   assert.ok(page.indexOf("surface.style.transform = 'scale('") !== -1,
     'the smaller backing surface is scaled back up to fill the stage');
   assert.ok(page.indexOf('api.setRenderScale') !== -1, 'the slider stores its value per window');
