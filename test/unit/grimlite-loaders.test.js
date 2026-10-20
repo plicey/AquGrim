@@ -424,10 +424,48 @@ test('a read that nobody answers reports every attempt\'s own words, never an em
   const access = game.createGameAccess(bridgeStub({}));
   await assert.rejects(function () { return access.readQuestTree(); },
     function (error) {
+      assert.ok(/GetQuestTree/.test(error.message), error.message);
       assert.ok(/world\.questTree/.test(error.message), error.message);
-      assert.ok(/world\.getQuests/.test(error.message), error.message);
       return true;
     });
+});
+
+test('quest reads and loads use the loader surface, with array-shaped game fallback', async () => {
+  const loaderCalls = [];
+  const bridge = {
+    call: function (name, args) {
+      if (args[0] === 'world.getQuests') {
+        assert.deepStrictEqual(args[1], ['10', '11'], 'world.getQuests takes an array');
+        return Promise.resolve({ ok: true, value: 'null' });
+      }
+      return Promise.resolve({ ok: false, error: 'no member ' + args[0] });
+    },
+    loaderCall: function (name, args) {
+      loaderCalls.push({ name: name, args: args });
+      if (name === 'GetQuestTree') return Promise.resolve([{ QuestID: 10, sName: 'Loaded' }]);
+      return Promise.resolve(null);
+    }
+  };
+  const access = game.createGameAccess(bridge);
+
+  assert.deepStrictEqual(await access.readQuestTree(), [{ QuestID: 10, sName: 'Loaded' }]);
+  assert.strictEqual(access.lastRead.answeredBy, 'GetQuestTree');
+  assert.strictEqual((await access.loadQuest(10)).via, 'LoadQuest');
+  assert.strictEqual((await access.loadQuests([10, 11])).via, 'LoadQuests');
+  assert.deepStrictEqual(loaderCalls.map(function (call) { return call.name + ':' + call.args.join(','); }), [
+    'GetQuestTree:', 'LoadQuest:10', 'LoadQuests:10,11'
+  ]);
+
+  const fallback = game.createGameAccess({
+    call: function (name, args) {
+      if (args[0] === 'world.getQuests') {
+        assert.deepStrictEqual(args[1], ['10', '11']);
+        return Promise.resolve({ ok: true, value: 'null' });
+      }
+      return Promise.resolve({ ok: false, error: 'no member ' + args[0] });
+    }
+  });
+  assert.strictEqual((await fallback.loadQuests([10, 11])).via, 'world.getQuests');
 });
 
 test('a loaded target asks the reference\'s own name first, then the game\'s own request', async () => {

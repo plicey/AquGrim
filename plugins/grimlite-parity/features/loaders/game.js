@@ -127,6 +127,16 @@ function createGameAccess(bridge, log) {
         });
     }
 
+    /** The reference loader's own helper surface, when this channel carries it. */
+    function loaderCall(name, args) {
+        return ensure().then(function () {
+            if (!bridge || typeof bridge.loaderCall !== 'function') {
+                throw new Error('this app has no loader helper surface');
+            }
+            return bridge.loaderCall(name, Array.isArray(args) ? args : []);
+        }).then(decode);
+    }
+
     /** One dot-path read through the generic surface: getGameObject, decoded. */
     function read(path) {
         return ensure().then(function () {
@@ -140,7 +150,9 @@ function createGameAccess(bridge, log) {
     }
 
     function run(route) {
-        return route.kind === 'call' ? invoke(route.name, route.args) : read(route.name);
+        if (route.kind === 'loader') return loaderCall(route.name, route.args);
+        if (route.kind === 'read') return read(route.name);
+        return invoke(route.name, route.args);
     }
 
     /**
@@ -177,7 +189,7 @@ function createGameAccess(bridge, log) {
                     error: 'could not load ' + what + ' - ' + tried.join('; ')
                 });
             }
-            return invoke(routes[index].name, routes[index].args).then(function () {
+            return run(routes[index]).then(function () {
                 return { ok: true, via: routes[index].name };
             }, function (error) {
                 tried.push(routes[index].name + ': ' + message(error));
@@ -226,16 +238,14 @@ function createGameAccess(bridge, log) {
         },
 
         /**
-         * The quest tree as a list. The game keeps it as a map keyed by id, so it is flattened
-         * here. Both routes are the game's own: a read that has working routes does not spend a
-         * call on the reference loader's GetQuestTree, which only that loader carries. A load is
-         * different - it tries the reference's name first, because that is a side effect whose
-         * effect the game's own request reproduces.
+         * The quest tree as a list. The reference loader's own GetQuestTree flattens the same
+         * map the game exposes; the direct path stays as a fallback for channels without the
+         * loader surface.
          */
         readQuestTree: function () {
             return firstOf('the quest tree', [
-                { name: 'world.questTree', kind: 'read' },
-                { name: 'world.getQuests', kind: 'call' }
+                { name: 'GetQuestTree', kind: 'loader' },
+                { name: 'world.questTree', kind: 'read' }
             ]).then(function (payload) {
                 return asList(payload);
             });
@@ -335,7 +345,7 @@ function createGameAccess(bridge, log) {
         /** Quests.Load(id): the loader's LoadQuest, then the game's own getQuest. */
         loadQuest: function (id) {
             return loadTarget('quest ' + id, [
-                { name: 'LoadQuest', args: [String(id)] },
+                { name: 'LoadQuest', kind: 'loader', args: [String(id)] },
                 { name: 'world.getQuest', args: [id] }
             ]);
         },
@@ -344,8 +354,8 @@ function createGameAccess(bridge, log) {
         loadQuests: function (ids) {
             const list = Array.isArray(ids) ? ids : [ids];
             return loadTarget('quests ' + list.join(','), [
-                { name: 'LoadQuests', args: [list.join(',')] },
-                { name: 'world.getQuests', args: [list.join(',')] }
+                { name: 'LoadQuests', kind: 'loader', args: [list.join(',')] },
+                { name: 'world.getQuests', args: [list.map(String)] }
             ]);
         },
 
@@ -447,4 +457,3 @@ module.exports = {
     decode: decode,
     equipSlot: equipSlot
 };
-
