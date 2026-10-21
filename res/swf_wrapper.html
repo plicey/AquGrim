@@ -58,6 +58,8 @@
     obj.data = swfUrl;
     obj.width = '100%';
     obj.height = '100%';
+    // Let the plugin take keyboard focus back after a toolbar control is used.
+    obj.tabIndex = 0;
 
     var cfg = [
       {name:'wmode', value: wmode},
@@ -81,6 +83,10 @@
     var stage = document.getElementById('stage');
     var surface = document.getElementById('surface');
     surface.appendChild(obj);
+
+    function focusGame() {
+      try { obj.focus(); } catch (e) { /* the plugin owns the surface; nothing else to focus */ }
+    }
 
     /** Render fewer pixels and let the browser scale the surface back to the stage. */
     function applyRenderScale(percent) {
@@ -123,8 +129,10 @@
         // The strip's own words for the last press: a refusal is what the user needs to see, and a
         // press that worked says nothing rather than leaving the previous refusal on screen.
         show(result && result.error ? result.error : '');
+        focusGame();
       }, function (error) {
         show(String(error && error.message ? error.message : error));
+        focusGame();
       });
     }
 
@@ -148,6 +156,7 @@
         });
         select.addEventListener('change', function () {
           send(entry.id, { value: select.value });
+          focusGame();
         });
         return select;
       }
@@ -159,6 +168,7 @@
         box.checked = value === true;
         box.addEventListener('change', function () {
           send(entry.id, { checked: box.checked });
+          focusGame();
         });
         label.appendChild(box);
         label.appendChild(el('span', null, entry.label));
@@ -166,7 +176,7 @@
       }
       var button = el('button', null, entry.label);
       button.id = 'chrome-' + entry.id;
-      button.addEventListener('click', function () { send(entry.id, {}); });
+      button.addEventListener('click', function () { send(entry.id, {}); focusGame(); });
       return button;
     }
 
@@ -197,7 +207,10 @@
         window.clearTimeout(saveTimer);
         saveTimer = window.setTimeout(commit, 120);
       });
-      slider.addEventListener('change', commit);
+      slider.addEventListener('change', function () {
+        commit();
+        focusGame();
+      });
       label.appendChild(slider);
       label.appendChild(readout);
       return label;

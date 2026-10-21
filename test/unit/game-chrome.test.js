@@ -314,4 +314,7 @@ test('the wrapper page carries the strip above the surface and asks the platform
   assert.ok(page.indexOf("surface.style.transform = 'scale('") !== -1,
     'the smaller backing surface is scaled back up to fill the stage');
   assert.ok(page.indexOf('api.setRenderScale') !== -1, 'the slider stores its value per window');
+  assert.ok(page.indexOf('obj.tabIndex = 0') !== -1, 'the Flash object can take keyboard focus');
+  assert.ok(page.indexOf('function focusGame()') !== -1, 'the toolbar can return focus to the game');
+  assert.ok(page.indexOf('focusGame();') !== -1);
 });
