@@ -1896,6 +1896,32 @@ function createEngine(deps) {
             return undefined;
         },
 
+        CmdJoin2: async function (ctx, command) {
+            // Older Grimlite revisions serialize joins as CmdJoin2 with a separate Room. Its
+            // 1e99 sentinel means "roll a room", the cell is entered after the map, and unlike
+            // CmdJoin it does not set the spawn point here.
+            const mapName = String(varOf(command.Map));
+            const roomValue = varOf(command.Room);
+            const rawRoom = String(roomValue === undefined ? '' : roomValue);
+            const room = rawRoom === '1e99' ? String(randomJoin2Room()) : rawRoom;
+            const cell = String(varOf(command.Cell));
+            const pad = String(varOf(command.Pad));
+            const here = await read('map');
+            if (!(here.ok && String(here.value).toLowerCase() === mapName.toLowerCase())) {
+                const joined = await tryJoin(mapName, room, cell, pad);
+                if (!joined.ok) return joined.error;
+            }
+            const arrived = await read('map');
+            if (!(arrived.ok && String(arrived.value).toLowerCase() === mapName.toLowerCase())) {
+                return 'could not reach ' + mapName;
+            }
+            const at = await read('cell');
+            if (!(at.ok && String(at.value).toLowerCase() === cell.toLowerCase())) {
+                await readN('jump', [cell, pad]);
+            }
+            return undefined;
+        },
+
         CmdTravel: async function (ctx, command) {
             // CmdTravel.cs: wait for the transfer lock, then join when the map differs, otherwise
             // just step to the cell it names.
@@ -2461,6 +2487,11 @@ function createEngine(deps) {
     /** CmdJoin's own room roll for a non-numeric room: new Random().Next(1000, 99999). */
     function randomRoom() {
         return 1000 + Math.floor(Math.random() * (99999 - 1000));
+    }
+
+    /** CmdJoin2's own Room sentinel uses Random.Next(1001, 99999). */
+    function randomJoin2Room() {
+        return 1001 + Math.floor(Math.random() * (99999 - 1001));
     }
 
     /**

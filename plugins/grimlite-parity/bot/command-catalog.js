@@ -35,7 +35,7 @@ const GROUPS = {
     CmdBuyFast: 'Item', CmdEquip: 'Item', CmdEquipSet: 'Item', CmdGetDrop: 'Item',
     CmdLoad: 'Item', CmdLoadTravel: 'Item', CmdMapItem: 'Item', CmdSell: 'Item',
     CmdWhitelist: 'Item',
-    CmdJoin: 'Map', CmdMoveToCell: 'Map', CmdMoveToCell2: 'Map', CmdSetSpawn: 'Map',
+    CmdJoin: 'Map', CmdJoin2: 'Map', CmdMoveToCell: 'Map', CmdMoveToCell2: 'Map', CmdSetSpawn: 'Map',
     CmdTravel: 'Map', CmdWalk: 'Map', CmdYulgar: 'Map',
     CmdBackgroundPacket: 'Misc', CmdBankList: 'Misc', CmdBeep: 'Misc', CmdBlank: 'Misc',
     CmdBlank2: 'Misc', CmdBlank3: 'Misc', CmdBotDelay: 'Misc', CmdChange: 'Misc',
@@ -132,6 +132,8 @@ const DISPLAY = {
     // Try's own initialiser is 1 (CmdJoin.cs:17), so an omitted key reads [1x].
     CmdJoin: (c) => 'Join: [' + text(c.Try === undefined ? 1 : c.Try) + 'x] ' +
         (text(c.MapSwf) ? '[SWF] ' : '') + text(c.Map) + ', ' + text(c.Cell) + ', ' + text(c.Pad),
+    CmdJoin2: (c) => 'Join: ' + text(c.Map) + ', ' + text(c.Room) + ', ' +
+        text(c.Cell) + ', ' + text(c.Pad),
     CmdMoveToCell: (c) => 'Move to cell: ' + text(c.Cell) + ', ' + text(c.Pad),
     CmdMoveToCell2: function (c) {
         if (c.stop) return 'Stop Cell Jump';
