@@ -152,7 +152,7 @@ function createSpammerWindow(deps) {
             const ok = loop.sendOnce((args && args[0]) || '');
             return Promise.resolve({ sent: ok, failed: loop.failedCount() });
         }
-        throw new Error('[AquaStar:grimlite-parity] unknown spammer channel "' + channel + '"');
+        throw new Error('[AquGrim:grimlite-parity] unknown spammer channel "' + channel + '"');
     }
 
     function attach() {

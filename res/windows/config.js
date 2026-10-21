@@ -84,5 +84,5 @@ exports.settingsUrl = toFileUrl(path.join(appRoot, 'res', 'features', 'settings'
 // Local feature windows all use the same singleton lifecycle.  Keeping their
 // declarative metadata here prevents every caller from reimplementing it.
 exports.featureWindows = {
-    settings:  { config: exports.settingsConfig,  url: exports.settingsUrl,  title: 'AquaStar - Settings' }
+    settings:  { config: exports.settingsConfig,  url: exports.settingsUrl,  title: 'AquGrim - Settings' }
 };

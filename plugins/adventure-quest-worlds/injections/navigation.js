@@ -75,10 +75,10 @@ function createNavigationHooks(options) {
                 'if (window.__aquastarWikiViewInjected) return false;\n' +
                 'try {\n' + wikiview + '\n' +
                 'window.__aquastarWikiViewInjected = true; return true;\n' +
-                '} catch (error) { delete window.__aquastarWikiViewInjected; console.error("[AquaStar] WikiView injection failed", error); throw error; }\n' +
+                '} catch (error) { delete window.__aquastarWikiViewInjected; console.error("[AquGrim] WikiView injection failed", error); throw error; }\n' +
                 '})();';
             const injected = await execute(wikiview, 'Wiki enhancement');
-            if (injected) console.log('[AquaStar] Wiki enhancement injected into ' + url);
+            if (injected) console.log('[AquGrim] Wiki enhancement injected into ' + url);
         }
 
         if (kind === 'account') {

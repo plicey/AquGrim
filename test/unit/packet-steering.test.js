@@ -238,7 +238,7 @@ test('the boot path merges steering into its single session-rule registration', 
   assert.ok(/await applySessionRules\(\)/.test(main),
     'steering may bind a listener, so the window waits for it');
   assert.ok(/packetLayerState\s*=\s*null/.test(main), 'a refused layer is dropped, not half-used');
-  assert.ok(/[AquaStar:packets]/.test(main), 'a refusal says so on the console');
+  assert.ok(/[AquGrim:packets]/.test(main), 'a refusal says so on the console');
 
   // The opt-in flag reaches the layer from settings, like every other platform flag.
   assert.ok(/packetSteering: keyb\.keybinds\.packetSteering/.test(main),

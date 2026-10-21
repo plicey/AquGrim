@@ -77,7 +77,7 @@ function migrate(raw) {
 function load() {
     if (!fs.existsSync(strategyJsonPath)) { const fresh = migrate(jsonStore.read(defaultPath)); jsonStore.write(strategyJsonPath, fresh); return fresh; }
     try { return migrate(jsonStore.read(strategyJsonPath)); }
-    catch (error) { console.log('[AquaStar] Failed to parse ' + strategyJsonPath + ': ' + error.message); return migrate({}); }
+    catch (error) { console.log('[AquGrim] Failed to parse ' + strategyJsonPath + ': ' + error.message); return migrate({}); }
 }
 function save(data) {
     // The renderer keeps its class list in memory while auxiliary class editors save through

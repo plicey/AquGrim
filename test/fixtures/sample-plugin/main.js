@@ -5,7 +5,7 @@ function activate(host) {
       return 'https://example.com/game.swf';
     },
     title: function () {
-      return 'AquaStar - Sample SWF';
+      return 'AquGrim - Sample SWF';
     },
     isGameUrl: function (url) {
       return typeof url === 'string' && url.indexOf('https://example.com/game.swf') === 0;

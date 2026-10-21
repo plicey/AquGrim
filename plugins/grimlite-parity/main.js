@@ -41,7 +41,7 @@ const skillPresets = require('./features/chrome/skill-presets.js');
 const launcherSkin = require('./features/chrome/skin.js');
 const logsFeature = require('./features/hotkeys/logs.js');
 
-const BRIDGE_TITLE = 'AquaStar - Grimlite Parity';
+const BRIDGE_TITLE = 'AquGrim';
 const LOGIN_PAGE = path.join('features', 'login', 'login.html');
 
 // Electron keeps no reference of its own to a Tray: letting this go would take the icon away.
@@ -219,7 +219,7 @@ function installTray(host) {
     if (!electron || typeof electron.Tray !== 'function') return null;
     try {
         const tray = new electron.Tray(host.getAppIconPath());
-        tray.setToolTip('AquaStar');
+        tray.setToolTip('AquGrim');
         tray.on('click', function () { toggleMainWindow(); });
         appTray = tray;
         return tray;
@@ -783,7 +783,7 @@ async function activate(host) {
     host.registerPacketSteering(require('./packets.js').steeringDeclarations()[0]);
 
     installTray(host);
-    host.log('Grimlite Parity activated; bridge at ' + (bridgeUrl(baseUrl) || '(no origin)'));
+    host.log('AquGrim activated; bridge at ' + (bridgeUrl(baseUrl) || '(no origin)'));
 }
 
 module.exports = {

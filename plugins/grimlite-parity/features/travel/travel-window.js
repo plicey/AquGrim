@@ -30,7 +30,7 @@ function createTravelWindow(deps) {
         if (channel === 'travelMessages') {
             return Promise.resolve(messages);
         }
-        throw new Error('[AquaStar:grimlite-parity] unknown travel channel "' + channel + '"');
+        throw new Error('[AquGrim:grimlite-parity] unknown travel channel "' + channel + '"');
     }
 
     // A window must never receive a rejection it cannot show: the game being unreachable is a

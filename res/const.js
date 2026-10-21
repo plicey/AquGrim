@@ -20,6 +20,7 @@ const appRoot = __dirname.substring(0,__dirname.lastIndexOf(path.sep));
 const appCurrentDirectory = process.cwd();
 const appVersion  = require('electron').app.getVersion();
 const appName     = "AquaStar";
+const appDisplayName = "AquGrim";
 // Keep mutable data outside the installation. This also works for portable/readonly
 // installs and avoids replacing files that an older AquaStar still expects.
 const persistentAppDataDirectory = path.join(app.getPath("appData"), appName);
@@ -36,16 +37,16 @@ if (fs.existsSync(restoreBundledRuffleMarker)) {
         if (fs.existsSync(currentRuffleDirectory)) fs.rmdirSync(currentRuffleDirectory, { recursive: true });
         if (fs.existsSync(stagedRuffleDirectory)) fs.rmdirSync(stagedRuffleDirectory, { recursive: true });
         fs.unlinkSync(restoreBundledRuffleMarker);
-    } catch (e) { console.log('[AquaStar] Could not restore bundled Ruffle: ' + e.message); }
+    } catch (e) { console.log('[AquGrim] Could not restore bundled Ruffle: ' + e.message); }
 } else if (fs.existsSync(path.join(stagedRuffleDirectory, 'ruffle.js'))) {
     try {
         if (fs.existsSync(currentRuffleDirectory)) fs.rmdirSync(currentRuffleDirectory, { recursive: true });
         fs.renameSync(stagedRuffleDirectory, currentRuffleDirectory);
-    } catch (e) { console.log('[AquaStar] Could not activate downloaded Ruffle: ' + e.message); }
+    } catch (e) { console.log('[AquGrim] Could not activate downloaded Ruffle: ' + e.message); }
 }
 
 /// Pictures save location.
-const sshotPath   = path.join(app.getPath("pictures"),"AquaStar Screenshots");
+const sshotPath   = path.join(app.getPath("pictures"),"AquGrim Screenshots");
 const iconPath    = path.join(appRoot, 'Icon', (isDebugBuild)? 'Icondeb_1024.png' : 'Icon_1024.png');
 const iconRedPath = path.join(appRoot, 'Icon', 'Iconred_1024.png');
 
@@ -56,6 +57,7 @@ const githubPage   = "https://github.com/plicey/AquGrim/releases";
 exports.githubPage       = githubPage;
 
 exports.appName          = appName;
+exports.appDisplayName   = appDisplayName;
 exports.appVersion       = appVersion;
 exports.appRootPath      = appRoot;
 exports.appDirectoryPath = appCurrentDirectory;
@@ -282,7 +284,7 @@ if (!fs.existsSync(appdataJsonPath)) {
     var migrationSource = fs.existsSync(inPathJsonPath) ? inPathJsonPath : legacyAppdataJsonPath;
     if (fs.existsSync(migrationSource)) {
         try { fs.copyFileSync(migrationSource, appdataJsonPath); }
-        catch (e) { console.log('[AquaStar] Could not migrate settings: ' + e.message); }
+        catch (e) { console.log('[AquGrim] Could not migrate settings: ' + e.message); }
     }
 }
 var listValidKeybindLocations = [];

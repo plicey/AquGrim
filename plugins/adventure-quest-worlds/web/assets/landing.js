@@ -5,16 +5,16 @@ const content = {
     navHow: 'Como funciona',
     eyebrow: 'Companheiro para AdventureQuest Worlds',
     hero: 'Seu AQW, <em>mais organizado.</em>',
-    lead: 'AquaStar reúne launcher, utilitários e ferramentas de planejamento em uma experiência focada, privada e feita para o ritmo do jogo.',
+    lead: 'AquGrim reúne launcher, utilitários e ferramentas de planejamento em uma experiência focada, privada e feita para o ritmo do jogo.',
     explore: 'Explorar ferramentas',
     github: 'Ver no GitHub',
     featuresTitle: 'Tudo que importa, no mesmo lugar.',
     featuresLead: 'Recursos pensados para reduzir atrito, não para tirar o foco do jogo.',
     toolsTitle: 'Use do seu jeito.',
     toolsLead: 'O aplicativo desktop acompanha sua sessão; as ferramentas web funcionam em qualquer navegador.',
-    desktop: 'AquaStar Desktop',
+    desktop: 'AquGrim Desktop',
     desktopLead: 'Launcher com Flash nativo, WikiView, captura, gravação, Char Page Studio e ferramentas integradas.',
-    web: 'AquaStar Tools',
+    web: 'AquGrim Tools',
     webLead: 'Lembretes, lista de tarefas e estratégias de Ultra Bosses, salvos localmente no navegador.',
     reminders: 'Lembretes',
     todo: 'Lista de Tarefas',
@@ -35,11 +35,11 @@ const content = {
       ['✓', 'Lembretes e To‑Do', 'Acompanhe resets, farms, drops e objetivos por personagem.'],
       ['◌', 'Estratégia', 'Planeje grupos, papéis e timers para Ultra Bosses.'],
       ['⌘', 'Atalhos personalizados', 'Defina keybinds para as ações que fazem sentido no seu fluxo.'],
-      ['↗', 'Janelas importantes', 'Abra rapidamente as principais telas do AquaStar por atalhos.'],
+      ['↗', 'Janelas importantes', 'Abra rapidamente as principais telas do AquGrim por atalhos.'],
       ['⌕', 'Prévia da wiki', 'Passe o cursor sobre links da wiki para visualizar a página antes de abri-la.']
     ],
     steps: [
-      ['Baixe o AquaStar', 'Use o desktop para jogar com os recursos do launcher.'],
+      ['Baixe o AquGrim', 'Use o desktop para jogar com os recursos do launcher.'],
       ['Abra uma ferramenta', 'Escolha Lembretes, To‑Do ou Ultra Bosses na web.'],
       [
         'Mantenha seus dados',
@@ -50,11 +50,11 @@ const content = {
       ['Preciso criar uma conta?', 'Não. As ferramentas web funcionam sem conta e salvam dados neste navegador.'],
       [
         'As ferramentas web substituem o jogo?',
-        'Não. Elas são utilitários de planejamento; o jogo continua no AquaStar Desktop.'
+        'Não. Elas são utilitários de planejamento; o jogo continua no AquGrim Desktop.'
       ],
       [
         'Onde ficam os dados?',
-        'No AquaStar Desktop, os dados ficam na pasta AppData/AquaStar. Nas ferramentas web, ficam no localStorage do navegador.'
+        'No AquGrim Desktop, os dados ficam na pasta AppData/AquaStar. Nas ferramentas web, ficam no localStorage do navegador.'
       ]
     ]
   },
@@ -64,16 +64,16 @@ const content = {
     navHow: 'How it works',
     eyebrow: 'AdventureQuest Worlds companion',
     hero: 'Your AQW, <em>better organized.</em>',
-    lead: 'AquaStar brings a launcher, utilities and planning tools into a focused, private experience built around the game.',
+    lead: 'AquGrim brings a launcher, utilities and planning tools into a focused, private experience built around the game.',
     explore: 'Explore tools',
     github: 'View on GitHub',
     featuresTitle: 'Everything that matters, together.',
     featuresLead: 'Features made to remove friction, not distract you from the game.',
     toolsTitle: 'Use it your way.',
     toolsLead: 'The desktop app follows your session; web tools work in any browser.',
-    desktop: 'AquaStar Desktop',
+    desktop: 'AquGrim Desktop',
     desktopLead: 'Launcher with native Flash, WikiView, capture, recording, Char Page Studio and integrated tools.',
-    web: 'AquaStar Tools',
+    web: 'AquGrim Tools',
     webLead: 'Reminders, To-Do and Ultra Boss strategy tools stored locally in your browser.',
     reminders: 'Reminders',
     todo: 'To-Do List',
@@ -94,23 +94,23 @@ const content = {
       ['✓', 'Reminders and To‑Do', 'Track resets, farms, drops and goals per character.'],
       ['◌', 'Strategy', 'Plan groups, roles and timers for Ultra Bosses.'],
       ['⌘', 'Custom keybindings', 'Set keybinds for the actions that fit your workflow.'],
-      ['↗', 'Important windows', 'Open AquaStar’s main screens quickly with shortcuts.'],
+      ['↗', 'Important windows', 'Open AquGrim’s main screens quickly with shortcuts.'],
       ['⌕', 'Wiki previews', 'Hover wiki links to preview a page before opening it.']
     ],
     steps: [
-      ['Download AquaStar', 'Use the desktop app to play with launcher features.'],
+      ['Download AquGrim', 'Use the desktop app to play with launcher features.'],
       ['Open a tool', 'Choose Reminders, To-Do or Ultra Bosses on the web.'],
       [
         'Keep your data',
-        'In AquaStar Desktop, data is stored in AppData/AquaStar. In web tools, it is stored in browser localStorage.'
+        'In AquGrim Desktop, data is stored in AppData/AquaStar. In web tools, it is stored in browser localStorage.'
       ]
     ],
     faq: [
       ['Do I need an account?', 'No. Web tools work without an account and save data in this browser.'],
-      ['Do web tools replace the game?', 'No. They are planning utilities; the game remains in AquaStar Desktop.'],
+      ['Do web tools replace the game?', 'No. They are planning utilities; the game remains in AquGrim Desktop.'],
       [
         'Where is data stored?',
-        'In AquaStar Desktop, data is stored in the AppData/AquaStar folder. In web tools, it is stored in browser localStorage.'
+        'In AquGrim Desktop, data is stored in the AppData/AquaStar folder. In web tools, it is stored in browser localStorage.'
       ]
     ]
   }
@@ -142,7 +142,7 @@ function render() {
     ([question, answer]) => `<details><summary>${question}</summary><p>${answer}</p></details>`
   );
   byId('language').textContent = language === 'pt' ? 'EN' : 'PT';
-  document.title = `AquaStar — ${language === 'pt' ? 'companheiro AQW' : 'AQW companion'}`;
+  document.title = `AquGrim — ${language === 'pt' ? 'companheiro AQW' : 'AQW companion'}`;
 }
 
 byId('language').addEventListener('click', () => {

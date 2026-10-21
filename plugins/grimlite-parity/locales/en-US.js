@@ -4,7 +4,7 @@ exports.dialogMessages = {
             if (Array.isArray(keyb)) return keyb.join(', ');
             return keyb || '';
         }
-        return 'Grimlite Parity\n' +
+        return 'AquGrim\n' +
             'Bot - Bot Manager\n' +
             expand(k.grimliteBank) + ' - Bank window\n' +
             expand(k.grimliteLoaders) + ' - Loaders and grabbers: load a shop, a quest or\n' +
@@ -37,7 +37,7 @@ exports.logsMessages = {
 
 exports.menuMessages = {
     menuNewInstance: 'Open Another Instance',
-    grimliteMenu: 'Grimlite',
+    grimliteMenu: 'Client',
     grimliteBot: 'Bot',
     grimliteBotManager: 'Bot Manager',
     grimliteEyedropper: 'Eye Dropper',
@@ -77,7 +77,7 @@ exports.botFileMessages = {
 };
 
 exports.windowTitles = {
-    primary: 'AquaStar - Grimlite Parity',
+    primary: 'AquGrim',
     botFile: 'Bot File',
     bank: 'Bank',
     loaders: 'Loaders and grabbers',

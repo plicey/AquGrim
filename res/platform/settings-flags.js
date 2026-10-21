@@ -12,7 +12,7 @@ function readSettingsObject(candidates) {
             const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
             if (parsed && typeof parsed === 'object') return parsed;
         } catch (e) {
-            console.log('[AquaStar:plugins] Could not parse ' + filePath + ': ' + e.message);
+            console.log('[AquGrim:plugins] Could not parse ' + filePath + ': ' + e.message);
         }
     }
     return {};

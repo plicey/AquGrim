@@ -5,7 +5,7 @@ function expand (keyb) {if(Array.isArray(keyb)) return keyb.join(', '); else ret
 
 exports.charPageStudioMessages = {
     locale: "en-US",
-    title: "AquaStar — Char Page Studio",
+    title: "AquGrim — Char Page Studio",
     heading: "Char Page Studio",
     description: "Customize a Char Page with the native Flash Player.",
     sceneModeLabel: "Scene mode",
@@ -112,9 +112,9 @@ exports.settingsMessages = {
         liveLoaderUrl: "Follow Artix's Game Loader",
     },
     optionHints: {
-        liveLoaderUrl: "On startup, reads which game loader Artix Game Launcher currently uses (from artix.com) so AquaStar keeps working when Artix switches loaders. Falls back to the built-in loader if the page can't be read. Ignored when Custom URL or a custom SWF is set. Restart to apply.",
+        liveLoaderUrl: "On startup, reads which game loader Artix Game Launcher currently uses (from artix.com) so AquGrim keeps working when Artix switches loaders. Falls back to the built-in loader if the page can't be read. Ignored when Custom URL or a custom SWF is set. Restart to apply.",
         playerCharacter: "Letters and numbers only. Used by the Char Page shortcut (Alt+P) to open straight to this character.",
-        featurePlayerName: "When on, replaces \"AquaStar\" in the main window title with your Player Character above.",
+        featurePlayerName: "When on, replaces \"AquGrim\" in the main window title with your Player Character above.",
         autoSync: "Periodically syncs your Inventory/BuyBack data from account.aq.com in the background (about every 2 hours) once you've logged in there at least once via Alt+A. When off, sync only happens when you use a Sync Now button (in the Inventory window or on account.aq.com/Home).",
     },
     settingsSections: {
@@ -124,7 +124,7 @@ exports.settingsMessages = {
 };
 
 exports.remindersMessages = {
-    title: "AquaStar - Reminders",
+    title: "AquGrim - Reminders",
     heading: "Reminders",
     description: "Track daily and weekly in-game tasks per character. Resets follow the AE server clock (America/New_York) - daily at midnight, weekly at the Thursday-to-Friday midnight.",
     showCompletedLabel: "Show completed",
@@ -235,7 +235,7 @@ exports.remindersMessages = {
 };
 
 exports.todoMessages = {
-    title: "AquaStar - To-Do List",
+    title: "AquGrim - To-Do List",
     heading: "To-Do List",
     description: "Track drops, shop items, and quest rewards to grab, per character.",
     serverTimeLabel: "Server Time",
@@ -345,7 +345,7 @@ exports.todoMessages = {
 };
 
 exports.strategyMessages = {
-    title: "AquaStar - Strategy",
+    title: "AquGrim - Strategy",
     heading: "Strategy",
     description: "Plan team compositions, tactics and timed mechanics for Ultra and Challenge bosses.",
     addBoss: "Add Boss",
@@ -435,7 +435,7 @@ exports.strategyMessages = {
 };
 
 exports.inventoryMessages = {
-    title: "AquaStar - Inventory",
+    title: "AquGrim - Inventory",
     heading: "Inventory",
     description: "Browse your synced account.aq.com Inventory and BuyBack data, per character.",
     inventoryTabLabel: "Inventory",
@@ -491,7 +491,7 @@ exports.inventoryMessages = {
 };
 
 exports.wikiMessages = {
-    mergeMaterialsTitle: "AquaStar: Shop materials",
+    mergeMaterialsTitle: "AquGrim: Shop materials",
     mergeDependencies: "Include dependencies",
     mergeBuyback: "Dependencies with Buy Back",
     mergeEmpty: "No materials listed.",

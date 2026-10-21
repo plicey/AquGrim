@@ -50,7 +50,7 @@ function _loadTodo() {
             individualHiddenMode: parsed.individualHiddenMode === true
         };
     } catch (e) {
-        console.log('[AquaStar] Failed to parse ' + todoJsonPath + ': ' + e.message);
+        console.log('[AquGrim] Failed to parse ' + todoJsonPath + ': ' + e.message);
         return { characters: [], tasks: [], individualHiddenMode: false };
     }
 }

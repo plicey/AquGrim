@@ -2,7 +2,7 @@
 <html style="margin:0;padding:0;width:100%;height:100%;">
 <head>
 <meta charset="UTF-8">
-<title>AquaStar - Settings</title>
+<title>AquGrim - Settings</title>
 <style>
   :root {
     color-scheme: dark;
@@ -625,7 +625,7 @@
       update.disabled = false;
       if (result.ok) {
         if (result.restartRequired) {
-          setStatus(messages.ruffleUpdatedMessage || 'Ruffle update downloaded. Restart AquaStar to apply it.', true);
+          setStatus(messages.ruffleUpdatedMessage || 'Ruffle update downloaded. Restart AquGrim to apply it.', true);
           document.getElementById('restartBtn').disabled = false;
         } else if (result.bundledAlreadyCurrent) setStatus(messages.ruffleBundledAlreadyCurrentMessage || 'The bundled Ruffle is already the latest stable version.');
         else setStatus(messages.ruffleAlreadyCurrentMessage || 'Ruffle is already up to date.');
@@ -830,7 +830,7 @@
     const activeHint = document.createElement('span');
     activeHint.className = 'hint';
     activeHint.textContent = messages.pluginsActiveHint ||
-      'Only one plugin can be active. Changing it requires restarting AquaStar.';
+      'Only one plugin can be active. Changing it requires restarting AquGrim.';
     activeLabel.appendChild(activeHint);
     const selectEl = document.createElement('select');
     selectEl.className = 'select-input';
@@ -1196,7 +1196,7 @@
         document.getElementById('restartBtn').disabled = false;
         if (Object.prototype.hasOwnProperty.call(changed, 'activePluginId')) {
           const prompt = messages.pluginsRestartPrompt ||
-            'Active plugin changed. Restart AquaStar now to apply it?';
+            'Active plugin changed. Restart AquGrim now to apply it?';
           if (window.confirm(prompt)) api.restartApp();
         }
       } finally {

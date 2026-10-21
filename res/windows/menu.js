@@ -149,7 +149,7 @@ function platformAquaStarMenu(menuMessages, keybinds) {
         }
     }
     return {
-        label: 'AquaStar',
+        label: constant.appDisplayName || 'AquGrim',
         submenu: [
             command(menuMessages.menuSettings || 'Settings', 'settings', keybinds.settings),
             { label: menuMessages.menuNewInstance || 'Open Another Instance', click: openAnotherInstance },

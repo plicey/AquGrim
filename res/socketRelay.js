@@ -214,15 +214,15 @@ function createRelay(options) {
         // repeating a declaration reuses the port.
         targetPort: function (endpoint) {
             if (!endpoint || typeof endpoint.host !== 'string' || !endpoint.host || endpoint.port == null) {
-                return Promise.reject(new Error('[AquaStar] relay target needs a host and a port'));
+                return Promise.reject(new Error('[AquGrim] relay target needs a host and a port'));
             }
             const host = endpoint.host.toLowerCase();
             const port = Number(endpoint.port);
             if (!matchesHost(allowedHosts, host)) {
-                return Promise.reject(new Error('[AquaStar] relay target ' + host + ' is not allowed'));
+                return Promise.reject(new Error('[AquGrim] relay target ' + host + ' is not allowed'));
             }
             if (!running) {
-                return Promise.reject(new Error('[AquaStar] relay has not started, so it serves no target'));
+                return Promise.reject(new Error('[AquGrim] relay has not started, so it serves no target'));
             }
             const existing = targetFor(host, port);
             if (existing && existing.listenPort) return Promise.resolve(existing.listenPort);

@@ -100,7 +100,7 @@ function register(host, windowTitle, deps) {
         // entry and the extra Bot file window are deliberately absent; Logs is the reference's
         // own Tools -> Logs. Hotkeys remains here because the reference keeps it under Tools.
         menus.push({
-            label: labels.grimliteMenu || 'Grimlite',
+            label: labels.grimliteMenu || 'Client',
             submenu: [{
                 label: labels.grimliteTravels || 'Fast travels',
                 accelerator: keybinds.grimliteFastTravels,

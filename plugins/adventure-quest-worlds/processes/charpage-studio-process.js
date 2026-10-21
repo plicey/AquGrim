@@ -61,7 +61,7 @@ function installProtocol() {
 function rendererConfig(renderer, rawFlashVars) {
     const emptyScene = renderer === 'empty-scene';
     const swf = emptyScene ? emptySceneSwf : studioSwf;
-    if (!fs.existsSync(swf)) throw new Error('O SWF selecionado do Char Page Studio não foi encontrado. Reinstale o AquaStar.');
+    if (!fs.existsSync(swf)) throw new Error('O SWF selecionado do Char Page Studio não foi encontrado. Reinstale o AquGrim.');
     const params = new URLSearchParams(String(rawFlashVars || ''));
     // The original derived Char Page resolves paths relative to chardetail;
     // the standalone compositor resolves directly from gamefiles instead.

@@ -32,7 +32,7 @@ function createSetsWindow(deps) {
         if (channel === 'setMessages') {
             return Promise.resolve(deps.messages || {});
         }
-        throw new Error('[AquaStar:grimlite-parity] unknown sets channel "' + channel + '"');
+        throw new Error('[AquGrim:grimlite-parity] unknown sets channel "' + channel + '"');
     }
 
     function message(error) {

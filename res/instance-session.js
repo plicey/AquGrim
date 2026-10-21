@@ -46,7 +46,7 @@ function seedCopy(source, destination) {
                 fs.copyFileSync(from, to);
             }
         } catch (error) {
-            console.error('[AquaStar] Could not seed instance file ' + from + ': ' + error.message);
+            console.error('[AquGrim] Could not seed instance file ' + from + ': ' + error.message);
         }
     });
 }
@@ -85,7 +85,7 @@ function launch(options) {
     const child = spawn(executable, args, { detached: true, stdio: 'ignore' });
     if (child && typeof child.on === 'function') {
         child.on('error', opts.onError || function (error) {
-            console.error('[AquaStar] Could not start another instance: ' + error.message);
+            console.error('[AquGrim] Could not start another instance: ' + error.message);
         });
     }
     if (child && typeof child.unref === 'function') child.unref();

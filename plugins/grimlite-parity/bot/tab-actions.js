@@ -543,7 +543,7 @@ function statementsIn(tag) {
 function build(id, values, modifiers) {
     const builder = COMMAND_BUTTONS[id];
     if (!builder) {
-        throw new Error('[AquaStar:grimlite-parity] no command is wired to ' + id);
+        throw new Error('[AquGrim:grimlite-parity] no command is wired to ' + id);
     }
     const mods = modifiers || {};
     return builder(values || {}, { alt: mods.alt === true, ctrl: mods.ctrl === true });

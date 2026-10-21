@@ -89,7 +89,7 @@ function applySessionRules(session, rules, ctx) {
         if (bodyService) { report.responseBody.engaged.push(rule.id); return; }
         report.responseBody.unengaged.push(rule.id);
         if (typeof ctx.logLine === 'function') {
-            ctx.logLine('[AquaStar] session rule "' + rule.id +
+            ctx.logLine('[AquGrim] session rule "' + rule.id +
                 '" needs a response body but none is available; the response is served unmodified');
         }
     });

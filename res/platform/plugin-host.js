@@ -21,7 +21,7 @@ const PLATFORM_RESERVED_KEYBIND_IDS = {
 
 function createPermissionError(pluginId, method, permission) {
     return new Error(
-        '[AquaStar:plugins] Plugin "' + pluginId + '" called ' + method +
+        '[AquGrim:plugins] Plugin "' + pluginId + '" called ' + method +
         ' without permission "' + permission + '"'
     );
 }
@@ -63,7 +63,7 @@ function createPluginHost(options) {
     const deps = Object.assign({}, options.deps || {});
     const log = typeof options.log === 'function'
         ? options.log
-        : function (msg) { console.log('[AquaStar:plugins] ' + msg); };
+        : function (msg) { console.log('[AquGrim:plugins] ' + msg); };
 
     const bridgeChannel = require('./bridge-channel.js').createBridgeChannel({
         // The window the platform opened for this plugin's own game: the only page whose
@@ -131,7 +131,7 @@ function createPluginHost(options) {
         for (let i = 0; i < list.length; i++) {
             if (list[i].id === item.id) {
                 throw new Error(
-                    '[AquaStar:plugins] Duplicate ' + label + ' id "' + item.id +
+                    '[AquGrim:plugins] Duplicate ' + label + ' id "' + item.id +
                     '" in plugin "' + pluginId + '"'
                 );
             }
@@ -166,7 +166,7 @@ function createPluginHost(options) {
     function hostPathInsidePlugin(relativePath) {
         if (schema.hasPathEscape(relativePath)) {
             throw new Error(
-                '[AquaStar:plugins] scriptRelativePath must stay inside the plugin root'
+                '[AquGrim:plugins] scriptRelativePath must stay inside the plugin root'
             );
         }
         const resolved = path.resolve(options.pluginRoot, relativePath);
@@ -174,7 +174,7 @@ function createPluginHost(options) {
         const prefix = rootResolved.endsWith(path.sep) ? rootResolved : rootResolved + path.sep;
         if (resolved !== rootResolved && resolved.indexOf(prefix) !== 0) {
             throw new Error(
-                '[AquaStar:plugins] scriptRelativePath escaped plugin root'
+                '[AquGrim:plugins] scriptRelativePath escaped plugin root'
             );
         }
         return resolved;
@@ -232,7 +232,7 @@ function createPluginHost(options) {
         getStore: function (ns) {
             requirePermission('getStore', 'persistent-store');
             if (typeof ns !== 'string' || !ns) {
-                throw new Error('[AquaStar:plugins] getStore requires a namespace string');
+                throw new Error('[AquGrim:plugins] getStore requires a namespace string');
             }
             if (state.stores[ns]) return state.stores[ns];
             if (typeof deps.createStore === 'function') {
@@ -254,7 +254,7 @@ function createPluginHost(options) {
 
         registerKeybindDefaults: function (defs) {
             if (!defs || typeof defs !== 'object') {
-                throw new Error('[AquaStar:plugins] registerKeybindDefaults expects an object');
+                throw new Error('[AquGrim:plugins] registerKeybindDefaults expects an object');
             }
             Object.keys(defs).forEach(function (key) {
                 state.keybindDefaults[key] = defs[key];
@@ -263,7 +263,7 @@ function createPluginHost(options) {
 
         registerOptionDefaults: function (defs) {
             if (!defs || typeof defs !== 'object') {
-                throw new Error('[AquaStar:plugins] registerOptionDefaults expects an object');
+                throw new Error('[AquGrim:plugins] registerOptionDefaults expects an object');
             }
             Object.keys(defs).forEach(function (key) {
                 state.optionDefaults[key] = defs[key];
@@ -272,15 +272,15 @@ function createPluginHost(options) {
 
         registerKeybinds: function (bindings) {
             if (!Array.isArray(bindings)) {
-                throw new Error('[AquaStar:plugins] registerKeybinds expects an array');
+                throw new Error('[AquGrim:plugins] registerKeybinds expects an array');
             }
             bindings.forEach(function (binding) {
                 if (!binding || typeof binding.id !== 'string') {
-                    throw new Error('[AquaStar:plugins] keybind requires id');
+                    throw new Error('[AquGrim:plugins] keybind requires id');
                 }
                 if (PLATFORM_RESERVED_KEYBIND_IDS[binding.id]) {
                     throw new Error(
-                        '[AquaStar:plugins] keybind id "' + binding.id +
+                        '[AquGrim:plugins] keybind id "' + binding.id +
                         '" is reserved for the platform'
                     );
                 }
@@ -291,25 +291,25 @@ function createPluginHost(options) {
 
         registerMenus: function (contributor) {
             if (typeof contributor !== 'function') {
-                throw new Error('[AquaStar:plugins] registerMenus expects a function');
+                throw new Error('[AquGrim:plugins] registerMenus expects a function');
             }
             state.menus.push(contributor);
         },
 
         registerMenuPages: function (providers) {
             if (!providers || typeof providers !== 'object') {
-                throw new Error('[AquaStar:plugins] registerMenuPages expects an object');
+                throw new Error('[AquGrim:plugins] registerMenuPages expects an object');
             }
             if (providers.appUsefulPages != null &&
                 typeof providers.appUsefulPages !== 'function') {
                 throw new Error(
-                    '[AquaStar:plugins] registerMenuPages.appUsefulPages expects a function'
+                    '[AquGrim:plugins] registerMenuPages.appUsefulPages expects a function'
                 );
             }
             if (providers.gameMenuPages != null &&
                 typeof providers.gameMenuPages !== 'function') {
                 throw new Error(
-                    '[AquaStar:plugins] registerMenuPages.gameMenuPages expects a function'
+                    '[AquGrim:plugins] registerMenuPages.gameMenuPages expects a function'
                 );
             }
             const next = state.menuProviders
@@ -326,11 +326,11 @@ function createPluginHost(options) {
 
         registerFeatureWindows: function (windows) {
             if (!Array.isArray(windows)) {
-                throw new Error('[AquaStar:plugins] registerFeatureWindows expects an array');
+                throw new Error('[AquGrim:plugins] registerFeatureWindows expects an array');
             }
             windows.forEach(function (winDef) {
                 if (!winDef || typeof winDef.id !== 'string') {
-                    throw new Error('[AquaStar:plugins] feature window requires id');
+                    throw new Error('[AquGrim:plugins] feature window requires id');
                 }
                 const cfg = winDef.config || {};
                 const needsUnsafe =
@@ -351,7 +351,7 @@ function createPluginHost(options) {
         registerBrowserPreload: function (relativePath) {
             requirePermission('registerBrowserPreload', 'inject-scripts');
             if (typeof relativePath !== 'string' || !relativePath) {
-                throw new Error('[AquaStar:plugins] registerBrowserPreload expects a relative path');
+                throw new Error('[AquGrim:plugins] registerBrowserPreload expects a relative path');
             }
             state.browserPreload = hostPathInsidePlugin(relativePath);
         },
@@ -359,11 +359,11 @@ function createPluginHost(options) {
         registerSessionRules: function (rules) {
             requirePermission('registerSessionRules', 'web-request');
             if (!Array.isArray(rules)) {
-                throw new Error('[AquaStar:plugins] registerSessionRules expects an array');
+                throw new Error('[AquGrim:plugins] registerSessionRules expects an array');
             }
             rules.forEach(function (rule) {
                 if (!rule || typeof rule.id !== 'string') {
-                    throw new Error('[AquaStar:plugins] session rule requires id');
+                    throw new Error('[AquGrim:plugins] session rule requires id');
                 }
                 assertUniqueIds(state.sessionRules, rule, 'session rule');
                 state.sessionRules.push(rule);
@@ -380,22 +380,22 @@ function createPluginHost(options) {
         registerPacketSteering: function (declaration) {
             requirePermission('registerPacketSteering', 'packet-tap');
             if (!declaration || typeof declaration !== 'object' || Array.isArray(declaration)) {
-                throw new Error('[AquaStar:plugins] registerPacketSteering expects a declaration object');
+                throw new Error('[AquGrim:plugins] registerPacketSteering expects a declaration object');
             }
             if (typeof declaration.id !== 'string' || !declaration.id) {
-                throw new Error('[AquaStar:plugins] packet steering declaration requires id');
+                throw new Error('[AquGrim:plugins] packet steering declaration requires id');
             }
             if (!Array.isArray(declaration.urls) || !declaration.urls.length) {
-                throw new Error('[AquaStar:plugins] packet steering declaration requires urls');
+                throw new Error('[AquGrim:plugins] packet steering declaration requires urls');
             }
             if (typeof declaration.hostField !== 'string' || typeof declaration.portField !== 'string') {
-                throw new Error('[AquaStar:plugins] packet steering declaration requires hostField and portField');
+                throw new Error('[AquGrim:plugins] packet steering declaration requires hostField and portField');
             }
             if (typeof declaration.policyDomain !== 'string' || !declaration.policyDomain) {
-                throw new Error('[AquaStar:plugins] packet steering declaration requires policyDomain');
+                throw new Error('[AquGrim:plugins] packet steering declaration requires policyDomain');
             }
             if (!Array.isArray(declaration.allowedHosts) || !declaration.allowedHosts.length) {
-                throw new Error('[AquaStar:plugins] packet steering declaration requires allowedHosts');
+                throw new Error('[AquGrim:plugins] packet steering declaration requires allowedHosts');
             }
             assertUniqueIds(state.packetSteering, declaration, 'packet steering declaration');
             state.packetSteering.push(declaration);
@@ -418,11 +418,11 @@ function createPluginHost(options) {
 
         registerLaunches: function (entries) {
             if (!Array.isArray(entries)) {
-                throw new Error('[AquaStar:plugins] registerLaunches expects an array');
+                throw new Error('[AquGrim:plugins] registerLaunches expects an array');
             }
             entries.forEach(function (entry) {
                 if (!entry || typeof entry.id !== 'string' || typeof entry.getUrl !== 'function') {
-                    throw new Error('[AquaStar:plugins] launch requires id and getUrl()');
+                    throw new Error('[AquGrim:plugins] launch requires id and getUrl()');
                 }
                 assertUniqueIds(state.launches, entry, 'launch');
                 state.launches.push(entry);
@@ -431,10 +431,10 @@ function createPluginHost(options) {
 
         setPrimaryGame: function (cfg) {
             if (!cfg || typeof cfg.id !== 'string' || typeof cfg.getUrl !== 'function') {
-                throw new Error('[AquaStar:plugins] setPrimaryGame requires id and getUrl()');
+                throw new Error('[AquGrim:plugins] setPrimaryGame requires id and getUrl()');
             }
             if (typeof cfg.isGameUrl !== 'function') {
-                throw new Error('[AquaStar:plugins] setPrimaryGame requires isGameUrl()');
+                throw new Error('[AquGrim:plugins] setPrimaryGame requires isGameUrl()');
             }
             state.primaryGame = cfg;
         },
@@ -450,46 +450,46 @@ function createPluginHost(options) {
          */
         registerGameChrome: function (declaration) {
             if (!declaration || typeof declaration !== 'object' || Array.isArray(declaration)) {
-                throw new Error('[AquaStar:plugins] registerGameChrome expects a declaration object');
+                throw new Error('[AquGrim:plugins] registerGameChrome expects a declaration object');
             }
             if (!(Number(declaration.height) > 0)) {
-                throw new Error('[AquaStar:plugins] registerGameChrome needs a positive height: ' +
+                throw new Error('[AquGrim:plugins] registerGameChrome needs a positive height: ' +
                     'the strip is what the game surface gives up');
             }
             if (typeof declaration.controls !== 'function') {
-                throw new Error('[AquaStar:plugins] registerGameChrome expects controls()');
+                throw new Error('[AquGrim:plugins] registerGameChrome expects controls()');
             }
             if (typeof declaration.state !== 'function') {
-                throw new Error('[AquaStar:plugins] registerGameChrome expects state()');
+                throw new Error('[AquGrim:plugins] registerGameChrome expects state()');
             }
             if (typeof declaration.action !== 'function') {
-                throw new Error('[AquaStar:plugins] registerGameChrome expects action(id, args)');
+                throw new Error('[AquGrim:plugins] registerGameChrome expects action(id, args)');
             }
             if (declaration.menuLabel != null && typeof declaration.menuLabel !== 'function') {
-                throw new Error('[AquaStar:plugins] registerGameChrome menuLabel must be a function');
+                throw new Error('[AquGrim:plugins] registerGameChrome menuLabel must be a function');
             }
             const controls = declaration.controls();
             if (!Array.isArray(controls) || !controls.length) {
-                throw new Error('[AquaStar:plugins] registerGameChrome needs at least one control');
+                throw new Error('[AquGrim:plugins] registerGameChrome needs at least one control');
             }
             const seen = {};
             controls.forEach(function (control) {
                 if (!control || typeof control.id !== 'string' || !control.id) {
-                    throw new Error('[AquaStar:plugins] registerGameChrome control needs an id');
+                    throw new Error('[AquGrim:plugins] registerGameChrome control needs an id');
                 }
                 // A picker may carry no text of its own - the reference's two list boxes have
                 // none, and their options are their labels. A button or a tick is its caption,
                 // so one of those with no label is a control that cannot be used and is refused.
                 if (typeof control.label !== 'string') {
-                    throw new Error('[AquaStar:plugins] registerGameChrome control "' + control.id +
+                    throw new Error('[AquGrim:plugins] registerGameChrome control "' + control.id +
                         '" needs a label (an empty string is allowed for a picker)');
                 }
                 if (!control.label && control.kind !== 'select') {
-                    throw new Error('[AquaStar:plugins] registerGameChrome control "' + control.id +
+                    throw new Error('[AquGrim:plugins] registerGameChrome control "' + control.id +
                         '" needs a label');
                 }
                 if (seen[control.id]) {
-                    throw new Error('[AquaStar:plugins] Duplicate chrome control id "' +
+                    throw new Error('[AquGrim:plugins] Duplicate chrome control id "' +
                         control.id + '" in plugin "' + pluginId + '"');
                 }
                 seen[control.id] = true;
@@ -518,31 +518,31 @@ function createPluginHost(options) {
                 } catch (e) { return false; }
             })) {
                 throw new Error(
-                    '[AquaStar:plugins] declareGameOrigin expects routes: [{ prefix, origin }]'
+                    '[AquGrim:plugins] declareGameOrigin expects routes: [{ prefix, origin }]'
                 );
             }
             if (state.gameOrigin) {
                 throw new Error(
-                    '[AquaStar:plugins] game origin already declared by plugin "' + pluginId + '"'
+                    '[AquGrim:plugins] game origin already declared by plugin "' + pluginId + '"'
                 );
             }
             let files = {};
             if (declaration.files != null) {
                 if (typeof declaration.files !== 'object' || Array.isArray(declaration.files)) {
-                    throw new Error('[AquaStar:plugins] declareGameOrigin files must be an object');
+                    throw new Error('[AquGrim:plugins] declareGameOrigin files must be an object');
                 }
                 Object.keys(declaration.files).forEach(function (servedPath) {
                     const target = declaration.files[servedPath];
                     if (servedPath.charAt(0) !== '/' || typeof target !== 'string' || !target) {
                         throw new Error(
-                            '[AquaStar:plugins] declareGameOrigin files must map "/path" to an absolute file'
+                            '[AquGrim:plugins] declareGameOrigin files must map "/path" to an absolute file'
                         );
                     }
                     files[servedPath] = target;
                 });
             }
             if (typeof deps.startGameOrigin !== 'function') {
-                throw new Error('[AquaStar:plugins] game origin not wired');
+                throw new Error('[AquGrim:plugins] game origin not wired');
             }
             state.gameOrigin = { routes: routes, files: files };
             return Promise.resolve(deps.startGameOrigin({
@@ -560,7 +560,7 @@ function createPluginHost(options) {
         trustFlashUrls: function (urls) {
             requirePermission('trustFlashUrls', 'flash-trust');
             if (!Array.isArray(urls)) {
-                throw new Error('[AquaStar:plugins] trustFlashUrls expects an array');
+                throw new Error('[AquGrim:plugins] trustFlashUrls expects an array');
             }
             state.trustedFlashUrls = state.trustedFlashUrls.concat(urls);
             if (typeof deps.trustFlashUrls === 'function') {
@@ -570,7 +570,7 @@ function createPluginHost(options) {
 
         registerLocales: function (catalog) {
             if (!catalog || typeof catalog !== 'object') {
-                throw new Error('[AquaStar:plugins] registerLocales expects an object');
+                throw new Error('[AquGrim:plugins] registerLocales expects an object');
             }
             Object.keys(catalog).forEach(function (localeId) {
                 state.locales[localeId] = catalog[localeId];
@@ -624,14 +624,14 @@ function createPluginHost(options) {
          */
         readPluginText: function (relativePath) {
             if (schema.hasPathEscape(relativePath)) {
-                throw new Error('[AquaStar:plugins] readPluginText path escapes plugin root');
+                throw new Error('[AquGrim:plugins] readPluginText path escapes plugin root');
             }
             const fs = require('fs');
             const full = path.resolve(options.pluginRoot, relativePath);
             const rootResolved = path.resolve(options.pluginRoot);
             const prefix = rootResolved.endsWith(path.sep) ? rootResolved : rootResolved + path.sep;
             if (full !== rootResolved && full.indexOf(prefix) !== 0) {
-                throw new Error('[AquaStar:plugins] readPluginText escaped plugin root');
+                throw new Error('[AquGrim:plugins] readPluginText escaped plugin root');
             }
             return fs.readFileSync(full, 'utf8');
         },
@@ -672,7 +672,7 @@ function createPluginHost(options) {
 
         registerSettingsSection: function (section) {
             if (!section || typeof section !== 'object') {
-                throw new Error('[AquaStar:plugins] registerSettingsSection expects an object');
+                throw new Error('[AquGrim:plugins] registerSettingsSection expects an object');
             }
             state.settingsSections.push(section);
         },
@@ -738,15 +738,15 @@ function createPluginHost(options) {
             on: function (event, listener) {
                 requirePermission('packets.on', 'packet-tap');
                 if (event !== 'frame') {
-                    throw new Error('[AquaStar:plugins] packets.on knows one event, "frame" (got "' +
+                    throw new Error('[AquGrim:plugins] packets.on knows one event, "frame" (got "' +
                         event + '")');
                 }
                 if (typeof listener !== 'function') {
-                    throw new Error('[AquaStar:plugins] packets.on expects a listener function');
+                    throw new Error('[AquGrim:plugins] packets.on expects a listener function');
                 }
                 const tap = typeof deps.getPacketTap === 'function' ? deps.getPacketTap() : null;
                 if (!tap || typeof tap.subscribe !== 'function') {
-                    throw new Error('[AquaStar:plugins] the packet tap is not available in this app ' +
+                    throw new Error('[AquGrim:plugins] the packet tap is not available in this app ' +
                         'session: game traffic is not being steered');
                 }
                 return tap.subscribe(listener);
@@ -765,15 +765,15 @@ function createPluginHost(options) {
                 requirePermission('packets.send', 'packet-send');
                 const candidate = frame || {};
                 if (candidate.direction !== 'toServer' && candidate.direction !== 'toClient') {
-                    throw new Error('[AquaStar:plugins] packets.send writes one of two directions, ' +
+                    throw new Error('[AquGrim:plugins] packets.send writes one of two directions, ' +
                         '"toServer" or "toClient" (got "' + candidate.direction + '")');
                 }
                 if (typeof candidate.text !== 'string' || !candidate.text.length) {
-                    throw new Error('[AquaStar:plugins] packets.send expects the frame text');
+                    throw new Error('[AquGrim:plugins] packets.send expects the frame text');
                 }
                 const send = typeof deps.getPacketSender === 'function' ? deps.getPacketSender() : null;
                 if (typeof send !== 'function') {
-                    throw new Error('[AquaStar:plugins] this app session is not steering game ' +
+                    throw new Error('[AquGrim:plugins] this app session is not steering game ' +
                         'traffic, so there is no relay to write a frame through');
                 }
                 return send(candidate.direction, candidate.text) === true;
@@ -785,25 +785,25 @@ function createPluginHost(options) {
                 if (typeof deps.openPrimaryGame === 'function') {
                     return deps.openPrimaryGame(opts);
                 }
-                throw new Error('[AquaStar:plugins] windows.openPrimaryGame not wired');
+                throw new Error('[AquGrim:plugins] windows.openPrimaryGame not wired');
             },
             openLaunch: function (launchId) {
                 if (typeof deps.openLaunch === 'function') {
                     return deps.openLaunch(launchId);
                 }
-                throw new Error('[AquaStar:plugins] windows.openLaunch not wired');
+                throw new Error('[AquGrim:plugins] windows.openLaunch not wired');
             },
             openFeatureWindow: function (featureId) {
                 if (typeof deps.openFeatureWindow === 'function') {
                     return deps.openFeatureWindow(featureId);
                 }
-                throw new Error('[AquaStar:plugins] windows.openFeatureWindow not wired');
+                throw new Error('[AquGrim:plugins] windows.openFeatureWindow not wired');
             },
             openUrl: function (url, mode) {
                 if (typeof deps.openUrl === 'function') {
                     return deps.openUrl(url, mode || 'new-window');
                 }
-                throw new Error('[AquaStar:plugins] windows.openUrl not wired');
+                throw new Error('[AquGrim:plugins] windows.openUrl not wired');
             },
             openExternal: function (url) {
                 if (typeof deps.openExternal === 'function') {
@@ -813,14 +813,14 @@ function createPluginHost(options) {
                 try {
                     return require('electron').shell.openExternal(url);
                 } catch (e) {
-                    throw new Error('[AquaStar:plugins] windows.openExternal not wired');
+                    throw new Error('[AquGrim:plugins] windows.openExternal not wired');
                 }
             },
             spawnHelperProcess: function (spawnOpts) {
                 requirePermission('windows.spawnHelperProcess', 'spawn-helper-process');
                 if (!spawnOpts || !spawnOpts.scriptRelativePath) {
                     throw new Error(
-                        '[AquaStar:plugins] spawnHelperProcess requires scriptRelativePath'
+                        '[AquGrim:plugins] spawnHelperProcess requires scriptRelativePath'
                     );
                 }
                 const scriptPath = hostPathInsidePlugin(spawnOpts.scriptRelativePath);

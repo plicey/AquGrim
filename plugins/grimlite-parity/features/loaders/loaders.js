@@ -405,7 +405,7 @@ function createLoadersFeature(host, deps) {
         case 'loadersAct':
             return act(argv[1], argv[2]);
         default:
-            throw new Error('[AquaStar:grimlite-parity] unknown loaders channel "' + channel + '"');
+            throw new Error('[AquGrim:grimlite-parity] unknown loaders channel "' + channel + '"');
         }
     }
 

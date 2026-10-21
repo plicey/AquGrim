@@ -159,7 +159,7 @@ function register(host, deps) {
                 id: meta.id,
                 openMode: meta.openMode,
                 action: function () {
-                    throw new Error('[AquaStar:plugins] keybind action not wired: ' + meta.id);
+                    throw new Error('[AquGrim:plugins] keybind action not wired: ' + meta.id);
                 }
             }]);
         });

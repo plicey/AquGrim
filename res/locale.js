@@ -67,7 +67,7 @@ function mergePluginLocales(catalog) {
 
     Object.keys(plugin).forEach(function (ns) {
         if (PLATFORM_PROTECTED_NS[ns]) {
-            console.log('[AquaStar:i18n] Ignoring plugin key under reserved namespace "' + ns + '"');
+            console.log('[AquGrim:i18n] Ignoring plugin key under reserved namespace "' + ns + '"');
             return;
         }
         exports.strings[ns] = _mergeNamespace(exports.strings[ns], plugin[ns], ns);
@@ -111,7 +111,7 @@ function detectLang(systemLang, keyb){
         return require(filePath);
     }
     if (resolved.code !== systemLang) {
-        console.log('[AquaStar:i18n] Locale "' + systemLang + '" → using "' + resolved.code + '"');
+        console.log('[AquGrim:i18n] Locale "' + systemLang + '" → using "' + resolved.code + '"');
     }
     langFile = loadPo(pathToFile);
 

@@ -310,7 +310,7 @@ function create(bot) {
         get: currentKey,
         set: function (key) {
             if (LIST_KEYS.indexOf(key) === -1) {
-                throw new Error('[AquaStar:grimlite-parity] not a bot list: ' + key);
+                throw new Error('[AquGrim:grimlite-parity] not a bot list: ' + key);
             }
             selected = key;
             if (!selections[key]) selections[key] = [];

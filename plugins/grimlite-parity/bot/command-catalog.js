@@ -21,7 +21,7 @@ function classNameOf(command) {
 
 function fullType(className) {
     const group = GROUPS[className];
-    if (!group) throw new Error('[AquaStar:grimlite-parity] unknown command class: ' + className);
+    if (!group) throw new Error('[AquGrim:grimlite-parity] unknown command class: ' + className);
     return ROOT + group + '.' + className + SUFFIX;
 }
 
@@ -549,7 +549,7 @@ function makeCommand(className, properties) {
 /** A statement command: the three fields the reference always carries, in the same order. */
 function makeStatement(className, value1, value2) {
     const row = STATEMENTS.filter(function (s) { return s.className === className; })[0];
-    if (!row) throw new Error('[AquaStar:grimlite-parity] unknown statement: ' + className);
+    if (!row) throw new Error('[AquGrim:grimlite-parity] unknown statement: ' + className);
     const command = { $type: ROOT + 'Misc.Statements.' + className + SUFFIX, Tag: row.tag, Text: row.text };
     command.Value1 = value1 === undefined || value1 === null ? '' : String(value1);
     command.Value2 = value2 === undefined || value2 === null ? '' : String(value2);

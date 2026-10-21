@@ -39,7 +39,8 @@ ipcMain.handle('getDesktopCapturerSourceForWindow', async (event) => {
         }
     }
     for (let i = 0; i < sources.length; i++) {
-        if (sources[i].name && sources[i].name.indexOf('AquaStar') !== -1) {
+        if (sources[i].name &&
+            (sources[i].name.indexOf('AquGrim') !== -1 || sources[i].name.indexOf('AquaStar') !== -1)) {
             return { id: sources[i].id, name: sources[i].name };
         }
     }

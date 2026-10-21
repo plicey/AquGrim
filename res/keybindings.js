@@ -106,7 +106,7 @@ function _migrateRuffleAutoUpdateDefault(topLevel) {
         json.ruffleAutoUpdate = true;
         json.ruffleAutoUpdateMigrated = true;
         fs.writeFileSync(target, JSON.stringify(json, null, 4));
-    } catch (e) { console.log('[AquaStar] Could not migrate ruffleAutoUpdate: ' + e.message); }
+    } catch (e) { console.log('[AquGrim] Could not migrate ruffleAutoUpdate: ' + e.message); }
 }
 
 function toggleRecording(focusedWin) {
@@ -142,7 +142,7 @@ async function reloadIgnoringCache(focusedWin) {
             ses.clearStorageData({ storages: CACHE_STORAGES })
         ]);
     } catch (err) {
-        console.error('[AquaStar] Cache purge error:', err);
+        console.error('[AquGrim] Cache purge error:', err);
     }
     focusedWin.webContents.reloadIgnoringCache();
 }
@@ -263,7 +263,7 @@ const addGlobalKeybind = function(keybind, func, onlyHTML = false, considerDF = 
         return;
     }
     if (!globalShortcut.register(keybind, handler)) {
-        console.error('[AquaStar] Failed to register global shortcut:', keybind);
+        console.error('[AquGrim] Failed to register global shortcut:', keybind);
     }
 };
 

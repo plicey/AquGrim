@@ -4,7 +4,7 @@ const instanceSession = require('./res/instance-session.js');
 try {
     instanceSession.configure(app, process.argv);
 } catch (error) {
-    dialog.showErrorBox('AquaStar', error.message);
+    dialog.showErrorBox('AquGrim', error.message);
     app.exit(1);
     return;
 }
@@ -14,7 +14,7 @@ try {
 const helper = require('./res/platform/helper-process.js').resolveHelperScript(process.argv, __dirname);
 if (helper.requested) {
     if (!helper.script) {
-        console.error('[AquaStar] ' + helper.error);
+        console.error('[AquGrim] ' + helper.error);
         app.exit(1);
         return;
     }
@@ -61,7 +61,7 @@ let packetLayerState = null;
 // One tap per app session: the relay hands it every frame it carries, and plugins holding
 // packet-tap subscribe to it (res/platform/packet-tap.js). The listener is the platform's.
 const packetTap = platform.createPacketTap({
-    onError: function (line) { console.log('[AquaStar:packets] ' + line); }
+    onError: function (line) { console.log('[AquGrim:packets] ' + line); }
 });
 
 // pluginSystem:false / AQUASTAR_DISABLE_PLUGINS=1 is the emergency "safe mode": only the
@@ -85,7 +85,7 @@ function activatePlugins() {
 
     const safeMode = !bootFlags.pluginSystem;
     if (safeMode) {
-        console.log('[AquaStar:plugins] pluginSystem disabled — safe mode: bundled default plugin only');
+        console.log('[AquGrim:plugins] pluginSystem disabled — safe mode: bundled default plugin only');
     }
 
     return platform.activateSelected({
@@ -143,7 +143,7 @@ function activatePlugins() {
         }
         return runtime;
     }).catch(function (err) {
-        console.log('[AquaStar:plugins] Activation failed: ' + (err && err.message ? err.message : err));
+        console.log('[AquGrim:plugins] Activation failed: ' + (err && err.message ? err.message : err));
         platform.menuRegistry.clear();
         platform.settingsRegistry.clear();
         platform.pluginRuntime.clear();
@@ -177,9 +177,9 @@ async function createWindow () {
         ).then((result) => {
             if (result && result.restartRequired) {
                 const { Notification } = require('electron');
-                new Notification({ title: 'AquaStar', body: 'A new Ruffle version was downloaded. Restart AquaStar to apply it.' }).show();
+                new Notification({ title: 'AquGrim', body: 'A new Ruffle version was downloaded. Restart AquGrim to apply it.' }).show();
             }
-        }).catch((e) => console.log('[AquaStar] Ruffle auto-update failed: ' + e.message));
+        }).catch((e) => console.log('[AquGrim] Ruffle auto-update failed: ' + e.message));
     }
 
     // Lang setup. Has to be after Ready event.
@@ -195,16 +195,16 @@ async function createWindow () {
         Menu.setApplicationMenu(null);
     } else {
         Menu.setApplicationMenu(Menu.buildFromTemplate([
-            { label: 'AquaStar', submenu: [{ role: 'quit' }] }
+            { label: 'AquGrim', submenu: [{ role: 'quit' }] }
         ]));
     }
 
     // Primary URL comes from the active plugin (platform custom SWF / customUrl still win).
     const bootGameUrl = platform.pluginRuntime.getPrimaryUrl();
     if (!bootGameUrl) {
-        dialog.showErrorBox('AquaStar',
+        dialog.showErrorBox('AquGrim',
             'No game plugin could be loaded, so there is nothing to open.\n\n' +
-            'Check the console output for "[AquaStar:plugins]" lines, or reinstall AquaStar.');
+            'Check the console output for "[AquGrim:plugins]" lines, or reinstall AquGrim.');
         app.quit();
         return;
     }
@@ -265,7 +265,7 @@ async function applySessionRules() {
                 ctx: {
                     defaultUserAgent: session.defaultSession.getUserAgent(),
                     settings: { swfLog: constant.isSwfLogEnabled, packetSteering: keyb.keybinds.packetSteering },
-                    logLine: function (line) { console.log('[AquaStar:packets] ' + line); }
+                    logLine: function (line) { console.log('[AquGrim:packets] ' + line); }
                 }
             }).start();
             packetRules = packetLayerState.rules;
@@ -273,7 +273,7 @@ async function applySessionRules() {
         } catch (error) {
             // The client's HTTP-polling fallback is not steered, so a half-working layer must not
             // pretend: report it and carry on with the platform's own rules only.
-            console.log('[AquaStar:packets] packet steering unavailable: ' +
+            console.log('[AquGrim:packets] packet steering unavailable: ' +
                 (error && error.message ? error.message : error));
             packetLayerState = null;
         }
@@ -319,7 +319,7 @@ app.on('will-quit', () => {
   if (activePluginRuntime && activePluginRuntime.module &&
       typeof activePluginRuntime.module.deactivate === 'function') {
     try { activePluginRuntime.module.deactivate(activePluginRuntime.host); }
-    catch (e) { console.log('[AquaStar:plugins] deactivate error: ' + e.message); }
+    catch (e) { console.log('[AquGrim:plugins] deactivate error: ' + e.message); }
   }
 })
 app.on('quit', instanceSession.cleanup)

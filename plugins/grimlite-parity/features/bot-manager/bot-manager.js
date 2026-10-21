@@ -843,7 +843,7 @@ function createBotManager(deps) {
         case 'find': return Object.assign({ hit: editor.find(options.text) }, view());
         case 'label': return labelKey(options);
         default:
-            throw new Error('[AquaStar:grimlite-parity] unknown bot manager key "' + action + '"');
+            throw new Error('[AquGrim:grimlite-parity] unknown bot manager key "' + action + '"');
         }
         return view();
     }
@@ -871,7 +871,7 @@ function createBotManager(deps) {
         case 'reload': settings.reload(); break;
         case 'read': break;
         default:
-            throw new Error('[AquaStar:grimlite-parity] unknown bot manager style action "' + options.action + '"');
+            throw new Error('[AquGrim:grimlite-parity] unknown bot manager style action "' + options.action + '"');
         }
         return view();
     }
@@ -1433,7 +1433,7 @@ function createBotManager(deps) {
                 });
             }
             default:
-                throw new Error('[AquaStar:grimlite-parity] unknown bot manager channel "' + channel + '"');
+                throw new Error('[AquGrim:grimlite-parity] unknown bot manager channel "' + channel + '"');
             }
         },
 

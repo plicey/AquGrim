@@ -38,7 +38,7 @@ function createCosmeticsWindow(deps) {
         if (channel === 'cosmeticClear') return Promise.resolve(cosmetics.cleared());
         if (channel === 'cosmeticSave') return dialogs.save(args && args[0]);
         if (channel === 'cosmeticLoad') return load();
-        throw new Error('[AquaStar:grimlite-parity] unknown cosmetics channel "' + channel + '"');
+        throw new Error('[AquGrim:grimlite-parity] unknown cosmetics channel "' + channel + '"');
     }
 
     // ------------------------------------------------------------------ the picker

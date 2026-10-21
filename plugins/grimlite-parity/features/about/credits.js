@@ -15,7 +15,7 @@ function versionLine() {
 /** The running port's own version, in the shape the reference uses for its version line. */
 function portLine(appVersion) {
     const version = String(appVersion == null ? '' : appVersion);
-    return version ? 'AquaStar ' + version : 'AquaStar';
+    return version ? 'AquGrim ' + version : 'AquGrim';
 }
 
 // The three headings AboutForm.Designer.cs stacks down the left (darkLabel3 y=100, darkLabel1

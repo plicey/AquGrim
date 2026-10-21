@@ -91,7 +91,7 @@ const flashTrustManager = (app, appRootPath, trustedPath, appName) =>{
 
     const flashPluginPath = path.resolve(appRootPath, 'FlashPlayer', getPluginName());
     if (!fs.existsSync(flashPluginPath)) {
-        console.error('[AquaStar] PPAPI Flash plugin not found:', flashPluginPath);
+        console.error('[AquGrim] PPAPI Flash plugin not found:', flashPluginPath);
     }
     app.commandLine.appendSwitch('ppapi-flash-path', flashPluginPath);
     app.commandLine.appendSwitch('ppapi-flash-version', getPluginVersion());
@@ -109,7 +109,7 @@ const flashTrustManager = (app, appRootPath, trustedPath, appName) =>{
  */
 function refreshTrust(urls) {
     if (!activeTrustManager) {
-        console.log('[AquaStar] Flash trust refresh skipped — trust manager not initialized');
+        console.log('[AquGrim] Flash trust refresh skipped — trust manager not initialized');
         return;
     }
     activeTrustManager.empty();
@@ -121,7 +121,7 @@ function refreshTrust(urls) {
         try {
             activeTrustManager.add(url);
         } catch (e) {
-            console.log('[AquaStar] Flash trust add failed for ' + url + ': ' + e.message);
+            console.log('[AquGrim] Flash trust add failed for ' + url + ': ' + e.message);
         }
     });
 }

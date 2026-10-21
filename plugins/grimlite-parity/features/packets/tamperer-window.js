@@ -92,7 +92,7 @@ function createTampererWindow(deps) {
         if (channel === 'tampererSendToClient') {
             return Promise.resolve({ sent: capture.sendToClient((args && args[0]) || '') });
         }
-        throw new Error('[AquaStar:grimlite-parity] unknown tamperer channel "' + channel + '"');
+        throw new Error('[AquGrim:grimlite-parity] unknown tamperer channel "' + channel + '"');
     }
 
     // A closed window is not a reason to keep reading traffic: with no window left, the tap is
