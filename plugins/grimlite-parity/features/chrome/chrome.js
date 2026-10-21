@@ -327,6 +327,8 @@ function createChrome(deps) {
     async function rotationForClass() {
         if (!deps.presets || typeof deps.presets.forClass !== 'function') return [];
         if (typeof deps.presets.reload === 'function') deps.presets.reload();
+        const own = typeof deps.presets.custom === 'function' ? deps.presets.custom() : [];
+        if (own.length) return own;
         const answer = await read('className');
         if (answer.error) return [];
         return deps.presets.forClass(answer.value) || [];

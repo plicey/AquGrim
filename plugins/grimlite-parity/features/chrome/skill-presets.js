@@ -96,6 +96,7 @@ function createPresetSource(deps) {
     const files = Array.isArray(deps.files) ? deps.files : candidateFiles(deps.appDataDirectory);
     const readFile = deps.readFile || function (file) { return fs.readFileSync(file, 'utf8'); };
     let presets = {};
+    let autoSkills = [];
 
     function storePresets() {
         if (!store || typeof store.read !== 'function') return {};
@@ -130,6 +131,8 @@ function createPresetSource(deps) {
         }
         presets = fileText === null ? {} : parseConfig(fileText);
         Object.assign(presets, storePresets());
+        const custom = typeof deps.skillSet === 'function' ? deps.skillSet() : deps.skillSet;
+        autoSkills = parsePreset(custom);
         return presets;
     }
 
@@ -143,6 +146,9 @@ function createPresetSource(deps) {
                 .trim().toUpperCase();
             const found = presets[key];
             return found ? found.map(function (skill) { return Object.assign({}, skill); }) : [];
+        },
+        custom: function () {
+            return autoSkills.map(function (skill) { return Object.assign({}, skill); });
         }
     };
 }

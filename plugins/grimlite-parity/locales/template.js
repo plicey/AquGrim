@@ -143,12 +143,15 @@ exports.settingsMessages = {
 
     },
     optionLabels: {
+        autoAttackSkillSet: "",
         packetSteering: ""
     },
     optionHints: {
+        autoAttackSkillSet: "",
         packetSteering: ""
     },
     settingsSections: {
+        autoAttack: "",
         packets: ""
     }
 };

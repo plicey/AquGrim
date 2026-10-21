@@ -184,6 +184,11 @@ test('the plugin registers a 27 px strip holding the reference controls, in its 
   assert.ok(declared.menuLabel(), 'the game menu entry needs a label');
   assert.strictEqual(typeof declared.state, 'function');
   assert.strictEqual(typeof declared.action, 'function');
+  const sections = activated.host._getState().settingsSections || [];
+  const auto = sections.filter(function (section) { return section.id === 'grimlite-auto-attack'; })[0];
+  assert.ok(auto, 'Auto Attack must have its own settings section');
+  assert.deepStrictEqual(auto.fields.map(function (field) { return field.key; }),
+    ['autoAttackSkillSet'], 'it must not read the Bot Manager Skills list');
 });
 
 test('the pad picker is the reference own list, in its own order', () => {
@@ -466,6 +471,23 @@ test('a preset with no match falls back to skills 1-4', async () => {
   h.chrome.stop();
 });
 
+test('Auto Attack uses its own skill set before the class preset', async () => {
+  const own = skillPresets.parsePreset('3:SH>70;4');
+  const classPreset = skillPresets.parsePreset('1;2');
+  const h = harness({
+    answers: { hasTarget: true, className: 'Void Highlord' },
+    presets: {
+      reload: function () {},
+      forClass: function () { return classPreset; },
+      custom: function () { return own; }
+    }
+  });
+  await h.chrome.action('autoAttack', { checked: true });
+  assert.deepStrictEqual(h.chrome.rotation().map(function (one) { return one.index; }), ['3', '4']);
+  assert.strictEqual(h.chrome.rotation()[0].safe, true);
+  h.chrome.stop();
+});
+
 test('the preset source reads ClientConfig.cfg, with the store key winning over it', () => {
   const source = skillPresets.createPresetSource({
     files: ['/app/ClientConfig.cfg'],
@@ -481,6 +503,14 @@ test('the preset source reads ClientConfig.cfg, with the store key winning over 
   assert.deepStrictEqual(source.forClass('Shaman').map(function (one) { return one.index; }),
     ['1', '2'], 'classes only in the file still work');
   assert.deepStrictEqual(source.forClass('Nobody'), []);
+
+  const configured = skillPresets.createPresetSource({
+    files: [],
+    store: { read: function () { return {}; } },
+    skillSet: function () { return '2:SH>50;4'; }
+  });
+  assert.deepStrictEqual(configured.custom().map(function (one) { return one.index; }), ['2', '4']);
+  assert.strictEqual(configured.custom()[0].safe, true);
 });
 
 // ------------------------------------------------------------------- the cell and pad pickers

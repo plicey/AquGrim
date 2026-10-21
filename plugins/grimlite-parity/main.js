@@ -723,7 +723,10 @@ async function activate(host) {
         // autoAttackPresets store object winning over the file when the user edits that instead.
         presets: skillPresets.createPresetSource({
             appDataDirectory: host.appDataDirectory,
-            store: host.getStore(skillPresets.STORE_NAMESPACE)
+            store: host.getStore(skillPresets.STORE_NAMESPACE),
+            skillSet: function () {
+                return (host.getPlatformSettings() || {}).autoAttackSkillSet || '';
+            }
         }),
         // Read live: this plugin's catalog is merged into the platform's after activate().
         messages: function () { return host.getLocaleStrings('chromeMessages') || {}; },
@@ -772,7 +775,14 @@ async function activate(host) {
     // Steering carries the session through a local process, so it is the player's opt-in rather
     // than something the client does to itself. The declaration is this game's facts: the platform
     // owns the mechanism and knows none of them (res/platform/packet-layer.js).
-    host.registerOptionDefaults({ packetSteering: false });
+    host.registerOptionDefaults({ packetSteering: false, autoAttackSkillSet: '' });
+    host.registerSettingsSection({
+        id: 'grimlite-auto-attack',
+        titleKey: 'autoAttack',
+        title: 'Auto Attack',
+        order: 20,
+        fields: [{ key: 'autoAttackSkillSet', type: 'text' }]
+    });
     host.registerSettingsSection({
         id: 'grimlite-packets',
         titleKey: 'packets',
