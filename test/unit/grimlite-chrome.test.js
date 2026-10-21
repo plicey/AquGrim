@@ -109,6 +109,7 @@ function harness(options) {
     windowKey: function () { return 'game-window-1'; },
     bot: function () { return bot.document; },
     presets: options.presets,
+    openAutoSkillSet: options.openAutoSkillSet,
     messages: options.messages || {},
     log: function () {},
     sleep: function () { return Promise.resolve(); },
@@ -176,19 +177,24 @@ test('the plugin registers a 27 px strip holding the reference controls, in its 
   assert.strictEqual(HEIGHT, 27);
   const controls = declared.controls();
   assert.deepStrictEqual(controls.map(function (one) { return one.id; }),
-    ['startBot', 'autoAttack', 'pad', 'cell', 'refreshCell', 'bank']);
+    ['startBot', 'autoAttack', 'autoSkillSet', 'pad', 'cell', 'refreshCell', 'bank']);
   assert.deepStrictEqual(controls.map(function (one) { return one.label; }),
-    ['Start Bot', 'Auto Attack', '', '', 'x', 'Bank']);
+    ['Start Bot', 'Auto Attack', 'Skill Set', '', '', 'x', 'Bank']);
   assert.deepStrictEqual(controls.map(function (one) { return one.kind; }),
-    ['check', 'check', 'select', 'select', 'button', 'button']);
+    ['check', 'check', 'button', 'select', 'select', 'button', 'button']);
   assert.ok(declared.menuLabel(), 'the game menu entry needs a label');
   assert.strictEqual(typeof declared.state, 'function');
   assert.strictEqual(typeof declared.action, 'function');
-  const sections = activated.host._getState().settingsSections || [];
-  const auto = sections.filter(function (section) { return section.id === 'grimlite-auto-attack'; })[0];
-  assert.ok(auto, 'Auto Attack must have its own settings section');
-  assert.deepStrictEqual(auto.fields.map(function (field) { return field.key; }),
-    ['autoAttackSkillSet'], 'it must not read the Bot Manager Skills list');
+});
+
+test('the toolbar Skill Set button opens the Auto Attack-only editor', async () => {
+  let opened = 0;
+  const h = harness({
+    openAutoSkillSet: function () { opened += 1; return { ok: true, error: null }; }
+  });
+  const answer = await h.chrome.action('autoSkillSet', {});
+  assert.strictEqual(answer.ok, true);
+  assert.strictEqual(opened, 1);
 });
 
 test('the pad picker is the reference own list, in its own order', () => {
@@ -632,12 +638,12 @@ test('every game read the strip makes is a loader name the surface answers', () 
     'the strip reads through the session, not through the raw loader surface');
 });
 
-test('the strip own controls are the six the reference draws, and nothing else', () => {
+test('the strip keeps the reference controls and adds the Auto Attack skill editor', () => {
   const h = harness();
   const controls = h.chrome.controls();
-  assert.strictEqual(controls.length, 6);
+  assert.strictEqual(controls.length, 7);
   assert.deepStrictEqual(controls.map(function (one) { return one.id; }),
-    ['startBot', 'autoAttack', 'pad', 'cell', 'refreshCell', 'bank']);
+    ['startBot', 'autoAttack', 'autoSkillSet', 'pad', 'cell', 'refreshCell', 'bank']);
   // A label from the locale catalog wins, so a translated build shows its own words.
   const localised = createChrome({
     messages: { startBot: 'Iniciar Bot', bank: 'Banco' },
@@ -645,5 +651,5 @@ test('the strip own controls are the six the reference draws, and nothing else',
   });
   const labels = localised.controls().map(function (one) { return one.label; });
   assert.strictEqual(labels[0], 'Iniciar Bot');
-  assert.strictEqual(labels[5], 'Banco');
+  assert.strictEqual(labels[6], 'Banco');
 });

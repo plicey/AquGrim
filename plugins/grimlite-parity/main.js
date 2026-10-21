@@ -26,6 +26,7 @@ const tampererWindow = require('./features/packets/tamperer-window.js');
 const resRoot = path.join(__dirname, '..', '..', 'res');
 
 const createNotepad = require('./features/notepad/notepad.js').createNotepad;
+const autoAttackWindow = require('./features/auto-attack/auto-attack-window.js');
 const createEyedropper = require('./features/eyedropper/eyedropper.js').createEyedropper;
 const createAbout = require('./features/about/about.js').createAbout;
 const createCosmetics = require('./features/cosmetics/cosmetics-window.js').createFromHost;
@@ -723,14 +724,15 @@ async function activate(host) {
         // autoAttackPresets store object winning over the file when the user edits that instead.
         presets: skillPresets.createPresetSource({
             appDataDirectory: host.appDataDirectory,
-            store: host.getStore(skillPresets.STORE_NAMESPACE),
-            skillSet: function () {
-                return (host.getPlatformSettings() || {}).autoAttackSkillSet || '';
-            }
+            store: host.getStore(skillPresets.STORE_NAMESPACE)
         }),
         // Read live: this plugin's catalog is merged into the platform's after activate().
         messages: function () { return host.getLocaleStrings('chromeMessages') || {}; },
-        log: function (line) { host.log('chrome: ' + line); }
+        log: function (line) { host.log('chrome: ' + line); },
+        openAutoSkillSet: function () {
+            host.windows.openFeatureWindow(windows.AUTO_ATTACK_WINDOW_ID);
+            return { ok: true, error: null };
+        }
     });
     host.registerGameChrome({
         height: chromeFeature.HEIGHT,
@@ -758,6 +760,7 @@ async function activate(host) {
                 : undefined;
         }
     }).register(host);
+    autoAttackWindow.createFromHost(host).register(host);
     createAbout({
         appVersion: host.appVersion,
         getMessages: function () { return messages('aboutMessages'); },
@@ -775,14 +778,7 @@ async function activate(host) {
     // Steering carries the session through a local process, so it is the player's opt-in rather
     // than something the client does to itself. The declaration is this game's facts: the platform
     // owns the mechanism and knows none of them (res/platform/packet-layer.js).
-    host.registerOptionDefaults({ packetSteering: false, autoAttackSkillSet: '' });
-    host.registerSettingsSection({
-        id: 'grimlite-auto-attack',
-        titleKey: 'autoAttack',
-        title: 'Auto Attack',
-        order: 20,
-        fields: [{ key: 'autoAttackSkillSet', type: 'text' }]
-    });
+    host.registerOptionDefaults({ packetSteering: false });
     host.registerSettingsSection({
         id: 'grimlite-packets',
         titleKey: 'packets',

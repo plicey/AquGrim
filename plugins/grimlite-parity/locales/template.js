@@ -81,6 +81,7 @@ exports.botFileMessages = {
 
 exports.windowTitles = {
     primary: "",
+    autoAttack: "",
     botFile: "",
     bank: "",
     loaders: "",
@@ -143,15 +144,12 @@ exports.settingsMessages = {
 
     },
     optionLabels: {
-        autoAttackSkillSet: "",
         packetSteering: ""
     },
     optionHints: {
-        autoAttackSkillSet: "",
         packetSteering: ""
     },
     settingsSections: {
-        autoAttack: "",
         packets: ""
     }
 };
@@ -373,6 +371,7 @@ exports.maidMessages = {
 exports.chromeMessages = {
     startBot: "",
     autoAttack: "",
+    autoSkillSet: "",
     pad: "",
     cell: "",
     refreshCell: "",

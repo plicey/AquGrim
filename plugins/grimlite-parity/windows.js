@@ -5,6 +5,7 @@ const featureRoot = path.join(__dirname, 'features');
 const BANK_WINDOW_ID = 'grimlite-parity-bank';
 const LOGIN_WINDOW_ID = 'grimlite-parity-char-select';
 const NOTEPAD_WINDOW_ID = 'grimlite-parity-notepad';
+const AUTO_ATTACK_WINDOW_ID = 'grimlite-parity-auto-attack';
 const EYEDROPPER_WINDOW_ID = 'grimlite-parity-eyedropper';
 const ABOUT_WINDOW_ID = 'grimlite-parity-about';
 const DEVTEST_PAGE = path.join(featureRoot, 'devtest', 'devtest.html');
@@ -95,6 +96,14 @@ function register(host, windowTitle) {
             },
             url: pageUrl('notepad', 'notepad.html'),
             config: windowConfig(host, 'notepad', 'preload_notepad.js', { width: 560, height: 420 })
+        },
+        {
+            id: AUTO_ATTACK_WINDOW_ID,
+            title: function () {
+                return windowTitle('autoAttack', 'AquGrim - Auto Attack Skill Set');
+            },
+            url: pageUrl('auto-attack', 'auto-attack.html'),
+            config: windowConfig(host, 'auto-attack', 'preload_auto_attack.js', { width: 460, height: 300 })
         },
         {
             id: ABOUT_WINDOW_ID,
@@ -259,6 +268,7 @@ module.exports = {
     DEVTEST_WINDOW_ID: DEVTEST_WINDOW_ID,
     COSMETICS_WINDOW_ID: COSMETICS_WINDOW_ID,
     NOTEPAD_WINDOW_ID: NOTEPAD_WINDOW_ID,
+    AUTO_ATTACK_WINDOW_ID: AUTO_ATTACK_WINDOW_ID,
     EYEDROPPER_WINDOW_ID: EYEDROPPER_WINDOW_ID,
     ABOUT_WINDOW_ID: ABOUT_WINDOW_ID,
     LOGGER_WINDOW_ID: LOGGER_WINDOW_ID,

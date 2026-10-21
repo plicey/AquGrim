@@ -17,6 +17,7 @@ const path = require('path');
 
 const STORE_NAMESPACE = 'auto-attack';
 const STORE_KEY = 'autoAttackPresets';
+const SKILL_SET_KEY = 'autoAttackSkillSet';
 const CONFIG_FILE = 'ClientConfig.cfg';
 const DEFAULT_SKILLS = [
     { index: '1', safe: false, wait: false },
@@ -98,6 +99,18 @@ function createPresetSource(deps) {
     let presets = {};
     let autoSkills = [];
 
+    function stored() {
+        if (!store || typeof store.read !== 'function') return {};
+        try { return store.read() || {}; } catch (error) { return {}; }
+    }
+
+    function configuredSkillSet() {
+        if (typeof deps.skillSet === 'function') return deps.skillSet();
+        if (typeof deps.skillSet === 'string') return deps.skillSet;
+        const data = stored();
+        return data && typeof data[SKILL_SET_KEY] === 'string' ? data[SKILL_SET_KEY] : '';
+    }
+
     function storePresets() {
         if (!store || typeof store.read !== 'function') return {};
         let stored;
@@ -131,8 +144,7 @@ function createPresetSource(deps) {
         }
         presets = fileText === null ? {} : parseConfig(fileText);
         Object.assign(presets, storePresets());
-        const custom = typeof deps.skillSet === 'function' ? deps.skillSet() : deps.skillSet;
-        autoSkills = parsePreset(custom);
+        autoSkills = parsePreset(configuredSkillSet());
         return presets;
     }
 
@@ -149,6 +161,17 @@ function createPresetSource(deps) {
         },
         custom: function () {
             return autoSkills.map(function (skill) { return Object.assign({}, skill); });
+        },
+        setCustom: function (text) {
+            if (!store || typeof store.write !== 'function') return [];
+            const data = Object.assign({}, stored());
+            data[SKILL_SET_KEY] = String(text == null ? '' : text);
+            store.write(data);
+            reload();
+            return this.custom();
+        },
+        rawCustom: function () {
+            return String(configuredSkillSet() || '');
         }
     };
 }
@@ -156,6 +179,7 @@ function createPresetSource(deps) {
 module.exports = {
     STORE_NAMESPACE: STORE_NAMESPACE,
     STORE_KEY: STORE_KEY,
+    SKILL_SET_KEY: SKILL_SET_KEY,
     CONFIG_FILE: CONFIG_FILE,
     DEFAULT_SKILLS: DEFAULT_SKILLS,
     defaultSkills: defaultSkills,

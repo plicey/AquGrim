@@ -78,6 +78,7 @@ exports.botFileMessages = {
 
 exports.windowTitles = {
     primary: 'AquGrim',
+    autoAttack: 'Auto Attack Skill Set',
     botFile: 'Bot File',
     bank: 'Bank',
     loaders: 'Loaders and grabbers',
@@ -145,18 +146,15 @@ exports.setsMessages = {
 exports.settingsMessages = {
     labels: {},
     optionLabels: {
-        autoAttackSkillSet: 'Auto Attack Skill Set',
         packetSteering: 'Steer game traffic through a local relay'
     },
     optionHints: {
-        autoAttackSkillSet: 'Skills Auto Attack uses in order, separated by commas or semicolons; for example 1,2,3,4 or 1,2:SH>60,3:SM<30,wait. This is independent of the Bot Manager. Empty keeps the class preset. Restart AquGrim to apply.',
         packetSteering: 'Points the game at a local relay, so the packet tools can see the game\'s own ' +
             'traffic. The relay answers Flash\'s policy request itself and forwards to the real ' +
             'servers; nothing is modified. While this is on, the account password crosses the local ' +
             'relay in plaintext, exactly as it already crosses the network. Restart to apply.'
     },
     settingsSections: {
-        autoAttack: 'Auto Attack',
         packets: 'Packets'
     }
 };
@@ -411,6 +409,7 @@ exports.maidMessages = {
 exports.chromeMessages = {
     startBot: 'Start Bot',
     autoAttack: 'Auto Attack',
+    autoSkillSet: 'Skill Set',
     pad: '',
     cell: '',
     refreshCell: 'x',

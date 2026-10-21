@@ -82,6 +82,7 @@ global.test = function (name, fn) {
   './unit/multi-instance.test.js',
   './unit/game-quality.test.js',
   './unit/branding.test.js',
+  './unit/auto-attack-skill-set.test.js',
   './unit/pack-plugins.test.js',
   './unit/grimlite-cosmetics.test.js',
   './unit/grimlite-bot-engine.test.js',

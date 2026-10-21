@@ -171,6 +171,7 @@ function createChrome(deps) {
         return [
             { id: 'startBot', kind: 'check', label: words.startBot || 'Start Bot' },
             { id: 'autoAttack', kind: 'check', label: words.autoAttack || 'Auto Attack' },
+            { id: 'autoSkillSet', kind: 'button', label: words.autoSkillSet || 'Skill Set' },
             { id: 'pad', kind: 'select', label: words.pad || '' },
             { id: 'cell', kind: 'select', label: words.cell || '' },
             { id: 'refreshCell', kind: 'button', label: words.refreshCell || 'x' },
@@ -462,6 +463,11 @@ function createChrome(deps) {
         try {
             if (id === 'startBot') answer = await startBot(picked.checked);
             else if (id === 'autoAttack') answer = await autoAttackToggle(picked.checked);
+            else if (id === 'autoSkillSet') {
+                answer = typeof deps.openAutoSkillSet === 'function'
+                    ? deps.openAutoSkillSet()
+                    : { ok: false, error: 'the Auto Attack skill set window is not available' };
+            }
             else if (id === 'cell') answer = await moveTo({ cell: picked.value });
             else if (id === 'pad') answer = await moveTo({ pad: picked.value });
             else if (id === 'refreshCell') answer = await refreshCell();
