@@ -38,6 +38,10 @@ test('matchesPattern follows Chrome match-pattern rules for the subset rules use
   assert.strictEqual(matchesPattern('*://game.aq.com/game/*', 'https://game.aq.com/other'), false);
   assert.strictEqual(matchesPattern('https://api.github.com/*', 'http://api.github.com/x'), false);
   assert.strictEqual(matchesPattern('https://api.github.com/*', 'https://api.github.com:8443/x'), true);
+  assert.strictEqual(matchesPattern('http://127.0.0.1:43123/*', 'http://127.0.0.1:43124/x'), false);
+  assert.strictEqual(matchesPattern('http://127.0.0.1:43123/*', 'http://127.0.0.1/x'), false);
+  assert.strictEqual(matchesPattern('http://127.0.0.1:80/*', 'http://127.0.0.1/x'), true);
+  assert.strictEqual(matchesPattern('https://api.github.com:443/*', 'https://api.github.com/x'), true);
   assert.strictEqual(matchesPattern('*://*/*', 'file:///C:/x.html'), false);
   assert.strictEqual(matchesPattern('<all_urls>', 'https://anything.example/'), true);
   assert.strictEqual(matchesPattern('garbage', 'https://x.example/'), false);

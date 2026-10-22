@@ -10,6 +10,7 @@ const path = require('path');
 const platform = require('../../res/platform');
 const packetLayer = require('../../res/platform/packet-layer.js');
 const bodyService = require('../../res/platform/body-service.js');
+const { createOriginProxy } = require('../../res/platform/origin-proxy.js');
 
 const DECLARATION = {
   id: 'steer-login',
@@ -54,12 +55,12 @@ function makeHost(extra, deps) {
 }
 
 // A stand-in upstream: the login path answers the response shape the client actually receives.
-function standInUpstream() {
+function standInUpstream(loginBody) {
   const server = http.createServer(function (req, res) {
     req.resume();
     req.on('end', function () {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(LOGIN_BODY);
+      res.end(loginBody || LOGIN_BODY);
     });
   });
   return new Promise(function (resolve) {
@@ -78,10 +79,11 @@ function fakeSession() {
   };
 }
 
-function fetchThrough(service, target) {
+function fetchThrough(service, target, method) {
   const parsed = new URL(service.urlFor({ url: target }));
   return new Promise(function (resolve, reject) {
-    const req = http.request({ host: parsed.hostname, port: parsed.port, path: parsed.pathname + parsed.search },
+    const req = http.request({ host: parsed.hostname, port: parsed.port, path: parsed.pathname + parsed.search,
+      method: method || 'GET' },
       function (res) {
         const chunks = [];
         res.on('data', function (c) { chunks.push(c); });
@@ -201,6 +203,48 @@ test('no relay comes up when the steering flag is off, and the reason is reporte
   }
 });
 
+test('parity loopback login aliases reach the steering body service and rewrite server rows', async () => {
+  const upstream = await standInUpstream(LOGIN_BODY.replace(/\.up\.example/g, '.aq.com'));
+  const proxy = createOriginProxy({ routes: [
+    { prefix: '/api/', origin: 'http://127.0.0.1:' + upstream.port + '/game/api' },
+    { prefix: '/', origin: 'http://127.0.0.1:' + upstream.port }
+  ] });
+  const baseUrl = await proxy.listen(0);
+  const declaration = require('../../plugins/grimlite-parity/packets.js').steeringDeclarations(baseUrl)[0];
+  const layer = packetLayer.createPacketLayer({
+    declarations: [declaration], ctx: { settings: { packetSteering: true } }
+  });
+  const started = await layer.start();
+  const session = fakeSession();
+  require('../../res/platform/session-rules.js').applySessionRules(session, started.rules, {
+    responseBody: started.responseBody
+  });
+  try {
+    for (const alias of ['/game/api/login/now', '/api/login/now']) {
+      const url = baseUrl + alias + '?probe=1';
+      let redirect;
+      session.registered.request[0].listener({ url: url }, function (answer) { redirect = answer; });
+      assert.ok(redirect && redirect.redirectURL,
+        'loopback login must enter the body service: ' + alias);
+      const rows = JSON.parse(await fetchThrough(started.bodyService, url, 'POST')).servers;
+      assert.ok(rows.every(function (row) { return row.sIP === '127.0.0.1' && row.iPort >= 1024; }),
+        'the client must receive relay addresses, not the upstream server addresses');
+    }
+    assert.strictEqual(declaration.policyDomain, '127.0.0.1',
+      'Flash requests relay policy for the loopback movie origin');
+    assert.ok(started.rules[0].urls.includes('*://game.aq.com/game/api/login/now*'));
+    const matches = require('../../res/platform/session-rules.js').matchesPattern;
+    const localPattern = declaration.urls.find(function (url) { return url.startsWith(baseUrl); });
+    assert.ok(localPattern, 'the declaration names this origin explicitly');
+    assert.strictEqual(matches(localPattern, 'http://127.0.0.1:1/game/api/login/now'), false,
+      'a different loopback service must not enter the credential proxy');
+  } finally {
+    await layer.close();
+    await proxy.close();
+    await new Promise(function (resolve) { upstream.server.close(resolve); });
+  }
+});
+
 test('the parity plugin declares its steering behind an opt-in flag and names no platform fact', () => {
   const declarations = require('../../plugins/grimlite-parity/packets.js').steeringDeclarations();
   assert.ok(Array.isArray(declarations) && declarations.length >= 1);
@@ -301,12 +345,17 @@ test('activating the parity plugin hands the platform exactly one steering decla
     appDataDirectory: path.join(__dirname, '../tmp-plugin-data'),
     clearRequireCache: true,
     log: function () {},
-    deps: { openFeatureWindow: function () { return {}; } }
+    deps: {
+      openFeatureWindow: function () { return {}; },
+      startGameOrigin: function () { return Promise.resolve('http://127.0.0.1:43123'); }
+    }
   });
   const recorded = activated.host._getState().packetSteering;
   assert.strictEqual(recorded.length, 1, 'exactly one declaration, from a plugin holding packet-tap');
   assert.strictEqual(recorded[0].settingKey, 'packetSteering');
   assert.ok(recorded[0].urls.length >= 1);
+  assert.ok(recorded[0].urls.includes('http://127.0.0.1:43123/api/login/now*'),
+    'activation passes the declared origin to the steering registration');
 
   // And the opt-in is off until the player turns it on: default settings engage nothing.
   const defaults = activated.host._getState().optionDefaults || {};

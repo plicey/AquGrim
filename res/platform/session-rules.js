@@ -15,7 +15,7 @@
 
 /**
  * Match an Electron/Chrome match pattern ("*://*.example.com/*", "<all_urls>") against a URL.
- * Supports the subset AquaStar rules use: scheme, host (exact / "*" / "*.suffix"), path glob.
+ * Supports scheme, host (exact / "*" / "*.suffix"), optional explicit port, path glob.
  */
 function matchesPattern(pattern, url) {
     if (pattern === '<all_urls>') return /^(https?|wss?|ftp|file):/i.test(url);
@@ -27,6 +27,11 @@ function matchesPattern(pattern, url) {
     const scheme = u[1].toLowerCase();
     if (m[1] !== '*' && m[1].toLowerCase() !== scheme) return false;
     if (m[1] === '*' && scheme !== 'http' && scheme !== 'https') return false;
+
+    // Explicit ports restrict loopback body rules to the declared service.
+    const port = /:(\d+)$/.exec(m[2]);
+    const actualPort = /:(\d+)$/.exec(u[2]);
+    if (port && port[1] !== (actualPort ? actualPort[1] : (scheme === 'https' ? '443' : '80'))) return false;
 
     // Strip userinfo and port before comparing hosts.
     const host = u[2].replace(/^.*@/, '').replace(/:\d+$/, '').toLowerCase();

@@ -802,7 +802,7 @@ async function activate(host) {
         order: 30,
         fields: [{ key: 'packetSteering', type: 'boolean' }]
     });
-    host.registerPacketSteering(require('./packets.js').steeringDeclarations()[0]);
+    host.registerPacketSteering(require('./packets.js').steeringDeclarations(baseUrl)[0]);
 
     installTray(host);
     host.log('AquGrim activated; bridge at ' + (bridgeUrl(baseUrl) || '(no origin)'));

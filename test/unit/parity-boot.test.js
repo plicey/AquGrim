@@ -49,7 +49,9 @@ test('the parity plugin boots the game from its own origin, with the bridge serv
     deps: {
       startGameOrigin: function (declared) {
         proxy = createOriginProxy({
-          routes: declared.routes,
+          routes: declared.routes.map(function (route) {
+            return { prefix: route.prefix, origin: upstreamOrigin };
+          }),
           files: declared.files,
           log: function () {}
         });
@@ -61,9 +63,6 @@ test('the parity plugin boots the game from its own origin, with the bridge serv
   });
 
   const bridgeModule = require(path.join(PARITY, 'game-origin.js'));
-  const routes = bridgeModule.routes().map(function (route) {
-    return { prefix: route.prefix, origin: upstreamOrigin };
-  });
   const files = bridgeModule.files();
   assert.ok(files && Object.keys(files).length, 'the plugin must serve the bridge SWF itself');
   Object.keys(files).forEach(function (localPath) {
@@ -72,8 +71,13 @@ test('the parity plugin boots the game from its own origin, with the bridge serv
 
   let baseUrl = '';
   try {
-    baseUrl = await host.declareGameOrigin({ routes: routes, files: files });
+    await require(path.join(PARITY, 'main.js')).activate(host);
+    baseUrl = 'http://127.0.0.1:' + proxy.port;
     assert.strictEqual(baseUrl.indexOf('http://127.0.0.1:'), 0, baseUrl);
+    const steering = host._getState().packetSteering[0];
+    assert.ok(steering.urls.includes(baseUrl + '/game/api/login/now*'));
+    assert.ok(steering.urls.includes(baseUrl + '/api/login/now*'));
+    assert.strictEqual(steering.policyDomain, '127.0.0.1');
 
     // The bridge SWF is served from the same origin as Loader4 and the game's own paths: that is
     // the property the whole bridge rests on.
