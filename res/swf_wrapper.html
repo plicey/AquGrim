@@ -129,10 +129,10 @@
         // The strip's own words for the last press: a refusal is what the user needs to see, and a
         // press that worked says nothing rather than leaving the previous refusal on screen.
         show(result && result.error ? result.error : '');
-        focusGame();
+        if (id !== 'autoSkillSet') focusGame();
       }, function (error) {
         show(String(error && error.message ? error.message : error));
-        focusGame();
+        if (id !== 'autoSkillSet') focusGame();
       });
     }
 
@@ -176,7 +176,10 @@
       }
       var button = el('button', null, entry.label);
       button.id = 'chrome-' + entry.id;
-      button.addEventListener('click', function () { send(entry.id, {}); focusGame(); });
+      button.addEventListener('click', function () {
+        send(entry.id, {});
+        if (entry.id !== 'autoSkillSet') focusGame();
+      });
       return button;
     }
 
