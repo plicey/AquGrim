@@ -57,6 +57,20 @@ const NO_DELAY = {
     CmdSkillSet: true
 };
 
+// Class names older Grimlite/Grimoire files still carry. They run through the modern handler
+// with the same meaning; the two quest commands moved their id into a Quest object.
+const LEGACY_ALIASES = {
+    CmdAcceptQuest2: 'CmdAcceptQuest',
+    CmdCompleteQuest2: 'CmdCompleteQuest',
+    CmdBotDelay2: 'CmdBotDelay',
+    CmdStopBotWithMessage: 'CmdStop'
+};
+
+const LEGACY_QUEST_COMMANDS = {
+    CmdAcceptQuest2: true,
+    CmdCompleteQuest2: true
+};
+
 function requiresDelay(command) {
     const className = catalog.classNameOf(command);
     if (NO_DELAY[className]) return false;
@@ -467,9 +481,11 @@ function createEngine(deps) {
         }
         commands().forEach(function (command) {
             const name = catalog.classNameOf(command);
-            if (name === 'CmdAcceptQuest' || name === 'CmdCompleteQuest') {
+            if (name === 'CmdAcceptQuest' || name === 'CmdCompleteQuest' ||
+                name === 'CmdAcceptQuest2' || name === 'CmdCompleteQuest2') {
                 const quest = command.Quest;
-                add(quest && typeof quest === 'object' ? questIdOf(quest) : command.QuestId);
+                add(quest && typeof quest === 'object' ? questIdOf(quest) :
+                    (command.QuestID === undefined ? command.QuestId : command.QuestID));
             } else if (name === 'CmdAddQuestList') {
                 add(command.Id);
             } else if (name === 'CmdQuestHunt') {
@@ -1557,7 +1573,11 @@ function createEngine(deps) {
                 const parsed = /^[+-]?\d+$/.test(text) ? Number(text) : NaN;
                 if (Number.isInteger(parsed) && Math.abs(parsed) <= 2147483647) amount = parsed;
             }
-            const type = Number(command.Type) || 0;
+            // Older files omit Type on the Goto form, which is the default and so was dropped
+            // when the file was written. An omitted member therefore means Goto (2), not Up (0).
+            const writtenType = command.Type;
+            const type = writtenType === undefined || writtenType === null || writtenType === ''
+                ? 2 : Number(writtenType) || 0;
             // CmdIndex.cs: Down adds (n - 1) only when that is positive AND the result is still
             // inside the list; Up subtracts (n + 1) only when the result stays at or above zero.
             // Neither branch uses the Index setter, so neither wraps.
@@ -2750,14 +2770,24 @@ function createEngine(deps) {
         }
         lastCommand = catalog.rowText(command);
 
-        const className = catalog.classNameOf(command);
-        dispatched.push({ index: at, className: className });
+        const originalName = catalog.classNameOf(command);
+        let className = LEGACY_ALIASES[originalName] || originalName;
+        let dispatchedCommand = command;
+        if (LEGACY_QUEST_COMMANDS[originalName]) {
+            dispatchedCommand = Object.assign({}, command, {
+                Quest: command.Quest && typeof command.Quest === 'object'
+                    ? command.Quest : { QuestID: command.QuestID }
+            });
+        } else if (originalName === 'CmdStopBotWithMessage' && command.Message) {
+            log(String(command.Message));
+        }
+        dispatched.push({ index: at, className: originalName });
         // The engine's own flow vocabulary first, then whatever a feature ticket registered.
         const handler = handlers[className] || extraHandlers[className];
         if (!handler) {
             log(className + ' is not implemented yet (#38-#42); skipping it');
         } else {
-            const outcome = await Promise.resolve(handler(context(), command));
+            const outcome = await Promise.resolve(handler(context(), dispatchedCommand));
             if (typeof outcome === 'string') log(className + ': ' + outcome);
         }
 
