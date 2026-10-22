@@ -13,27 +13,56 @@ function memoryStore(value) {
   };
 }
 
-test('the Auto Attack skill editor stores its own rotation without touching Bot Manager data', async () => {
-  const store = memoryStore({ autoAttackPresets: { 'VOID HIGHLORD': '1;2' } });
+test('the Auto Attack editor loads named class presets, applies drafts, and saves only on request', async () => {
+  const store = memoryStore({
+    autoAttackSkillSet: '1,2,4',
+    autoAttackPresets: { 'VOID HIGHLORD': { Boss: '1;2' } }
+  });
   const handlers = {};
   const host = {
     ipc: { handle: function (name, fn) { handlers[name] = fn; } }
   };
-  autoAttack.createAutoAttackWindow({ store: store }).register(host);
+  const used = [];
+  const source = presets.createPresetSource({ store: store, files: [] });
+  autoAttack.createAutoAttackWindow({
+    presets: source,
+    className: function () { return 'Void Highlord'; },
+    onUse: function (text) { used.push(text); }
+  }).register(host);
 
-  assert.deepStrictEqual(handlers.autoAttackSkillSetGet(), { text: '' });
-  const saved = handlers.autoAttackSkillSetSave(null, '2:SH>60;3,4');
+  const start = await handlers.autoAttackSkillSetGet();
+  assert.strictEqual(start.className, 'Void Highlord');
+  assert.deepStrictEqual(start.presets.map(function (one) { return one.name; }), ['Boss']);
+  assert.strictEqual(start.text, '', 'the old universal key is ignored');
+
+  const loaded = await handlers.autoAttackPresetLoad(null, {
+    className: 'Void Highlord', name: 'Boss'
+  });
+  assert.strictEqual(loaded.ok, true);
+  assert.strictEqual(loaded.text, '1;2');
+  assert.deepStrictEqual(used, ['1;2'], 'selecting a preset uses it immediately');
+
+  const drafted = await handlers.autoAttackSkillSetDraft(null, {
+    className: 'Void Highlord', name: 'Boss', text: '2:SH>60;3,4'
+  });
+  assert.strictEqual(drafted.text, '2:SH>60;3,4');
+  assert.deepStrictEqual(used, ['1;2'], 'editing does not apply to the running rotation');
+
+  const saved = await handlers.autoAttackPresetSave(null, {
+    className: 'Void Highlord', name: 'Boss', text: '2:SH>60;3,4'
+  });
   assert.strictEqual(saved.ok, true);
   assert.deepStrictEqual(store.read(), {
-    autoAttackPresets: { 'VOID HIGHLORD': '1;2' },
-    autoAttackSkillSet: '2:SH>60;3,4'
-  }, 'the class presets survive and no Skills list is written');
+    autoAttackSkillSet: '1,2,4',
+    autoAttackPresets: { 'VOID HIGHLORD': { Boss: '2:SH>60;3,4' } }
+  }, 'save stores the named class preset and leaves the old universal key untouched');
+  assert.deepStrictEqual(used, ['1;2'], 'saving does not apply anything');
 
-  const source = presets.createPresetSource({ store: store, files: [] });
-  assert.deepStrictEqual(source.custom().map(function (one) { return one.index; }), ['2', '3', '4']);
-  assert.strictEqual(source.custom()[0].safe, true);
-  assert.deepStrictEqual(source.forClass('Void Highlord').map(function (one) { return one.index; }),
-    ['1', '2'], 'class presets remain independent');
+  await handlers.autoAttackPresetDelete(null, { className: 'Void Highlord', name: 'Boss' });
+  assert.deepStrictEqual(store.read(), { autoAttackSkillSet: '1,2,4' });
+
+  await handlers.autoAttackSkillSetDefault(null, { className: 'Void Highlord' });
+  assert.deepStrictEqual(used, ['1;2', ''], 'choosing Default applies the fallback');
 });
 
 test('the Auto Attack editor is a direct toolbar window with its own preload', () => {
@@ -46,6 +75,8 @@ test('the Auto Attack editor is a direct toolbar window with its own preload', (
   assert.ok(windows.indexOf("'auto-attack', 'preload_auto_attack.js'") !== -1);
   assert.ok(page.indexOf('Auto Attack Skill Set') !== -1);
   assert.ok(page.indexOf('window.aquastarAutoAttack') !== -1);
+  assert.ok(page.indexOf('Custom (unsaved)') !== -1);
+  assert.ok(preload.indexOf('autoAttackPresetSave') !== -1);
   assert.ok(/require\((['"])electron\1\)/.test(preload));
   assert.ok(!/[^\w.]require\(['"](?!electron)/.test(preload), 'preloads may only require electron');
 });

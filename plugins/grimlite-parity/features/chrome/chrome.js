@@ -324,15 +324,13 @@ function createChrome(deps) {
         return percent === skill.value;
     }
 
-    /** The class's own SS.CLASS preset, reloaded when Auto Attack starts. */
+    /** The unsaved draft loaded for this character's class, read when Auto Attack starts. */
     async function rotationForClass() {
-        if (!deps.presets || typeof deps.presets.forClass !== 'function') return [];
-        if (typeof deps.presets.reload === 'function') deps.presets.reload();
-        const own = typeof deps.presets.custom === 'function' ? deps.presets.custom() : [];
-        if (own.length) return own;
+        if (!deps.presets || typeof deps.presets.draftFor !== 'function') return [];
         const answer = await read('className');
         if (answer.error) return [];
-        return deps.presets.forClass(answer.value) || [];
+        const draft = deps.presets.draftFor(answer.value);
+        return draft && Array.isArray(draft.skills) ? draft.skills : [];
     }
 
     /**
@@ -403,6 +401,14 @@ function createChrome(deps) {
         autoStep = 0;
         startTimer();
         return { ok: true, error: null };
+    }
+
+    /** A preset was selected in the editor: use it now, before Auto Attack is re-enabled. */
+    function useSkillText(text) {
+        const skills = skillPresets.parsePreset(text);
+        rotation = skills.length ? skills : skillPresets.defaultSkills();
+        autoStep = 0;
+        return rotation.map(function (skill) { return Object.assign({}, skill); });
     }
 
     /** The hotkey action: tick or untick the same box the strip draws. */
@@ -491,6 +497,7 @@ function createChrome(deps) {
         stop: function () { autoAttack = false; stopTimer(); },
         autoAttack: function () { return autoAttack; },
         toggleAutoAttack: toggleAutoAttack,
+        useSkillText: useSkillText,
         /** One Auto Attack rotation, for the tests and for a window that wants to show it. */
         rotation: function () { return rotation.map(function (skill) { return Object.assign({}, skill); }); },
         /** @internal test seam */

@@ -714,18 +714,18 @@ async function activate(host) {
     // Start Bot runs the document the Bot Manager holds through the same per-window engine the Bot
     // Manager's own tick drives (#36), so the three refusals are the engine's own words (#37) and
     // the strip never re-implements a check the engine already makes.
+    const autoAttackPresets = skillPresets.createPresetSource({
+        appDataDirectory: host.appDataDirectory,
+        store: host.getStore(skillPresets.STORE_NAMESPACE)
+    });
     chrome = chromeFeature.createFromHost(host, {
         runtime: runtime,
         windowKey: gameWindowKey,
         bot: function () { return botManager.bot(); },
         editor: function () { return botManager.editorOptions(); },
         onEngineChange: function () { botManager.engineStateChanged(); },
-        // Auto Attack's SS.<CLASS> presets: ClientConfig.cfg in the app data directory, with the
-        // autoAttackPresets store object winning over the file when the user edits that instead.
-        presets: skillPresets.createPresetSource({
-            appDataDirectory: host.appDataDirectory,
-            store: host.getStore(skillPresets.STORE_NAMESPACE)
-        }),
+        // Named Auto Attack presets, with ClientConfig.cfg as the read-only legacy source.
+        presets: autoAttackPresets,
         // Read live: this plugin's catalog is merged into the platform's after activate().
         messages: function () { return host.getLocaleStrings('chromeMessages') || {}; },
         log: function (line) { host.log('chrome: ' + line); },
@@ -760,7 +760,23 @@ async function activate(host) {
                 : undefined;
         }
     }).register(host);
-    autoAttackWindow.createFromHost(host).register(host);
+    autoAttackWindow.createFromHost(host, {
+        presets: autoAttackPresets,
+        className: function () {
+            try {
+                const entry = runtime.forWindow(gameWindowKey());
+                const session = entry && entry.engine ? entry.engine.session : null;
+                return session && typeof session.className === 'function'
+                    ? Promise.resolve(session.className()).catch(function () { return ''; })
+                    : '';
+            } catch (error) {
+                return '';
+            }
+        },
+        onUse: function (text) {
+            if (chrome) chrome.useSkillText(text);
+        }
+    }).register(host);
     createAbout({
         appVersion: host.appVersion,
         getMessages: function () { return messages('aboutMessages'); },
