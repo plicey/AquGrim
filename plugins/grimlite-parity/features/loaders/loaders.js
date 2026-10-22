@@ -384,9 +384,9 @@ function createLoadersFeature(host, deps) {
         const argv = Array.isArray(args) ? args : [];
         switch (channel) {
         case 'loadersGrab':
-            return grab(argv[1], argv[2]);
+            return grab(argv[0], argv[1]);
         case 'loadersLoad':
-            return loadTarget(argv[1], argv[2], argv[3], argv[4], argv[5]);
+            return loadTarget(argv[0], argv[1], argv[2], argv[3], argv[4]);
         case 'loadersSave':
             return save(owner);
         case 'loadersOpen':
@@ -401,9 +401,9 @@ function createLoadersFeature(host, deps) {
                 defaultLoadIndex: grabbers.LOAD_DEFAULT_INDEX
             });
         case 'loadersMenu':
-            return Promise.resolve(menuFor(argv[1], argv[2]));
+            return Promise.resolve(menuFor(argv[0], argv[1]));
         case 'loadersAct':
-            return act(argv[1], argv[2]);
+            return act(argv[0], argv[1]);
         default:
             throw new Error('[AquGrim:grimlite-parity] unknown loaders channel "' + channel + '"');
         }

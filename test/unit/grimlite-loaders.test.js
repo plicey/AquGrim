@@ -938,23 +938,51 @@ test('the grab channel hands back the rows the page draws, and refusals say why'
     }))
   });
 
-  const grabbed = await instance.handle('loadersGrab', [null, 'inventoryItems', 'Name']);
+  const grabbed = await instance.handle('loadersGrab', ['inventoryItems', 'Name']);
   assert.strictEqual(grabbed.ok, true);
   assert.deepStrictEqual(texts(grabbed.rows), ['Rock (3)']);
   // Each row carries the menu kind its context needs, so the page never invents a menu.
   assert.strictEqual(grabbed.rows[0].menu, 'item');
 
-  const refused = await instance.handle('loadersGrab', [null, 'bankItems', 'Name']);
+  const refused = await instance.handle('loadersGrab', ['bankItems', 'Name']);
   assert.strictEqual(refused.ok, false);
   assert.ok(/bankinfo|getBank/.test(refused.error), refused.error);
 
-  const unknown = await instance.handle('loadersGrab', [null, 'nope', 'Name']);
+  const unknown = await instance.handle('loadersGrab', ['nope', 'Name']);
   assert.strictEqual(unknown.ok, false);
   assert.ok(/nope/.test(unknown.error), unknown.error);
 
   // A grab that fails clears the tree, as btnGrab_Click's own Nodes.Clear() does before the
   // switch that threw: the rows a failed grab leaves behind are no rows.
   assert.deepStrictEqual(instance.rows(), []);
+});
+
+test('the live IPC wrapper passes the page arguments through unchanged', async () => {
+  const copied = [];
+  const instance = feature({
+    game: game.createGameAccess(bridgeStub({
+      'callGameFunction0:world.getInventory': { items: [
+        { ItemID: 3, sName: 'Rock', iQty: 1, iStk: 5, sType: 'Item', iLvl: 1, sDesc: '' }
+      ] }
+    })),
+    clipboard: { writeText: function (text) { copied.push(text); } }
+  });
+  const handlers = {};
+  instance.attachTo({ ipc: { handle: function (name, fn) { handlers[name] = fn; } } });
+
+  const grabbed = await handlers.loadersGrab(null, 'inventoryItems', 'Name');
+  assert.strictEqual(grabbed.ok, true);
+  assert.deepStrictEqual(texts(grabbed.rows), ['Rock (3)']);
+
+  const menu = await handlers.loadersMenu(null, 'item', { name: 'Rock' });
+  assert.deepStrictEqual(actions(menu), [
+    'Add to both', 'Add to whitelist', 'Add to unbank list',
+    'Copy item name to clipboard', 'Go to Wikipage', 'Search on Wiki'
+  ]);
+
+  const acted = await handlers.loadersAct(null, 'copy', { text: 'Rock' });
+  assert.deepStrictEqual(acted, { ok: true });
+  assert.deepStrictEqual(copied, ['Rock']);
 });
 
 test('the load channel drives each target, the quest count and the ghost variant', async () => {
@@ -977,37 +1005,37 @@ test('the load channel drives each target, the quest count and the ghost variant
   let inProgress = [];
   const instance = feature({ game: access });
 
-  await instance.handle('loadersLoad', [null, 'shop', '42', 1, false, false]);
+  await instance.handle('loadersLoad', ['shop', '42', 1, false, false]);
   assert.deepStrictEqual(calls.pop(), ['shop', 42]);
-  await instance.handle('loadersLoad', [null, 'hairShop', '7', 1, false, false]);
+  await instance.handle('loadersLoad', ['hairShop', '7', 1, false, false]);
   assert.deepStrictEqual(calls.pop(), ['hairShop', 7]);
-  await instance.handle('loadersLoad', [null, 'armorCustomizer', '', 1, false, false]);
+  await instance.handle('loadersLoad', ['armorCustomizer', '', 1, false, false]);
   assert.deepStrictEqual(calls.pop(), ['armorCustomizer']);
 
   // A single id with the count control: LoadQuests gets the expanded list, like btnLoad does.
-  await instance.handle('loadersLoad', [null, 'quest', '10', 3, false, false]);
+  await instance.handle('loadersLoad', ['quest', '10', 3, false, false]);
   assert.deepStrictEqual(calls.pop(), ['quests', [10, 11, 12]]);
   // A comma list is not expanded.
-  await instance.handle('loadersLoad', [null, 'quest', '4,5', 3, false, false]);
+  await instance.handle('loadersLoad', ['quest', '4,5', 3, false, false]);
   assert.deepStrictEqual(calls.pop(), ['quests', [4, 5]]);
 
   // F Accept: load the batch, then accept what the game says is not already in progress.
   inProgress = [11];
-  const accepted = await instance.handle('loadersLoad', [null, 'quest', '10', 3, true, false]);
+  const accepted = await instance.handle('loadersLoad', ['quest', '10', 3, true, false]);
   assert.strictEqual(accepted.ok, true);
   assert.deepStrictEqual(calls.shift(), ['quests', [10, 11, 12]]);
   assert.deepStrictEqual(calls, [['accept', 10, false], ['accept', 12, false]]);
 
   // Ghost goes through the packet path, and its refusal is reported rather than swallowed.
   calls.length = 0;
-  const ghost = await instance.handle('loadersLoad', [null, 'quest', '10', 1, true, true]);
+  const ghost = await instance.handle('loadersLoad', ['quest', '10', 1, true, true]);
   assert.strictEqual(ghost.ok, false);
   assert.ok(/sfc\.sendString/.test(ghost.error), ghost.error);
   assert.deepStrictEqual(calls, [['quests', [10]], ['accept', 10, true]]);
 
   // A non-numeric box is the reference's own silent refusal, reported as such.
   calls.length = 0;
-  const refused = await instance.handle('loadersLoad', [null, 'quest', 'abc', 1, false, false]);
+  const refused = await instance.handle('loadersLoad', ['quest', 'abc', 1, false, false]);
   assert.strictEqual(refused.ok, false);
   assert.deepStrictEqual(calls, []);
 });
@@ -1038,14 +1066,14 @@ test('save writes the XML through the reference\'s save dialog, and open reads i
 
   // Save with nothing grabbed is the reference's own empty document, not a refusal: SaveNodes
   // over an empty TreeView writes the declaration and an empty root.
-  const empty = await instance.handle('loadersSave', [null]);
+  const empty = await instance.handle('loadersSave', []);
   assert.strictEqual(empty.ok, true);
   assert.strictEqual(written.length, 1);
   assert.ok(/<TreeView>\r\n<\/TreeView>/.test(written[0][1]), written[0][1]);
   written.length = 0;
 
-  await instance.handle('loadersGrab', [null, 'shopItems', 'Name']);
-  const saved = await instance.handle('loadersSave', [null]);
+  await instance.handle('loadersGrab', ['shopItems', 'Name']);
+  const saved = await instance.handle('loadersSave', []);
   assert.strictEqual(saved.ok, true);
   // The reference's own dialog: title "Save grabber data", filter "XML files|*.xml".
   assert.strictEqual(asked[0].title, 'Save grabber data');
@@ -1053,7 +1081,7 @@ test('save writes the XML through the reference\'s save dialog, and open reads i
   assert.strictEqual(written[0][0], '/tmp/grab.xml');
   assert.ok(written[0][1].indexOf('<n t="A Shop">') !== -1);
 
-  const reopened = await instance.handle('loadersOpen', [null]);
+  const reopened = await instance.handle('loadersOpen', []);
   assert.strictEqual(reopened.ok, true);
   assert.strictEqual(reopened.rows.length, 1);
   assert.deepStrictEqual(texts(reopened.rows[0].children), ['ID:        42', 'Location:  Here', 'Items']);
@@ -1071,6 +1099,6 @@ test('a cancelled dialog reports cancelled and writes nothing', async () => {
     writeText: function () { throw new Error('must not write'); },
     readText: function () { throw new Error('must not read'); }
   });
-  assert.deepStrictEqual(await instance.handle('loadersSave', [null]), { ok: false, canceled: true });
-  assert.deepStrictEqual(await instance.handle('loadersOpen', [null]), { ok: false, canceled: true });
+  assert.deepStrictEqual(await instance.handle('loadersSave', []), { ok: false, canceled: true });
+  assert.deepStrictEqual(await instance.handle('loadersOpen', []), { ok: false, canceled: true });
 });
