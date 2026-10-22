@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 
 const platform = require('../../res/platform');
-const { createChrome, HEIGHT, PADS, DEFAULT_SKILLS } = require('../../plugins/grimlite-parity/features/chrome/chrome.js');
+const { createChrome, createFromHost, HEIGHT, PADS, DEFAULT_SKILLS } = require('../../plugins/grimlite-parity/features/chrome/chrome.js');
 const skillPresets = require('../../plugins/grimlite-parity/features/chrome/skill-presets.js');
 const engine = require('../../plugins/grimlite-parity/bot/engine.js');
 const catalog = require('../../plugins/grimlite-parity/bot/command-catalog.js');
@@ -193,6 +193,18 @@ test('the toolbar Skill Set button opens the Auto Attack-only editor', async () 
     openAutoSkillSet: function () { opened += 1; return { ok: true, error: null }; }
   });
   const answer = await h.chrome.action('autoSkillSet', {});
+  assert.strictEqual(answer.ok, true);
+  assert.strictEqual(opened, 1);
+});
+
+test('the host wiring keeps the toolbar Skill Set callback', async () => {
+  let opened = 0;
+  const chrome = createFromHost({ log: function () {} }, {
+    runtime: null,
+    session: null,
+    openAutoSkillSet: function () { opened += 1; return { ok: true, error: null }; }
+  });
+  const answer = await chrome.action('autoSkillSet', {});
   assert.strictEqual(answer.ok, true);
   assert.strictEqual(opened, 1);
 });

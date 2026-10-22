@@ -527,6 +527,7 @@ function createFromHost(host, deps) {
         messages: deps.messages || {},
         log: deps.log || function (line) { host.log('chrome: ' + line); },
         presets: deps.presets,
+        openAutoSkillSet: deps.openAutoSkillSet,
         sleep: deps.sleep,
         timers: deps.timers
     });
