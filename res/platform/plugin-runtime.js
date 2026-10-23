@@ -13,6 +13,7 @@ let BrowserWindowApi = null;
 let createOriginProxyApi = null;
 let packetTapApi = null;
 let resolvePacketSenderApi = null;
+let resolvePacketLayerApi = null;
 let settingsApi = null;
 let gameOriginProxy = null;
 let gameOriginBaseUrl = '';
@@ -36,6 +37,7 @@ function setDependencies(deps) {
     // A resolver, not the sender itself: the packet layer is composed after plugins activate, so
     // the write path only exists once the app is on its way to the first window.
     if (deps.packetSender) resolvePacketSenderApi = deps.packetSender;
+    if (deps.packetLayer) resolvePacketLayerApi = deps.packetLayer;
     if (deps.settings) settingsApi = deps.settings;
 }
 
@@ -73,6 +75,15 @@ function startGameOrigin(declaration) {
         routes: declared.routes,
         files: files,
         userAgent: typeof declared.userAgent === 'function' ? declared.userAgent : null,
+        // Resolve on each response: the origin starts before the packet layer exists.
+        rewriteResponse: function (context, body) {
+            const layer = resolvePacketLayerApi && resolvePacketLayerApi();
+            const matches = require('./session-rules.js').matchesPattern;
+            const rule = layer && layer.rules.find(function (entry) {
+                return entry.urls.some(function (pattern) { return matches(pattern, context.url); });
+            });
+            return rule ? rule.onResponseBody(context, body) : undefined;
+        },
         log: function (line) { console.log('[AquGrim:origin] ' + line); }
     });
     return Promise.resolve(proxy.listen(0)).then(function (baseUrl) {

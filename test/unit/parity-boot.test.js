@@ -75,8 +75,7 @@ test('the parity plugin boots the game from its own origin, with the bridge serv
     baseUrl = 'http://127.0.0.1:' + proxy.port;
     assert.strictEqual(baseUrl.indexOf('http://127.0.0.1:'), 0, baseUrl);
     const steering = host._getState().packetSteering[0];
-    assert.ok(steering.urls.includes(baseUrl + '/game/api/login/now*'));
-    assert.ok(steering.urls.includes(baseUrl + '/api/login/now*'));
+    assert.deepStrictEqual(steering.urls, ['*://game.aq.com/game/api/login/now*']);
     assert.strictEqual(steering.policyDomain, '127.0.0.1');
 
     // The bridge SWF is served from the same origin as Loader4 and the game's own paths: that is
