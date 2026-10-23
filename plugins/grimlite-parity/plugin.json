@@ -36,6 +36,7 @@
     "UseSkill",
     "ForceUseSkill",
     "CancelTargetSelf",
-    "SetTargetPvP"
+    "SetTargetPvP",
+    "RejectDrop"
   ]
 }

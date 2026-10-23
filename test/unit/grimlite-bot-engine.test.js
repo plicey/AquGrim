@@ -608,3 +608,29 @@ test('the flow commands the engine owns are exactly the ones it can execute', ()
       className + ' is not a command class the reference declares');
   });
 });
+
+test('auto reject respects padded mixed-case whitelist names and its original run guard', async () => {
+  const session = fakeSession();
+  let onDrop;
+  const rejected = [];
+  session.onDrop = function (fn) { onDrop = fn; return function () {}; };
+  session.rejectDrop = async function (name, id, guard) { rejected.push({ name, id, guard }); };
+  const made = engine({ session });
+  const doc = bot([command('CmdRestart', {})], { EnableRejection: true, Drops: ['Sword'] });
+  await made.start(doc);
+  onDrop({ ItemID: 1, sName: '  sWoRd  ' });
+  assert.strictEqual(rejected.length, 0);
+  onDrop({ ItemID: 2, sName: '  Junk  ' });
+  assert.strictEqual(rejected.length, 1);
+  assert.strictEqual(rejected[0].name, 'junk');
+  assert.strictEqual(rejected[0].guard(), true);
+  made.drops().push('JUNK');
+  assert.strictEqual(rejected[0].guard(), false, 'a newly whitelisted drop cancels retries');
+  made.drops().pop();
+  assert.strictEqual(rejected[0].guard(), true);
+  made.stop();
+  assert.strictEqual(rejected[0].guard(), false);
+  await made.start(doc);
+  assert.strictEqual(rejected[0].guard(), false, 'restart cannot revive an older rejection');
+  made.stop();
+});

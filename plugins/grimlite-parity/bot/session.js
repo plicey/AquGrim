@@ -285,8 +285,7 @@ const LOADER_BODIES = {
     RoomId: { helper: 'RoomId', body: 'world.curRoom, the room a getDrop frame names' },
     RejectDrop: {
         helper: 'RejectDrop',
-        body: 'Flash.Call("RejectDrop", name, id) - the loader own drop rejection',
-        why: 'the loader surface refuses RejectDrop until its stock-game route is implemented'
+        body: 'Flash.Call("RejectDrop", name, id) - the loader own drop rejection'
     }
 };
 
@@ -342,6 +341,7 @@ function createSession(deps) {
     // subscribes to these frames while its bot runs; the list itself is kept for the session's
     // whole life so a "has dropped" statement can answer even between pickups.
     const drops = [];
+    let closed = false;
     const dropWatchers = [];
 
     function isDropFrame(frame) {
@@ -354,14 +354,6 @@ function createSession(deps) {
             return null;
         }
         return require('./auras.js').payloadOf(parsed);
-    }
-
-    function firstItem(items) {
-        if (!items) return null;
-        if (Array.isArray(items)) return items[0] || null;
-        if (Array.isArray(items.$values)) return items.$values[0] || null;
-        const keys = Object.keys(items);
-        return keys.length ? items[keys[0]] : null;
     }
 
     function accountDrop(drop) {
@@ -386,7 +378,8 @@ function createSession(deps) {
         const payload = isDropFrame(frame);
         if (!payload) return;
         if (payload.cmd === 'dropItem') {
-            accountDrop(firstItem(payload.items));
+            const items = payload.items && (payload.items.$values || payload.items);
+            Object.keys(items || {}).forEach(function (key) { accountDrop(items[key]); });
         } else if (payload.cmd === 'getDrop') {
             const success = Number(payload.bSuccess);
             if (success !== 1) return;
@@ -448,10 +441,11 @@ function createSession(deps) {
      * from it. A refusal - a name the surface does not implement, or the game refusing the read -
      * rejects with the reason, marked when it means the window is gone.
      */
-    async function loaderCall(name, args) {
+    async function loaderCall(name, args, shouldCall) {
         // Attach first, for the same reason the raw reads do: the surface answers over the same
         // channel, and a channel that is not attached has no game window to ask.
         await attach();
+        if (shouldCall && !shouldCall()) return false;
         if (typeof bridge.loaderCall !== 'function') {
             throw refusal('this bridge does not expose the loader surface (ticket #48): ' + name);
         }
@@ -697,9 +691,20 @@ function createSession(deps) {
             });
         },
 
-        /** The loader's own drop rejection call, until its stock-game route is implemented. */
-        rejectDrop: function (name, id) {
-            return loaderCall('RejectDrop', [String(name).toLowerCase(), String(id)]);
+        /** The relay emits before delivery to Flash, so wait briefly for the stock UI. */
+        rejectDrop: async function (name, id, shouldReject) {
+            for (let attempt = 0; attempt < 20; attempt++) {
+                if (closed) throw refusal('the session closed before drop rejection');
+                if (shouldReject && !shouldReject()) return;
+                const removed = await loaderCall('RejectDrop', [String(name).toLowerCase(), String(id)],
+                    function () { return !closed && (!shouldReject || shouldReject()); });
+                if (removed === true || removed === 'true') {
+                    return;
+                }
+                if (removed !== false && removed !== 'false') throw refusal('RejectDrop did not confirm UI rejection');
+                await new Promise(function (resolve) { setTimeout(resolve, 100); });
+            }
+            throw refusal('the stock drop UI did not appear within 2000ms');
         },
 
         // ---- combat and map (ticket #38) ----------------------------------------------------
@@ -947,6 +952,7 @@ function createSession(deps) {
          * to prevent.
          */
         close: async function () {
+            closed = true;
             if (typeof release === 'function') {
                 const off = release;
                 release = null;

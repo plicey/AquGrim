@@ -791,7 +791,9 @@ const SURFACE = {
         compute: function (ctx) { return ctx.raw('CancelTargetSelf', []); }
     },
     MapLoadComplete: { why: 'the reference inspects its own display list; ticket #41 owns state' },
-    RejectDrop: { why: 'the reference walks its own drop stack UI; ticket #33 owns drops' },
+    RejectDrop: {
+        compute: function (ctx, p) { return ctx.raw('RejectDrop', [String(p[0]), String(p[1])]); }
+    },
 
     // ---- the generic array accessors, which sit beside the other generic callbacks --------
     getArrayObject: {

@@ -799,7 +799,7 @@ function createEngine(deps) {
     }
 
     function dropName(drop) {
-        return String(drop.sName === undefined ? (drop.Name === undefined ? '' : drop.Name) : drop.sName);
+        return String(drop.sName === undefined ? (drop.Name === undefined ? '' : drop.Name) : drop.sName).trim();
     }
 
     /** World.DropStack.GetDrop: the room frame, with the reference's three-second cooldown. */
@@ -843,6 +843,11 @@ function createEngine(deps) {
     async function handleDrop(drop) {
         if (!running || !drop) return;
         const name = dropName(drop);
+        const dropConfig = config;
+        const shouldReject = function () {
+            return running && config === dropConfig && config.EnableRejection &&
+                config.Drops && !pushes(config.Drops);
+        };
         const pushes = function (list) {
             return (Array.isArray(list) ? list : []).some(function (entry) {
                 return String(entry).toLowerCase() === name.toLowerCase();
@@ -861,10 +866,10 @@ function createEngine(deps) {
         if (config.EnablePickupAcTagged && isAcDrop(drop) && id !== undefined && id !== null) {
             await pickupDrop(id);
         }
-        if (config.EnableRejection && config.Drops && !pushes(config.Drops)) {
+        if (shouldReject()) {
             if (session && typeof session.rejectDrop === 'function' && id !== undefined && id !== null) {
                 try {
-                    await session.rejectDrop(name.toLowerCase(), id);
+                    await session.rejectDrop(name.toLowerCase(), id, shouldReject);
                 } catch (error) {
                     reportOnce('drop-reject', 'the drop rejection was refused: ' + message(error));
                 }
