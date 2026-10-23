@@ -46,7 +46,12 @@ function createAutoAttackWindow(deps) {
 
         host.ipc.handle('autoAttackPresetLoad', function (event, data) {
             const args = payload(data);
-            const loaded = source.loadPreset(args.className, args.name);
+            let loaded;
+            try {
+                loaded = source.loadPreset(args.className, args.name);
+            } catch (error) {
+                return { ok: false, error: (error && error.message) || String(error) };
+            }
             if (!loaded) return { ok: false, error: 'that preset no longer exists' };
             onUse(loaded.text);
             return snapshot(args.className).then(function (state) {
@@ -80,7 +85,11 @@ function createAutoAttackWindow(deps) {
 
         host.ipc.handle('autoAttackSkillSetDefault', function (event, data) {
             const args = payload(data);
-            source.clearDraft(args.className);
+            try {
+                source.clearDraft(args.className);
+            } catch (error) {
+                return { ok: false, error: (error && error.message) || String(error) };
+            }
             onUse('');
             return snapshot(args.className).then(function (state) {
                 return Object.assign({ ok: true, error: null }, state);

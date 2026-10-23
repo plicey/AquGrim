@@ -15,6 +15,7 @@ const path = require('path');
 
 const STORE_NAMESPACE = 'auto-attack';
 const STORE_KEY = 'autoAttackPresets';
+const SELECTION_KEY = 'autoAttackSelectedPresets';
 const CONFIG_FILE = 'ClientConfig.cfg';
 const FILE_PRESET_NAME = 'ClientConfig';
 const DEFAULT_SKILLS = [
@@ -202,6 +203,28 @@ function createPresetSource(deps) {
         store.write(data);
     }
 
+    function rememberedName(className) {
+        const selections = stored()[SELECTION_KEY];
+        return selections && typeof selections === 'object' && !Array.isArray(selections) &&
+            typeof selections[classKey(className)] === 'string'
+            ? selections[classKey(className)] : null;
+    }
+
+    function remember(className, name) {
+        if (!store || typeof store.write !== 'function') return;
+        const key = classKey(className);
+        if (!key) return;
+        const data = Object.assign({}, stored());
+        const previous = data[SELECTION_KEY];
+        const selections = previous && typeof previous === 'object' && !Array.isArray(previous)
+            ? Object.assign({}, previous) : {};
+        if (name) selections[key] = name;
+        else delete selections[key];
+        if (Object.keys(selections).length) data[SELECTION_KEY] = selections;
+        else delete data[SELECTION_KEY];
+        store.write(data);
+    }
+
     function findName(className, name) {
         const wanted = cleanName(name).toLowerCase();
         if (!wanted) return null;
@@ -229,10 +252,9 @@ function createPresetSource(deps) {
         const preset = findName(key, name);
         if (!preset) return presetList(key);
         writeStored({ className: key, preset: preset }, null);
+        if (cleanName(rememberedName(key)).toLowerCase() === preset.toLowerCase()) remember(key, null);
         if (draft && draft.className === key &&
-            String(draft.name || '').toLowerCase() === preset.toLowerCase()) {
-            draft.name = null;
-        }
+            String(draft.name || '').toLowerCase() === preset.toLowerCase()) draft.name = null;
         return presetList(key);
     }
 
@@ -246,11 +268,24 @@ function createPresetSource(deps) {
     }
 
     function draftFor(className) {
-        if (!draft || draft.className !== classKey(className)) return null;
-        return copyDraft(draft);
+        const key = classKey(className);
+        if (draft && draft.className === key) {
+            if (!draft.name || findName(key, draft.name)) return copyDraft(draft);
+            remember(key, null);
+            draft.name = null;
+            return copyDraft(draft);
+        }
+        const remembered = rememberedName(key);
+        const preset = findName(key, remembered);
+        if (!preset) {
+            if (remembered) remember(key, null);
+            return null;
+        }
+        return setDraft(key, rawForClass(key)[preset].text, preset);
     }
 
     function clearDraft(className) {
+        remember(className || (draft && draft.className), null);
         if (!className || (draft && draft.className === classKey(className))) draft = null;
         return null;
     }
@@ -260,8 +295,8 @@ function createPresetSource(deps) {
         const preset = findName(key, name);
         if (!preset) return null;
         const raw = rawForClass(key)[preset];
-        setDraft(key, raw.text, preset);
-        return copyDraft(draft);
+        remember(key, preset);
+        return setDraft(key, raw.text, preset);
     }
 
     reload();
@@ -282,6 +317,7 @@ function createPresetSource(deps) {
 module.exports = {
     STORE_NAMESPACE: STORE_NAMESPACE,
     STORE_KEY: STORE_KEY,
+    SELECTION_KEY: SELECTION_KEY,
     CONFIG_FILE: CONFIG_FILE,
     FILE_PRESET_NAME: FILE_PRESET_NAME,
     DEFAULT_SKILLS: DEFAULT_SKILLS,

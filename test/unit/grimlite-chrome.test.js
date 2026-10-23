@@ -677,3 +677,31 @@ test('the strip keeps the reference controls and adds the Auto Attack skill edit
   assert.strictEqual(labels[0], 'Iniciar Bot');
   assert.strictEqual(labels[6], 'Banco');
 });
+
+test('Auto Attack enable restores remembered named presets for the detected class', async () => {
+  let data = { autoAttackPresets: {
+    SHAMAN: { Farm: '2;3' }, 'VOID HIGHLORD': { Boss: '4;1' }
+  } };
+  const store = {
+    read: function () { return JSON.parse(JSON.stringify(data)); },
+    write: function (next) { data = JSON.parse(JSON.stringify(next)); }
+  };
+  const selected = skillPresets.createPresetSource({ store: store, files: [] });
+  selected.loadPreset('Shaman', 'Farm');
+  selected.loadPreset('Void Highlord', 'Boss');
+  const answers = { className: ' shaman ' };
+  const h = harness({ answers: answers,
+    presets: skillPresets.createPresetSource({ store: store, files: [] }) });
+  try {
+    await h.chrome.action('autoAttack', { checked: true });
+    assert.deepStrictEqual(h.chrome.rotation().map(function (one) { return one.index; }), ['2', '3']);
+    await h.chrome.action('autoAttack', { checked: false });
+    answers.className = 'Void Highlord';
+    await h.chrome.action('autoAttack', { checked: true });
+    assert.deepStrictEqual(h.chrome.rotation().map(function (one) { return one.index; }), ['4', '1']);
+    await h.chrome.action('autoAttack', { checked: false });
+    answers.className = 'Nobody';
+    await h.chrome.action('autoAttack', { checked: true });
+    assert.deepStrictEqual(h.chrome.rotation().map(function (one) { return one.index; }), ['1', '2', '3', '4']);
+  } finally { h.chrome.stop(); }
+});
