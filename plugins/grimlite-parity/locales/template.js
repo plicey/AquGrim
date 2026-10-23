@@ -31,6 +31,7 @@ exports.dialogMessages = {
             '' +
             '' +
             '' +
+            '' +
             '';
     }
 };
@@ -41,6 +42,7 @@ exports.logsMessages = {
 };
 
 exports.menuMessages = {
+    menuNewInstance: "",
     grimliteMenu: "",
     grimliteBot: "",
     grimliteBotManager: "",
@@ -80,6 +82,7 @@ exports.botFileMessages = {
 
 exports.windowTitles = {
     primary: "",
+    autoAttack: "",
     botFile: "",
     bank: "",
     loaders: "",
@@ -184,6 +187,10 @@ exports.botManagerMessages = {
     opened: "",
     saved: "",
     customizer: "",
+    colors: "",
+    rgb: "",
+    randomColors: "",
+    reloadColors: "",
     fonts: "",
     multiline: "",
     tabpages: "",
@@ -365,6 +372,7 @@ exports.maidMessages = {
 exports.chromeMessages = {
     startBot: "",
     autoAttack: "",
+    autoSkillSet: "",
     pad: "",
     cell: "",
     refreshCell: "",

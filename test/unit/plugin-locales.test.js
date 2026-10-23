@@ -68,7 +68,7 @@ test('mergePluginLocales applies plugin keys without clobbering platformMessages
   assert.ok(locale.strings.settingsMessages.labels.settings);
   assert.ok(locale.strings.menuMessages.menuSettings);
   assert.ok(locale.strings.menuMessages.menuWiki);
-  assert.ok(String(locale.strings.dialogMessages.helpDetail).indexOf('AquaStar (app)') !== -1);
+  assert.ok(String(locale.strings.dialogMessages.helpDetail).indexOf('AquGrim (app)') !== -1);
   assert.ok(String(locale.strings.dialogMessages.helpDetail).indexOf('AQW Wiki') !== -1);
   assert.ok(String(locale.strings.dialogMessages.helpDetail).indexOf('Adventure Quest Worlds') !== -1);
 

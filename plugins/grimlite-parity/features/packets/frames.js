@@ -74,7 +74,7 @@
         }
 
         function start(watcher) {
-            if (!watcher) throw new Error('[Grimlite Parity] the logger needs a window to send frames to');
+            if (!watcher) throw new Error('[AquGrim] the logger needs a window to send frames to');
             if (watchers.indexOf(watcher) !== -1) return false;
             watchers.push(watcher);
             if (!release) release = packets.on('frame', fanOut);

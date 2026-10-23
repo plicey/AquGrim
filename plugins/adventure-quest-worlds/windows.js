@@ -65,10 +65,10 @@ function createWindows(deps) {
     return {
         charPrintConfig: charPrint,
         featureWindows: [
-            { id: 'reminders', title: 'AquaStar - Reminders', url: featurePage('reminders', 'reminders.html'), config: reminders },
-            { id: 'todo', title: 'AquaStar - To-Do List', url: featurePage('todo', 'todo.html'), config: todo },
-            { id: 'inventory', title: 'AquaStar - Inventory', url: featurePage('inventory', 'inventory.html'), config: inventory },
-            { id: 'strategy', title: 'AquaStar - Strategy', url: featurePage('strategy', 'strategy.html'), config: strategy }
+            { id: 'reminders', title: 'AquGrim - Reminders', url: featurePage('reminders', 'reminders.html'), config: reminders },
+            { id: 'todo', title: 'AquGrim - To-Do List', url: featurePage('todo', 'todo.html'), config: todo },
+            { id: 'inventory', title: 'AquGrim - Inventory', url: featurePage('inventory', 'inventory.html'), config: inventory },
+            { id: 'strategy', title: 'AquGrim - Strategy', url: featurePage('strategy', 'strategy.html'), config: strategy }
         ]
     };
 }

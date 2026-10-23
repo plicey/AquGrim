@@ -1,4 +1,4 @@
-// Minimal AquaStar plugin entry. See docs/design/plugin-architecture.md and
+// Minimal AquGrim plugin entry. See docs/design/plugin-architecture.md and
 // docs/PLUGINS.md (authored in a later PR) for the full Host API.
 
 function activate(host) {
@@ -8,7 +8,7 @@ function activate(host) {
             return 'https://example.com/path/to/game.swf';
         },
         title: function () {
-            return 'AquaStar - My Flash Game';
+            return 'AquGrim - My Flash Game';
         },
         isGameUrl: function (url) {
             return typeof url === 'string' &&

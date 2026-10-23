@@ -104,6 +104,25 @@ test('a window with no engine wired refuses out loud rather than ticking on noth
   });
 });
 
+test('stopping the bot turns the live zone handler off when a zone is selected', async () => {
+  const runtime = fakeRuntime();
+  const zones = [];
+  const feature = window({
+    runtime: runtime,
+    windowKey: 'win-a',
+    specialHandler: function () {
+      return { set: function (zone, on) { zones.push([zone, on]); return { ok: true }; } };
+    }
+  });
+  await feature.handle('botManagerSetting', null, ['AutoZone', 'Auto Zone - Dark Carnax']);
+  await feature.handle('botManagerEnable', null, [true]);
+  await feature.handle('botManagerEnable', null, [false]);
+  assert.deepStrictEqual(zones, [
+    ['Auto Zone - Dark Carnax', true],
+    ['Auto Zone - Dark Carnax', false]
+  ]);
+});
+
 test('the state read reports this window\'s bot, and says so when there is no engine', () => {
   const runtime = fakeRuntime();
   const feature = window({ runtime: runtime, windowKey: 'win-a' });

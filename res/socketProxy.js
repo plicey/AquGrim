@@ -79,7 +79,7 @@ function start() {
     });
 
     wss.on('error', (err) => {
-        console.error('[AquaStar] Ruffle socket proxy error:', err);
+        console.error('[AquGrim] Ruffle socket proxy error:', err);
     });
 }
 

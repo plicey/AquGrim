@@ -260,11 +260,8 @@ function logText(text, values) {
  */
 const LOADER_NAMES = [
     'Cell', 'ChangeGuild', 'ChangeName', 'GetFactions', 'GetInventoryItems', 'GoTo', 'Gold',
-    'Level', 'Logout', 'Map', 'Pad', 'PlayersInMap', 'RoomId', 'RoomNumber'
+    'Level', 'Logout', 'Map', 'Pad', 'PlayersInMap', 'RoomId', 'RoomNumber', 'SetFPS'
 ];
-
-// Names these commands call and the surface refuses by design, each with its own reason.
-const REFUSED_NAMES = ['SetFPS'];
 
 module.exports = {
     packetText: packetText,
@@ -272,6 +269,5 @@ module.exports = {
     resolveBotPath: resolveBotPath,
     logText: logText,
     refusalText: refusalText,
-    LOADER_NAMES: LOADER_NAMES,
-    REFUSED_NAMES: REFUSED_NAMES
+    LOADER_NAMES: LOADER_NAMES
 };

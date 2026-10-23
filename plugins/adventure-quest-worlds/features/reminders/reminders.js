@@ -18,7 +18,7 @@ const remindersDefaultPath = path.join(__dirname, 'reminders_default.json');
 
 if (!fs.existsSync(remindersJsonPath) && fs.existsSync(legacyRemindersJsonPath)) {
     try { fs.copyFileSync(legacyRemindersJsonPath, remindersJsonPath); }
-    catch (e) { console.log('[AquaStar] Could not migrate reminders: ' + e.message); }
+    catch (e) { console.log('[AquGrim] Could not migrate reminders: ' + e.message); }
 }
 
 function _genId(prefix) {
@@ -47,7 +47,7 @@ function _buildSeedState() {
     try {
         raw = JSON.parse(fs.readFileSync(remindersDefaultPath));
     } catch (e) {
-        console.log('[AquaStar] Failed to read ' + remindersDefaultPath + ': ' + e.message);
+        console.log('[AquGrim] Failed to read ' + remindersDefaultPath + ': ' + e.message);
     }
     const SEASONAL_EVENT_KEYS = listState.SEASONAL_EVENT_KEYS;
     const quests = (Array.isArray(raw.quests) ? raw.quests : []).map((q) => ({
@@ -81,7 +81,7 @@ function _loadReminders() {
             individualHiddenMode: parsed.individualHiddenMode === true
         };
     } catch (e) {
-        console.log('[AquaStar] Failed to parse ' + remindersJsonPath + ': ' + e.message);
+        console.log('[AquGrim] Failed to parse ' + remindersJsonPath + ': ' + e.message);
         return { characters: [], quests: [], showCompleted: true, showMemberDailies: true, individualHiddenMode: false };
     }
 }

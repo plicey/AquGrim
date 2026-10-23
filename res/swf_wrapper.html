@@ -20,14 +20,18 @@
   #chrome select, #chrome button {
     background:#272727; color:#c8c8c8; border:1px solid #3a3a44; border-radius:2px;
   }
+  #chrome .render-scale { display:inline-flex; align-items:center; gap:4px; }
+  #chrome .render-scale input[type=range] { width:96px; height:21px; padding:0; margin:0; }
+  #chrome .render-scale output { min-width:32px; text-align:right; color:#c8c8c8; }
   #chrome span.status { margin-left:auto; overflow:hidden; text-overflow:ellipsis; }
   #stage { flex:1 1 auto; position:relative; min-height:0; }
+  #surface { position:absolute; left:0; top:0; width:100%; height:100%; transform-origin:0 0; }
   object { display:block; width:100%; height:100%; border:none; outline:none; }
 </style>
 </head>
 <body>
 <div id="chrome" role="toolbar"></div>
-<div id="stage"></div>
+<div id="stage"><div id="surface"></div></div>
 <script>
   (function() {
     var params = new URLSearchParams(window.location.search);
@@ -37,6 +41,9 @@
     // Optional overrides, set from a plugin's wrap config (e.g. wmode=opaque&scale=showall).
     var wmode = params.get('wmode') || 'direct';
     var scale = params.get('scale') || 'showall';
+    var quality = params.get('quality') || 'medium';
+    if (['low', 'medium', 'high', 'best'].indexOf(quality) === -1) quality = 'medium';
+    var renderScale = 100;
 
     // Base directory of the SWF so relative ActionScript loads resolve against the
     // game origin, not this file:// wrapper page (critical for DFLoader.swf).
@@ -51,14 +58,15 @@
     obj.data = swfUrl;
     obj.width = '100%';
     obj.height = '100%';
+    // Let the plugin take keyboard focus back after a toolbar control is used.
+    obj.tabIndex = 0;
 
     var cfg = [
       {name:'wmode', value: wmode},
       {name:'scale', value: scale},
-      {name:'salign', value: 't'},
       {name:'allowscriptaccess', value:'always'},
       {name:'allowfullscreen', value:'true'},
-      {name:'quality', value:'best'},
+      {name:'quality', value: quality},
       {name:'bgcolor', value:'#000000'},
       {name:'base', value: swfBase},
       {name:'allownetworking', value:'all'}
@@ -72,7 +80,31 @@
       obj.appendChild(el);
     });
 
-    document.getElementById('stage').appendChild(obj);
+    var stage = document.getElementById('stage');
+    var surface = document.getElementById('surface');
+    surface.appendChild(obj);
+
+    function focusGame() {
+      try { obj.focus(); } catch (e) { /* the plugin owns the surface; nothing else to focus */ }
+    }
+
+    /** Render fewer pixels and let the browser scale the surface back to the stage. */
+    function applyRenderScale(percent) {
+      var pct = Number(percent);
+      if (!isFinite(pct)) pct = 100;
+      renderScale = Math.max(25, Math.min(100, Math.round(pct * 10) / 10));
+      if (renderScale >= 100) {
+        surface.style.width = '100%';
+        surface.style.height = '100%';
+        surface.style.transform = 'none';
+        return;
+      }
+      var factor = renderScale / 100;
+      surface.style.width = Math.max(1, stage.clientWidth * factor) + 'px';
+      surface.style.height = Math.max(1, stage.clientHeight * factor) + 'px';
+      surface.style.transform = 'scale(' + (1 / factor) + ')';
+    }
+    window.addEventListener('resize', function () { applyRenderScale(renderScale); });
 
     // The chrome strip (ticket #45). The page knows nothing about a game: the platform answers
     // what to draw, from whatever the active plugin declared, and reports back what was pressed.
@@ -97,8 +129,10 @@
         // The strip's own words for the last press: a refusal is what the user needs to see, and a
         // press that worked says nothing rather than leaving the previous refusal on screen.
         show(result && result.error ? result.error : '');
+        if (id !== 'autoSkillSet') focusGame();
       }, function (error) {
         show(String(error && error.message ? error.message : error));
+        if (id !== 'autoSkillSet') focusGame();
       });
     }
 
@@ -122,6 +156,7 @@
         });
         select.addEventListener('change', function () {
           send(entry.id, { value: select.value });
+          focusGame();
         });
         return select;
       }
@@ -133,6 +168,7 @@
         box.checked = value === true;
         box.addEventListener('change', function () {
           send(entry.id, { checked: box.checked });
+          focusGame();
         });
         label.appendChild(box);
         label.appendChild(el('span', null, entry.label));
@@ -140,8 +176,47 @@
       }
       var button = el('button', null, entry.label);
       button.id = 'chrome-' + entry.id;
-      button.addEventListener('click', function () { send(entry.id, {}); });
+      button.addEventListener('click', function () {
+        send(entry.id, {});
+        if (entry.id !== 'autoSkillSet') focusGame();
+      });
       return button;
+    }
+
+    /** The platform's render percentage, on the same strip as the plugin's controls. */
+    function renderScaleControl() {
+      var label = el('label', 'render-scale');
+      label.appendChild(el('span', null, 'Scale'));
+      var slider = el('input');
+      slider.type = 'range';
+      slider.min = '25';
+      slider.max = '100';
+      slider.step = 'any';
+      slider.value = String(renderScale);
+      slider.setAttribute('aria-label', 'Game render scale');
+      var readout = el('output', null, Math.round(renderScale) + '%');
+      var saveTimer = null;
+      function commit() {
+        window.clearTimeout(saveTimer);
+        saveTimer = null;
+        applyRenderScale(slider.value);
+        if (typeof api.setRenderScale !== 'function') return;
+        Promise.resolve(api.setRenderScale(renderScale)).catch(function (error) {
+          show(String(error && error.message ? error.message : error));
+        });
+      }
+      slider.addEventListener('input', function () {
+        readout.textContent = Math.round(Number(slider.value)) + '%';
+        window.clearTimeout(saveTimer);
+        saveTimer = window.setTimeout(commit, 120);
+      });
+      slider.addEventListener('change', function () {
+        commit();
+        focusGame();
+      });
+      label.appendChild(slider);
+      label.appendChild(readout);
+      return label;
     }
 
     function draw(view) {
@@ -150,11 +225,13 @@
       // screenshot and recording paths size their capture from.
       strip.style.display = view && view.enabled ? 'flex' : 'none';
       strip.style.height = view && view.enabled ? (view.height + 'px') : '0';
+      if (view && view.renderScale !== undefined) applyRenderScale(view.renderScale);
       while (strip.firstChild) strip.removeChild(strip.firstChild);
       if (!view || !view.enabled) return;
       (view.controls || []).forEach(function (entry) {
         strip.appendChild(control(entry, view));
       });
+      strip.appendChild(renderScaleControl());
       strip.appendChild(el('span', 'status', view.error || ''));
       strip.lastChild.id = 'chromeStatus';
     }

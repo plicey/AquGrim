@@ -252,3 +252,25 @@ test('a declared user-agent policy is applied to upstream requests', async funct
     await upstream.close();
   }
 });
+
+test('an origin rewrite can decline or fail without losing the upstream response', async function () {
+  const upstream = await startUpstream(plain('original:'));
+  const proxy = createOriginProxy({
+    routes: [{ prefix: '/', origin: upstream.origin }],
+    rewriteResponse: async function (context) {
+      if (context.url.endsWith('/broken')) throw new Error('bad rule');
+      return undefined;
+    }
+  });
+  const origin = await proxy.listen(0);
+  try {
+    for (const path of ['/unmatched', '/broken']) {
+      const served = await request(origin + path);
+      assert.strictEqual(served.status, 200);
+      assert.strictEqual(served.body, 'original:' + path);
+    }
+  } finally {
+    await proxy.close();
+    await upstream.close();
+  }
+});

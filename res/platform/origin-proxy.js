@@ -80,8 +80,8 @@ function createOriginProxy(opts) {
             upRes.on('data', function (c) {
                 chunks.push(c);
             });
-            upRes.on('end', function () {
-                const out = Buffer.concat(chunks);
+            upRes.on('end', async function () {
+                let out = Buffer.concat(chunks);
                 const location = upRes.headers.location;
                 if (location && upRes.statusCode >= 300 && upRes.statusCode < 400 && depth < MAX_REDIRECTS) {
                     let next;
@@ -94,6 +94,22 @@ function createOriginProxy(opts) {
                         log('redirect ' + upRes.statusCode + ' ' + target.pathname + ' -> ' + next);
                         forward(req, res, new URL(next), body, depth + 1);
                         return;
+                    }
+                }
+                if (typeof opts.rewriteResponse === 'function') {
+                    try {
+                        const replacement = await opts.rewriteResponse({
+                            url: target.href,
+                            method: req.method,
+                            statusCode: upRes.statusCode,
+                            requestHeaders: req.headers,
+                            responseHeaders: upRes.headers
+                        }, out);
+                        if (replacement !== undefined && replacement !== null) {
+                            out = Buffer.isBuffer(replacement) ? replacement : Buffer.from(String(replacement), 'utf8');
+                        }
+                    } catch (error) {
+                        log('response rewrite failed, serving original body: ' + error.message);
                     }
                 }
                 const outHeaders = Object.assign({}, upRes.headers);

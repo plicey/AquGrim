@@ -26,7 +26,7 @@ function fetchOfficialAsset(url, redirectsLeft, allowAnyHost) {
     return new Promise((resolve, reject) => {
         const parsed = new URL(url);
         if (!allowAnyHost && !ALLOWED_HOSTS.has(parsed.hostname)) return reject(new Error('Unexpected AQW asset host.'));
-        https.get(parsed, { headers: { 'User-Agent': 'AquaStar Char Page Studio' } }, (response) => {
+        https.get(parsed, { headers: { 'User-Agent': 'AquGrim Char Page Studio' } }, (response) => {
             if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location && redirectsLeft > 0) {
                 response.resume();
                 resolve(fetchOfficialAsset(new URL(response.headers.location, parsed).href, redirectsLeft - 1, allowAnyHost));
@@ -51,7 +51,7 @@ function fetchOfficialAsset(url, redirectsLeft, allowAnyHost) {
 // intercept*Protocol handler here: Electron 11 applies it to every window in
 // the default session, which made the whole app unstable.
 function activateProtocol() {
-    if (!fs.existsSync(bundledStudioSwfPath)) throw new Error('The bundled Char Page Studio SWF is missing. Reinstall AquaStar.');
+    if (!fs.existsSync(bundledStudioSwfPath)) throw new Error('The bundled Char Page Studio SWF is missing. Reinstall AquGrim.');
     return true;
 }
 

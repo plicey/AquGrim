@@ -130,13 +130,13 @@ test('the menus open the Options and Hotkeys windows, and only registered ones',
     })
     .reduce(function (all, group) { return all.concat(group); }, []);
   const options = top.filter(function (menu) { return menu.label === 'Options'; });
-  const grimlite = top.filter(function (menu) { return menu.label === 'Grimlite'; })[0];
-  const items = options.concat((grimlite && grimlite.submenu) || []);
+  const client = top.filter(function (menu) { return menu.label === 'Client'; })[0];
+  const items = options.concat((client && client.submenu) || []);
 
   assert.deepStrictEqual(top.map(function (menu) { return menu.label; }),
-    ['Bot', 'Packets', 'Options', 'Maid', 'About', 'Char Select', 'Grimlite'],
+    ['Bot', 'Packets', 'Options', 'Maid', 'About', 'Char Select', 'Client'],
     'the reference order, with its Tools entries in this plugin\'s own menu');
-  const tools = (grimlite && grimlite.submenu || []).map(function (item) { return item.label; });
+  const tools = (client && client.submenu || []).map(function (item) { return item.label; });
   ['Bot file', 'Parity placeholder window', 'Sets'].forEach(function (hidden) {
     assert.strictEqual(tools.indexOf(hidden), -1, hidden + ' must not have a visible entry');
   });

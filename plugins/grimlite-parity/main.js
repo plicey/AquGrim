@@ -26,6 +26,7 @@ const tampererWindow = require('./features/packets/tamperer-window.js');
 const resRoot = path.join(__dirname, '..', '..', 'res');
 
 const createNotepad = require('./features/notepad/notepad.js').createNotepad;
+const autoAttackWindow = require('./features/auto-attack/auto-attack-window.js');
 const createEyedropper = require('./features/eyedropper/eyedropper.js').createEyedropper;
 const createAbout = require('./features/about/about.js').createAbout;
 const createCosmetics = require('./features/cosmetics/cosmetics-window.js').createFromHost;
@@ -41,7 +42,7 @@ const skillPresets = require('./features/chrome/skill-presets.js');
 const launcherSkin = require('./features/chrome/skin.js');
 const logsFeature = require('./features/hotkeys/logs.js');
 
-const BRIDGE_TITLE = 'AquaStar - Grimlite Parity';
+const BRIDGE_TITLE = 'AquGrim';
 const LOGIN_PAGE = path.join('features', 'login', 'login.html');
 
 // Electron keeps no reference of its own to a Tray: letting this go would take the icon away.
@@ -219,7 +220,7 @@ function installTray(host) {
     if (!electron || typeof electron.Tray !== 'function') return null;
     try {
         const tray = new electron.Tray(host.getAppIconPath());
-        tray.setToolTip('AquaStar');
+        tray.setToolTip('AquGrim');
         tray.on('click', function () { toggleMainWindow(); });
         appTray = tray;
         return tray;
@@ -273,7 +274,8 @@ async function activate(host) {
     // The same default the Bot Manager declares below, hoisted so the two cannot drift: a
     // CmdLoadBot that resolved against one directory while the tree listed another would be a
     // file the user can see and the engine cannot reach.
-    const defaultBotsDirectory = path.join(host.appDataDirectory, 'Bots');
+    const defaultBotsDirectory = path.join(
+        host.persistentAppDataDirectory || host.appDataDirectory, 'Bots');
     // And the directory the user actually chose, which is the Bot Manager's own setting: a bot
     // saved from the tree with a relative path resolves against the same root the tree lists.
     const botSettings = require('./bot/display-settings.js').create({
@@ -524,6 +526,15 @@ async function activate(host) {
         // The controls that act on the running game read through the generic bridge surface. A
         // name the stock game does not have reports the helper it waits for instead of a value.
         bridge: host.bridge,
+        loaderCall: gameAccess.loaderCall,
+        // The Bot Manager's Client tab reads the game's own staff frames and the area packet.
+        packets: host.packets,
+        currentWindowKey: gameWindowKey,
+        logDebug: function (line) { logs.append(line); },
+        // The Bot Manager's quest whitelist button and its alignment packets need the same game
+        // access and relay the bot engine uses; they are not generic dot-path reads.
+        game: runtimeDependencies.createGame(),
+        sendFrame: function (frame) { return host.packets.send(frame); },
         specialHandler: function () { return zonePanel; },
         options: {
             state: function () { return optionsFeature ? optionsFeature.state() : { applying: false }; },
@@ -531,6 +542,21 @@ async function activate(host) {
                 return optionsFeature
                     ? optionsFeature.setApplying(running)
                     : Promise.resolve({ ok: false, error: 'options are not ready' });
+            },
+            setToggle: function (id, on) {
+                return optionsFeature
+                    ? optionsFeature.setToggle(id, on)
+                    : Promise.resolve({ ok: false, error: 'options are not ready' });
+            },
+            setTimer: function (ms) {
+                return optionsFeature
+                    ? optionsFeature.setTimer(ms)
+                    : { ok: false, error: 'options are not ready' };
+            },
+            setRespawnProvoke: function (on) {
+                return optionsFeature
+                    ? optionsFeature.setRespawnProvoke(on)
+                    : { ok: false, error: 'options are not ready' };
             }
         }
     });
@@ -688,19 +714,25 @@ async function activate(host) {
     // Start Bot runs the document the Bot Manager holds through the same per-window engine the Bot
     // Manager's own tick drives (#36), so the three refusals are the engine's own words (#37) and
     // the strip never re-implements a check the engine already makes.
+    const autoAttackPresets = skillPresets.createPresetSource({
+        appDataDirectory: host.appDataDirectory,
+        store: host.getStore(skillPresets.STORE_NAMESPACE)
+    });
     chrome = chromeFeature.createFromHost(host, {
         runtime: runtime,
         windowKey: gameWindowKey,
         bot: function () { return botManager.bot(); },
-        // Auto Attack's SS.<CLASS> presets: ClientConfig.cfg in the app data directory, with the
-        // autoAttackPresets store object winning over the file when the user edits that instead.
-        presets: skillPresets.createPresetSource({
-            appDataDirectory: host.appDataDirectory,
-            store: host.getStore(skillPresets.STORE_NAMESPACE)
-        }),
+        editor: function () { return botManager.editorOptions(); },
+        onEngineChange: function () { botManager.engineStateChanged(); },
+        // Named Auto Attack presets, with ClientConfig.cfg as the read-only legacy source.
+        presets: autoAttackPresets,
         // Read live: this plugin's catalog is merged into the platform's after activate().
         messages: function () { return host.getLocaleStrings('chromeMessages') || {}; },
-        log: function (line) { host.log('chrome: ' + line); }
+        log: function (line) { host.log('chrome: ' + line); },
+        openAutoSkillSet: function () {
+            host.windows.openFeatureWindow(windows.AUTO_ATTACK_WINDOW_ID);
+            return { ok: true, error: null };
+        }
     });
     host.registerGameChrome({
         height: chromeFeature.HEIGHT,
@@ -728,6 +760,23 @@ async function activate(host) {
                 : undefined;
         }
     }).register(host);
+    autoAttackWindow.createFromHost(host, {
+        presets: autoAttackPresets,
+        className: function () {
+            try {
+                const entry = runtime.forWindow(gameWindowKey());
+                const session = entry && entry.engine ? entry.engine.session : null;
+                return session && typeof session.className === 'function'
+                    ? Promise.resolve(session.className()).catch(function () { return ''; })
+                    : '';
+            } catch (error) {
+                return '';
+            }
+        },
+        onUse: function (text) {
+            if (chrome) chrome.useSkillText(text);
+        }
+    }).register(host);
     createAbout({
         appVersion: host.appVersion,
         getMessages: function () { return messages('aboutMessages'); },
@@ -753,10 +802,10 @@ async function activate(host) {
         order: 30,
         fields: [{ key: 'packetSteering', type: 'boolean' }]
     });
-    host.registerPacketSteering(require('./packets.js').steeringDeclarations()[0]);
+    host.registerPacketSteering(require('./packets.js').steeringDeclarations(baseUrl)[0]);
 
     installTray(host);
-    host.log('Grimlite Parity activated; bridge at ' + (bridgeUrl(baseUrl) || '(no origin)'));
+    host.log('AquGrim activated; bridge at ' + (bridgeUrl(baseUrl) || '(no origin)'));
 }
 
 module.exports = {

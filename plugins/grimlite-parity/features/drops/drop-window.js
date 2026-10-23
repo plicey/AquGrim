@@ -284,7 +284,7 @@ function createDropWindow(deps) {
             return announce().then(function () { return { settled: true }; });
         }
         default:
-            throw new Error('[AquaStar:grimlite-parity] unknown drops channel "' + channelName + '"');
+            throw new Error('[AquGrim:grimlite-parity] unknown drops channel "' + channelName + '"');
         }
     }
 

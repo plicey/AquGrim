@@ -66,15 +66,19 @@ test('every button the sheet draws builds something, reads the game, or says why
   // game read and no handler in the page would silently do nothing when pressed.
   const press = RENDERER.slice(RENDERER.indexOf('function press('));
   const switchBlock = press.slice(0, press.indexOf('function value('));
+  const sheet = window().handle('botManagerSheet', null, []);
   const wired = Object.keys(actions.COMMAND_BUTTONS)
     .concat(Object.keys(actions.LIST_BUTTONS))
-    .concat(Object.keys(gameReads.GAME_BUTTONS));
+    .concat(sheet.gameButtons || []);
 
   const buttons = [];
   tabs.TABS.forEach(function (tab) {
-    (tab.controls || []).forEach(function (control) {
-      if (control.kind === 'button') buttons.push(control.id);
-    });
+    (function walk(controls) {
+      (controls || []).forEach(function (control) {
+        if (control.kind === 'button') buttons.push(control.id);
+        walk(control.children);
+      });
+    })(tab.controls);
   });
   assert.ok(buttons.length >= 40, 'the sheet still declares its buttons');
 
@@ -82,6 +86,98 @@ test('every button the sheet draws builds something, reads the game, or says why
     return wired.indexOf(id) === -1 && switchBlock.indexOf("'" + id + "'") === -1;
   });
   assert.deepStrictEqual(silent, [], 'these buttons would silently do nothing');
+});
+
+test('an action-only game control is not sent through the read-fill path', () => {
+  assert.ok(/if \(result\.values\)/.test(RENDERER),
+    'the page must only fill boxes when the action returned values');
+});
+
+test('Hunt Get writes the literal -[room], and alt appends the current cells', async () => {
+  const answers = {
+    'world.strMapName': '"yulgar"', 'world.strFrame': '"Enter"', 'world.strPad': '"Spawn"'
+  };
+  const feature = window({
+    bridge: {
+      attach: function () { return Promise.resolve({ ok: true }); },
+      call: function (name, args) {
+        assert.strictEqual(name, 'getGameObject');
+        return Promise.resolve({ ok: true, value: answers[args[0]] });
+      }
+    }
+  });
+  const plain = await feature.handle('botManagerGame', null, ['btnGetMapF', { fields: {} }]);
+  assert.deepStrictEqual(plain.values, { map: 'yulgar', cell: 'Enter', pad: 'Spawn' });
+
+  const ctrl = await feature.handle('botManagerGame', null,
+    ['btnGetMapF', { ctrl: true, fields: {} }]);
+  assert.strictEqual(ctrl.values.map, 'yulgar-[room]');
+
+  const alt = await feature.handle('botManagerGame', null,
+    ['btnGetMapF', { alt: true, fields: { tbCellF: 'r1', tbPadF: 'p1' } }]);
+  assert.deepStrictEqual(alt.values, { map: 'yulgar-[room]', cell: 'r1,Enter', pad: 'p1,Spawn' });
+});
+
+test('the access-level and alignment buttons act instead of doing nothing', async () => {
+  const sent = [];
+  const calls = [];
+  const feature = window({
+    sendFrame: function (frame) { sent.push(frame); return true; },
+    bridge: {
+      attach: function () { return Promise.resolve({ ok: true }); },
+      call: function (name, args) {
+        calls.push([name, args]);
+        return Promise.resolve({ ok: true, value: 'null' });
+      }
+    }
+  });
+
+  const alignment = await feature.handle('botManagerGame', null, ['btnSetGood', {}]);
+  assert.strictEqual(alignment.ok, true);
+  assert.deepStrictEqual(sent, [{ direction: 'toServer', text: '%xt%zm%updateQuest%218701%41%1%' }]);
+
+  const member = await feature.handle('botManagerGame', null, ['btnSetMem', {}]);
+  assert.strictEqual(member.ok, true);
+  assert.ok(calls.some(function (one) {
+    return one[0] === 'setGameObject' && one[1][0] === 'world.myAvatar.pMC.pname.ti.textColor';
+  }), JSON.stringify(calls));
+  assert.ok(calls.some(function (one) {
+    return one[0] === 'setGameObject' && one[1][0] === 'world.myAvatar.objData.iUpgDays' && one[1][1] === 30;
+  }), JSON.stringify(calls));
+});
+
+test('Load Map and Add item whitelist reach their reference actions', async () => {
+  const calls = [];
+  const feature = window({
+    game: {
+      loadQuest: function (id) { calls.push(['loadQuest', id]); return Promise.resolve(); },
+      quest: function (id) {
+        calls.push(['quest', id]);
+        return Promise.resolve({ rewards: [{ sName: 'Reward' }], reqd: [{ sName: 'Requirement' }] });
+      }
+    },
+    bridge: {
+      attach: function () { return Promise.resolve({ ok: true }); },
+      call: function (name, args) {
+        calls.push([name, args]);
+        return Promise.resolve({ ok: true, value: 'null' });
+      }
+    }
+  });
+
+  const loaded = await feature.handle('botManagerGame', null,
+    ['btnLoadMap', { fields: { tbLoadMap: 'yulgar-1.swf' } }]);
+  assert.strictEqual(loaded.ok, true);
+  assert.ok(calls.some(function (one) {
+    return one[0] === 'callGameFunction' && one[1][0] === 'world.loadMap' && one[1][1] === 'yulgar-1.swf';
+  }), JSON.stringify(calls));
+
+  const added = await feature.handle('botManagerGame', null, ['btnQAddToWhitelist', {
+    fields: { numQQuestId: '123', chkQRewards: true, chkQRequirements: true }
+  }]);
+  assert.strictEqual(added.ok, true, added.error);
+  assert.ok(added.state.lists.Drops.some(function (row) { return row.text === 'Reward'; }));
+  assert.ok(added.state.lists.Drops.some(function (row) { return row.text === 'Requirement'; }));
 });
 
 test('a reachable control reads through the generic surface and reports the values', async () => {
@@ -133,22 +229,18 @@ test('a bridge that cannot answer at all says so instead of reading as empty', a
   assert.strictEqual(result.error, 'no game window');
 });
 
-test('a control that needs the reference loader names the exact helper call it waits for', async () => {
-  const feature = window();
-  const expected = {
-    btnWalkCur: 'Position',
-    btnCellSwap: 'RoomNumber',
-    btnSetSpawn2: 'SetSpawnPoint',
-    btnReloadMap: 'ReloadMap',
-    btnHideLoading: 'HideConnMC',
-    btnSetFPS: 'SetFPS'
-  };
-  for (const id of Object.keys(expected)) {
-    const result = await feature.handle('botManagerGame', null, [id, {}]);
-    assert.strictEqual(result.ok, false, id + ' cannot read without the helper surface');
-    assert.ok(result.error.indexOf(expected[id]) !== -1,
-      id + ' must name ' + expected[id] + ', got: ' + result.error);
-  }
+test('Hide Loading and Set FPS act through the loader surface too', async () => {
+  const calls = [];
+  const feature = window({
+    loaderCall: function (name, args) {
+      calls.push([name, args || []]);
+      return Promise.resolve(true);
+    }
+  });
+  assert.strictEqual((await feature.handle('botManagerGame', null, ['btnHideLoading', {}])).ok, true);
+  assert.strictEqual((await feature.handle('botManagerGame', null,
+    ['btnSetFPS', { fields: { numSetFPS: '60' } }])).ok, true);
+  assert.deepStrictEqual(calls, [['HideConnMC', []], ['SetFPS', [60]]]);
 });
 
 test('the sheet hands the page the game controls and their reasons, so none is a dead button', () => {
@@ -159,4 +251,36 @@ test('the sheet hands the page the game controls and their reasons, so none is a
     assert.ok(sheet.gameButtons.indexOf(id) !== -1, id + ' travels with the sheet');
   });
   assert.ok(RENDERER.indexOf('gameButtons') !== -1, 'the page reads that list');
+});
+
+test('loader-backed controls act through the loader surface instead of reporting a reason', async () => {
+  const calls = [];
+  const bridgeCalls = [];
+  const feature = window({
+    bridge: {
+      attach: function () { return Promise.resolve({ ok: true }); },
+      call: function (name, args) { bridgeCalls.push([name, args]); return Promise.resolve({ ok: true, value: 'null' }); }
+    },
+    loaderCall: function (name, args) {
+      calls.push([name, args || []]);
+      if (name === 'Position') return Promise.resolve([12, 34]);
+      if (name === 'Map') return Promise.resolve('yulgar');
+      if (name === 'RoomNumber') return Promise.resolve('1');
+      return Promise.resolve(true);
+    }
+  });
+
+  const walked = await feature.handle('botManagerGame', null, ['btnWalkCur', {}]);
+  assert.deepStrictEqual(walked.values, { x: 12, y: 34 });
+
+  const swapped = await feature.handle('botManagerGame', null,
+    ['btnCellSwap', { fields: { txtCell: 'Enter', txtPad: 'Spawn' } }]);
+  assert.deepStrictEqual(swapped.values, { join: 'yulgar-1', cell: 'Enter', pad: 'Spawn' });
+
+  assert.strictEqual((await feature.handle('botManagerGame', null, ['btnSetSpawn2', {}])).ok, true);
+  assert.strictEqual((await feature.handle('botManagerGame', null, ['btnReloadMap', {}])).ok, true);
+  assert.ok(calls.some(function (one) { return one[0] === 'SetSpawnPoint'; }));
+  assert.ok(calls.some(function (one) { return one[0] === 'ReloadMap'; }));
+  assert.ok(bridgeCalls.some(function (one) { return one[0] === 'sendClientPacket'; }),
+    'the reference sends "Spawnpoint set: cell, pad" to the client');
 });

@@ -338,8 +338,8 @@ test('the eye dropper page drops its extra labels and carries the preview canvas
 // beside it.
 test('the about window carries the reference version line', () => {
   assert.strictEqual(about.versionLine(), 'Version Li 1.9.3b (10-10-2026)');
-  assert.strictEqual(about.portLine('2.0.0'), 'AquaStar 2.0.0');
-  assert.strictEqual(about.portLine(null), 'AquaStar');
+  assert.strictEqual(about.portLine('2.0.0'), 'AquGrim 2.0.0');
+  assert.strictEqual(about.portLine(null), 'AquGrim');
 });
 
 // AboutForm.Designer.cs's three team headings, in its own order, and rtbCredits.Text.

@@ -49,7 +49,7 @@ function createCustomSwf(opts) {
         removeAll: function () {
             candidates().forEach(function (p) {
                 try { if (fs.existsSync(p)) fs.unlinkSync(p); }
-                catch (e) { console.log('[AquaStar] Could not remove ' + p + ': ' + e.message); }
+                catch (e) { console.log('[AquGrim] Could not remove ' + p + ': ' + e.message); }
             });
         },
         names: names

@@ -35,10 +35,10 @@ const FILTER = { name: 'XML files', extensions: ['xml'] };
  */
 function createBotLists(deps) {
     const document = deps && deps.bot && typeof deps.bot === 'object' ? deps.bot : null;
+    function unwired() {
+        return { added: 0, wired: false, reason: ERRORS.noLists };
+    }
     if (!document) {
-        function unwired() {
-            return { added: 0, wired: false, reason: ERRORS.noLists };
-        }
         return {
             addDrops: unwired,
             addItems: unwired,
@@ -384,9 +384,9 @@ function createLoadersFeature(host, deps) {
         const argv = Array.isArray(args) ? args : [];
         switch (channel) {
         case 'loadersGrab':
-            return grab(argv[1], argv[2]);
+            return grab(argv[0], argv[1]);
         case 'loadersLoad':
-            return loadTarget(argv[1], argv[2], argv[3], argv[4], argv[5]);
+            return loadTarget(argv[0], argv[1], argv[2], argv[3], argv[4]);
         case 'loadersSave':
             return save(owner);
         case 'loadersOpen':
@@ -401,11 +401,11 @@ function createLoadersFeature(host, deps) {
                 defaultLoadIndex: grabbers.LOAD_DEFAULT_INDEX
             });
         case 'loadersMenu':
-            return Promise.resolve(menuFor(argv[1], argv[2]));
+            return Promise.resolve(menuFor(argv[0], argv[1]));
         case 'loadersAct':
-            return act(argv[1], argv[2]);
+            return act(argv[0], argv[1]);
         default:
-            throw new Error('[AquaStar:grimlite-parity] unknown loaders channel "' + channel + '"');
+            throw new Error('[AquGrim:grimlite-parity] unknown loaders channel "' + channel + '"');
         }
     }
 
@@ -455,7 +455,7 @@ function createFromHost(host, deps) {
     return createLoadersFeature(host, Object.assign({
         game: deps.game || require('./game.js').createGameAccess(host.bridge, function (msg) {
             host.log(msg);
-        }),
+        }, { packets: host.packets }),
         openUrl: deps.openUrl || function (url, mode) { host.windows.openUrl(url, mode); },
         clipboard: deps.clipboard || {
             writeText: function (value) { electron.clipboard.writeText(String(value)); }

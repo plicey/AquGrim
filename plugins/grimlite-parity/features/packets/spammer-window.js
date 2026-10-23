@@ -152,7 +152,7 @@ function createSpammerWindow(deps) {
             const ok = loop.sendOnce((args && args[0]) || '');
             return Promise.resolve({ sent: ok, failed: loop.failedCount() });
         }
-        throw new Error('[AquaStar:grimlite-parity] unknown spammer channel "' + channel + '"');
+        throw new Error('[AquGrim:grimlite-parity] unknown spammer channel "' + channel + '"');
     }
 
     function attach() {
@@ -209,7 +209,8 @@ function createFromHost(host, deps) {
         store: host.getStore(STORE_NAMESPACE),
         // The reference has no Spammer/ folder beside the exe; here it is the app's own data
         // directory, beside the store the plugin already keeps there.
-        defaultDirectory: path.join(host.appDataDirectory, 'Spammer'),
+        defaultDirectory: path.join(
+            host.persistentAppDataDirectory || host.appDataDirectory, 'Spammer'),
         indexChannel: 'plugin:' + host.pluginId + ':spammerIndex',
         // Off means the relay is not there to write through (steering-notice.js says why).
         steering: function () { return steeringNotice.notice(host); },

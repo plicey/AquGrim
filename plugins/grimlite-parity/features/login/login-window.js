@@ -125,7 +125,7 @@ function createLoginWindow(deps) {
                     };
                 });
         }
-        throw new Error('[AquaStar:grimlite-parity] unknown login channel "' + channel + '"');
+        throw new Error('[AquGrim:grimlite-parity] unknown login channel "' + channel + '"');
     }
 
     function attach() {

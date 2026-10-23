@@ -71,11 +71,10 @@ function number(values, id, fallback) {
     return isNaN(parsed) ? fallback : parsed;
 }
 
-/** "Monster (* = random)", empty, or "/id 123" all mean the wildcard the reference uses. */
-function monster(values, id) {
+/** The placeholder is the wildcard; whether an empty box is too depends on the handler. */
+function monster(values, id, emptyIsRandom) {
     const value = field(values, id);
-    if (value === undefined || value.length === 0) return '*';
-    if (value.split(' ')[0] === '/id') return '*';
+    if (value === undefined) return emptyIsRandom === true ? '*' : '';
     return value;
 }
 
@@ -89,18 +88,19 @@ function command(className, properties) {
 }
 
 const COMMAND_BUTTONS = {
-    btnAttack: (v) => command('CmdAttack', { Monster: monster(v, 'txtMonster') }),
-    btnKill: (v) => command('CmdKill', { Monster: monster(v, 'txtMonster') }),
+    btnAttack: (v) => command('CmdAttack', { Monster: monster(v, 'txtMonster', false) }),
+    btnKill: (v) => command('CmdKill', { Monster: monster(v, 'txtMonster', true) }),
     btnRest: () => command('CmdRest', {}),
     btnRestF: () => command('CmdRest', { Full: true }),
     btnKillF: function (v) {
-        // btnKillF_Click guards the item and the quantity first: either box empty, no command.
+        // The designer's Quantity text is rendered as a placeholder here, so an untouched box is
+        // empty; the reference turns that visible "* = any" text into the wildcard.
         const item = field(v, 'txtKillFItem');
-        const quantity = field(v, 'txtKillFQ');
-        if (item === undefined || quantity === undefined) return null;
+        if (item === undefined) return null;
+        const quantity = fieldOr(v, 'txtKillFQ', '*');
         return command('CmdKillFor', {
             ItemType: v.rbTemp ? 1 : 0,
-            Monster: monster(v, 'txtKillFMon'),
+            Monster: monster(v, 'txtKillFMon', true),
             ItemName: item.trim(),
             Quantity: quantity.trim()
         });
@@ -114,7 +114,7 @@ const COMMAND_BUTTONS = {
             Index: fieldOr(v, 'numSkillCmd', '1'),
             Wait: v.cbSkillCmdWait === true,
             Force: v.chkForceSkill === true,
-            Monster: monster(v, 'txtMonsterSkillCmd')
+            Monster: monster(v, 'txtMonsterSkillCmd', false)
         };
         // The alt branch adds skills 1 to 4 at once, which is why a builder may return more
         // than one command (the caller adds each of them where the reference adds each).
@@ -155,8 +155,10 @@ const COMMAND_BUTTONS = {
     },
     btnMapItem: (v) => command('CmdMapItem', { ItemId: number(v, 'numMapItem', 1) }),
     btnItem: function (v, mods) {
-        const name = field(v, 'txtItem') || '';
-        switch (field(v, 'cbItemCmds')) {
+        const name = field(v, 'txtItem');
+        const action = field(v, 'cbItemCmds');
+        if (name === undefined || action === undefined) return null;
+        switch (action) {
         case 'Sell':
             return command('CmdSell', { ItemName: name, Qty: mods.alt ? '0' : '1' });
         case 'Equip':
@@ -177,10 +179,12 @@ const COMMAND_BUTTONS = {
             return command('CmdGetDrop', { ItemName: name });
         }
     },
-    btnSwap: (v) => command('CmdBankSwap', {
-        InventoryItemName: field(v, 'txtSwapInv') || '',
-        BankItemName: field(v, 'txtSwapBank') || ''
-    }),
+    btnSwap: function (v) {
+        const bank = field(v, 'txtSwapBank');
+        const inventory = field(v, 'txtSwapInv');
+        if (bank === undefined || inventory === undefined) return null;
+        return command('CmdBankSwap', { InventoryItemName: inventory, BankItemName: bank });
+    },
     btnWhitelistOn: () => command('CmdWhitelist', { state: 0 }),
     btnWhitelistOff: () => command('CmdWhitelist', { state: 1 }),
     btnWhitelistToggle: () => command('CmdWhitelist', { state: 2 }),
@@ -246,21 +250,31 @@ const COMMAND_BUTTONS = {
     ButtonTC_Start: () => command('CmdTauntcycle', { type: 0 }),
     ButtonTC_Stop: () => command('CmdTauntcycle', { type: 1 }),
     btnFollowCmd: (v) => command('CmdFollow', { PlayerName: (field(v, 'tbFollowPlayer') || '').toLowerCase() }),
-    btnAddLabel: (v) => command('CmdLabel', { Name: (field(v, 'txtLabel') || '').toUpperCase() }),
-    btnGotoLabel: (v) => command('CmdGotoLabel', { Label: (field(v, 'txtLabel') || '').toUpperCase() }),
-    btnGoto: (v) => command('CmdGotoPlayer', { PlayerName: field(v, 'txtPlayer') || '' }),
+    btnAddLabel: function (v) {
+        const label = field(v, 'txtLabel');
+        return label === undefined ? null : command('CmdLabel', { Name: label.toUpperCase() });
+    },
+    btnGotoLabel: function (v) {
+        const label = field(v, 'txtLabel');
+        return label === undefined ? null : command('CmdGotoLabel', { Label: label.toUpperCase() });
+    },
+    btnGoto: function (v) {
+        const player = field(v, 'txtPlayer');
+        return player === undefined ? null : command('CmdGotoPlayer', { PlayerName: player });
+    },
     btnSetInt: function (v, mods) {
-        if (mods.alt) {
-            return command('CmdInt2', {
-                IntKey: field(v, 'txtSetInt') || '',
-                Value: String(number(v, 'numSetInt', 0))
-            });
-        }
-        return command('CmdInt', {
+        const set = command('CmdInt', {
             Int: field(v, 'txtSetInt') || '',
             Value: number(v, 'numSetInt', 0),
             type: 0
         });
+        if (mods.alt) {
+            return [command('CmdInt2', {
+                IntKey: field(v, 'txtSetInt') || '',
+                Value: String(number(v, 'numSetInt', 0))
+            }), set];
+        }
+        return set;
     },
     btnIncreaseInt: (v) => command('CmdInt', {
         Int: field(v, 'txtSetInt') || '',
@@ -292,8 +306,11 @@ const COMMAND_BUTTONS = {
     btnLogout: () => command('CmdLogout', {}),
     btnBeep: (v) => command('CmdBeep', { Times: number(v, 'numBeepTimes', 10) }),
     btnDelay: (v) => command('CmdDelay', { Delay: number(v, 'numDelay', 1500) }),
-    btnStatementAdd: (v) => catalog.makeStatement(field(v, 'cbStatement') || '', field(v, 'txtStatement1'),
-        field(v, 'txtStatement2')),
+    btnStatementAdd: function (v) {
+        const statement = field(v, 'cbStatement');
+        if (statement === undefined) return null;
+        return catalog.makeStatement(statement, field(v, 'txtStatement1'), field(v, 'txtStatement2'));
+    },
     btnPacket: (v) => command('CmdPacket', {
         Packet: field(v, 'txtPacket') || '',
         SpamTimes: number(v, 'numSpamTimes', 1),
@@ -323,11 +340,15 @@ const COMMAND_BUTTONS = {
     btnLog: (v) => command('CmdLog', { Text: field(v, 'txtLog') || '' }),
     btnLogDebug: (v) => command('CmdLog', { Text: field(v, 'txtLog') || '', Debug: true }),
     btnSetFPSCmd: (v) => command('CmdSetFPS', { FPS: number(v, 'numSetFPS', 30) }),
-    btnSetLevelCmd: (v) => command('CmdPacket', {
-        Packet: 'Level ' + (field(v, 'tbLevel') || ''),
-        SpamTimes: 1,
-        ForClient: true
-    }),
+    btnSetLevelCmd: function (v) {
+        const level = field(v, 'tbLevel');
+        if (level === undefined || !/^\d+$/.test(String(level).trim())) return null;
+        return command('CmdPacket', {
+            Packet: 'Level ' + String(level).trim(),
+            SpamTimes: 1,
+            ForClient: true
+        });
+    },
     btnAddInfoMsg: (v) => command('CmdClientMessage', {
         Messages: field(v, 'inputMsgClient') || '',
         IsWarning: false
@@ -347,7 +368,7 @@ const COMMAND_BUTTONS = {
             Cell: field(v, 'tbCellF') || '',
             Pad: field(v, 'tbPadF') || '',
             ItemType: v.chkIsTempF === true ? 1 : 0,
-            Monster: monster(v, 'tbMonNameF'),
+            Monster: monster(v, 'tbMonNameF', true),
             ItemName: itemName,
             Quantity: quantity,
             BlankFirst: v.cbBlankFirstF === true
@@ -451,6 +472,13 @@ const COMMAND_LISTS = {
         const item = field(v, 'txtKillFItem');
         if (item === undefined) return [];
         return [{ list: 'Drops', items: item.split(','), unique: true, insensitive: true }];
+    },
+    // btnAddCmdHunt_Click adds the hunt's item names to Drops before it builds the command.
+    btnAddCmdHunt: function (v) {
+        if (v.chkAddToWhitelistF !== true) return [];
+        const item = field(v, 'tbItemNameF');
+        if (item === undefined) return [];
+        return [{ list: 'Drops', items: item.split(','), unique: true, insensitive: true }];
     }
 };
 
@@ -482,6 +510,7 @@ const SETTINGS = {
     chkExitRest: 'ExitCombatBeforeRest',
     chkHP: 'RestIfHp',
     chkMP: 'RestIfMp',
+    chkRespawnProvoke: 'respawnProvoke',
     // The boxes the reference reads when it generates a configuration rather than on change
     // (GenerateConfiguration: FollowName, AutoZone, Server). Here they write the document as
     // they change, so a save writes what the window shows.
@@ -514,7 +543,7 @@ function statementsIn(tag) {
 function build(id, values, modifiers) {
     const builder = COMMAND_BUTTONS[id];
     if (!builder) {
-        throw new Error('[AquaStar:grimlite-parity] no command is wired to ' + id);
+        throw new Error('[AquGrim:grimlite-parity] no command is wired to ' + id);
     }
     const mods = modifiers || {};
     return builder(values || {}, { alt: mods.alt === true, ctrl: mods.ctrl === true });

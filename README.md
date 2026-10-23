@@ -1,7 +1,7 @@
-# AquaStar
-![AquaStarLogo](Icon/Icon_1024.png)
+# AquGrim
+![AquGrimLogo](Icon/Icon_1024.png)
 
-AquaStar is a Flash-capable companion launcher (Electron 11 + PPAPI). It ships with an **Adventure Quest Worlds** plugin and can be extended for other Flash games.
+AquGrim is a Flash-capable companion launcher (Electron 11 + PPAPI). It ships with an **Adventure Quest Worlds** plugin and can be extended for other Flash games.
 
 **Writing a plugin:** full guide in [`docs/PLUGINS.md`](docs/PLUGINS.md). Worked example: [`plugins/example-companion/`](plugins/example-companion/) (stage + Flash, GitHub keybinds, dashboard). Empty stub: [`plugins/_template/`](plugins/_template/). Design: [`docs/design/plugin-architecture.md`](docs/design/plugin-architecture.md).
 
@@ -20,7 +20,7 @@ ChromeBook support (more on that bellow!)
 
 ### ChromeBook (Possibly outdated):
 
-According to /u/Primal_Majin on reddit, AquaStar (and game launcher, if you want that) is able to run on chromebooks using the Linux (Beta) support. 
+According to /u/Primal_Majin on reddit, AquGrim (and game launcher, if you want that) is able to run on chromebooks using the Linux (Beta) support.
 
 - On the linux terminal, (he used Debian Buster, the current one at this time), install the package "libnss3", doing the following command:
 ```
@@ -42,7 +42,7 @@ While this project was made to be an AQLite launcher, the project evolved to be 
 
 As after version 1.2 AQLite is a part of vanilla game, what we offer is support for older platforms, and custom features the official launcher doesnt offer.
 
-## Just some new features on AquaStar:
+## Just some new features on AquGrim:
  - Screenshot button that grabs the game part only.
  - Keybindings for game windows
  - Even more Keybindings for Wiki, design notes, and char pages

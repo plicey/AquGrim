@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('aquastarBotManager', {
     sheet: function () { return ipcRenderer.invoke(CH('botManagerSheet')); },
     messages: function () { return ipcRenderer.invoke(CH('botManagerMessages')); },
     load: function (file) { return ipcRenderer.invoke(CH('botManagerLoad'), file || null); },
+    pickBot: function () { return ipcRenderer.invoke(CH('botManagerPickBot')); },
     save: function (options) { return ipcRenderer.invoke(CH('botManagerSave'), options || null); },
     add: function (id, values, modifiers) {
         return ipcRenderer.invoke(CH('botManagerAdd'), id, values, modifiers || {});
@@ -49,6 +50,8 @@ contextBridge.exposeInMainWorld('aquastarBotManager', {
     // The native clipboard is main-process work; this window has no Node.
     clipboardWrite: function (text) { return ipcRenderer.invoke(CH('botManagerCopy'), text); },
     clipboardRead: function () { return ipcRenderer.invoke(CH('botManagerPaste')); },
+    // rtbInfo_LinkClicked: open the clicked description link in the user's browser.
+    openLink: function (url) { return ipcRenderer.invoke(CH('botManagerOpenLink'), url); },
     // The engine's two controls (#37): the Enable Bot tick starts and stops this window's bot,
     // and the state read is what the window draws the tick and the log from.
     enable: function (on) { return ipcRenderer.invoke(CH('botManagerEnable'), on === true); },

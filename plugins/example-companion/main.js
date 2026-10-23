@@ -24,7 +24,7 @@ function activate(host) {
         id: 'example-boxmover',
         getUrl: function () { return boxmoverSwf; },
         title: function () {
-            return windowTitle('primary', 'AquaStar - Example Companion');
+            return windowTitle('primary', 'AquGrim - Example Companion');
         },
         isGameUrl: function (candidate) {
             return typeof candidate === 'string' &&
@@ -41,7 +41,7 @@ function activate(host) {
             id: 'example-static-rect',
             getUrl: function () { return rectangleSwf; },
             title: function () {
-                return windowTitle('staticRect', 'AquaStar - Static rectangle.swf');
+                return windowTitle('staticRect', 'AquGrim - Static rectangle.swf');
             },
             wrap: { preferDirectWmode: true, ruffleEligible: true },
             flashTrust: true

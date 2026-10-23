@@ -698,13 +698,18 @@ test('a refusal carries the surface own reason once, however the refusal was wor
 // ------------------------------------------------------------------ what this loop cannot do
 
 test('a command whose own call this build cannot make says so and names the owner', async () => {
-  const fps = await run(engine(), 'CmdSetFPS', { FPS: 30 });
-  assert.ok(fps.records.some(function (l) { return /CmdSetFPS/.test(l) && /stage|frame rate/.test(l); }),
-    'CmdSetFPS carries the surface own reason: ' + fps.records.join('|'));
-
   const taunt = await run(engine(), 'CmdTauntcycle', { type: 0 });
   assert.ok(taunt.records.some(function (l) { return /taunt/i.test(l) && /handler wired/.test(l); }),
     'CmdTauntcycle reports a window with no taunt-cycle handler: ' + taunt.records.join('|'));
+});
+
+test('CmdSetFPS sets the stage frame rate through the loader', async () => {
+  const session = fakeSession({ answers: { SetFPS: true } });
+  const fps = await run(engine({ session: session }), 'CmdSetFPS', { FPS: 30 });
+  assert.deepStrictEqual(session.calls.filter(function (call) { return call.name === 'loader'; })
+    .map(function (call) { return call.args.slice(0, 2); }), [['SetFPS', '30']]);
+  assert.ok(!fps.records.some(function (line) { return /CmdSetFPS/.test(line); }),
+    'a successful call logs no refusal: ' + fps.records.join('|'));
 });
 
 test('CmdTauntcycle starts and stops the rotation the reference starts there', async () => {
@@ -786,9 +791,7 @@ test('every loader name these commands ask for is one the surface answers', () =
   const done = surface.implemented();
   const refused = misc.LOADER_NAMES.filter(function (name) { return done.indexOf(name) === -1; });
   assert.deepStrictEqual(refused, [], 'the engine asks for names the surface refuses: ' + refused);
-  // And the one ask the surface refuses on purpose: its own reason has to survive to the log.
-  assert.deepStrictEqual(misc.REFUSED_NAMES, ['SetFPS']);
-  assert.ok(surface.SURFACE.SetFPS.why, 'SetFPS stays a reason row: the bridge has no stage path');
+  assert.ok(surface.SURFACE.SetFPS.set, 'SetFPS writes the shared stage frame rate');
   assert.ok(surface.SURFACE.ChangeName && done.indexOf('ChangeName') !== -1,
     'the name setters are rows the surface itself carries (#40 owns their commands)');
   assert.ok(done.indexOf('ChangeGuild') !== -1);

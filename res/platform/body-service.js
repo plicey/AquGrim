@@ -176,7 +176,7 @@ function createBodyService(options) {
 
         /** The loopback URL the session-rule layer sends a matched request to. */
         urlFor: function (details) {
-            if (!port) throw new Error('[AquaStar] body service is not started');
+            if (!port) throw new Error('[AquGrim] body service is not started');
             return 'http://127.0.0.1:' + port + BODY_ROUTE + '?u=' + encodeURIComponent(details.url);
         },
 

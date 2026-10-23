@@ -49,7 +49,9 @@ test('the parity plugin boots the game from its own origin, with the bridge serv
     deps: {
       startGameOrigin: function (declared) {
         proxy = createOriginProxy({
-          routes: declared.routes,
+          routes: declared.routes.map(function (route) {
+            return { prefix: route.prefix, origin: upstreamOrigin };
+          }),
           files: declared.files,
           log: function () {}
         });
@@ -61,9 +63,6 @@ test('the parity plugin boots the game from its own origin, with the bridge serv
   });
 
   const bridgeModule = require(path.join(PARITY, 'game-origin.js'));
-  const routes = bridgeModule.routes().map(function (route) {
-    return { prefix: route.prefix, origin: upstreamOrigin };
-  });
   const files = bridgeModule.files();
   assert.ok(files && Object.keys(files).length, 'the plugin must serve the bridge SWF itself');
   Object.keys(files).forEach(function (localPath) {
@@ -72,8 +71,12 @@ test('the parity plugin boots the game from its own origin, with the bridge serv
 
   let baseUrl = '';
   try {
-    baseUrl = await host.declareGameOrigin({ routes: routes, files: files });
+    await require(path.join(PARITY, 'main.js')).activate(host);
+    baseUrl = 'http://127.0.0.1:' + proxy.port;
     assert.strictEqual(baseUrl.indexOf('http://127.0.0.1:'), 0, baseUrl);
+    const steering = host._getState().packetSteering[0];
+    assert.deepStrictEqual(steering.urls, ['*://game.aq.com/game/api/login/now*']);
+    assert.strictEqual(steering.policyDomain, '127.0.0.1');
 
     // The bridge SWF is served from the same origin as Loader4 and the game's own paths: that is
     // the property the whole bridge rests on.
@@ -139,6 +142,10 @@ test('the bridge starts Artix Loader4 so it can initialize the current game', fu
   );
   assert.ok(/addChild\(gameLoader\)[\s\S]*?gameLoader\.load/.test(source),
     'Loader4 must be on stage when it starts');
+  assert.ok(/stage\.scaleMode\s*=\s*StageScaleMode\.SHOW_ALL/.test(source),
+    'the game must scale with the window instead of staying at its authored size');
+  assert.ok(!/stage\.align\s*=/.test(source),
+    'the stage alignment stays at its centered default');
   assert.ok(/new Timer\(1000\)/.test(source) && /TimerEvent\.TIMER/.test(source) &&
     !/TIMER_COMPLETE|onGameRootTimeout/.test(source),
     'the bridge must keep waiting for Game until the user signs in');
@@ -218,4 +225,12 @@ test('the built bridge asset carries the call surface the manifest declares', fu
   });
   assert.ok(text.indexOf('Loader4.swf?ver=b') !== -1 && text.indexOf('game root available') !== -1,
     'the built bridge must start Loader4 and wait for its initialized Game root');
+  assert.ok(text.indexOf('SHOW_ALL') !== -1,
+    'the built bridge must carry the window-following scale mode');
+  const build = fs.readFileSync(path.join(PARITY, 'bridge/build.sh'), 'utf8');
+  assert.ok(/-default-size\s+960\s+550/.test(build),
+    'the bridge stage must match the game and Loader4 960x550 stage');
+  const windowConfig = fs.readFileSync(path.join(REPO, 'res/windows/config.js'), 'utf8');
+  assert.ok(/height:\s*550/.test(windowConfig),
+    'the plain game window must not crop the game\'s bottom 20 px');
 });

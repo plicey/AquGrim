@@ -18,11 +18,18 @@
   var controlsById = {};
   var tabsById = {};
   var state = null;
-  var multiline = false;
+  // MultiMode(): the reference's "Multiline Toggle" switches the six lists between
+  // SelectionMode.MultiExtended (the designer default) and SelectionMode.One.
+  var multiMode = true;
   // The ServerUse rows cbBoosts offered last (the objects the game sent), by option index.
   var boosts = [];
   // The Bots tab's tree: its root, count and one level of nodes (UpdateTree's own state).
   var botTreeState = null;
+  // The tab's own Location/Size table while its page is being built (tabs.js's Combat layout).
+  var currentLayout = null;
+  // Give the desktop designer's compact coordinates room for browser controls.
+  var layoutScale = 1.25;
+  var rowScale = 1.5;
   var list = document.getElementById('list');
   var tabHost = document.getElementById('tabHost');
 
@@ -40,6 +47,10 @@
     opened: 'Opened.',
     saved: 'Saved.',
     customizer: 'Command Customizer',
+    colors: 'Colors',
+    rgb: 'RGB',
+    randomColors: 'Random Colors based on RGB',
+    reloadColors: 'Reload Colors',
     fonts: 'Change Fonts',
     multiline: 'Multiline Toggle',
     tabpages: 'Toggle Tabpages',
@@ -87,10 +98,23 @@
     return node;
   }
 
+  /** A designer label's own \r\n line breaks, kept as real lines in the fixed layout. */
+  function appendText(host, text) {
+    String(text === undefined || text === null ? '' : text).split(/\r?\n/).forEach(function (line, at) {
+      if (at) host.appendChild(document.createElement('br'));
+      host.appendChild(document.createTextNode(line));
+    });
+  }
+
   function label(text, control, host) {
-    var wrap = el('label', control.kind === 'tick' || control.kind === 'radio' ? 'tick' : 'inline');
+    var tick = control && (control.type === 'checkbox' || control.type === 'radio');
+    var wrap = el('label', tick ? 'tick' : 'inline');
     wrap.appendChild(control);
-    if (text) wrap.appendChild(document.createTextNode(' ' + text));
+    if (text) {
+      var caption = el('span');
+      appendText(caption, text);
+      wrap.appendChild(caption);
+    }
     host.appendChild(wrap);
     return wrap;
   }
@@ -104,10 +128,34 @@
   // ---------------------------------------------------------------- the sheet
 
   function control(entry, groupName) {
+    var node = makeControl(entry, groupName);
+    var position = currentLayout && entry.id ? currentLayout.positions[entry.id] : null;
+    if (position) {
+      var container = ['group', 'split', 'panel', 'grid'].indexOf(entry.kind) !== -1;
+      var inset = entry.kind === 'group' ? 2 : container ? 0 : 3;
+      // Open gutters without enlarging controls or widening the page.
+      node.style.position = 'absolute';
+      node.style.left = position[0] * layoutScale + inset + 'px';
+      node.style.top = position[1] * rowScale + 'px';
+      node.style.width = position[2] * layoutScale - inset * 2 + 'px';
+      var stretch = container || (['text', 'list', 'tree', 'rtf'].indexOf(entry.kind) !== -1 && position[3] > 40);
+      var bottomInset = entry.kind === 'group' || (!container && stretch) ? 6 : 0;
+      node.style.height = position[3] * (stretch ? rowScale : layoutScale) - bottomInset + 'px';
+      // The reference's group children are positioned from the group's client area.
+      if (entry.kind === 'group') node.style.padding = '0';
+      if ((entry.kind === 'tick' || entry.kind === 'radio') && position[3] > 24) {
+        node.classList.add('wrap-text');
+      }
+    }
+    return node;
+  }
+
+  function makeControl(entry, groupName) {
     var node;
     switch (entry.kind) {
     case 'group':
       node = el('fieldset', 'group');
+      if (entry.id) node.id = entry.id;
       node.appendChild(el('legend', null, entry.text || ''));
       (entry.children || []).forEach(function (child) {
         node.appendChild(control(child, entry.id));
@@ -117,6 +165,7 @@
     case 'panel':
     case 'grid':
       node = el('div', entry.kind);
+      if (entry.id) node.id = entry.id;
       (entry.children || []).forEach(function (child) {
         node.appendChild(control(child, groupName));
       });
@@ -124,6 +173,7 @@
     case 'button':
       node = el('button', 'sheet-button', entry.text || entry.id);
       node.id = entry.id;
+      if (entry.title) node.title = entry.title;
       node.addEventListener('click', function (event) {
         press(entry.id, { alt: event.altKey, ctrl: event.ctrlKey || event.metaKey });
       });
@@ -136,13 +186,17 @@
       if (entry.kind === 'radio') node.name = groupName || entry.id;
       node.id = entry.id;
       node.checked = entry.checked === true;
+      if (entry.title) node.title = entry.title;
       restore(node, remembered[entry.id]);
-      return label(entry.text, node, el('span'));
+      var wrapper = label(entry.text, node, el('span'));
+      if (entry.title) wrapper.title = entry.title;
+      return wrapper;
     case 'text':
-      node = el('input', 'sheet-text');
-      node.type = 'text';
+      node = entry.multiline ? el('textarea', 'sheet-text') : el('input', 'sheet-text');
+      if (!entry.multiline) node.type = 'text';
       node.id = entry.id;
       node.placeholder = entry.text || '';
+      if (entry.readonly) node.readOnly = true;
       restore(node, remembered[entry.id]);
       return node;
     case 'number':
@@ -151,6 +205,8 @@
       node.id = entry.id;
       // The designer's own spinner values (BotManager.Designer.cs).
       if (entry.value !== undefined) node.value = String(entry.value);
+      if (entry.min !== undefined) node.min = String(entry.min);
+      if (entry.max !== undefined) node.max = String(entry.max);
       restore(node, remembered[entry.id]);
       return node;
     case 'select':
@@ -166,11 +222,14 @@
       restore(node, remembered[entry.id]);
       return node;
     case 'label':
-      return el('span', 'sheet-label', entry.text || '');
+      node = el('span', 'sheet-label');
+      appendText(node, entry.text || '');
+      if (entry.id) node.id = entry.id;
+      return node;
     case 'list':
       node = el('select', 'sheet-list');
       node.id = entry.id;
-      node.multiple = true;
+      node.multiple = entry.single !== true;
       node.size = 5;
       (entry.options || []).forEach(function (option) {
         var item = el('option', null, option);
@@ -179,7 +238,13 @@
       });
       return node;
     case 'rtf':
-      node = el('div', 'sheet-rtf', entry.text || '');
+      if (entry.editable) {
+        node = el('textarea', 'sheet-rtf test-rtf');
+        node.placeholder = entry.text || '';
+      } else {
+        node = el('div', 'sheet-rtf' + (entry.id === 'rtbInfo' ? ' info-pane' : ''));
+        if (entry.text) node.textContent = entry.text;
+      }
       node.id = entry.id;
       return node;
     case 'tree':
@@ -206,11 +271,24 @@
       tabsById[tab.id] = tab;
       var button = el('button', 'tab', tab.title);
       button.id = 'tab-' + tab.id;
+      if (tab.tooltip) button.title = tab.tooltip;
       button.addEventListener('click', function () { showTab(tab.id); });
       bar.appendChild(button);
     });
     // The left column's controls carry the reference's ids as well.
     index(sheet.column);
+    // The left column is static markup, so its list selector has to be filled from the sheet.
+    var selector = document.getElementById('cbLists');
+    var selection = controlsById.cbLists;
+    if (selector && selection && selection.options) {
+      selector.textContent = '';
+      selection.options.forEach(function (name) {
+        var option = el('option', null, name);
+        option.value = name;
+        selector.appendChild(option);
+      });
+      selector.value = 'Commands';
+    }
     // The constructor opens the Bots tab: `mainTabControl.SelectedIndex = 9`.
     showTab(((sheet.tabs || [])[9] || (sheet.tabs || [])[0] || {}).id);
   }
@@ -223,7 +301,15 @@
     });
     tabHost.textContent = '';
     var page = el('div', 'tabpage');
+    currentLayout = tab.layout || null;
+    if (currentLayout) {
+      page.classList.add('fixed-layout');
+      page.style.position = 'relative';
+      page.style.width = currentLayout.width * layoutScale + 'px';
+      page.style.height = currentLayout.height * rowScale + 'px';
+    }
     (tab.controls || []).forEach(function (entry) { page.appendChild(control(entry)); });
+    currentLayout = null;
     tabHost.appendChild(page);
     index(tab.controls);
     applyConfiguration();
@@ -456,7 +542,21 @@
     setEnabled('numQuestListItem', checked('chkQuestListItem'));
     setEnabled('chkAFK', checked('chkRelog'));
     setEnabled('cmbSpecials', !checked('chkSpecial'));
+    // chkWalkSpeed_CheckedChanged and chkSaveProgress_CheckedChanged disable their own numbers.
+    setEnabled('numWalkSpeed', !checked('chkWalkSpeed'));
+    setEnabled('numSaveProgress', !checked('chkSaveProgress'));
     var busy = running();
+    // chkEnableBot_CheckedChanged and toggleAntiMod: the start disables the anti-mod group,
+    // the quest delay, the bot delay and the zone tick; anti-mod off disables its two actions.
+    var anti = checked('chkAntiMod');
+    setEnabled('chkAntiMod', !busy);
+    setEnabled('chkAMLogout', !busy && !anti);
+    setEnabled('chkAMStopBot', !busy && !anti);
+    setEnabled('chkReloginCompleteQuest', !busy);
+    setEnabled('numQuestDelay', !busy);
+    setEnabled('numBotDelay', !busy);
+    setEnabled('chkSpecial', !busy && !!value('cmbSpecials'));
+    setEnabled('chkHidePlayers', !busy || !anti);
     ['btnUp', 'btnDown', 'btnClear', 'btnRemove'].forEach(function (id) { setEnabled(id, !busy); });
   }
 
@@ -514,6 +614,14 @@
     if (next.clipboard !== undefined) api.clipboardWrite(next.clipboard);
     drawList();
     applyConfiguration();
+    if (next.enabled !== undefined) {
+      var special = document.getElementById('chkSpecial');
+      if (special) special.checked = next.enabled === true && !!value('cmbSpecials');
+    }
+    if (next.optionsWalkSpeed !== undefined) {
+      var walk = document.getElementById('chkWalkSpeed');
+      if (walk) walk.checked = next.optionsWalkSpeed === true;
+    }
     syncRules();
     if (next.error) setStatus(next.error, true);
     else if (next.path) setStatus(messages.opened + ' ' + next.path, false);
@@ -523,6 +631,35 @@
   // ---------------------------------------------------------------- buttons
 
   function press(id, modifiers) {
+    // ">" is the local half of the Map tab's cell/pad pair; it needs no game read.
+    if (id === 'button2') {
+      setValue('txtCell', value('txtJoinCell'));
+      setValue('txtPad', value('txtJoinPad'));
+      setStatus('Copied join cell and pad to Cell and Pad.', false);
+      return Promise.resolve(null);
+    }
+    // Add Skill Set writes a label into the Skills list, not the Commands list the page is
+    // usually showing. Say where it went so the reference's split workflow is not a silent click.
+    if (id === 'btnAddSkillSet' || id === 'btnUseSkillSet') {
+      var setName = value('txtSkillSet').trim();
+      if (!setName) {
+        setStatus('Type a skill set name first.', true);
+        return Promise.resolve(null);
+      }
+      if (id === 'btnAddSkillSet') {
+        return api.addList(id, valuesFromSheet(), modifiers).then(function (next) {
+          applyState(next);
+          setStatus('Added [' + setName.toUpperCase() +
+            '] to Skills. Add the skills below that label, then press Use Skill Set.', false);
+          return next;
+        });
+      }
+      return api.add(id, valuesFromSheet(), modifiers).then(function (next) {
+        applyState(next);
+        setStatus('Added Skill Set: ' + setName.toUpperCase() + ' to Commands.', false);
+        return next;
+      });
+    }
     if ((sheet.commandButtons || []).indexOf(id) !== -1) {
       return api.add(id, valuesFromSheet(), modifiers).then(applyState);
     }
@@ -538,8 +675,12 @@
           setStatus((result && result.error) || 'the game did not answer', true);
           return;
         }
+        if (result.state) applyState(result.state);
         if (id === 'cbBoosts') { fillBoosts(result.boosts || []); return; }
-        fillFromGame(id, result.values, modifiers);
+        // A control that acts without filling boxes (map item, access level, alignment, quest
+        // whitelist) has no values; it must not be sent through the read-fill path.
+        if (result.values) fillFromGame(id, result.values, modifiers);
+        if (result.message) setStatus(result.message, false);
       });
     }
     switch (id) {
@@ -559,6 +700,7 @@
     case 'btnStatementAdd': return api.add('btnStatementAdd', valuesFromSheet(), {}).then(applyState);
     case 'btnSetBotsDir': return api.chooseDirectory().then(function (result) {
       botTreeState = result;
+      if (result && result.directory) setValue('txtSaved', result.directory);
       applyState(result);
       drawTree();
       return result;
@@ -620,12 +762,14 @@
   }
 
   function loadCommand() {
-    return api.load(null).then(function (result) {
-      if (!result || !result.path || result.canceled) return applyState(result);
-      return api.add('btnLoadCmd', Object.assign(valuesFromSheet(), {
-        loadFileName: result.path.replace(/^.*[\\/]/, ''),
-        loadFilePath: result.path
-      }), {}).then(applyState);
+    // btnLoadCmd_Click: an OpenFileDialog titled "Select bot to load", then a CmdLoadBot whose
+    // path is relative to the bots directory ("Bots\\..." in the reference).
+    return api.pickBot().then(function (result) {
+      if (!result || result.canceled || !result.path) return;
+      return api.add('btnLoadCmd', {
+        loadFileName: result.fileName,
+        loadFilePath: result.filePath
+      }, {}).then(applyState);
     });
   }
 
@@ -670,6 +814,8 @@
   function refreshTree() {
     return api.tree([], value('txtSaved')).then(function (result) {
       botTreeState = result;
+      // tabControl1_Selected fills txtSaved with the configured Bots directory.
+      if (result && result.directory && !value('txtSaved')) setValue('txtSaved', result.directory);
       drawTree();
       applyConfiguration();
       return result;
@@ -747,7 +893,63 @@
 
   function drawInfo() {
     var info = document.getElementById('rtbInfo');
-    if (info && state && state.description) info.textContent = String(state.description);
+    if (!info) return;
+    var description = state && state.description ? String(state.description) : '';
+    drawInfoText(info, description ? richText(description) : INFO_PLACEHOLDER);
+  }
+
+  var INFO_PLACEHOLDER = 'This is where information about a bot will be shown in RichTextFormat';
+
+  /** rtbInfo's own links: WinForms raises LinkClicked and Process.Start opens the target. */
+  function drawInfoText(node, value) {
+    var text = String(value || '');
+    var pattern = /\b(?:https?:\/\/|mailto:)[^\s<>"']+/gi;
+    var from = 0;
+    var match;
+    node.textContent = '';
+    while ((match = pattern.exec(text)) !== null) {
+      var href = match[0].replace(/[.,;:!?)\]]+$/, '');
+      if (!href) continue;
+      if (match.index > from) node.appendChild(document.createTextNode(text.slice(from, match.index)));
+      var link = el('a', 'info-link', href);
+      link.href = '#';
+      link.addEventListener('click', function (event) {
+        event.preventDefault();
+        api.openLink(this.textContent);
+      });
+      node.appendChild(link);
+      from = match.index + href.length;
+    }
+    if (from < text.length) node.appendChild(document.createTextNode(text.slice(from)));
+  }
+
+  // A small RTF-to-text view. The reference hands rtbInfo.Rtf to WinForms, which Chromium does
+  // not have; stripping the control words gives the same readable description and lets the Test
+  // here box preview RTF without a converter dependency.
+  function richText(value) {
+    var text = String(value || '');
+    if (!/^\s*\{\\rtf/i.test(text)) return text;
+    return text
+      // {\field{\*\fldinst HYPERLINK "url"}{\fldrslt label}} displays as its label; a label
+      // that is not itself the URL keeps the target beside it, which is the one thing a plain
+      // text stand-in can still make clickable.
+      .replace(/\{\\field\{\\\*\\fldinst\s+HYPERLINK\s+"([^"]+)"\}\s*\{\\fldrslt\s*([^}]*)\}\}/gi,
+        function (_match, url, label) {
+          var shown = String(label || '').trim();
+          return shown && shown !== url ? shown + ' (' + url + ')' : url;
+        })
+      .replace(/\\u(-?\d+)\??/g, function (_match, code) {
+        var n = Number(code);
+        return String.fromCharCode((n + 65536) % 65536);
+      })
+      .replace(/\\par[d]?\b/g, '\n')
+      .replace(/\\line\b/g, '\n')
+      .replace(/\\tab\b/g, '\t')
+      .replace(/\\'[0-9a-f]{2}/gi, '')
+      .replace(/\\[a-zA-Z]+-?\d* ?/g, '')
+      .replace(/[{}]/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   // ---------------------------------------------------------------- dialogs
@@ -908,8 +1110,8 @@
   }
 
   function toggleMultiline() {
-    multiline = !multiline;
-    list.classList.toggle('multiline', multiline);
+    multiMode = !multiMode;
+    setStatus('Multi-select ' + (multiMode ? 'on' : 'off'), false);
   }
 
   function toggleTabpages() {
@@ -920,7 +1122,8 @@
   /** CommandColorForm: a name to colour, a colour, a centring tick and the size slider. */
   function openCustomizer() {
     var names = (state && state.style && state.style.customisable) || [];
-    var body = openModal(messages.customizer);
+    // CommandColorForm's caption is "Colors"; the menu item is "Command Customizer".
+    var body = openModal(messages.colors);
     var picker = el('select', 'sheet-select');
     names.forEach(function (name) {
       var option = el('option', null, name);
@@ -948,6 +1151,32 @@
     slider.addEventListener('input', function () { sizeLabel.textContent = messages.size + ': ' + slider.value; });
     body.appendChild(slider);
     body.appendChild(sizeLabel);
+
+    var rgb = el('input', 'sheet-text');
+    rgb.value = '255, 255, 255';
+    var rgbLabel = el('label', 'inline');
+    rgbLabel.appendChild(document.createTextNode(messages.rgb + ' '));
+    rgbLabel.appendChild(rgb);
+    body.appendChild(rgbLabel);
+    var random = el('button', 'sheet-button', messages.randomColors);
+    random.type = 'button';
+    random.addEventListener('click', function () {
+      var parts = String(rgb.value || '').split(',').map(function (part) { return Number(part); });
+      var r = isFinite(parts[0]) ? parts[0] : 255;
+      var g = isFinite(parts[1]) ? parts[1] : 255;
+      var b = isFinite(parts[2]) ? parts[2] : 255;
+      api.style({ action: 'random', r: r, g: g, b: b }).then(function (next) {
+        applyState(next);
+        sync();
+      });
+    });
+    body.appendChild(random);
+    var reload = el('button', 'sheet-button', messages.reloadColors);
+    reload.type = 'button';
+    reload.addEventListener('click', function () {
+      api.style({ action: 'reload' }).then(function (next) { applyState(next); sync(); });
+    });
+    body.appendChild(reload);
 
     function sync() {
       colour.value = '#' + hexOf(currentColour(picker.value));
@@ -987,7 +1216,7 @@
       var index = Number(row.dataset.index);
       var current = (state && state.selection) || [];
       var next;
-      if (running()) {
+      if (running() || !multiMode) {
         // selectionMode(SelectionMode.One) while the bot runs: one row, never a block.
         next = [index];
       } else if (event.shiftKey && current.length) {
@@ -1050,6 +1279,14 @@
   function wireChrome() {
     document.getElementById('open').addEventListener('click', function () { api.load(null).then(applyState); });
     document.getElementById('save').addEventListener('click', function () { save(true); });
+    // The left column is static markup, not a generated sheet control, so these buttons need
+    // their own click wiring. Without it Remove, Clear, Up, Down and Find were dead controls.
+    ['btnUp', 'btnDown', 'btnClear', 'btnRemove', 'btnSearchCmd'].forEach(function (id) {
+      var node = document.getElementById(id);
+      if (!node || node.dataset.wired) return;
+      node.dataset.wired = '1';
+      node.addEventListener('click', function () { press(id); });
+    });
     document.getElementById('menu').addEventListener('click', function (event) {
       event.stopPropagation();
       openMenu();
@@ -1083,6 +1320,56 @@
         api.setting(sheet.numbers[id], Number(node.value)).then(applyState);
       });
     });
+    // The Client tab's controls act on the live game or the editor, not on a Configuration key.
+    var special = {
+      chkInventOnStart: 'InventOnStart',
+      chkWalkSpeed: 'WalkSpeedOn',
+      chkSaveProgress: 'SaveProgress',
+      chkAMStopBot: 'AntiModStopBot',
+      chkAMLogout: 'AntiModLogout',
+      chkAntiMod: 'AntiMod',
+      chkGender: 'GenderSwap',
+      chkCorrection: 'AutoCorrect',
+      chkMapSpoofer: 'MapSpoofer',
+      chkToggleMute: 'ToggleMute'
+    };
+    Object.keys(special).forEach(function (id) {
+      var node = document.getElementById(id);
+      if (!node || node.dataset.wired) return;
+      node.dataset.wired = '1';
+      node.addEventListener('change', function () {
+        var answer;
+        if (id === 'chkMapSpoofer') {
+          answer = api.setting(special[id], { on: node.checked, name: value('tbMapSpoof') });
+        } else if (id === 'chkWalkSpeed') {
+          answer = api.setting(special[id], { on: node.checked, value: Number(value('numWalkSpeed')) });
+        } else {
+          answer = api.setting(special[id], node.checked);
+        }
+        answer.then(applyState);
+      });
+    });
+    var saveEvery = document.getElementById('numSaveProgress');
+    if (saveEvery && !saveEvery.dataset.wired) {
+      saveEvery.dataset.wired = '1';
+      saveEvery.addEventListener('change', function () {
+        api.setting('SaveProgressMinutes', Number(saveEvery.value)).then(applyState);
+      });
+    }
+    var questDelay = document.getElementById('numQuestDelay');
+    if (questDelay && !questDelay.dataset.wired) {
+      questDelay.dataset.wired = '1';
+      questDelay.addEventListener('change', function () {
+        api.setting('QuestDelay', Number(questDelay.value));
+      });
+    }
+    var spoofName = document.getElementById('tbMapSpoof');
+    if (spoofName && !spoofName.dataset.wired) {
+      spoofName.dataset.wired = '1';
+      spoofName.addEventListener('change', function () {
+        api.setting('MapSpoofName', spoofName.value);
+      });
+    }
     var merge = document.getElementById('chkMerge');
     if (merge && !merge.dataset.wired) {
       merge.dataset.wired = '1';
@@ -1146,6 +1433,13 @@
         var box = document.getElementById('txtLog');
         box.value = (box.value ? box.value + ' ' : '') + chosen.value;
       });
+      logText.addEventListener('keydown', function (event) {
+        if (!(event.ctrlKey || event.metaKey) || String(event.key).toLowerCase() !== 'c') return;
+        var chosen = logText.options[logText.selectedIndex];
+        if (!chosen) return;
+        event.preventDefault();
+        api.clipboardWrite(chosen.value);
+      });
     }
     ['txtAuthor', 'txtDescription'].forEach(function (id) {
       var node = document.getElementById(id);
@@ -1157,6 +1451,14 @@
     wireStatements();
     wireBoosts();
     wireSaved();
+    var testInfo = document.getElementById('richTextBox2');
+    if (testInfo && !testInfo.dataset.wired) {
+      testInfo.dataset.wired = '1';
+      testInfo.addEventListener('input', function () {
+        var info = document.getElementById('rtbInfo');
+        if (info) drawInfoText(info, richText(testInfo.value));
+      });
+    }
     var special = document.getElementById('chkSpecial');
     if (special && !special.dataset.wired) {
       special.dataset.wired = '1';

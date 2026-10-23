@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 
 const platform = require('../../res/platform');
-const { createChrome, HEIGHT, PADS, DEFAULT_SKILLS } = require('../../plugins/grimlite-parity/features/chrome/chrome.js');
+const { createChrome, createFromHost, HEIGHT, PADS, DEFAULT_SKILLS } = require('../../plugins/grimlite-parity/features/chrome/chrome.js');
 const skillPresets = require('../../plugins/grimlite-parity/features/chrome/skill-presets.js');
 const engine = require('../../plugins/grimlite-parity/bot/engine.js');
 const catalog = require('../../plugins/grimlite-parity/bot/command-catalog.js');
@@ -109,6 +109,7 @@ function harness(options) {
     windowKey: function () { return 'game-window-1'; },
     bot: function () { return bot.document; },
     presets: options.presets,
+    openAutoSkillSet: options.openAutoSkillSet,
     messages: options.messages || {},
     log: function () {},
     sleep: function () { return Promise.resolve(); },
@@ -176,14 +177,36 @@ test('the plugin registers a 27 px strip holding the reference controls, in its 
   assert.strictEqual(HEIGHT, 27);
   const controls = declared.controls();
   assert.deepStrictEqual(controls.map(function (one) { return one.id; }),
-    ['startBot', 'autoAttack', 'pad', 'cell', 'refreshCell', 'bank']);
+    ['startBot', 'autoAttack', 'autoSkillSet', 'pad', 'cell', 'refreshCell', 'bank']);
   assert.deepStrictEqual(controls.map(function (one) { return one.label; }),
-    ['Start Bot', 'Auto Attack', '', '', 'x', 'Bank']);
+    ['Start Bot', 'Auto Attack', 'Skill Set', '', '', 'x', 'Bank']);
   assert.deepStrictEqual(controls.map(function (one) { return one.kind; }),
-    ['check', 'check', 'select', 'select', 'button', 'button']);
+    ['check', 'check', 'button', 'select', 'select', 'button', 'button']);
   assert.ok(declared.menuLabel(), 'the game menu entry needs a label');
   assert.strictEqual(typeof declared.state, 'function');
   assert.strictEqual(typeof declared.action, 'function');
+});
+
+test('the toolbar Skill Set button opens the Auto Attack-only editor', async () => {
+  let opened = 0;
+  const h = harness({
+    openAutoSkillSet: function () { opened += 1; return { ok: true, error: null }; }
+  });
+  const answer = await h.chrome.action('autoSkillSet', {});
+  assert.strictEqual(answer.ok, true);
+  assert.strictEqual(opened, 1);
+});
+
+test('the host wiring keeps the toolbar Skill Set callback', async () => {
+  let opened = 0;
+  const chrome = createFromHost({ log: function () {} }, {
+    runtime: null,
+    session: null,
+    openAutoSkillSet: function () { opened += 1; return { ok: true, error: null }; }
+  });
+  const answer = await chrome.action('autoSkillSet', {});
+  assert.strictEqual(answer.ok, true);
+  assert.strictEqual(opened, 1);
 });
 
 test('the pad picker is the reference own list, in its own order', () => {
@@ -336,9 +359,8 @@ test('Auto Attack waits out a preset skill\'s cooldown only when the preset says
     windowKey: function () { return 'game-window-1'; },
     bot: function () { return EMPTY_BOT; },
     presets: {
-      reload: function () {},
-      forClass: function () {
-        return [{ index: '1', safe: false, wait: true }];
+      draftFor: function () {
+        return { skills: [{ index: '1', safe: false, wait: true }] };
       }
     },
     sleep: function (ms) { slept.push(ms); return Promise.resolve(); },
@@ -440,14 +462,14 @@ test('ClientConfig SS.CLASS presets parse semicolons/commas, wait and the two sa
   assert.strictEqual(config.ARCHPALADIN[1].op, '<');
 });
 
-test('Auto Attack runs the matching class preset and skips a safe skill whose condition is false', async () => {
+test('Auto Attack runs the loaded draft and skips a safe skill whose condition is false', async () => {
   const preset = skillPresets.parsePreset('3:SH>60;2:SM<30');
   const h = harness({
     answers: { hasTarget: true, className: 'Void Highlord', health: 20, healthMax: 100, mana: 20 },
-    presets: { reload: function () {}, forClass: function () { return preset; } }
+    presets: { draftFor: function () { return { skills: preset }; } }
   });
   await h.chrome.action('autoAttack', { checked: true });
-  assert.deepStrictEqual(h.chrome.rotation(), preset, 'the matched class preset is the rotation');
+  assert.deepStrictEqual(h.chrome.rotation(), preset, 'the loaded draft is the rotation');
   await h.chrome.tick();
   assert.strictEqual(h.count('useSkill'), 0, '20% HP does not satisfy SH>60');
   await h.chrome.tick();
@@ -455,10 +477,10 @@ test('Auto Attack runs the matching class preset and skips a safe skill whose co
   h.chrome.stop();
 });
 
-test('a preset with no match falls back to skills 1-4', async () => {
+test('no loaded draft falls back to skills 1-4', async () => {
   const h = harness({
     answers: { hasTarget: true, className: 'No Class' },
-    presets: { reload: function () {}, forClass: function () { return []; } }
+    presets: { draftFor: function () { return null; } }
   });
   await h.chrome.action('autoAttack', { checked: true });
   assert.deepStrictEqual(h.chrome.rotation().map(function (one) { return one.index; }),
@@ -466,21 +488,59 @@ test('a preset with no match falls back to skills 1-4', async () => {
   h.chrome.stop();
 });
 
-test('the preset source reads ClientConfig.cfg, with the store key winning over it', () => {
+test('a loaded preset applies immediately while edits wait for the next enable', async () => {
+  const draft = { skills: skillPresets.parsePreset('1;2') };
+  const h = harness({
+    answers: { hasTarget: true, className: 'Void Highlord' },
+    presets: { draftFor: function () { return draft; } }
+  });
+  await h.chrome.action('autoAttack', { checked: true });
+  assert.deepStrictEqual(h.chrome.rotation().map(function (one) { return one.index; }), ['1', '2']);
+
+  h.chrome.useSkillText('3;4');
+  assert.deepStrictEqual(h.chrome.rotation().map(function (one) { return one.index; }), ['3', '4'],
+    'loading a preset changes the live rotation without a toggle');
+
+  draft.skills = skillPresets.parsePreset('4;3');
+  assert.deepStrictEqual(h.chrome.rotation().map(function (one) { return one.index; }), ['3', '4'],
+    'editing the draft does not change the rotation already running');
+
+  await h.chrome.action('autoAttack', { checked: false });
+  await h.chrome.action('autoAttack', { checked: true });
+  assert.deepStrictEqual(h.chrome.rotation().map(function (one) { return one.index; }), ['4', '3'],
+    're-enabling reads the edited draft');
+  h.chrome.stop();
+});
+
+test('the preset source keeps named class presets and reads ClientConfig as a named source', () => {
+  let data = { autoAttackPresets: { 'VOID HIGHLORD': { Boss: '4:SH>60;1' } } };
   const source = skillPresets.createPresetSource({
     files: ['/app/ClientConfig.cfg'],
     readFile: function () { return 'SS.VOID HIGHLORD=1;2\nSS.SHAMAN=1;2:SM>30'; },
     store: {
-      read: function () {
-        return { autoAttackPresets: { 'VOID HIGHLORD': '4:SH>60;1' } };
-      }
+      read: function () { return JSON.parse(JSON.stringify(data)); },
+      write: function (next) { data = JSON.parse(JSON.stringify(next)); }
     }
   });
-  assert.deepStrictEqual(source.forClass('void highlord').map(function (one) { return one.index; }),
-    ['4', '1'], 'the user\'s store edit is the one Auto Attack runs');
-  assert.deepStrictEqual(source.forClass('Shaman').map(function (one) { return one.index; }),
-    ['1', '2'], 'classes only in the file still work');
-  assert.deepStrictEqual(source.forClass('Nobody'), []);
+  assert.deepStrictEqual(source.presetList('void highlord').map(function (one) { return one.name; }),
+    ['Boss', 'ClientConfig']);
+  assert.deepStrictEqual(source.presetList('Shaman').map(function (one) { return one.name; }),
+    ['ClientConfig']);
+  assert.deepStrictEqual(source.presetList('Nobody'), []);
+
+  source.savePreset('Void Highlord', 'Farm', '2;3');
+  assert.deepStrictEqual(data.autoAttackPresets['VOID HIGHLORD'], {
+    Boss: '4:SH>60;1',
+    Farm: '2;3'
+  }, 'presets are stored by class and name');
+  source.savePreset('Void Highlord', 'boss', '3;4');
+  assert.strictEqual(data.autoAttackPresets['VOID HIGHLORD'].Boss, '3;4',
+    'a name differing only by case updates the existing preset');
+
+  const loaded = source.loadPreset('Void Highlord', 'Farm');
+  assert.deepStrictEqual(loaded.skills.map(function (one) { return one.index; }), ['2', '3']);
+  assert.strictEqual(source.draftFor('Void Highlord').name, 'Farm');
+  assert.strictEqual(source.draftFor('Shaman'), null);
 });
 
 // ------------------------------------------------------------------- the cell and pad pickers
@@ -602,12 +662,12 @@ test('every game read the strip makes is a loader name the surface answers', () 
     'the strip reads through the session, not through the raw loader surface');
 });
 
-test('the strip own controls are the six the reference draws, and nothing else', () => {
+test('the strip keeps the reference controls and adds the Auto Attack skill editor', () => {
   const h = harness();
   const controls = h.chrome.controls();
-  assert.strictEqual(controls.length, 6);
+  assert.strictEqual(controls.length, 7);
   assert.deepStrictEqual(controls.map(function (one) { return one.id; }),
-    ['startBot', 'autoAttack', 'pad', 'cell', 'refreshCell', 'bank']);
+    ['startBot', 'autoAttack', 'autoSkillSet', 'pad', 'cell', 'refreshCell', 'bank']);
   // A label from the locale catalog wins, so a translated build shows its own words.
   const localised = createChrome({
     messages: { startBot: 'Iniciar Bot', bank: 'Banco' },
@@ -615,5 +675,33 @@ test('the strip own controls are the six the reference draws, and nothing else',
   });
   const labels = localised.controls().map(function (one) { return one.label; });
   assert.strictEqual(labels[0], 'Iniciar Bot');
-  assert.strictEqual(labels[5], 'Banco');
+  assert.strictEqual(labels[6], 'Banco');
+});
+
+test('Auto Attack enable restores remembered named presets for the detected class', async () => {
+  let data = { autoAttackPresets: {
+    SHAMAN: { Farm: '2;3' }, 'VOID HIGHLORD': { Boss: '4;1' }
+  } };
+  const store = {
+    read: function () { return JSON.parse(JSON.stringify(data)); },
+    write: function (next) { data = JSON.parse(JSON.stringify(next)); }
+  };
+  const selected = skillPresets.createPresetSource({ store: store, files: [] });
+  selected.loadPreset('Shaman', 'Farm');
+  selected.loadPreset('Void Highlord', 'Boss');
+  const answers = { className: ' shaman ' };
+  const h = harness({ answers: answers,
+    presets: skillPresets.createPresetSource({ store: store, files: [] }) });
+  try {
+    await h.chrome.action('autoAttack', { checked: true });
+    assert.deepStrictEqual(h.chrome.rotation().map(function (one) { return one.index; }), ['2', '3']);
+    await h.chrome.action('autoAttack', { checked: false });
+    answers.className = 'Void Highlord';
+    await h.chrome.action('autoAttack', { checked: true });
+    assert.deepStrictEqual(h.chrome.rotation().map(function (one) { return one.index; }), ['4', '1']);
+    await h.chrome.action('autoAttack', { checked: false });
+    answers.className = 'Nobody';
+    await h.chrome.action('autoAttack', { checked: true });
+    assert.deepStrictEqual(h.chrome.rotation().map(function (one) { return one.index; }), ['1', '2', '3', '4']);
+  } finally { h.chrome.stop(); }
 });

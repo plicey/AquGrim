@@ -548,3 +548,27 @@ test('the refusals that remain are not the six', () => {
     assert.deepStrictEqual(LIVE_OBJECT_CALLS.filter((name) => refused.indexOf(name) !== -1), [],
         'these used to refuse and must not any more');
 });
+
+test('SetFPS writes the shared stage and HideConnMC hides the game connection dialog', () => {
+    const made = [];
+    const game = surface.createLoaderSurface(function (callback, args) {
+        made.push({ callback: callback, args: args });
+        return Promise.resolve('ok');
+    });
+    return Promise.all([game.call('SetFPS', ['60']), game.call('HideConnMC', [])]).then(() => {
+        assert.deepStrictEqual(made[0].args, ['stage.frameRate', 60]);
+        assert.deepStrictEqual(made[1], { callback: 'callGameFunction0', args: ['mcConnDetail.hideConn'] });
+    });
+});
+
+test('GetAccessLevel matches the loader\'s dataLeaf username, not the tree username', () => {
+    const bridge = fakeBridge({
+        'world.avatars': {
+            1: { uid: '7', dataLeaf: { strUsername: 'ModName' }, objData: { intAccessLevel: 60 } },
+            2: { uid: '8', dataLeaf: { strUsername: 'Player' }, objData: { intAccessLevel: 0 } }
+        }
+    }, {});
+    return access(bridge).call('GetAccessLevel', ['modname']).then((level) => {
+        assert.strictEqual(level, 60);
+    });
+});

@@ -7,6 +7,7 @@ const PLATFORM_OPTION_KEYS = {
     localOrigin: true,
     recordingFormat: true,
     renderMode: true,
+    gameQuality: true,
     ruffleUpdateChannel: true,
     ruffleAutoUpdate: true,
     ruffleAutoUpdateMigrated: true,

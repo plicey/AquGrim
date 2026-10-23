@@ -21,7 +21,6 @@ package {
     import flash.display.Loader;
     import flash.display.Sprite;
     import flash.display.Stage;
-    import flash.display.StageAlign;
     import flash.display.StageScaleMode;
     import flash.events.Event;
     import flash.events.IOErrorEvent;
@@ -52,8 +51,10 @@ package {
             Security.allowInsecureDomain('*');
 
             domain = ApplicationDomain.currentDomain;
-            stage.scaleMode = StageScaleMode.NO_SCALE;
-            stage.align = StageAlign.TOP_LEFT;
+            // The reference's AxShockwaveFlash defaults to ShowAll, so the game follows the
+            // window's size instead of staying fixed at its authored stage size. Leave align at
+            // its default: with ShowAll, that centers the letterboxed stage in the window.
+            stage.scaleMode = StageScaleMode.SHOW_ALL;
 
             registerCallSurface();
 
@@ -99,6 +100,7 @@ package {
             addCallback('ForceUseSkill', aqForceUseSkill);
             addCallback('CancelTargetSelf', aqCancelTargetSelf);
             addCallback('SetTargetPvP', aqSetTargetPvP);
+            addCallback('RejectDrop', aqRejectDrop);
         }
 
         private function addCallback(name:String, fn:Function):void {
@@ -472,6 +474,40 @@ package {
                 out = jsonError(e);
             }
             return out;
+        }
+
+        /** World.as RejectDrop: false means the relay beat the stock drop UI to this call. */
+        private function aqRejectDrop(name:String, id:String):String {
+            try {
+                var w:Object = world();
+                if (game.litePreference.data.bCustomDrops) {
+                    var ui:Object = game.cDropsUI;
+                    if (ui == null || w.invTree[id] == null) return 'false';
+                    for (var j:int = 0; j < ui.invTree.length; j++) {
+                        if (String(ui.invTree[j].ItemID) == id) {
+                            ui.onBtNo(w.invTree[id]);
+                            return 'true';
+                        }
+                    }
+                    return 'false';
+                }
+                var stack:Object = game.ui.dropStack;
+                var removed:Boolean = false;
+                // Walk backwards so removing adjacent matches cannot skip a child.
+                for (var i:int = stack.numChildren - 1; i >= 0; i--) {
+                    var clip:Object = stack.getChildAt(i);
+                    if (getQualifiedClassName(clip) == 'DFrame2MC' &&
+                        !clip.isClosing && clip.fData != null && String(clip.fData.ItemID) == id) {
+                        stack.removeChild(clip);
+                        removed = true;
+                    }
+                }
+                if (removed) game.cleanDropStack();
+                return removed ? 'true' : 'false';
+            } catch (e:Error) {
+                return jsonError(e);
+            }
+            return 'false';
         }
 
         // ---------------------------------------------------------------- reading and writing

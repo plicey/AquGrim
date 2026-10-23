@@ -1,12 +1,4 @@
-/* Keep keyboard focus consistent across AquaStar's native HTML windows. */
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-a:focus-visible,
-summary:focus-visible,
-[role="button"]:focus-visible,
-[tabindex]:focus-visible,
+/* No focus ring: dense client windows use a background tint for keyboard focus instead. */
 button:focus,
 input:focus,
 select:focus,
@@ -15,8 +7,21 @@ a:focus,
 summary:focus,
 [role="button"]:focus,
 [tabindex]:focus {
-  outline: 2px solid #4da3ff;
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: none;
+  background-color: #2f2f2f;
 }
 
 /* Chromium's native scrollbar otherwise stays bright against AquaStar's dark

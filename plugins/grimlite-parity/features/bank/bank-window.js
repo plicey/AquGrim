@@ -30,7 +30,7 @@ function createBankWindow(deps) {
         if (channel === 'bankMessages') {
             return Promise.resolve(messages());
         }
-        throw new Error('[AquaStar:grimlite-parity] unknown bank channel "' + channel + '"');
+        throw new Error('[AquGrim:grimlite-parity] unknown bank channel "' + channel + '"');
     }
 
     // A window must never receive a rejection it cannot show: the game being unreachable is a

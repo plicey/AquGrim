@@ -10,6 +10,7 @@ const path = require('path');
 const platform = require('../../res/platform');
 const packetLayer = require('../../res/platform/packet-layer.js');
 const bodyService = require('../../res/platform/body-service.js');
+const { createOriginProxy } = require('../../res/platform/origin-proxy.js');
 
 const DECLARATION = {
   id: 'steer-login',
@@ -54,12 +55,12 @@ function makeHost(extra, deps) {
 }
 
 // A stand-in upstream: the login path answers the response shape the client actually receives.
-function standInUpstream() {
+function standInUpstream(loginBody) {
   const server = http.createServer(function (req, res) {
     req.resume();
     req.on('end', function () {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(LOGIN_BODY);
+      res.end(loginBody || LOGIN_BODY);
     });
   });
   return new Promise(function (resolve) {
@@ -78,10 +79,11 @@ function fakeSession() {
   };
 }
 
-function fetchThrough(service, target) {
+function fetchThrough(service, target, method) {
   const parsed = new URL(service.urlFor({ url: target }));
   return new Promise(function (resolve, reject) {
-    const req = http.request({ host: parsed.hostname, port: parsed.port, path: parsed.pathname + parsed.search },
+    const req = http.request({ host: parsed.hostname, port: parsed.port, path: parsed.pathname + parsed.search,
+      method: method || 'GET' },
       function (res) {
         const chunks = [];
         res.on('data', function (c) { chunks.push(c); });
@@ -201,6 +203,96 @@ test('no relay comes up when the steering flag is off, and the reason is reporte
   }
 });
 
+test('local login POST stays on its origin and uses the packet rule on the upstream response', async () => {
+  const runtime = require('../../res/platform/plugin-runtime.js');
+  const seen = [];
+  const upstream = http.createServer(function (req, res) {
+    const chunks = [];
+    req.on('data', function (chunk) { chunks.push(chunk); });
+    req.on('end', function () {
+      seen.push({ method: req.method, url: req.url, body: Buffer.concat(chunks).toString() });
+      const body = LOGIN_BODY.replace(/\.up\.example/g, '.aq.com');
+      res.writeHead(201, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
+      res.end(body);
+    });
+  });
+  await new Promise(function (resolve) { upstream.listen(0, '127.0.0.1', resolve); });
+  const upstreamOrigin = 'http://127.0.0.1:' + upstream.address().port;
+  let started = null;
+  runtime.clear();
+  runtime.setDependencies({
+    constant: {}, createOriginProxy: createOriginProxy,
+    packetLayer: function () { return started; }
+  });
+  const baseUrl = await runtime.startGameOrigin({ routes: [
+    { prefix: '/api/', origin: upstreamOrigin + '/game/api' },
+    { prefix: '/', origin: upstreamOrigin }
+  ] });
+  const declaration = require('../../plugins/grimlite-parity/packets.js').steeringDeclarations(baseUrl)[0];
+  // Only the fake upstream replaces the live host; local URLs must never match this rule.
+  declaration.urls = declaration.urls.map(function (url) {
+    return url.replace('*://game.aq.com', upstreamOrigin);
+  });
+  try {
+    started = await packetLayer.createPacketLayer({
+      declarations: [declaration], ctx: { settings: { packetSteering: true } }
+    }).start();
+    const session = fakeSession();
+    require('../../res/platform/session-rules.js').applySessionRules(session, started.rules, {
+      responseBody: started.responseBody
+    });
+    for (const alias of ['/game/api/login/now', '/api/login/now']) {
+      const url = baseUrl + alias + '?probe=1';
+      const posted = await new Promise(function (resolve, reject) {
+        const req = http.request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } }, function (res) {
+          const chunks = [];
+          res.on('data', function (chunk) { chunks.push(chunk); });
+          res.on('end', function () {
+            resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks).toString() });
+          });
+        });
+        req.on('error', reject);
+        req.end('{"username":"test","password":"fake"}');
+      });
+      assert.strictEqual(posted.status, 201);
+      assert.strictEqual(posted.headers.location, undefined);
+      assert.deepStrictEqual(seen[seen.length - 1], {
+        method: 'POST', url: '/game/api/login/now?probe=1',
+        body: '{"username":"test","password":"fake"}'
+      });
+      const rows = JSON.parse(posted.body).servers;
+      assert.ok(rows.every(function (row) { return row.sIP === '127.0.0.1' && row.iPort >= 1024; }),
+        'the original origin response must contain relay addresses');
+      let result;
+      session.registered.request[0].listener({ url: url }, function (answer) { result = answer; });
+      assert.ok(!result.redirectURL, 'local login must never redirect to the body service');
+    }
+    assert.strictEqual(declaration.policyDomain, '127.0.0.1');
+    await started.close();
+    started = await packetLayer.createPacketLayer({
+      declarations: [declaration], ctx: { settings: { packetSteering: false } }
+    }).start();
+    const untouched = await new Promise(function (resolve, reject) {
+      http.get(baseUrl + '/api/login/now', function (res) {
+        const chunks = [];
+        res.on('data', function (chunk) { chunks.push(chunk); });
+        res.on('end', function () {
+          resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString() });
+        });
+      }).on('error', reject);
+    });
+    assert.strictEqual(untouched.status, 201);
+    assert.strictEqual(untouched.body, LOGIN_BODY.replace(/\.up\.example/g, '.aq.com'));
+    assert.strictEqual(started.relay.running, false);
+  } finally {
+    if (started) await started.close();
+    await runtime.stopGameOrigin();
+    runtime.setDependencies({ packetLayer: function () { return null; } });
+    runtime.clear();
+    await new Promise(function (resolve) { upstream.close(resolve); });
+  }
+});
+
 test('the parity plugin declares its steering behind an opt-in flag and names no platform fact', () => {
   const declarations = require('../../plugins/grimlite-parity/packets.js').steeringDeclarations();
   assert.ok(Array.isArray(declarations) && declarations.length >= 1);
@@ -238,7 +330,7 @@ test('the boot path merges steering into its single session-rule registration', 
   assert.ok(/await applySessionRules\(\)/.test(main),
     'steering may bind a listener, so the window waits for it');
   assert.ok(/packetLayerState\s*=\s*null/.test(main), 'a refused layer is dropped, not half-used');
-  assert.ok(/[AquaStar:packets]/.test(main), 'a refusal says so on the console');
+  assert.ok(/[AquGrim:packets]/.test(main), 'a refusal says so on the console');
 
   // The opt-in flag reaches the layer from settings, like every other platform flag.
   assert.ok(/packetSteering: keyb\.keybinds\.packetSteering/.test(main),
@@ -301,12 +393,17 @@ test('activating the parity plugin hands the platform exactly one steering decla
     appDataDirectory: path.join(__dirname, '../tmp-plugin-data'),
     clearRequireCache: true,
     log: function () {},
-    deps: { openFeatureWindow: function () { return {}; } }
+    deps: {
+      openFeatureWindow: function () { return {}; },
+      startGameOrigin: function () { return Promise.resolve('http://127.0.0.1:43123'); }
+    }
   });
   const recorded = activated.host._getState().packetSteering;
   assert.strictEqual(recorded.length, 1, 'exactly one declaration, from a plugin holding packet-tap');
   assert.strictEqual(recorded[0].settingKey, 'packetSteering');
   assert.ok(recorded[0].urls.length >= 1);
+  assert.deepStrictEqual(recorded[0].urls, ['*://game.aq.com/game/api/login/now*']);
+  assert.strictEqual(recorded[0].policyDomain, '127.0.0.1');
 
   // And the opt-in is off until the player turns it on: default settings engage nothing.
   const defaults = activated.host._getState().optionDefaults || {};

@@ -59,7 +59,7 @@
         var servers = await res.json();
         servers.forEach(function (server) { addHostPort(map, server.sIP, server.iPort); });
       } catch (e) {
-        console.log('[AquaStar] Server list unavailable, using fallback hosts only:', e);
+        console.log('[AquGrim] Server list unavailable, using fallback hosts only:', e);
       }
     }
 
@@ -95,7 +95,7 @@
     if (swfBase) loadOpts.base = swfBase;
 
     player.load(loadOpts).catch(function (e) {
-      console.error('[AquaStar] Ruffle load failed:', e);
+      console.error('[AquGrim] Ruffle load failed:', e);
     });
   }
 
@@ -104,7 +104,7 @@
   var script = document.createElement('script');
   script.src = ruffleUrl;
   script.onload = startPlayer;
-  script.onerror = function () { console.error('[AquaStar] Could not load Ruffle:', ruffleUrl); };
+  script.onerror = function () { console.error('[AquGrim] Could not load Ruffle:', ruffleUrl); };
   document.head.appendChild(script);
 })();
 </script>

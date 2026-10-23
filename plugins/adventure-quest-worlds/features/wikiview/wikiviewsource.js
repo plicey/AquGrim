@@ -372,7 +372,7 @@ if (location.hostname.indexOf("aqwwiki.wikidot.com") !== -1 &&
             const controls = document.createElement('div');
             controls.className = 'aquastarMergeShopTabControls';
             controls.style.cssText = 'margin:5px 0 2px;font-size:90%;';
-            controls.innerHTML = 'AquaStar: <a href="#">' + messages.mergeSelectAll + '</a> / <a href="#">' + messages.mergeClearAll + '</a>';
+            controls.innerHTML = 'AquGrim: <a href="#">' + messages.mergeSelectAll + '</a> / <a href="#">' + messages.mergeClearAll + '</a>';
             const firstTable = tabPanel.querySelector('table.wiki-content-table');
             if (firstTable) firstTable.parentNode.insertBefore(controls, firstTable);
             const links = controls.querySelectorAll('a');
@@ -389,7 +389,7 @@ if (location.hostname.indexOf("aqwwiki.wikidot.com") !== -1 &&
     }
 
     const mergeMessagesFallback = {
-        mergeMaterialsTitle: 'AquaStar: Shop materials',
+        mergeMaterialsTitle: 'AquGrim: Shop materials',
         mergeDependencies: 'Include dependencies',
         mergeBuyback: 'Dependencies with Buy Back',
         mergeEmpty: 'No materials listed.',

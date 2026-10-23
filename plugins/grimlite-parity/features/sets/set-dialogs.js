@@ -155,7 +155,8 @@ function createFromHost(host, deps) {
     const electron = deps.electron || require('electron');
     return createSetDialogs({
         store: host.getStore(STORE_NAMESPACE),
-        defaultDirectory: path.join(host.appDataDirectory, 'Sets'),
+        defaultDirectory: path.join(
+            host.persistentAppDataDirectory || host.appDataDirectory, 'Sets'),
         messages: messagesFrom(host),
         showOpenDialog: function (owner, options) {
             return electron.dialog.showOpenDialog(owner, options);

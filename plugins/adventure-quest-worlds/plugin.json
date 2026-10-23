@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "apiVersion": 1,
   "main": "main.js",
-  "description": "Official AQW companion plugin for AquaStar",
-  "author": "AquaStar",
+  "description": "Official AQW companion plugin for AquGrim",
+  "author": "AquGrim",
   "minAppVersion": "0.0.1",
   "capabilities": [
     "game-launch",

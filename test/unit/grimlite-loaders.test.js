@@ -420,14 +420,113 @@ test('a read falls back to the game\'s other object when the first one refuses',
   assert.strictEqual(access.lastRead.answeredBy, 'world.invTree');
 });
 
+test('the shop grabber accumulates loaded shops like World.LoadedShops', async () => {
+  let current = { ShopID: 1, sName: 'First Shop', Location: 'Here', items: [] };
+  const bridge = {
+    call: function (name, args) {
+      if (name === 'getGameObject' && args[0] === 'world.shopinfo') {
+        return Promise.resolve({ ok: true, value: JSON.stringify(current) });
+      }
+      return Promise.resolve({ ok: false, error: 'not asked in this test' });
+    }
+  };
+  const access = game.createGameAccess(bridge);
+  await access.readShopInfo();
+  current = { ShopID: 2, sName: 'Second Shop', Location: 'There', items: [] };
+  await access.readShopInfo();
+  current = { ShopID: 2, sName: 'Second Shop', Location: 'There', items: [] };
+  const shops = await access.readLoadedShops();
+  assert.deepStrictEqual(shops.map(function (shop) { return shop.ShopID; }), [1, 2]);
+  assert.deepStrictEqual(texts(grabbers.buildRows('shopItems', shops)), ['First Shop', 'Second Shop']);
+});
+
+test('loadShop frames fill the shop cache before the Loaders window is used', async () => {
+  let handler = null;
+  const packets = {
+    on: function (name, next) {
+      if (name === 'frame') handler = next;
+      return function () {};
+    }
+  };
+  const bridge = {
+    call: function () { return Promise.resolve({ ok: false, error: 'no current shop' }); }
+  };
+  const access = game.createGameAccess(bridge, function () {}, { packets: packets });
+  assert.strictEqual(typeof handler, 'function');
+  handler({ data: JSON.stringify({ b: { o: {
+    cmd: 'loadShop', shopinfo: { ShopID: 9, sName: 'Frame Shop', Location: 'Here', items: [] }
+  } } }) });
+  const shops = await access.readLoadedShops();
+  assert.deepStrictEqual(shops.map(function (shop) { return shop.ShopID; }), [9]);
+});
+
+test('shop and inventory operations prefer the implemented loader surface', async () => {
+  const loaderCalls = [];
+  const bridge = {
+    call: function (name, args) {
+      if (name === 'getGameObject' && args[0] === 'world.shopinfo') {
+        return Promise.resolve({ ok: true, value: JSON.stringify({ ShopID: 4, sName: 'Loaded', items: [] }) });
+      }
+      return Promise.resolve({ ok: false, error: 'generic fallback should not be used' });
+    },
+    loaderCall: function (name) {
+      loaderCalls.push(name);
+      if (name === 'GetInventoryItems') return Promise.resolve([{ ItemID: 7, sName: 'Rock', iQty: 1, iStk: 9 }]);
+      return Promise.resolve(true);
+    }
+  };
+  const access = game.createGameAccess(bridge);
+  assert.deepStrictEqual(await access.readInventory(), [{ ItemID: 7, sName: 'Rock', iQty: 1, iStk: 9 }]);
+  assert.strictEqual((await access.loadShop(4)).via, 'LoadShop');
+  assert.deepStrictEqual(loaderCalls.slice(0, 3), ['GetInventoryItems', 'ResetShopInfo', 'LoadShop']);
+});
+
 test('a read that nobody answers reports every attempt\'s own words, never an empty list', async () => {
   const access = game.createGameAccess(bridgeStub({}));
   await assert.rejects(function () { return access.readQuestTree(); },
     function (error) {
+      assert.ok(/GetQuestTree/.test(error.message), error.message);
       assert.ok(/world\.questTree/.test(error.message), error.message);
-      assert.ok(/world\.getQuests/.test(error.message), error.message);
       return true;
     });
+});
+
+test('quest reads and loads use the loader surface, with array-shaped game fallback', async () => {
+  const loaderCalls = [];
+  const bridge = {
+    call: function (name, args) {
+      if (args[0] === 'world.getQuests') {
+        assert.deepStrictEqual(args[1], ['10', '11'], 'world.getQuests takes an array');
+        return Promise.resolve({ ok: true, value: 'null' });
+      }
+      return Promise.resolve({ ok: false, error: 'no member ' + args[0] });
+    },
+    loaderCall: function (name, args) {
+      loaderCalls.push({ name: name, args: args });
+      if (name === 'GetQuestTree') return Promise.resolve([{ QuestID: 10, sName: 'Loaded' }]);
+      return Promise.resolve(null);
+    }
+  };
+  const access = game.createGameAccess(bridge);
+
+  assert.deepStrictEqual(await access.readQuestTree(), [{ QuestID: 10, sName: 'Loaded' }]);
+  assert.strictEqual(access.lastRead.answeredBy, 'GetQuestTree');
+  assert.strictEqual((await access.loadQuest(10)).via, 'LoadQuest');
+  assert.strictEqual((await access.loadQuests([10, 11])).via, 'LoadQuests');
+  assert.deepStrictEqual(loaderCalls.map(function (call) { return call.name + ':' + call.args.join(','); }), [
+    'GetQuestTree:', 'LoadQuest:10', 'LoadQuests:10,11'
+  ]);
+
+  const fallback = game.createGameAccess({
+    call: function (name, args) {
+      if (args[0] === 'world.getQuests') {
+        assert.deepStrictEqual(args[1], ['10', '11']);
+        return Promise.resolve({ ok: true, value: 'null' });
+      }
+      return Promise.resolve({ ok: false, error: 'no member ' + args[0] });
+    }
+  });
+  assert.strictEqual((await fallback.loadQuests([10, 11])).via, 'world.getQuests');
 });
 
 test('a loaded target asks the reference\'s own name first, then the game\'s own request', async () => {
@@ -438,12 +537,12 @@ test('a loaded target asks the reference\'s own name first, then the game\'s own
   assert.strictEqual(result.ok, true);
   assert.strictEqual(result.via, 'world.sendLoadShopRequest');
   assert.deepStrictEqual(bridge.calls.map(function (c) { return c.name + ':' + c.args[0]; }), [
-    // Shop.Load resets the shop info first, then loads.
-    'callGameFunction0:ResetShopInfo',
-    'callGameFunction:LoadShop',
-    'callGameFunction:world.sendLoadShopRequest'
+    // The stock game cannot answer the loader-only reset/load names on this channel.
+    'callGameFunction:world.sendLoadShopRequest',
+    // The loaded answer is remembered for the shop grabber's accumulated list.
+    'getGameObject:world.shopinfo'
   ]);
-  assert.deepStrictEqual(bridge.calls[2].args, ['world.sendLoadShopRequest', 42]);
+  assert.deepStrictEqual(bridge.calls[0].args, ['world.sendLoadShopRequest', 42]);
 });
 
 test('every loader target has the game-side call the stock SWF actually has', async () => {
@@ -814,13 +913,16 @@ test('the parity plugin registers the loaders window in the app\'s window conven
   ['grab', 'load', 'save', 'open', 'act', 'messages'].forEach(function (name) {
     assert.ok(exposed.indexOf(name) !== -1, 'the preload must expose ' + name);
   });
-  // cbGrab opens with no choice, the node text is editable (TreeView.LabelEdit), a search
-  // expands collapsed ancestors, and Open is a visible control rather than a hidden dblclick.
+  // cbGrab opens with no choice, the node text is editable (TreeView.LabelEdit), and a search
+  // expands collapsed ancestors. The reference's form has only Save and Grab at the bottom.
   assert.ok(/grabTarget'\)\.selectedIndex = -1/.test(html), 'the grabber combo must open unselected');
   assert.ok(html.indexOf('contentEditable') !== -1, 'a tree node text must be editable');
   assert.ok(html.indexOf("classList.remove('collapsed')") !== -1,
     'a search result must expand its collapsed ancestors');
-  assert.ok(/<button id="open"/.test(html), 'Open must be a visible control');
+  assert.ok(!/<button id="open"/.test(html), 'the reference has no Open button');
+  assert.ok(html.indexOf('id="top"') !== -1 && html.indexOf('id="searchRow"') !== -1 &&
+    html.indexOf('id="grabRow"') !== -1 && html.indexOf('id="buttons"') !== -1,
+  'the form uses the reference\'s absolute rows');
   (html.match(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g) || []).forEach(function (block) {
     const source = block.replace(/^<script[^>]*>/, '').replace(/<\/script>$/, '');
     assert.doesNotThrow(function () { new (require('vm').Script)(source); });
@@ -836,23 +938,51 @@ test('the grab channel hands back the rows the page draws, and refusals say why'
     }))
   });
 
-  const grabbed = await instance.handle('loadersGrab', [null, 'inventoryItems', 'Name']);
+  const grabbed = await instance.handle('loadersGrab', ['inventoryItems', 'Name']);
   assert.strictEqual(grabbed.ok, true);
   assert.deepStrictEqual(texts(grabbed.rows), ['Rock (3)']);
   // Each row carries the menu kind its context needs, so the page never invents a menu.
   assert.strictEqual(grabbed.rows[0].menu, 'item');
 
-  const refused = await instance.handle('loadersGrab', [null, 'bankItems', 'Name']);
+  const refused = await instance.handle('loadersGrab', ['bankItems', 'Name']);
   assert.strictEqual(refused.ok, false);
   assert.ok(/bankinfo|getBank/.test(refused.error), refused.error);
 
-  const unknown = await instance.handle('loadersGrab', [null, 'nope', 'Name']);
+  const unknown = await instance.handle('loadersGrab', ['nope', 'Name']);
   assert.strictEqual(unknown.ok, false);
   assert.ok(/nope/.test(unknown.error), unknown.error);
 
   // A grab that fails clears the tree, as btnGrab_Click's own Nodes.Clear() does before the
   // switch that threw: the rows a failed grab leaves behind are no rows.
   assert.deepStrictEqual(instance.rows(), []);
+});
+
+test('the live IPC wrapper passes the page arguments through unchanged', async () => {
+  const copied = [];
+  const instance = feature({
+    game: game.createGameAccess(bridgeStub({
+      'callGameFunction0:world.getInventory': { items: [
+        { ItemID: 3, sName: 'Rock', iQty: 1, iStk: 5, sType: 'Item', iLvl: 1, sDesc: '' }
+      ] }
+    })),
+    clipboard: { writeText: function (text) { copied.push(text); } }
+  });
+  const handlers = {};
+  instance.attachTo({ ipc: { handle: function (name, fn) { handlers[name] = fn; } } });
+
+  const grabbed = await handlers.loadersGrab(null, 'inventoryItems', 'Name');
+  assert.strictEqual(grabbed.ok, true);
+  assert.deepStrictEqual(texts(grabbed.rows), ['Rock (3)']);
+
+  const menu = await handlers.loadersMenu(null, 'item', { name: 'Rock' });
+  assert.deepStrictEqual(actions(menu), [
+    'Add to both', 'Add to whitelist', 'Add to unbank list',
+    'Copy item name to clipboard', 'Go to Wikipage', 'Search on Wiki'
+  ]);
+
+  const acted = await handlers.loadersAct(null, 'copy', { text: 'Rock' });
+  assert.deepStrictEqual(acted, { ok: true });
+  assert.deepStrictEqual(copied, ['Rock']);
 });
 
 test('the load channel drives each target, the quest count and the ghost variant', async () => {
@@ -875,37 +1005,37 @@ test('the load channel drives each target, the quest count and the ghost variant
   let inProgress = [];
   const instance = feature({ game: access });
 
-  await instance.handle('loadersLoad', [null, 'shop', '42', 1, false, false]);
+  await instance.handle('loadersLoad', ['shop', '42', 1, false, false]);
   assert.deepStrictEqual(calls.pop(), ['shop', 42]);
-  await instance.handle('loadersLoad', [null, 'hairShop', '7', 1, false, false]);
+  await instance.handle('loadersLoad', ['hairShop', '7', 1, false, false]);
   assert.deepStrictEqual(calls.pop(), ['hairShop', 7]);
-  await instance.handle('loadersLoad', [null, 'armorCustomizer', '', 1, false, false]);
+  await instance.handle('loadersLoad', ['armorCustomizer', '', 1, false, false]);
   assert.deepStrictEqual(calls.pop(), ['armorCustomizer']);
 
   // A single id with the count control: LoadQuests gets the expanded list, like btnLoad does.
-  await instance.handle('loadersLoad', [null, 'quest', '10', 3, false, false]);
+  await instance.handle('loadersLoad', ['quest', '10', 3, false, false]);
   assert.deepStrictEqual(calls.pop(), ['quests', [10, 11, 12]]);
   // A comma list is not expanded.
-  await instance.handle('loadersLoad', [null, 'quest', '4,5', 3, false, false]);
+  await instance.handle('loadersLoad', ['quest', '4,5', 3, false, false]);
   assert.deepStrictEqual(calls.pop(), ['quests', [4, 5]]);
 
   // F Accept: load the batch, then accept what the game says is not already in progress.
   inProgress = [11];
-  const accepted = await instance.handle('loadersLoad', [null, 'quest', '10', 3, true, false]);
+  const accepted = await instance.handle('loadersLoad', ['quest', '10', 3, true, false]);
   assert.strictEqual(accepted.ok, true);
   assert.deepStrictEqual(calls.shift(), ['quests', [10, 11, 12]]);
   assert.deepStrictEqual(calls, [['accept', 10, false], ['accept', 12, false]]);
 
   // Ghost goes through the packet path, and its refusal is reported rather than swallowed.
   calls.length = 0;
-  const ghost = await instance.handle('loadersLoad', [null, 'quest', '10', 1, true, true]);
+  const ghost = await instance.handle('loadersLoad', ['quest', '10', 1, true, true]);
   assert.strictEqual(ghost.ok, false);
   assert.ok(/sfc\.sendString/.test(ghost.error), ghost.error);
   assert.deepStrictEqual(calls, [['quests', [10]], ['accept', 10, true]]);
 
   // A non-numeric box is the reference's own silent refusal, reported as such.
   calls.length = 0;
-  const refused = await instance.handle('loadersLoad', [null, 'quest', 'abc', 1, false, false]);
+  const refused = await instance.handle('loadersLoad', ['quest', 'abc', 1, false, false]);
   assert.strictEqual(refused.ok, false);
   assert.deepStrictEqual(calls, []);
 });
@@ -936,14 +1066,14 @@ test('save writes the XML through the reference\'s save dialog, and open reads i
 
   // Save with nothing grabbed is the reference's own empty document, not a refusal: SaveNodes
   // over an empty TreeView writes the declaration and an empty root.
-  const empty = await instance.handle('loadersSave', [null]);
+  const empty = await instance.handle('loadersSave', []);
   assert.strictEqual(empty.ok, true);
   assert.strictEqual(written.length, 1);
   assert.ok(/<TreeView>\r\n<\/TreeView>/.test(written[0][1]), written[0][1]);
   written.length = 0;
 
-  await instance.handle('loadersGrab', [null, 'shopItems', 'Name']);
-  const saved = await instance.handle('loadersSave', [null]);
+  await instance.handle('loadersGrab', ['shopItems', 'Name']);
+  const saved = await instance.handle('loadersSave', []);
   assert.strictEqual(saved.ok, true);
   // The reference's own dialog: title "Save grabber data", filter "XML files|*.xml".
   assert.strictEqual(asked[0].title, 'Save grabber data');
@@ -951,7 +1081,7 @@ test('save writes the XML through the reference\'s save dialog, and open reads i
   assert.strictEqual(written[0][0], '/tmp/grab.xml');
   assert.ok(written[0][1].indexOf('<n t="A Shop">') !== -1);
 
-  const reopened = await instance.handle('loadersOpen', [null]);
+  const reopened = await instance.handle('loadersOpen', []);
   assert.strictEqual(reopened.ok, true);
   assert.strictEqual(reopened.rows.length, 1);
   assert.deepStrictEqual(texts(reopened.rows[0].children), ['ID:        42', 'Location:  Here', 'Items']);
@@ -969,6 +1099,6 @@ test('a cancelled dialog reports cancelled and writes nothing', async () => {
     writeText: function () { throw new Error('must not write'); },
     readText: function () { throw new Error('must not read'); }
   });
-  assert.deepStrictEqual(await instance.handle('loadersSave', [null]), { ok: false, canceled: true });
-  assert.deepStrictEqual(await instance.handle('loadersOpen', [null]), { ok: false, canceled: true });
+  assert.deepStrictEqual(await instance.handle('loadersSave', []), { ok: false, canceled: true });
+  assert.deepStrictEqual(await instance.handle('loadersOpen', []), { ok: false, canceled: true });
 });

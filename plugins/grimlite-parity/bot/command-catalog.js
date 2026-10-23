@@ -21,7 +21,7 @@ function classNameOf(command) {
 
 function fullType(className) {
     const group = GROUPS[className];
-    if (!group) throw new Error('[AquaStar:grimlite-parity] unknown command class: ' + className);
+    if (!group) throw new Error('[AquGrim:grimlite-parity] unknown command class: ' + className);
     return ROOT + group + '.' + className + SUFFIX;
 }
 
@@ -35,7 +35,7 @@ const GROUPS = {
     CmdBuyFast: 'Item', CmdEquip: 'Item', CmdEquipSet: 'Item', CmdGetDrop: 'Item',
     CmdLoad: 'Item', CmdLoadTravel: 'Item', CmdMapItem: 'Item', CmdSell: 'Item',
     CmdWhitelist: 'Item',
-    CmdJoin: 'Map', CmdMoveToCell: 'Map', CmdMoveToCell2: 'Map', CmdSetSpawn: 'Map',
+    CmdJoin: 'Map', CmdJoin2: 'Map', CmdMoveToCell: 'Map', CmdMoveToCell2: 'Map', CmdSetSpawn: 'Map',
     CmdTravel: 'Map', CmdWalk: 'Map', CmdYulgar: 'Map',
     CmdBackgroundPacket: 'Misc', CmdBankList: 'Misc', CmdBeep: 'Misc', CmdBlank: 'Misc',
     CmdBlank2: 'Misc', CmdBlank3: 'Misc', CmdBotDelay: 'Misc', CmdChange: 'Misc',
@@ -132,6 +132,8 @@ const DISPLAY = {
     // Try's own initialiser is 1 (CmdJoin.cs:17), so an omitted key reads [1x].
     CmdJoin: (c) => 'Join: [' + text(c.Try === undefined ? 1 : c.Try) + 'x] ' +
         (text(c.MapSwf) ? '[SWF] ' : '') + text(c.Map) + ', ' + text(c.Cell) + ', ' + text(c.Pad),
+    CmdJoin2: (c) => 'Join: ' + text(c.Map) + ', ' + text(c.Room) + ', ' +
+        text(c.Cell) + ', ' + text(c.Pad),
     CmdMoveToCell: (c) => 'Move to cell: ' + text(c.Cell) + ', ' + text(c.Pad),
     CmdMoveToCell2: function (c) {
         if (c.stop) return 'Stop Cell Jump';
@@ -549,7 +551,7 @@ function makeCommand(className, properties) {
 /** A statement command: the three fields the reference always carries, in the same order. */
 function makeStatement(className, value1, value2) {
     const row = STATEMENTS.filter(function (s) { return s.className === className; })[0];
-    if (!row) throw new Error('[AquaStar:grimlite-parity] unknown statement: ' + className);
+    if (!row) throw new Error('[AquGrim:grimlite-parity] unknown statement: ' + className);
     const command = { $type: ROOT + 'Misc.Statements.' + className + SUFFIX, Tag: row.tag, Text: row.text };
     command.Value1 = value1 === undefined || value1 === null ? '' : String(value1);
     command.Value2 = value2 === undefined || value2 === null ? '' : String(value2);

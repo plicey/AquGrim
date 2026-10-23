@@ -225,6 +225,28 @@ test('OptionsManager starts stopped, and Start follows Grimlite\'s immediate/one
   assert.deepStrictEqual(run.timers.running(), [], 'Stop ends only the OptionsManager loop');
 });
 
+test('numOptionsTimer changes the loop delay while it runs', async () => {
+  const run = createOptions();
+  await run.feature.setApplying(true);
+  assert.strictEqual(run.timers.running()[0].ms, 1000);
+  assert.deepStrictEqual(run.feature.setTimer(500), { ok: true, timer: 500 });
+  assert.strictEqual(run.timers.running().length, 1, 'the old interval is replaced');
+  assert.strictEqual(run.timers.running()[0].ms, 500);
+  await run.feature.setApplying(false);
+});
+
+test('Respawn Provoke suppresses the provoke call the Options loop would make', async () => {
+  const run = createOptions();
+  await run.feature.setToggle('provoke', true);
+  run.feature.setRespawnProvoke(true);
+  run.calls.calls.length = 0;
+  await run.feature.setApplying(true);
+  assert.deepStrictEqual(run.calls.calls, [], 'Start sends no provoke while Respawn Provoke is on');
+  await run.timers.pass();
+  assert.deepStrictEqual(run.calls.calls, []);
+  await run.feature.setApplying(false);
+});
+
 test('a toggle the reference never had an off call for sends nothing when switched off', async () => {
   // Root.cs:1264-1310 only sets the flag on untick for these five; the reference has no
   // "undo" call for them, so neither does this port (nothing invented in its place).

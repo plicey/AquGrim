@@ -6,7 +6,7 @@
  * name in the title. Only letters and digits survive: it is typed into a window title.
  */
 function displayName(ctx) {
-    const appName = (ctx && ctx.displayName) || 'AquaStar';
+    const appName = (ctx && ctx.displayName) || 'AquGrim';
     const settings = (ctx && ctx.settings) || {};
     if (settings.featurePlayerName !== true) return appName;
     const id = settings.playerCharacter == null

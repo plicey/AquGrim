@@ -16,12 +16,19 @@ body { display: flex; flex-direction: column; }
 .grow { flex: 1; }
 
 main { flex: 1; display: flex; min-height: 0; }
-#left { width: 42%; min-width: 260px; display: flex; flex-direction: column; border-right: 1px solid #232323; }
+#left { width: clamp(300px, calc(100% - 700px), 42%); min-width: 300px; display: flex; flex-direction: column; border-right: 1px solid #232323; }
 #right { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #right[hidden] { display: none; }
 
-.selector { display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-wrap: wrap; }
-.selector select { flex: 1; }
+#leftBottom { display: flex; border-top: 1px solid #232323; background: #24242e; }
+#listControls { width: 44%; min-width: 116px; display: flex; flex-direction: column; gap: 3px; padding: 4px; border-right: 1px solid #1c1c1c; }
+#editControls { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 4px; }
+#moveRow, #clearRow, #searchRow { display: flex; align-items: center; gap: 6px; }
+#moveRow button { flex: 1; }
+#clearRow button { flex: 0 0 52px; }
+#clearRow .tick { margin-left: auto; }
+#searchRow input { flex: 1; min-width: 0; }
+#cbLists, #editControls > #btnRemove { width: 100%; }
 
 #list {
   flex: 1; margin: 0; padding: 4px; list-style: none; overflow: auto;
@@ -29,22 +36,44 @@ main { flex: 1; display: flex; min-height: 0; }
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px;
   line-height: 1.45;
 }
-#list.multiline .row { white-space: pre-wrap; }
 #list .row { padding: 1px 4px; cursor: default; white-space: pre; }
 #list .row.centered { text-align: center; }
 #list .row.picked { background: #2b3a55; outline: 1px solid #3a7fe0; }
 #list .row.current { background: #3a3020; }
 #list .empty { color: #7d7d7d; padding: 8px; white-space: normal; }
 
-#tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 6px 8px 0; }
+#tabs { display: flex; flex-wrap: nowrap; gap: 1px; padding: 6px 8px 0; overflow-x: auto; }
 .tab {
   background: #1d1d1d; color: #cfcfcf; border: 1px solid #2c2c2c; border-bottom: none;
-  border-radius: 4px 4px 0 0; padding: 4px 10px; cursor: pointer;
+  border-radius: 4px 4px 0 0; padding: 3px 7px; cursor: pointer; font-size: 11px; white-space: nowrap;
 }
 .tab.active { background: #2a2a2a; color: #fff; border-color: #3a3a3a; }
 
-#tabHost { flex: 1; overflow: auto; padding: 8px; border-top: 1px solid #2c2c2c; }
+#tabHost { flex: 1; min-height: 0; overflow: auto; padding: 6px; border-top: 1px solid #2c2c2c; }
+#tabHost::-webkit-scrollbar { width: 8px; height: 8px; }
+#tabHost::-webkit-scrollbar-thumb { background: #383838; border-radius: 4px; }
 .tabpage { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+.tabpage.fixed-layout { display: block; margin: 0 auto; font-size: 12px; }
+.tabpage.fixed-layout, .tabpage.fixed-layout * { box-sizing: border-box; }
+/* Native legends shift the fieldset's absolute-positioning origin below the title.
+   Keep titles out of flow so children retain the designer's client coordinates. */
+.tabpage.fixed-layout fieldset.group { display: block; min-width: 0; }
+.tabpage.fixed-layout fieldset.group > legend {
+  position: absolute; top: -7px; left: 4px; background: #121212;
+  max-width: calc(100% - 8px); white-space: nowrap;
+}
+.tabpage.fixed-layout .tick { line-height: 1.2; }
+.tabpage.fixed-layout .tick input { flex: 0 0 auto; margin: 0; }
+.tabpage.fixed-layout .tick > span { min-width: 0; }
+.tabpage.fixed-layout .sheet-label { line-height: 1.2; }
+.tabpage.fixed-layout .counter-label { white-space: pre-line; overflow-wrap: anywhere; }
+.tabpage.fixed-layout .sheet-button { padding: 1px 3px; }
+.tabpage.fixed-layout .sheet-tree { max-height: none; }
+.tabpage.fixed-layout select { font-size: 12px; }
+.tabpage.fixed-layout textarea { resize: none; }
+.tabpage.fixed-layout .tick.wrap-text { white-space: normal; line-height: 1.15; }
+.tabpage.fixed-layout input[type=text], .tabpage.fixed-layout input[type=number],
+.tabpage.fixed-layout select { padding: 1px 3px; }
 
 fieldset.group {
   border: 1px solid #2c2c2c; border-radius: 5px; padding: 6px 8px; margin: 0;
@@ -59,13 +88,16 @@ fieldset.group > legend { color: #9f9f9f; padding: 0 4px; font-size: 11px; }
 /* lblCommands' own "Number of\r\nCommands:" keeps its line break (treeBots_AfterSelect). */
 .sheet-label.counter-label { white-space: pre-line; }
 .tick { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.sheet-tree { list-style: none; margin: 0; padding-left: 10px; overflow: auto; max-height: 240px; width: 100%; }
+.sheet-tree { list-style: none; margin: 0; padding-left: 10px; overflow: auto; max-height: 240px; width: 100%; background: #161616; border: 1px solid #242424; }
 .sheet-tree li { padding: 1px 2px; }
 .sheet-tree li span { cursor: pointer; }
 .sheet-tree li.folder > span { color: #f0d08a; }
 .sheet-tree li.bot > span { color: #a8d8a8; }
 .sheet-tree .loading { color: #6d6d6d; font-style: italic; }
 .sheet-rtf { width: 100%; min-height: 80px; white-space: pre-wrap; color: #d6d6d6; background: #161616; border: 1px solid #242424; padding: 6px; }
+textarea.sheet-rtf.test-rtf { min-height: 22px; padding: 4px 6px; resize: none; }
+.sheet-rtf.info-pane { overflow: auto; font-family: "Microsoft Sans Serif", sans-serif; font-size: 19px; font-weight: 700; }
+.sheet-rtf.info-pane .info-link { color: #7fb3ff; }
 
 input[type=text], input[type=number], select, textarea {
   background: #1b1b1b; color: #e6e6e6; border: 1px solid #2c2c2c; border-radius: 4px;
@@ -89,6 +121,7 @@ button:hover { background: #303030; }
   background: #1e1e1e; border: 1px solid #333; border-radius: 5px; padding: 4px; min-width: 170px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
 }
+.popup[hidden] { display: none; }
 .popup .menu-item { background: none; border: none; text-align: left; padding: 6px 8px; border-radius: 3px; }
 .popup .menu-item:hover { background: #2f2f2f; }
 

@@ -111,7 +111,7 @@ const ERRORS = {
 function wrapList(fieldKey, values) {
     const type = LIST_TYPES[fieldKey];
     if (!type) {
-        throw new Error('[AquaStar:grimlite-parity] not a list field of a bot: ' + fieldKey);
+        throw new Error('[AquGrim:grimlite-parity] not a list field of a bot: ' + fieldKey);
     }
     return { $type: type, $values: Array.isArray(values) ? values : [] };
 }

@@ -2,7 +2,7 @@
 <html style="margin:0;padding:0;width:100%;height:100%;">
 <head>
 <meta charset="UTF-8">
-<title>AquaStar - To-Do List</title>
+<title>AquGrim - To-Do List</title>
 <style>
   :root { color-scheme: dark; }
   html, body {
@@ -297,7 +297,7 @@
   let characterTabs;
   function renderTabs() {
     if (!characterTabs) {
-      characterTabs = window.AquaStarWorkspace.createCharacterTabs({
+      characterTabs = window.AquGrimWorkspace.createCharacterTabs({
         tabsElement: document.getElementById('tabs'),
         messages: messages,
         characters: () => state.characters,

@@ -8,7 +8,7 @@ const LAUNCHER_TITLE = 'Artix Game Launcher';
 function createLauncherSkin(deps) {
     deps = deps || {};
     const getWindow = deps.getWindow || function () { return null; };
-    const title = deps.title || function () { return 'AquaStar - Grimlite Parity'; };
+    const title = deps.title || function () { return 'AquGrim'; };
     const chrome = deps.chrome || function () {};
     let launcher = false;
 

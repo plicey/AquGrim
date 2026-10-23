@@ -41,7 +41,6 @@ const HELPERS = {
     PlayerByName: true,
     GetCellPlayers: true,
     SkillAvailable: true,
-    IsMonsterAvailable: true,
     Class: true,
     State: true,
     GetCells: true,
@@ -409,10 +408,14 @@ function createMaid(deps) {
         if (config.AttackPriority === true && forcedSkill === null) await priorityTarget();
         let hasTarget = asBool(await call('HasTarget')) === true;
         if (!hasTarget && !(scheduled && scheduled.wildcardAttempted === true)) {
-            // `if (World.IsMonsterAvailable("*") && !Player.HasTarget)` (MaidRemake.cs:246).
-            if (asBool(await call('IsMonsterAvailable', ['*'])) === true) {
-                await attack('*');
-                hasTarget = asBool(await call('HasTarget')) === true;
+            // AttackMonster is the authoritative live-object callback: it is a no-op when the
+            // cell is empty, and it is the same acquisition Auto Attack already uses. Do not gate
+            // it on IsMonsterAvailable, whose reshaped monster probe can disagree with it.
+            await attack('*');
+            hasTarget = asBool(await call('HasTarget')) === true;
+            if (!hasTarget) {
+                await sleep(Number(config.SkillDelay) || TIMING.waitStepMs);
+                return { ok: true, status: status, waiting: 'no target' };
             }
         }
 

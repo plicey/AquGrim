@@ -26,13 +26,13 @@ function _executeJavaScriptSafely(webContents, source, label) {
     try {
         return webContents.executeJavaScript(source).catch((error) => {
             if (!webContents.isDestroyed()) {
-                console.log('[AquaStar] ' + label + ' skipped: ' + error.message);
+                console.log('[AquGrim] ' + label + ' skipped: ' + error.message);
             }
             return null;
         });
     } catch (error) {
         if (!webContents.isDestroyed()) {
-            console.log('[AquaStar] ' + label + ' skipped: ' + error.message);
+            console.log('[AquGrim] ' + label + ' skipped: ' + error.message);
         }
         return Promise.resolve(null);
     }
@@ -60,7 +60,7 @@ function newBrowserWindow(new_path, isMainWin=false){
     var now = Date.now();
     if (gateKey && gateKey === _windowOpenGate.key &&
         (now - _windowOpenGate.at) < WINDOW_OPEN_DEDUP_MS) {
-        console.log('[AquaStar] Suppressed duplicate newBrowserWindow:', originalPath);
+        console.log('[AquGrim] Suppressed duplicate newBrowserWindow:', originalPath);
         var existing = BrowserWindow.getAllWindows();
         return existing.length ? existing[existing.length - 1] : null;
     }
@@ -89,14 +89,20 @@ function newBrowserWindow(new_path, isMainWin=false){
     // Explicit wrap options (e.g. wmode=opaque + scale=showall for a game whose relative
     // loads break under wmode=direct from file://). Applies even with useDirectWmode off.
     else if (_looksLikeSwfUrl(originalPath) && wrap && (wrap.wmode || wrap.scale)) {
-        new_path = constant.wrapSwfUrl(new_path, { wmode: wrap.wmode, scale: wrap.scale });
+        new_path = constant.wrapSwfUrl(new_path, {
+            wmode: wrap.wmode,
+            scale: wrap.scale,
+            quality: keybinds.keybinds && keybinds.keybinds.gameQuality
+        });
         wrappedForChrome = true;
     }
     // Default: wrap Flash SWFs of non-standalone games in an HTML page with wmode=direct.
     else if (constant.useDirectWmode && _looksLikeSwfUrl(originalPath) &&
         gameEntry && !gameEntry.standalone &&
         !(wrap && wrap.preferDirectWmode === false)) {
-        new_path = constant.wrapSwfUrl(new_path);
+        new_path = constant.wrapSwfUrl(new_path, {
+            quality: keybinds.keybinds && keybinds.keybinds.gameQuality
+        });
         wrappedForChrome = true;
     }
 
@@ -237,7 +243,7 @@ function _windowAddContext(newWin){
                     return _executeJavaScriptSafely(newWin.webContents, source, label);
                 }
             })).catch(function (error) {
-                console.log('[AquaStar] Navigation hook failed: ' +
+                console.log('[AquGrim] Navigation hook failed: ' +
                     (error && error.message ? error.message : error));
             });
             return;
@@ -283,19 +289,19 @@ function _findGameEntry(url) {
 // Window title for a game entry; the plugin owns the wording.
 function _titleForGameEntry(entry, settings) {
     // Plugins build their own title from the app name and the saved settings.
-    var displayName = constant.appName;
+    var displayName = constant.appDisplayName || constant.appName;
     if (entry && typeof entry.title === 'function') {
         try {
             return entry.title({
                 displayName: displayName,
                 settings: settings || {},
                 usingCustomSwf: !!constant.hasCustomSwf
-            }) || ('AquaStar - ' + displayName);
+            }) || (displayName || 'AquGrim');
         } catch (e) {
-            return 'AquaStar';
+            return constant.appDisplayName || 'AquGrim';
         }
     }
-    return 'AquaStar - ' + displayName;
+    return displayName || 'AquGrim';
 }
 
 // considerDF: also count standalone launches (separate games with their own wrapper and
@@ -364,7 +370,7 @@ function takeSS(focusedWin, ret = null, destroyWindow = false){
             return savePath;
         })
         .catch((err) => {
-            console.log("[AquaStar] Screenshot error:", err);
+            console.log("[AquGrim] Screenshot error:", err);
             return null;
         });
 }
@@ -422,7 +428,7 @@ function _mkdir (filepath){
         fs.mkdirSync(filepath, { recursive: true });
         return true;
     } catch (error) {
-        console.log('[AquaStar] Could not create directory ' + filepath + ': ' + error.message);
+        console.log('[AquGrim] Could not create directory ' + filepath + ': ' + error.message);
         return false;
     }
 }

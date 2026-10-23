@@ -62,7 +62,7 @@ function createOptionsWindow(deps) {
         if (channel === 'optionsView') return Promise.resolve(view());
         if (channel === 'optionsSet') return set(args && args[0], args && args[1]);
         if (channel === 'optionsWalkSpeed') return setSpeed(args && args[0]);
-        throw new Error('[AquaStar:grimlite-parity] unknown options channel "' + channel + '"');
+        throw new Error('[AquGrim:grimlite-parity] unknown options channel "' + channel + '"');
     }
 
     function attachTo(host) {

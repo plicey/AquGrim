@@ -439,7 +439,7 @@ function createMaidWindow(deps) {
         case 'maidAutoload':
             return Promise.resolve(Object.assign(autoload(), { view: view() }));
         default:
-            throw new Error('[AquaStar:grimlite-parity] unknown maid channel "' + channel + '"');
+            throw new Error('[AquGrim:grimlite-parity] unknown maid channel "' + channel + '"');
         }
     }
 
@@ -724,7 +724,7 @@ function createFromHost(host, deps) {
 
     window = deps.window || createMaidWindow({
         host: host,
-        appDataDirectory: host.appDataDirectory,
+        appDataDirectory: host.persistentAppDataDirectory || host.appDataDirectory,
         maid: maid,
         party: party,
         game: bridge,

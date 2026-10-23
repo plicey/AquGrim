@@ -816,6 +816,37 @@ test('CmdJoin that cannot reach its map says so rather than looping forever', as
         made.records.join(' | '));
 });
 
+test('CmdJoin2 reads downloaded Grimlite bots and rolls its 1e99 room', async () => {
+    // Older Grimlite exports use CmdJoin2 with Map/Room/Cell/Pad. 1e99 means a random room;
+    // this command does not set a spawn point, unlike CmdJoin.
+    const session = fakeSession({ map: 'battleontown' });
+    const made = engine({ session: session });
+    await made.start({ Commands: [command('CmdJoin2', {
+        Map: 'doomwood', Room: '1e99', Cell: 'Enter', Pad: 'Spawn'
+    })] });
+    await made.tick();
+    const target = session.asked('join')[0].args[0];
+    assert.ok(target.indexOf('doomwood-') === 0, target);
+    const room = Number(target.split('-')[1]);
+    assert.ok(room >= 1001 && room < 99999, 'inside CmdJoin2\'s own random range: ' + room);
+    assert.strictEqual(session.asked('setSpawnPointHere').length, 0);
+    assert.strictEqual(catalog.rowText(command('CmdJoin2', {
+        Map: 'doomwood', Room: '1e99', Cell: 'Enter', Pad: 'Spawn'
+    })), 'Join: doomwood, 1e99, Enter, Spawn');
+});
+
+test('CmdJoin2 already in the map takes only the cell it names', async () => {
+    const session = fakeSession({ map: 'doomwood', cell: 'Right', pad: 'Left' });
+    const made = engine({ session: session });
+    await made.start({ Commands: [command('CmdJoin2', {
+        Map: 'doomwood', Room: '1e99', Cell: 'Enter', Pad: 'Spawn'
+    })] });
+    await made.tick();
+    assert.deepStrictEqual(session.asked('join'), []);
+    assert.deepStrictEqual(session.asked('jump')[0].args, ['Enter', 'Spawn']);
+    assert.strictEqual(session.asked('setSpawnPointHere').length, 0);
+});
+
 test('CmdMoveToCell jumps until the cell reads back, then records where it stands', async () => {
     // CmdMoveToCell.cs: `while (!Player.Cell.EqualsIgnoreCase(Cell)) { Player.MoveToCell(Cell, Pad);
     // await Task.Delay(500); }` - the loop leaves on the cell's own answer.

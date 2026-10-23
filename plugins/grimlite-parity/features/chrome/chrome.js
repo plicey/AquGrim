@@ -171,6 +171,7 @@ function createChrome(deps) {
         return [
             { id: 'startBot', kind: 'check', label: words.startBot || 'Start Bot' },
             { id: 'autoAttack', kind: 'check', label: words.autoAttack || 'Auto Attack' },
+            { id: 'autoSkillSet', kind: 'button', label: words.autoSkillSet || 'Skill Set' },
             { id: 'pad', kind: 'select', label: words.pad || '' },
             { id: 'cell', kind: 'select', label: words.cell || '' },
             { id: 'refreshCell', kind: 'button', label: words.refreshCell || 'x' },
@@ -232,12 +233,17 @@ function createChrome(deps) {
         if (!runtime) return { ok: false, error: ERRORS.noEngine };
         if (checked !== true) {
             return Promise.resolve(runtime.stop(windowKey())).then(function () {
+                if (typeof deps.onEngineChange === 'function') deps.onEngineChange();
                 return { ok: true, error: null };
             }, function (error) {
                 return { ok: false, error: message(error) };
             });
         }
-        return Promise.resolve(runtime.start(windowKey(), deps.bot())).then(function (answer) {
+        const started = deps.editor
+            ? runtime.start(windowKey(), deps.bot(), deps.editor())
+            : runtime.start(windowKey(), deps.bot());
+        return Promise.resolve(started).then(function (answer) {
+            if (typeof deps.onEngineChange === 'function') deps.onEngineChange();
             return { ok: !!(answer && answer.ok), error: (answer && answer.error) || null };
         }, function (error) {
             return { ok: false, error: message(error) };
@@ -318,13 +324,13 @@ function createChrome(deps) {
         return percent === skill.value;
     }
 
-    /** The class's own SS.CLASS preset, reloaded when Auto Attack starts. */
+    /** The unsaved draft loaded for this character's class, read when Auto Attack starts. */
     async function rotationForClass() {
-        if (!deps.presets || typeof deps.presets.forClass !== 'function') return [];
-        if (typeof deps.presets.reload === 'function') deps.presets.reload();
+        if (!deps.presets || typeof deps.presets.draftFor !== 'function') return [];
         const answer = await read('className');
         if (answer.error) return [];
-        return deps.presets.forClass(answer.value) || [];
+        const draft = deps.presets.draftFor(answer.value);
+        return draft && Array.isArray(draft.skills) ? draft.skills : [];
     }
 
     /**
@@ -397,6 +403,14 @@ function createChrome(deps) {
         return { ok: true, error: null };
     }
 
+    /** A preset was selected in the editor: use it now, before Auto Attack is re-enabled. */
+    function useSkillText(text) {
+        const skills = skillPresets.parsePreset(text);
+        rotation = skills.length ? skills : skillPresets.defaultSkills();
+        autoStep = 0;
+        return rotation.map(function (skill) { return Object.assign({}, skill); });
+    }
+
     /** The hotkey action: tick or untick the same box the strip draws. */
     async function toggleAutoAttack() {
         return action('autoAttack', { checked: !autoAttack });
@@ -455,6 +469,11 @@ function createChrome(deps) {
         try {
             if (id === 'startBot') answer = await startBot(picked.checked);
             else if (id === 'autoAttack') answer = await autoAttackToggle(picked.checked);
+            else if (id === 'autoSkillSet') {
+                answer = typeof deps.openAutoSkillSet === 'function'
+                    ? deps.openAutoSkillSet()
+                    : { ok: false, error: 'the Auto Attack skill set window is not available' };
+            }
             else if (id === 'cell') answer = await moveTo({ cell: picked.value });
             else if (id === 'pad') answer = await moveTo({ pad: picked.value });
             else if (id === 'refreshCell') answer = await refreshCell();
@@ -478,6 +497,7 @@ function createChrome(deps) {
         stop: function () { autoAttack = false; stopTimer(); },
         autoAttack: function () { return autoAttack; },
         toggleAutoAttack: toggleAutoAttack,
+        useSkillText: useSkillText,
         /** One Auto Attack rotation, for the tests and for a window that wants to show it. */
         rotation: function () { return rotation.map(function (skill) { return Object.assign({}, skill); }); },
         /** @internal test seam */
@@ -514,6 +534,7 @@ function createFromHost(host, deps) {
         messages: deps.messages || {},
         log: deps.log || function (line) { host.log('chrome: ' + line); },
         presets: deps.presets,
+        openAutoSkillSet: deps.openAutoSkillSet,
         sleep: deps.sleep,
         timers: deps.timers
     });

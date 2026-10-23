@@ -110,7 +110,7 @@ async function activate(host) {
             id: 'aqw-testing',
             keybindId: 'newTest',
             getUrl: function () { return urls.testingAQW(); },
-            title: function () { return 'AquaStar - AQW Testing Version!'; },
+            title: function () { return 'AquGrim - AQW Testing Version!'; },
             wrap: { preferDirectWmode: true, ruffleEligible: true, ruffle: ruffle },
             flashTrust: true
         },
@@ -118,7 +118,7 @@ async function activate(host) {
             id: 'dragonfable',
             keybindId: 'dragon',
             getUrl: function () { return urls.URLS.dfLoader; },
-            title: function () { return 'AquaStar - DragonFable'; },
+            title: function () { return 'AquGrim - DragonFable'; },
             // Own game: not numbered, no AQW game bar, and always the opaque/showall embed
             // so the 750x550 stage letterboxes and its relative loads keep working.
             standalone: true,
