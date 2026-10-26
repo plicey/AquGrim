@@ -588,3 +588,29 @@ test('Load (cmd) picks a file without loading it, and writes the reference relat
     fileName: 'x.gbot', filePath: path.join('Bots', 'sub', 'x.gbot')
   });
 });
+
+test('loading documents preserves selected Options and an explicit pause remains available', async () => {
+  let applying = true;
+  const changes = [];
+  const w = window({
+    options: {
+      state: () => ({ applying }),
+      setApplying: async value => { applying = value; changes.push(value); return { ok: true }; }
+    },
+    dialogs: { open: async () => ({ canceled: false, bot: bots.parseBot(fixture('plain.gbot')).bot, path: '/tmp/plain.gbot' }) }
+  });
+  const file = path.join(w.dir, 'plain.gbot');
+  fs.writeFileSync(file, fixture('plain.gbot'));
+  try {
+    await w.feature.handle('botManagerLoad', null, [file]);
+    await w.feature.handle('botManagerLoad', null, []);
+    await w.feature.handle('botManagerDrop', null, [[file]]);
+    await w.feature.handle('botManagerTreeSelect', null, [['plain.gbot'], false]);
+    assert.deepStrictEqual(changes, [], 'file, dialog, drop and tree loads never pause Options');
+    assert.strictEqual(w.feature.handle('botManagerSheet', null, []).optionsRunning, true);
+    await w.feature.handle('botManagerOptionsEnable', null, [false]);
+    assert.deepStrictEqual(changes, [false]);
+    await w.feature.handle('botManagerLoad', null, [file]);
+    assert.strictEqual(applying, false, 'document loads also preserve explicit pause');
+  } finally { fs.rmSync(w.dir, { recursive: true, force: true }); }
+});

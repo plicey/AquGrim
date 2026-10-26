@@ -73,6 +73,7 @@ function createOptions(deps) {
   const timers = deps.timers || fakeTimers();
   const feature = createOptionsFeature({ log: function () {} }, {
     gameCalls: calls,
+    isReady: deps.productionReadiness ? undefined : deps.isReady || function () { return Promise.resolve(true); },
     store: store,
     timers: timers,
     onApplyingChanged: deps.onApplyingChanged,
@@ -192,7 +193,8 @@ test('OptionsManager starts stopped, and Start follows Grimlite\'s immediate/one
   await run.feature.setToggle('provoke', true);
   run.calls.calls.length = 0;
 
-  // ApplySettings sends Provoke as soon as Start() begins, before the first delay.
+  // Pause remains explicit; Start immediately applies Provoke after checking readiness.
+  await run.feature.setApplying(false);
   await run.feature.setApplying(true);
   assert.deepStrictEqual(run.calls.calls, [['callGameFunction0', ['SetProvokeMonsters']]]);
   assert.strictEqual(run.timers.running().length, 1);
@@ -276,7 +278,7 @@ test('the walkspeed loop keeps pushing the value while the tick is on, and lets 
   assert.deepStrictEqual(run.calls.calls, [['callGameFunction', ['SetWalkSpeed', '20']]]);
 
   await run.feature.setToggle('walkSpeed', false);
-  assert.deepStrictEqual(run.timers.running(), []);
+  assert.deepStrictEqual(run.timers.running().filter(entry => entry.ms === toggles.WALK_SPEED.intervalMs), []);
   await run.feature.stop();
 });
 
@@ -391,19 +393,14 @@ test('the ticks and the walkspeed value survive a restart', async () => {
   await second.feature.stop();
 });
 
-test('a persisted walkspeed tick does not restart its loop on launch', async () => {
-  const store = memoryStore({ toggles: { walkSpeed: true }, walkSpeed: 33 });
-  const run = createOptions({ store: store });
-  assert.strictEqual(run.feature.state().walkSpeedOn, true, 'the user\'s tick is still drawn');
-  assert.deepStrictEqual(run.timers.running(), [],
-    'Grimlite starts its walkspeed loop from the tick changing, not from the file');
-  assert.deepStrictEqual(run.calls.calls, [], 'and it does not push the value on launch');
-
-  // Starting the OptionsManager loop does not restart the independent walkspeed timer either.
-  await run.feature.setApplying(true);
-  assert.deepStrictEqual(run.timers.running().filter(function (entry) {
-    return entry.ms === toggles.WALK_SPEED.intervalMs;
-  }), []);
+test('a persisted walkspeed tick resumes its loop on launch', async () => {
+  const run = createOptions({ store: memoryStore({ toggles: { walkSpeed: true }, walkSpeed: 33 }) });
+  assert.strictEqual(run.feature.state().walkSpeedOn, true);
+  assert.strictEqual(run.timers.running().length, 2);
+  await run.timers.pass();
+  assert.ok(run.calls.calls.some(call => call[1][0] === 'SetWalkSpeed' && call[1][1] === '33'));
+  await run.feature.setApplying(false);
+  assert.deepStrictEqual(run.timers.running(), []);
   await run.feature.stop();
 });
 
@@ -417,31 +414,225 @@ test('a stored tick that no longer exists is ignored rather than fatal', async (
   await run.feature.stop();
 });
 
-test('the OptionsManager running flag is temporary, while the option values remain saved', async () => {
-  const store = memoryStore({ toggles: { provoke: true }, walkSpeed: 35, applying: true });
+test('selected values resume on restart while explicit pause is temporary', async () => {
+  const store = memoryStore({ toggles: { provoke: true }, walkSpeed: 35, applying: false });
   const changes = [];
-  const run = createOptions({ store: store, onApplyingChanged: function (running) { changes.push(running); } });
-  assert.strictEqual(run.feature.state().applying, false,
-    'an old saved running flag must not override Grimlite\'s stopped-on-launch state');
-  assert.deepStrictEqual(run.timers.running(), []);
-
-  await run.feature.setApplying(true);
-  await run.feature.setApplying(true);
-  assert.deepStrictEqual(run.calls.calls, [['callGameFunction0', ['SetProvokeMonsters']]]);
-  assert.deepStrictEqual(changes, [true], 'the checkbox follows actual OptionsManager state changes');
-  await run.feature.setToggle('skipCutscenes', true);
-  const saved = store.read();
-  assert.strictEqual(saved.applying, undefined, 'running state is not persisted');
-  assert.strictEqual(saved.toggles.provoke, true);
-  assert.strictEqual(saved.toggles.skipCutscenes, true);
-  assert.strictEqual(saved.walkSpeed, 35);
+  const run = createOptions({ store, onApplyingChanged: running => changes.push(running) });
+  assert.strictEqual(run.feature.state().applying, true, 'saved runtime flags are ignored');
+  assert.deepStrictEqual(changes, [true]);
   await run.feature.setApplying(false);
-  assert.deepStrictEqual(changes, [true, false]);
+  await run.feature.setToggle('skipCutscenes', true);
+  assert.strictEqual(run.feature.state().applying, false, 'changing a tick respects explicit pause');
+  assert.deepStrictEqual(run.timers.running(), []);
+  assert.strictEqual(store.read().applying, undefined);
+  await run.feature.setApplying(true);
+  assert.deepStrictEqual(changes, [true, false, true]);
+  await run.feature.stop();
+  const restarted = createOptions({ store });
+  assert.strictEqual(restarted.feature.state().applying, true);
+  assert.strictEqual(restarted.feature.state().provoke, true);
+  await restarted.feature.stop();
+});
+
+test('remembered selected options activate automatically and skip later cutscenes', async () => {
+  const run = createOptions({ store: memoryStore({ toggles: {
+    infiniteRange: true, skipCutscenes: true, walkSpeed: true
+  }, walkSpeed: 33 }) });
+  assert.strictEqual(run.feature.state().applying, true);
+  await run.timers.pass();
+  await run.timers.pass();
+  assert.ok(run.calls.calls.some(call => call[1][0] === 'SetInfiniteRange'));
+  assert.ok(run.calls.calls.some(call => call[1][0] === 'SetWalkSpeed' && call[1][1] === '33'));
+  run.calls.calls.length = 0;
+  await run.timers.pass();
+  await run.timers.pass();
+  assert.ok(run.calls.calls.some(call => call[1][0] === 'SetSkipCutscenes'), 'later cutscenes are skipped without a new tick');
+  await run.feature.setToggle('skipCutscenes', false);
+  run.calls.calls.length = 0;
+  await run.timers.pass();
+  await run.timers.pass();
+  assert.ok(!run.calls.calls.some(call => call[1][0] === 'SetSkipCutscenes'));
+  await run.feature.stop();
+  assert.deepStrictEqual(run.timers.running(), []);
+});
+
+test('startup waits for a connected player, retries failed setters and recovers on a fresh game', async () => {
+  let connected = false;
+  let uid = null;
+  let failRange = true;
+  const calls = [];
+  const run = createOptions({
+    productionReadiness: true,
+    store: memoryStore({ toggles: { infiniteRange: true, walkSpeed: true }, walkSpeed: 37 }),
+    calls: { call: async function (name, args) {
+      calls.push([name, args]);
+      if (name === 'getGameObject') return { ok: true, value: args[0] === 'sfc.isConnected' ? connected : uid };
+      if (args[0] === 'SetInfiniteRange' && failRange) return { ok: false, error: 'skills not ready' };
+      return { ok: true };
+    } }
+  });
+  const writes = () => calls.filter(call => call[0] !== 'getGameObject');
+  await run.timers.pass();
+  assert.deepStrictEqual(writes(), []);
+  connected = true;
+  await run.timers.pass();
+  assert.deepStrictEqual(writes(), [], 'socket readiness alone is too early');
+  uid = 123;
+  await run.timers.pass();
+  await run.timers.pass();
+  assert.strictEqual(run.feature.state().results.infiniteRange.ok, false);
+  failRange = false;
+  await run.timers.pass();
+  await run.timers.pass();
+  assert.strictEqual(run.feature.state().results.infiniteRange.ok, true, 'failed one-shot is retried');
+  connected = false;
+  calls.length = 0;
+  await run.timers.pass();
+  assert.deepStrictEqual(writes(), []);
+  connected = true;
+  uid = 456;
+  await run.timers.pass();
+  await run.timers.pass();
+  assert.ok(writes().some(call => call[1][0] === 'SetInfiniteRange'));
+  assert.ok(writes().some(call => call[1][0] === 'SetWalkSpeed' && call[1][1] === '37'));
+  await run.feature.stop();
+});
+
+test('checked Skip Cutscenes drains separate later movies through the actual loader surface', async () => {
+  const { createLoaderSurface } = require(path.join(pluginRoot, 'loader-surface.js'));
+  let children = 2;
+  let removed = 0;
+  const surface = createLoaderSurface(async function (name, args) {
+    if (name === 'getGameObject' && args[0] === 'mcExtSWF.numChildren') return children;
+    if (args[0] === 'mcExtSWF.removeChildAt') { children--; removed++; }
+    return true;
+  });
+  const run = createOptions({
+    store: memoryStore({ toggles: { skipCutscenes: true } }),
+    calls: { call: async function (name, args) {
+      await surface.call(args[0], args.slice(1));
+      return { ok: true };
+    } }
+  });
+  await run.timers.pass();
+  await run.timers.pass();
+  assert.strictEqual(children, 0);
+  children = 3;
+  await run.timers.pass();
+  await run.timers.pass();
+  assert.strictEqual(children, 0, 'a later movie is cleared while the tick stays checked');
+  assert.strictEqual(removed, 5);
+  await run.feature.setToggle('skipCutscenes', false);
+  children = 1;
+  await run.timers.pass();
+  await run.timers.pass();
+  assert.strictEqual(children, 1, 'unticking leaves later movies alone');
+  await run.feature.stop();
+});
+
+test('both option clocks drop busy ticks and cancellation stops the rest of an in-flight pass', async () => {
+  let release;
+  const entered = [];
+  const run = createOptions({
+    store: memoryStore({ toggles: { infiniteRange: true, skipCutscenes: true, walkSpeed: true } }),
+    calls: { call: function (name, args) {
+      entered.push(args[0]);
+      if (args[0] === 'SetInfiniteRange') return new Promise(resolve => { release = resolve; });
+      return Promise.resolve({ ok: true });
+    } }
+  });
+  const slow = run.timers.running().find(entry => entry.ms === toggles.LOOP_MS);
+  const fast = run.timers.running().find(entry => entry.ms === toggles.WALK_SPEED.intervalMs);
+  await slow.fn();
+  const pending = slow.fn();
+  await Promise.resolve();
+  assert.strictEqual(typeof release, 'function', 'the slow pass reaches its deferred write');
+  for (let i = 0; i < 20; i++) { await slow.fn(); await fast.fn(); }
+  assert.deepStrictEqual(entered, ['SetInfiniteRange'], 'busy ticks do not overlap or accumulate');
+  await run.feature.setToggle('skipCutscenes', false);
+  await run.feature.stop();
+  release({ ok: true });
+  await pending;
+  assert.deepStrictEqual(entered, ['SetInfiniteRange'], 'stop cancels the remaining writes');
+  await slow.fn();
+  await fast.fn();
+  assert.deepStrictEqual(entered, ['SetInfiniteRange'], 'stale callbacks stay cancelled');
+  assert.deepStrictEqual(run.timers.running(), []);
+});
+
+test('pause during readiness prevents writes and does not auto-resume on game readiness', async () => {
+  let release;
+  const run = createOptions({
+    store: memoryStore({ toggles: { walkSpeed: true, skipCutscenes: true } }),
+    isReady: () => new Promise(resolve => { release = resolve; })
+  });
+  const stale = run.timers.running().slice();
+  const pending = stale[0].fn();
+  await run.feature.setApplying(false);
+  release(true);
+  await pending;
+  assert.deepStrictEqual(run.calls.calls, []);
+  await stale[0].fn();
+  await stale[1].fn();
+  assert.deepStrictEqual(run.calls.calls, []);
+  assert.strictEqual(run.feature.state().applying, false);
+  assert.deepStrictEqual(run.timers.running(), []);
+  await run.feature.stop();
+});
+
+test('no selected ticks means no bridge polling and native timers do not keep Node alive', async () => {
+  const run = createOptions();
+  await run.feature.setApplying(true);
+  await run.timers.pass();
+  await run.timers.pass();
+  assert.deepStrictEqual(run.calls.calls, []);
+  await run.feature.stop();
+  const native = createOptionsFeature(null, {
+    store: memoryStore({ toggles: { walkSpeed: true } }), gameCalls: recorder()
+  }).attach();
+  assert.strictEqual(native._loops().loop.hasRef(), false);
+  assert.strictEqual(native._loops().fastLoop.hasRef(), false);
+  await native.stop();
+});
+
+test('fast walkspeed ticks share slow readiness probes', async () => {
+  let probes = 0;
+  const run = createOptions({
+    store: memoryStore({ toggles: { walkSpeed: true } }),
+    isReady: async () => { probes++; return true; }
+  });
+  const slow = run.timers.running().find(entry => entry.ms === toggles.LOOP_MS);
+  const fast = run.timers.running().find(entry => entry.ms === toggles.WALK_SPEED.intervalMs);
+  await fast.fn();
+  assert.deepStrictEqual(run.calls.calls, [], 'wait for the first slow readiness probe');
+  await slow.fn();
+  for (let i = 0; i < 4; i++) await fast.fn();
+  assert.strictEqual(probes, 1);
+  assert.strictEqual(run.calls.calls.length, 4);
+  await run.feature.stop();
+});
+
+test('untick during readiness cancels Skip and a fresh tick starts automatic skipping', async () => {
+  let release;
+  let defer = true;
+  const run = createOptions({
+    store: memoryStore({ toggles: { skipCutscenes: true } }),
+    isReady: () => defer ? new Promise(resolve => { release = resolve; }) : Promise.resolve(true)
+  });
+  const slow = run.timers.running()[0];
+  const pending = slow.fn();
+  await run.feature.setToggle('skipCutscenes', false);
+  release(true);
+  await pending;
+  assert.deepStrictEqual(run.calls.calls, [], 'unticking during readiness prevents all writes');
+  defer = false;
   await run.feature.stop();
 
-  const restarted = createOptions({ store: store });
-  assert.strictEqual(restarted.feature.state().applying, false);
-  assert.strictEqual(restarted.feature.state().provoke, true);
-  assert.deepStrictEqual(restarted.timers.running(), []);
-  await restarted.feature.stop();
+  const fresh = createOptions();
+  await fresh.feature.setToggle('skipCutscenes', true);
+  fresh.calls.calls.length = 0;
+  await fresh.timers.pass();
+  await fresh.timers.pass();
+  assert.ok(fresh.calls.calls.some(call => call[1][0] === 'SetSkipCutscenes'));
+  await fresh.feature.stop();
 });

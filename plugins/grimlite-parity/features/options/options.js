@@ -1,13 +1,8 @@
 // The option toggles' main-process half: hold the user's own ticks, push each one into the game,
 // and keep pushing the ones the reference keeps pushing on a loop.
 //
-// Reference: Grimoire/Botting/OptionsManager.cs. Its re-apply loop is why this file exists at all:
-// the game drops most of these effects (a map reload, a respawn, a fresh action packet), so the
-// reference re-sends them every second and, for the group behind its 2000 ms gate, every second
-// pass. The two one-shot toggles are re-sent only when the user asks again.
-//
-// Nothing here decides for the user. A toggle moves only when a person moves it, and every call's
-// answer is kept so a refusal can be shown instead of a tick that quietly did nothing.
+// Selected values resume on launch and are retried as the game becomes ready. Explicit pause
+// remains temporary; only the user's ticks and walkspeed value are saved.
 
 const toggles = require('./toggles.js');
 const { createGameCalls } = require('../../game-calls.js');
@@ -16,7 +11,11 @@ const STORE_NAMESPACE = 'options';
 
 function defaultTimers() {
     return {
-        setInterval: function (fn, ms) { return setInterval(fn, ms); },
+        setInterval: function (fn, ms) {
+            const timer = setInterval(fn, ms);
+            timer.unref();
+            return timer;
+        },
         clearInterval: function (id) { clearInterval(id); }
     };
 }
@@ -49,12 +48,23 @@ function createOptionsFeature(host, deps) {
     let loop = null;
     let fastLoop = null;
     let pass = 0;
+    let generation = 0;
+    let busy = false;
+    let ready = false;
+    let stopped = false;
+    let manuallyPaused = false;
+    const isReady = deps.isReady || async function () {
+        const connected = await gameCalls.call('getGameObject', ['sfc.isConnected']);
+        if (!connected.ok || connected.value !== true) return false;
+        // The socket connects before the player has loaded; callbacks alone are not readiness.
+        const player = await gameCalls.call('getGameObject', ['world.myAvatar.uid']);
+        return player.ok && Number(player.value) > 0;
+    };
     // OptionsManager.Timer: numOptionsTimer_ValueChanged writes it; the default is 1000.
     let timerMs = toggles.LOOP_MS;
     // BotManager's "Respawn Provoke": the reference's loop skips provoke while it is ticked.
     let respawnProvoke = false;
-    // OptionsManager.IsRunning is runtime state: the hidden menu item and Toggle Options hotkey
-    // start/stop it, and a new Grimlite process starts stopped.
+    // The hotkey and Bot Manager still explicitly start/stop this runtime state.
     let applying = false;
 
     function load() {
@@ -92,32 +102,59 @@ function createOptionsFeature(host, deps) {
         return results[toggle.id];
     }
 
-    async function eachPass() {
-        if (!applying) return;
-        // ApplySettings' pass body: provoke while the tick is on (OptionsManager.cs:199-202).
-        if (state.provoke && !respawnProvoke) await send(toggles.byId('provoke'), true);
-        pass += 1;
-        // ...then its own gate: the group below runs on every second pass (OptionsManager.cs:205).
-        if (!applying || pass % 2 !== 0) return;
-        for (let i = 0; i < toggles.SECOND_PASS_ORDER.length; i++) {
-            const toggle = toggles.byId(toggles.SECOND_PASS_ORDER[i]);
-            // Lag killer is called with its current value every pass either way; the rest only
-            // while their tick is on.
-            const lagKiller = toggle.id === 'lagKiller';
-            if (state[toggle.id] || lagKiller) await send(toggle, state[toggle.id] === true);
+    function hasSelection() {
+        return toggles.TOGGLES.some(function (toggle) { return state[toggle.id]; });
+    }
+
+    function notifyApplying() {
+        if (typeof deps.onApplyingChanged !== 'function') return;
+        try {
+            deps.onApplyingChanged(applying);
+        } catch (error) {
+            log('could not update the options running state (' +
+                (error && error.message ? error.message : error) + ')');
         }
     }
 
-    async function fastPass() {
-        if (!state.walkSpeed) return;
-        await send(toggles.byId('walkSpeed'), true);
+    async function runPass(fast, initial) {
+        // Both clocks share one in-flight pass. Busy ticks are dropped, never queued.
+        if (busy || stopped || !applying || !hasSelection() ||
+            (fast && (!state.walkSpeed || !ready))) return;
+        busy = true;
+        const current = generation;
+        function active() { return !stopped && applying && current === generation; }
+        try {
+            // Only the slow clock probes readiness; fast ticks share its latest answer.
+            const available = fast ? ready : await isReady();
+            if (!active()) return;
+            ready = available;
+            if (!ready || !hasSelection()) return;
+            if (fast) {
+                if (state.walkSpeed) await send(toggles.byId('walkSpeed'), true);
+                return;
+            }
+            if (state.provoke && !respawnProvoke) await send(toggles.byId('provoke'), true);
+            if (initial) return;
+            pass += 1;
+            if (!active() || pass % 2 !== 0) return;
+            // Infinite Range is a one-shot upstream, but fresh games and skills replace it.
+            const ids = ['infiniteRange'].concat(toggles.SECOND_PASS_ORDER);
+            for (let i = 0; i < ids.length && active(); i++) {
+                const toggle = toggles.byId(ids[i]);
+                if (state[toggle.id] || toggle.id === 'lagKiller') {
+                    await send(toggle, state[toggle.id] === true);
+                }
+            }
+        } finally {
+            busy = false;
+        }
     }
 
     function startOptionsLoop() {
         if (loop) return;
         pass = 0;
         loop = timers.setInterval(function () {
-            return eachPass().catch(function (error) {
+            return runPass(false).catch(function (error) {
                 log('option loop failed: ' + (error && error.message ? error.message : error));
             });
         }, timerMs);
@@ -128,43 +165,42 @@ function createOptionsFeature(host, deps) {
     }
 
     function settleWalkSpeedLoop() {
-        if (state.walkSpeed && !fastLoop) {
+        if (applying && !stopped && state.walkSpeed && !fastLoop) {
             fastLoop = timers.setInterval(function () {
-                return fastPass().catch(function (error) {
+                return runPass(true).catch(function (error) {
                     log('walkspeed loop failed: ' + (error && error.message ? error.message : error));
                 });
             }, toggles.WALK_SPEED.intervalMs);
-        } else if (!state.walkSpeed && fastLoop) {
+        } else if ((!applying || stopped || !state.walkSpeed) && fastLoop) {
             timers.clearInterval(fastLoop);
             fastLoop = null;
         }
     }
 
-    /** Grimlite's walk-speed timer is independent of OptionsManager.Start/Stop. */
+    /** Pause and resume both clocks without changing selected values. */
     function settleLoops() {
         if (applying) startOptionsLoop();
         else stopOptionsLoop();
+        settleWalkSpeedLoop();
     }
 
     /** The reference's OptionsManager.Start/Stop. Ticks stay as the user left them. */
     async function setApplying(wanted) {
         const next = wanted === true;
+        manuallyPaused = !next;
+        if (next) stopped = false;
         if (applying === next) return { ok: true, applying: applying };
         applying = next;
+        generation += 1;
+        ready = false;
         settleLoops();
-        if (typeof deps.onApplyingChanged === 'function') {
-            try {
-                deps.onApplyingChanged(applying);
-            } catch (error) {
-                log('could not update the options running state (' +
-                    (error && error.message ? error.message : error) + ')');
-            }
-        }
+        notifyApplying();
         if (!applying) return { ok: true, applying: false };
         // ApplySettings starts with its Provoke check, then waits before its next pass.
+        await runPass(false, true);
         const answer = state.provoke && !respawnProvoke
-            ? await send(toggles.byId('provoke'), true) : { ok: true };
-        return { ok: answer.ok, error: answer.error || null, applying: true };
+            ? results.provoke || { ok: true } : { ok: true };
+        return { ok: answer.ok, error: answer.error || null, applying: applying };
     }
 
     const feature = {
@@ -175,6 +211,11 @@ function createOptionsFeature(host, deps) {
             const wanted = on === true;
             state[id] = wanted;
             save();
+            if (wanted && !manuallyPaused && !stopped && !applying) {
+                applying = true;
+                settleLoops();
+                notifyApplying();
+            }
 
             let answer = { ok: true, error: null };
             if (id === 'walkSpeed') {
@@ -187,8 +228,7 @@ function createOptionsFeature(host, deps) {
                         [toggle.call, String(toggles.WALK_SPEED.restore)]);
                     results[id] = { ok: answer.ok === true, error: answer.error || null };
                 }
-                // The loop belongs to this tick, not to the process: a value restored on launch
-                // stays a value until the user moves the box (BotManager.cs:1696-1702).
+                // The saved tick owns the fast loop as well as checkbox changes.
                 settleWalkSpeedLoop();
             } else if (id === 'provoke' || id === 'enemyMagnet') {
                 // OptionsManager's setters only set these two flags. ApplySettings sends them
@@ -228,6 +268,7 @@ function createOptionsFeature(host, deps) {
             const ms = Number(value);
             timerMs = isFinite(ms) && ms >= 100 && ms <= 10000 ? Math.round(ms) : 1000;
             if (loop) {
+                generation += 1;
                 stopOptionsLoop();
                 startOptionsLoop();
             }
@@ -254,17 +295,28 @@ function createOptionsFeature(host, deps) {
             return snapshot;
         },
 
-        /** Load remembered ticks; OptionsManager itself starts stopped on a fresh app launch. */
+        /** Resume only selected values; no running flag or migration is needed. */
         attach: function () {
             load();
+            stopped = false;
+            if (!manuallyPaused) {
+                applying = hasSelection();
+                settleLoops();
+                if (applying) notifyApplying();
+            }
             return feature;
         },
 
         /** Give the timers back: a plugin that is stopping must not leave a loop ticking. */
         stop: function () {
+            stopped = true;
+            ready = false;
+            generation += 1;
             stopOptionsLoop();
             if (fastLoop) { timers.clearInterval(fastLoop); fastLoop = null; }
+            const wasApplying = applying;
             applying = false;
+            if (wasApplying) notifyApplying();
             return Promise.resolve();
         },
 

@@ -483,9 +483,6 @@ function createBotManager(deps) {
         const parsed = bots.parseBot(text);
         if (!parsed.ok) return { error: parsed.error };
         apply(parsed.bot, file, key);
-        // Every load stops the Options loop (btnLoad_Click, treeBots_AfterSelect and the drop
-        // handler all call OptionsManager.Stop()).
-        stopOptions();
         return null;
     }
 
@@ -555,23 +552,6 @@ function createBotManager(deps) {
         const incoming = Array.isArray(bot.NotifyUponDrop) ? bot.NotifyUponDrop : [];
         const own = Array.isArray(botDocument.NotifyUponDrop) ? botDocument.NotifyUponDrop : [];
         if (incoming.length) botDocument.NotifyUponDrop = own.concat(incoming);
-    }
-
-    /** OptionsManager.Stop(), which every load calls before it returns. */
-    function stopOptions() {
-        if (!options || typeof options.setApplying !== 'function' || !optionsRunning()) return;
-        let answer;
-        try {
-            answer = options.setApplying(false);
-        } catch (error) {
-            optionsStateChanged(optionsRunning());
-            return;
-        }
-        Promise.resolve(answer).then(function () {
-            optionsStateChanged(optionsRunning());
-        }, function () {
-            optionsStateChanged(optionsRunning());
-        });
     }
 
     function statements() {
@@ -670,7 +650,6 @@ function createBotManager(deps) {
             if (!result || result.canceled) return { canceled: true };
             if (result.error) return view({ canceled: false, error: result.error });
             apply(result.bot, result.path, key);
-            stopOptions();
             currentPath = result.path;
             return view({ canceled: false, error: null });
         });
