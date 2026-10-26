@@ -226,15 +226,20 @@ test('Index Up moves back by the count asked for', async () => {
   assert.strictEqual(made.index(), 1);
 });
 
-test('Index without a Type uses the Goto shape older scripts write', async () => {
+test('Index without a Type defaults to upstream Up (zero)', async () => {
   const made = engine();
+  const jump = command('CmdIndex', { Index: 2 });
   await made.start(bot([
-    command('CmdIndex', { Index: 2 }),
     command('CmdBlank', {}),
-    command('CmdBlank2', { Text: 'landed' })
+    command('CmdBlank', {}),
+    command('CmdBlank', {}),
+    jump,
+    command('CmdBlank', {})
   ]));
+  made.setIndex(3);
   await made.tick();
-  assert.strictEqual(made.index(), 2, 'the missing Type is the default Goto 2');
+  assert.strictEqual(made.index(), 1, 'omitted enum Type is Up, so index 3 moves up two');
+  assert.strictEqual(catalog.rowText(jump), 'Index up: 2');
 });
 
 test('a label is a no-op and a goto finds it by name, case-insensitively', async () => {

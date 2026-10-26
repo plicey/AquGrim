@@ -1578,11 +1578,10 @@ function createEngine(deps) {
                 const parsed = /^[+-]?\d+$/.test(text) ? Number(text) : NaN;
                 if (Number.isInteger(parsed) && Math.abs(parsed) <= 2147483647) amount = parsed;
             }
-            // Older files omit Type on the Goto form, which is the default and so was dropped
-            // when the file was written. An omitted member therefore means Goto (2), not Up (0).
+            // CmdIndex.Type has no initializer upstream: an omitted enum member defaults to Up (0).
             const writtenType = command.Type;
             const type = writtenType === undefined || writtenType === null || writtenType === ''
-                ? 2 : Number(writtenType) || 0;
+                ? 0 : Number(writtenType) || 0;
             // CmdIndex.cs: Down adds (n - 1) only when that is positive AND the result is still
             // inside the list; Up subtracts (n + 1) only when the result stays at or above zero.
             // Neither branch uses the Index setter, so neither wraps.

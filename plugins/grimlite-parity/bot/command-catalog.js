@@ -165,7 +165,7 @@ const DISPLAY = {
     CmdGotoPlayer: (c) => 'Goto player: ' + text(c.PlayerName),
     CmdIndex: function (c) {
         if (c.Type === 1) return 'Index down: ' + text(c.Index);
-        if (c.Type === 0) return 'Index up: ' + text(c.Index);
+        if (c.Type === undefined || c.Type === 0) return 'Index up: ' + text(c.Index);
         return 'Goto index: ' + (text(c.IndexString) || text(c.Index));
     },
     CmdInt: function (c) {
