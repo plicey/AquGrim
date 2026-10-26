@@ -500,22 +500,24 @@ test('startup waits for a connected player, retries failed setters and recovers 
   await run.feature.stop();
 });
 
-test('restored Skip arms before readiness and untick/pause/stop disarm its native state', async () => {
+test('restored Skip arms before readiness, ignores pause, and only untick/stop disarm it', async () => {
   const run = createOptions({
     store: memoryStore({ toggles: { skipCutscenes: true } }),
     isReady: async () => false
   });
   await new Promise(setImmediate);
   assert.deepStrictEqual(run.calls.calls, [['callGameFunction', ['SetSkipCutscenes', true]]]);
+  const lastSkip = () => run.calls.calls.filter(call => call[1][0] === 'SetSkipCutscenes').at(-1);
   await run.feature.setApplying(false);
-  assert.deepStrictEqual(run.calls.calls.at(-1), ['callGameFunction', ['SetSkipCutscenes', false]]);
+  assert.deepStrictEqual(lastSkip(), ['callGameFunction', ['SetSkipCutscenes', true]],
+    'pausing the re-apply loop leaves the passive watcher armed');
   await run.feature.setApplying(true);
-  assert.deepStrictEqual(run.calls.calls.at(-1), ['callGameFunction', ['SetSkipCutscenes', true]]);
+  assert.deepStrictEqual(lastSkip(), ['callGameFunction', ['SetSkipCutscenes', true]]);
   await run.feature.setToggle('skipCutscenes', false);
-  assert.deepStrictEqual(run.calls.calls.at(-1), ['callGameFunction', ['SetSkipCutscenes', false]]);
+  assert.deepStrictEqual(lastSkip(), ['callGameFunction', ['SetSkipCutscenes', false]]);
   await run.feature.setToggle('skipCutscenes', true);
   await run.feature.stop();
-  assert.deepStrictEqual(run.calls.calls.at(-1), ['callGameFunction', ['SetSkipCutscenes', false]]);
+  assert.deepStrictEqual(lastSkip(), ['callGameFunction', ['SetSkipCutscenes', false]]);
 });
 
 test('slow busy ticks drop while walkspeed continues and stop cancels remaining writes', async () => {
@@ -526,6 +528,7 @@ test('slow busy ticks drop while walkspeed continues and stop cancels remaining 
   const run = createOptions({
     store: memoryStore({ toggles: { infiniteRange: true, skipCutscenes: true, walkSpeed: true } }),
     calls: { call: function (name, args) {
+      if (!args.length) return Promise.resolve({ ok: true, value: null });
       entered.push(args[0]);
       if (args[0] === 'SetInfiniteRange') return new Promise(resolve => { release = resolve; reachedRange(); });
       return Promise.resolve({ ok: true });
@@ -566,7 +569,7 @@ test('pause during readiness prevents writes and does not auto-resume on game re
   release(true);
   await pending;
   const pausedCalls = run.calls.calls.slice();
-  assert.deepStrictEqual(pausedCalls.at(-1), ['callGameFunction', ['SetSkipCutscenes', false]]);
+  assert.deepStrictEqual(pausedCalls.at(-1), ['callGameFunction', ['SetSkipCutscenes', true]]);
   await stale[0].fn();
   await stale[1].fn();
   assert.deepStrictEqual(run.calls.calls, pausedCalls);

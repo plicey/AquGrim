@@ -41,6 +41,8 @@ package {
         private var skipCutscenes:Boolean = false;
         private var skipRoot:Object = null;
         private var skipScene:Object = null;
+        private var skipTransfers:int = 0;
+        private var skipLast:String = 'off';
         private var game:Object = null;          // the game's own root object
         private var domain:ApplicationDomain;    // where the game's classes live (ours)
         private var events:Array = [];
@@ -105,6 +107,7 @@ package {
             addCallback('SetTargetPvP', aqSetTargetPvP);
             addCallback('RejectDrop', aqRejectDrop);
             addCallback('SetSkipCutscenesEnabled', aqSetSkipCutscenesEnabled);
+            addCallback('GetSkipCutscenesStatus', aqGetSkipCutscenesStatus);
         }
 
         private function addCallback(name:String, fn:Function):void {
@@ -128,7 +131,46 @@ package {
                 // Flash still invokes listeners removed during dispatch; let game callbacks finish first.
                 skipRoot.addEventListener(Event.ENTER_FRAME, onSkipCutsceneFrame, false, -2147483648, true);
             }
+            skipLast = enabled ? 'armed' : 'off';
             return toJson(enabled);
+        }
+
+        /** What the watcher currently sees, for the Options log when a scene still plays. */
+        private function aqGetSkipCutscenesStatus():String {
+            var status:Object = {
+                armed: skipCutscenes,
+                game: game != null,
+                world: false,
+                handler: false,
+                pending: false,
+                history: 0,
+                tracked: skipScene != null,
+                children: -1,
+                mapReady: false,
+                transfers: skipTransfers,
+                last: skipLast
+            };
+            try {
+                var world:Object = game == null ? null : game.world;
+                status.world = world != null;
+                var handler:Object = world == null ? null : world.cHandle;
+                status.handler = handler != null;
+                status.pending = handler != null && handler.isPending();
+                status.mapReady = world != null && world.map != null && !world.mapLoadInProgress;
+            } catch (e:Error) {
+            }
+            try {
+                status.children = game == null ? -1 : game.mcExtSWF.numChildren;
+            } catch (e2:Error) {
+            }
+            try {
+                var history:Object = game == null ? null : game.ldrMC.history;
+                for (var key:String in history) {
+                    if (history[key].dest === game.mcExtSWF) status.history++;
+                }
+            } catch (e3:Error) {
+            }
+            return toJson(status);
         }
 
         private function onSkipCutsceneFrame(event:Event):void {
@@ -137,7 +179,7 @@ package {
                 var handler:Object = world == null ? null : world.cHandle;
                 if (skipScene != null && (skipScene.world !== world || skipScene.handler !== handler ||
                     world == null || skipScene.map !== world.map)) skipScene = null;
-                if (handler == null) return;
+                if (handler == null) { skipLast = 'no handler'; return; }
                 if (!("isPending" in handler) || !("transfer" in handler)) {
                     throw new Error("this game's cutscene handler does not support isPending/transfer");
                 }
@@ -155,8 +197,9 @@ package {
                     }
                     loading = true;
                 }
-                if (loading) return;
+                if (loading) { skipLast = 'loading'; return; }
                 if (skipScene != null) {
+                    skipLast = 'tracked';
                     var content:Object = skipScene.loader.content;
                     if (content == null) return;
                     if (game.mcExtSWF.numChildren != 1 || game.mcExtSWF.getChildAt(0) !== content) {
@@ -165,10 +208,13 @@ package {
                     }
                 } else {
                     // A stale handler is not evidence that an arbitrary displayed movie is a cutscene.
+                    skipLast = pending ? 'pending' : 'idle';
                     if (!pending || game.mcExtSWF.numChildren != 0) return;
                 }
-                if (world.map == null || world.mapLoadInProgress) return;
+                if (world.map == null || world.mapLoadInProgress) { skipLast = 'waiting map'; return; }
                 skipScene = null;
+                skipTransfers++;
+                skipLast = 'exited';
                 handler.transfer();
             } catch (error:Error) {
                 aqSetSkipCutscenesEnabled(false);

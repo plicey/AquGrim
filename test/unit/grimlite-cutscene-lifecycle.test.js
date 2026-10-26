@@ -53,7 +53,8 @@ function scenario(realReadiness = false) {
     parent: { removeChild() { detached = true; } }, onFileLoadComplete: method(loaderSource, 'onFileLoadComplete', 'param1') };
   const events = [];
   g.world.mapEventTrigger = event => events.push(event.cmd);
-  const bridge = { game: g, skipCutscenes: false, skipRoot: null, skipScene: null, toJson: JSON.stringify,
+  const bridge = { game: g, skipCutscenes: false, skipRoot: null, skipScene: null,
+    skipTransfers: 0, skipLast: 'off', toJson: JSON.stringify,
     emit: (type, message) => events.push(message),
     aqSetSkipCutscenesEnabled: method(native, 'aqSetSkipCutscenesEnabled', 'enabled'),
     onSkipCutsceneFrame: method(native, 'onSkipCutsceneFrame', 'event') };

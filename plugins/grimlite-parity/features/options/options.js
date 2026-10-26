@@ -106,6 +106,17 @@ function createOptionsFeature(host, deps) {
         return results[toggle.id];
     }
 
+    // Logs only transitions, so the Logs window shows where a scene stalled without per-frame noise.
+    let lastSkipStatus = '';
+    async function pollSkipStatus() {
+        if (!state.skipCutscenes) return;
+        const answer = await gameCalls.call('GetSkipCutscenesStatus', []);
+        const text = answer.ok ? JSON.stringify(answer.value) : 'error: ' + answer.error;
+        if (text === lastSkipStatus) return;
+        lastSkipStatus = text;
+        log('skip cutscenes status ' + text);
+    }
+
     function hasSelection() {
         return toggles.TOGGLES.some(function (toggle) { return state[toggle.id]; });
     }
@@ -142,6 +153,7 @@ function createOptionsFeature(host, deps) {
             if (!active()) return;
             const available = await isReady();
             if (!active() || !available || !hasSelection()) return;
+            await pollSkipStatus();
             if (state.provoke && !respawnProvoke) await send(toggles.byId('provoke'), true);
             if (initial) return;
             pass += 1;
@@ -203,8 +215,10 @@ function createOptionsFeature(host, deps) {
         generation += 1;
         settleLoops();
         notifyApplying();
-        const skipResult = state.skipCutscenes
-            ? await send(toggles.byId('skipCutscenes'), applying) : { ok: true };
+        // Pausing the loop only pauses its re-apply rounds; Skip is a passive watcher and stays
+        // armed while its tick is on. Resuming re-asserts it for a bridge that reconnected.
+        const skipResult = applying && state.skipCutscenes && !stopped
+            ? await send(toggles.byId('skipCutscenes'), true) : { ok: true };
         if (!applying) return { ok: skipResult.ok, error: skipResult.error || null, applying: false };
         // ApplySettings starts with its Provoke check, then waits before its next pass.
         await runPass(true);
@@ -229,7 +243,7 @@ function createOptionsFeature(host, deps) {
 
             let answer = { ok: true, error: null };
             if (id === 'skipCutscenes') {
-                answer = await send(toggle, wanted && applying && !stopped);
+                answer = await send(toggle, wanted && !stopped);
             } else if (id === 'walkSpeed') {
                 // BotManager.cs:1696-1702: on, the value goes out and a 250 ms loop keeps it there;
                 // off, the reference restores its own 8.
@@ -316,7 +330,7 @@ function createOptionsFeature(host, deps) {
                 settleLoops();
                 if (applying) notifyApplying();
             }
-            if (applying && state.skipCutscenes) {
+            if (state.skipCutscenes) {
                 send(toggles.byId('skipCutscenes'), true).catch(error => log('could not arm Skip Cutscenes: ' + error.message));
             }
             return feature;
