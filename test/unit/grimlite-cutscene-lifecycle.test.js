@@ -27,16 +27,16 @@ const stock = fs.readFileSync(path.join(fixtures, 'cutsceneHandler.as'), 'utf8')
 const loaderSource = fs.readFileSync(path.join(fixtures, 'LoaderMC.as'), 'utf8');
 const native = fs.readFileSync(path.join(__dirname, '../../plugins/grimlite-parity/bridge/AquaBridge.as'), 'utf8');
 
-function scenario() {
+function scenario(realReadiness = false) {
   let listeners = [];
-  const ext = { children: [], get numChildren() { return this.children.length; }, addChild(child) { this.children.push(child); } };
+  const ext = { getChildAt(i) { return this.children[i]; }, children: [], get numChildren() { return this.children.length; }, addChild(child) { this.children.push(child); } };
   const g = {
     mcExtSWF: ext, ui: { visible: true },
     addEventListener(type, fn, capture, priority) {
       if (!listeners.some(entry => entry.fn === fn)) listeners.push({ fn, priority: priority || 0 });
     },
     removeEventListener(type, fn) { listeners = listeners.filter(entry => entry.fn !== fn); },
-    world: { map: {}, mapLoadInProgress: false, visible: true, strFrame: 'Enter', strPad: 'Spawn', moveToCell(frame, pad) { this.strFrame = frame; this.strPad = pad; } },
+    world: { map: {}, mapLoadInProgress: false, mapEntered: true, visible: true, strFrame: 'Enter', strPad: 'Spawn', moveToCell(frame, pad) { this.strFrame = frame; this.strPad = pad; } },
     clearExternamSWF() { ext.children.length = 0; this.world.visible = true; this.ui.visible = true; },
     loadExternalSWF() { this.world.visible = false; this.ui.visible = false; this.ldrMC.history.cold = { ldr: contentLoader, dest: ext, evt: true }; }
   };
@@ -53,18 +53,23 @@ function scenario() {
     parent: { removeChild() { detached = true; } }, onFileLoadComplete: method(loaderSource, 'onFileLoadComplete', 'param1') };
   const events = [];
   g.world.mapEventTrigger = event => events.push(event.cmd);
-  const bridge = { game: g, skipCutscenes: false, skipRoot: null, toJson: JSON.stringify,
+  const bridge = { game: g, skipCutscenes: false, skipRoot: null, skipScene: null, toJson: JSON.stringify,
     emit: (type, message) => events.push(message),
     aqSetSkipCutscenesEnabled: method(native, 'aqSetSkipCutscenesEnabled', 'enabled'),
     onSkipCutsceneFrame: method(native, 'onSkipCutsceneFrame', 'event') };
   // AS3 bound method closures retain their receiver when registered as listeners.
   bridge.onSkipCutsceneFrame = bridge.onSkipCutsceneFrame.bind(bridge);
   handler.onOverlayPoll = handler.onOverlayPoll.bind(handler);
-  return { g, handler, bridge, events,
+  if (realReadiness) {
+    handler.loadedTick = 0;
+    handler.startPoll = method(stock, 'startPoll');
+    handler.onReadyPoll = method(stock, 'onReadyPoll', 'param1').bind(handler);
+  }
+  return { g, handler, bridge, events, contentLoader,
     count: () => listeners.length,
     tick() {
       for (const entry of listeners.slice().sort((a, b) => b.priority - a.priority)) {
-        if (listeners.includes(entry)) entry.fn();
+        entry.fn(); // Flash snapshots dispatch: removal affects subsequent events only.
       }
     },
     complete() { loader.onFileLoadComplete({ target: { loader: contentLoader } }); assert.ok(detached); }
@@ -95,7 +100,7 @@ test('native watcher cancels first/new cutscenes before load and leaves ordinary
   assert.equal(run.handler.isPending(), true);
 });
 
-test('enable during cold load waits for actual completion, then transfers before stock overlay callback', () => {
+test('enable during cold load waits for INIT attachment, then restores destination after overlay callback', () => {
   const run = scenario();
   run.handler.showCutscene('first.swf', false, 'Cut1', 'Left');
   run.handler.fireCutscene();
@@ -204,3 +209,102 @@ test('native transfer preserves configured cross-map destination exactly once', 
   run.tick();
   assert.equal(transfers.length, 1, 'stale handler never repeats the transfer');
 });
+
+
+test('tracked loader survives INIT removing history and overlay clearing pending before watcher', () => {
+  const run = scenario();
+  run.handler.showCutscene('race.swf', false, 'Cut1', 'Left');
+  run.handler.fireCutscene();
+  run.bridge.aqSetSkipCutscenesEnabled(true);
+  run.tick(); // Observe the pending handler and its external loader before INIT.
+  run.complete(); // INIT removes history, although downloading may continue until COMPLETE.
+  run.handler.onOverlayPoll(); // Model game callback winning the broadcast frame race.
+  assert.equal(run.handler.isPending(), false);
+  assert.equal(run.g.world.strFrame, 'Cut1');
+  run.tick();
+  assert.equal(run.g.world.strFrame, 'Enter', 'associated displayed scene must transfer its destination');
+  assert.equal(run.g.mcExtSWF.numChildren, 0);
+  assert.equal(run.g.world.visible, true);
+  assert.equal(run.g.ui.visible, true);
+});
+
+
+test('Flash snapshot dispatch cannot resurrect a canceled ready callback after skip transfer', () => {
+  const run = scenario(true);
+  let transfers = 0;
+  let destinationTransfers = 0;
+  const move = run.g.world.moveToCell;
+  run.g.world.moveToCell = function (...args) { transfers++; if (args[0] === 'Enter') destinationTransfers++; return move.apply(this, args); };
+  run.bridge.aqSetSkipCutscenesEnabled(true);
+  run.handler.showCutscene('first-ready.swf', false, 'Cut1', 'Left');
+  run.tick();
+  // Either pre-load cancellation or an intact tracked load is safe; a canceled load is not.
+  assert.ok(run.handler.isPending() || Object.keys(run.g.ldrMC.history).length === 0,
+    'removed onReadyPoll still ran in the current Flash event and loaded a canceled scene');
+  if (Object.keys(run.g.ldrMC.history).length) {
+    assert.equal(transfers, 0, 'do not transfer before the current ready callback finishes starting its load');
+    assert.strictEqual(run.bridge.skipScene.loader, run.contentLoader,
+      'same ENTER_FRAME observes the load before asynchronous INIT, including cache hits');
+    run.complete();
+  }
+  run.tick();
+  assert.equal(run.g.mcExtSWF.numChildren, 0, 'first cutscene must be skipped');
+  assert.equal(run.g.world.strFrame, 'Enter', 'never leave a blank cutscene cell');
+  assert.equal(run.g.world.visible, true);
+  run.tick();
+  assert.equal(destinationTransfers, 1, 'destination transfer occurs once, after game callbacks');
+});
+
+for (const change of ['world', 'map', 'handler', 'movie', 'extra movie', 'disable']) {
+  test('tracked scene cannot transfer after changing ' + change, () => {
+    const run = scenario();
+    run.handler.showCutscene('tracked.swf', false, 'Cut1', 'Left');
+    run.handler.fireCutscene();
+    run.bridge.aqSetSkipCutscenesEnabled(true);
+    run.tick();
+    run.complete();
+    run.handler.onOverlayPoll();
+    let transfers = 0;
+    run.handler.transfer = () => { transfers++; };
+    if (change === 'world') run.g.world = { ...run.g.world };
+    if (change === 'map') run.g.world.map = {};
+    if (change === 'handler') run.g.world.cHandle = { isPending: () => false, transfer() { transfers++; } };
+    if (change === 'movie') run.g.mcExtSWF.children[0] = { name: 'shop' };
+    if (change === 'extra movie') run.g.mcExtSWF.children.push({ name: 'shop' });
+    if (change === 'disable') {
+      run.bridge.aqSetSkipCutscenesEnabled(false);
+      run.bridge.aqSetSkipCutscenesEnabled(true);
+    }
+    run.tick();
+    assert.equal(transfers, 0, 'never transfer a stale handler or clear unrelated movies');
+    assert.ok(run.g.mcExtSWF.numChildren > 0);
+  });
+}
+
+test('pending handler cannot clear an unrelated already displayed movie', () => {
+  const run = scenario();
+  run.g.mcExtSWF.children.push({ name: 'ordinary-shop' });
+  run.handler.showCutscene('queued.swf', false, 'Cut1', 'Left');
+  run.bridge.aqSetSkipCutscenesEnabled(true);
+  run.tick();
+  assert.equal(run.g.mcExtSWF.numChildren, 1);
+  assert.equal(run.handler.isPending(), true);
+});
+
+
+for (const competing of [false, true]) {
+  test('external load without unique pending cutscene association stays intact: competing=' + competing, () => {
+    const run = scenario();
+    run.handler.showCutscene('tracked.swf', false, 'Cut1', 'Left');
+    run.handler.fireCutscene();
+    if (competing) run.g.ldrMC.history.other = { dest: run.g.mcExtSWF, evt: true, ldr: {} };
+    else run.g.ldrMC.history.cold.evt = false;
+    run.bridge.aqSetSkipCutscenesEnabled(true);
+    run.tick();
+    run.complete();
+    delete run.g.ldrMC.history.other;
+    run.handler.onOverlayPoll();
+    run.tick();
+    assert.equal(run.g.mcExtSWF.numChildren, 1, 'ambiguous external content is never drained');
+  });
+}

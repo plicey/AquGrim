@@ -80,3 +80,52 @@
             this.cutTimer = null;
          }
       }
+
+      private function startPoll() : void
+      {
+         if(!this.polling)
+         {
+            this.polling = true;
+            this.waitTicks = 0;
+            this.loadedTick = 0;
+            this.rootClass.addEventListener(Event.ENTER_FRAME,this.onReadyPoll,false,0,true);
+         }
+      }
+
+      private function onReadyPoll(param1:Event) : void
+      {
+         ++this.waitTicks;
+         var _loc2_:* = this.rootClass.world;
+         var _loc3_:Boolean = _loc2_ != null && _loc2_.map != null && !_loc2_.mapLoadInProgress;
+         if(_loc3_ && this.loadedTick == 0)
+         {
+            this.loadedTick = this.waitTicks;
+         }
+         var _loc4_:Boolean = _loc3_ && (Boolean(_loc2_.mapEntered) || this.waitTicks - this.loadedTick >= 90);
+         if((_loc4_) && this.strFile == null)
+         {
+            _loc4_ = false;
+         }
+         if(!_loc4_ && this.waitTicks < 450)
+         {
+            return;
+         }
+         this.polling = false;
+         this.rootClass.removeEventListener(Event.ENTER_FRAME,this.onReadyPoll);
+         if(this.strFile == null)
+         {
+            trace("cutscene poll expired with no showCutscene call");
+            return;
+         }
+         trace("cutscene ready after " + this.waitTicks + " ticks, mapEntered: " + (_loc2_ != null ? _loc2_.mapEntered : "no world"));
+         if(this.bDelayed)
+         {
+            this.cutTimer = new Timer(3000,1);
+            this.cutTimer.addEventListener(TimerEvent.TIMER,this.onCutTimer,false,0,true);
+            this.cutTimer.start();
+         }
+         else
+         {
+            this.fireCutscene();
+         }
+      }
