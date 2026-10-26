@@ -275,7 +275,10 @@ test('the walkspeed loop keeps pushing the value while the tick is on, and lets 
 
   run.calls.calls.length = 0;
   await run.timers.pass();
-  assert.deepStrictEqual(run.calls.calls, [['callGameFunction', ['SetWalkSpeed', '20']]]);
+  assert.deepStrictEqual(run.calls.calls, [
+    ['callGameFunction', ['SetWalkSpeed', '20']],
+    ['callGameFunction', ['SetWalkSpeed', '20']]
+  ], 'both ready clocks maintain the selected speed');
 
   await run.feature.setToggle('walkSpeed', false);
   assert.deepStrictEqual(run.timers.running().filter(entry => entry.ms === toggles.WALK_SPEED.intervalMs), []);
@@ -533,30 +536,33 @@ test('checked Skip Cutscenes drains separate later movies through the actual loa
 test('both option clocks drop busy ticks and cancellation stops the rest of an in-flight pass', async () => {
   let release;
   const entered = [];
+  let reachedRange;
+  const rangeEntered = new Promise(resolve => { reachedRange = resolve; });
   const run = createOptions({
     store: memoryStore({ toggles: { infiniteRange: true, skipCutscenes: true, walkSpeed: true } }),
     calls: { call: function (name, args) {
       entered.push(args[0]);
-      if (args[0] === 'SetInfiniteRange') return new Promise(resolve => { release = resolve; });
+      if (args[0] === 'SetInfiniteRange') return new Promise(resolve => { release = resolve; reachedRange(); });
       return Promise.resolve({ ok: true });
     } }
   });
   const slow = run.timers.running().find(entry => entry.ms === toggles.LOOP_MS);
   const fast = run.timers.running().find(entry => entry.ms === toggles.WALK_SPEED.intervalMs);
   await slow.fn();
+  entered.length = 0;
   const pending = slow.fn();
-  await Promise.resolve();
+  await rangeEntered;
   assert.strictEqual(typeof release, 'function', 'the slow pass reaches its deferred write');
   for (let i = 0; i < 20; i++) { await slow.fn(); await fast.fn(); }
-  assert.deepStrictEqual(entered, ['SetInfiniteRange'], 'busy ticks do not overlap or accumulate');
+  assert.deepStrictEqual(entered, ['SetWalkSpeed', 'SetInfiniteRange'], 'busy ticks do not overlap or accumulate');
   await run.feature.setToggle('skipCutscenes', false);
   await run.feature.stop();
   release({ ok: true });
   await pending;
-  assert.deepStrictEqual(entered, ['SetInfiniteRange'], 'stop cancels the remaining writes');
+  assert.deepStrictEqual(entered, ['SetWalkSpeed', 'SetInfiniteRange'], 'stop cancels the remaining writes');
   await slow.fn();
   await fast.fn();
-  assert.deepStrictEqual(entered, ['SetInfiniteRange'], 'stale callbacks stay cancelled');
+  assert.deepStrictEqual(entered, ['SetWalkSpeed', 'SetInfiniteRange'], 'stale callbacks stay cancelled');
   assert.deepStrictEqual(run.timers.running(), []);
 });
 
@@ -608,7 +614,7 @@ test('fast walkspeed ticks share slow readiness probes', async () => {
   await slow.fn();
   for (let i = 0; i < 4; i++) await fast.fn();
   assert.strictEqual(probes, 1);
-  assert.strictEqual(run.calls.calls.length, 4);
+  assert.strictEqual(run.calls.calls.length, 5, 'the slow pass also maintains walkspeed');
   await run.feature.stop();
 });
 
@@ -635,4 +641,80 @@ test('untick during readiness cancels Skip and a fresh tick starts automatic ski
   await fresh.timers.pass();
   assert.ok(fresh.calls.calls.some(call => call[1][0] === 'SetSkipCutscenes'));
   await fresh.feature.stop();
+});
+
+test('room speed resets recover even when readiness occupies every fast tick', async () => {
+  let world = { WALKSPEED: 8, myAvatar: { uid: 123 } };
+  let connected = true;
+  let release;
+  let defer = false;
+  let probing;
+  const writes = [];
+  const calls = gameCallsModule.createGameCalls({ bridge: {
+    attach: async () => ({ ok: true }),
+    call: async function (name, args) {
+      if (name === 'getGameObject') {
+        if (args[0] === 'sfc.isConnected') {
+          if (defer) await new Promise(resolve => { release = resolve; probing(); });
+          return { ok: true, value: JSON.stringify(connected) };
+        }
+        assert.strictEqual(args[0], 'world.myAvatar.uid');
+        return { ok: true, value: JSON.stringify(world.myAvatar.uid) };
+      }
+      if (args[0] === 'SetWalkSpeed') {
+        return { ok: true, value: JSON.stringify({ error: 'no member SetWalkSpeed at SetWalkSpeed' }) };
+      }
+      assert.strictEqual(name, 'setGameObject');
+      assert.strictEqual(args[0], 'world.WALKSPEED');
+      world.WALKSPEED = args[1];
+      writes.push(args[1]);
+      return { ok: true, value: JSON.stringify(args[1]) };
+    }
+  } });
+  const run = createOptions({ calls, productionReadiness: true,
+    store: memoryStore({ toggles: { walkSpeed: true }, walkSpeed: 37 }) });
+  const slow = run.timers.running().find(entry => entry.ms === toggles.LOOP_MS);
+  const fast = run.timers.running().find(entry => entry.ms === toggles.WALK_SPEED.intervalMs);
+  await slow.fn();
+  await fast.fn();
+  assert.strictEqual(world.WALKSPEED, 37, 'saved selection applies through the real route');
+  world.WALKSPEED = 8;
+  await fast.fn();
+  assert.strictEqual(world.WALKSPEED, 37, 'normal room resets recover on the fast clock');
+  defer = true;
+  for (const replaceWorld of [false, true]) {
+    if (replaceWorld) world = { WALKSPEED: 8, myAvatar: { uid: 456 } };
+    else world.WALKSPEED = 8; // World.cellSetup resets the speed without disconnecting.
+    const before = writes.length;
+    const probeEntered = new Promise(resolve => { probing = resolve; });
+    const pending = slow.fn();
+    await probeEntered;
+    for (let i = 0; i < 4; i++) await fast.fn();
+    assert.strictEqual(writes.length, before, 'busy fast ticks never overlap the slow probe');
+    release();
+    release = null;
+    await pending;
+    assert.strictEqual(world.WALKSPEED, 37, 'the ready slow pass must recover a reset without a fast tick');
+    assert.strictEqual(run.feature.state().walkSpeedOn, true);
+  }
+  defer = false;
+  connected = false;
+  world.WALKSPEED = 8;
+  await slow.fn();
+  await fast.fn();
+  assert.strictEqual(world.WALKSPEED, 8, 'disconnected games remain gated');
+  connected = true;
+  world.myAvatar.uid = null;
+  await slow.fn();
+  await fast.fn();
+  assert.strictEqual(world.WALKSPEED, 8, 'a connected socket still needs a loaded player');
+  world.myAvatar.uid = 456;
+  await slow.fn();
+  assert.strictEqual(world.WALKSPEED, 37);
+  await run.feature.setApplying(false);
+  world.WALKSPEED = 8;
+  await slow.fn();
+  await fast.fn();
+  assert.strictEqual(world.WALKSPEED, 8, 'explicit pause survives a room reset');
+  await run.feature.stop();
 });

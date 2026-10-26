@@ -129,10 +129,9 @@ function createOptionsFeature(host, deps) {
             if (!active()) return;
             ready = available;
             if (!ready || !hasSelection()) return;
-            if (fast) {
-                if (state.walkSpeed) await send(toggles.byId('walkSpeed'), true);
-                return;
-            }
+            // Slow readiness probes can occupy every fast tick; they must restore room resets too.
+            if (state.walkSpeed) await send(toggles.byId('walkSpeed'), true);
+            if (fast || !active()) return;
             if (state.provoke && !respawnProvoke) await send(toggles.byId('provoke'), true);
             if (initial) return;
             pass += 1;
