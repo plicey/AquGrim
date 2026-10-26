@@ -177,11 +177,11 @@ test('the plugin registers a 27 px strip holding the reference controls, in its 
   assert.strictEqual(HEIGHT, 27);
   const controls = declared.controls();
   assert.deepStrictEqual(controls.map(function (one) { return one.id; }),
-    ['startBot', 'autoAttack', 'autoSkillSet', 'pad', 'cell', 'refreshCell', 'bank']);
+    ['startBot', 'autoAttack', 'autoSkillSet', 'pad', 'cell', 'refreshCell', 'bank', 'equipmentSet', 'equipSavedSet']);
   assert.deepStrictEqual(controls.map(function (one) { return one.label; }),
-    ['Start Bot', 'Auto Attack', 'Skill Set', '', '', 'x', 'Bank']);
+    ['Start Bot', 'Auto Attack', 'Skill Set', '', '', 'x', 'Bank', 'Saved equipment set', 'Equip']);
   assert.deepStrictEqual(controls.map(function (one) { return one.kind; }),
-    ['check', 'check', 'button', 'select', 'select', 'button', 'button']);
+    ['check', 'check', 'button', 'select', 'select', 'button', 'button', 'select', 'button']);
   assert.ok(declared.menuLabel(), 'the game menu entry needs a label');
   assert.strictEqual(typeof declared.state, 'function');
   assert.strictEqual(typeof declared.action, 'function');
@@ -665,9 +665,9 @@ test('every game read the strip makes is a loader name the surface answers', () 
 test('the strip keeps the reference controls and adds the Auto Attack skill editor', () => {
   const h = harness();
   const controls = h.chrome.controls();
-  assert.strictEqual(controls.length, 7);
+  assert.strictEqual(controls.length, 9);
   assert.deepStrictEqual(controls.map(function (one) { return one.id; }),
-    ['startBot', 'autoAttack', 'autoSkillSet', 'pad', 'cell', 'refreshCell', 'bank']);
+    ['startBot', 'autoAttack', 'autoSkillSet', 'pad', 'cell', 'refreshCell', 'bank', 'equipmentSet', 'equipSavedSet']);
   // A label from the locale catalog wins, so a translated build shows its own words.
   const localised = createChrome({
     messages: { startBot: 'Iniciar Bot', bank: 'Banco' },
@@ -704,4 +704,29 @@ test('Auto Attack enable restores remembered named presets for the detected clas
     await h.chrome.action('autoAttack', { checked: true });
     assert.deepStrictEqual(h.chrome.rotation().map(function (one) { return one.index; }), ['1', '2', '3', '4']);
   } finally { h.chrome.stop(); }
+});
+
+
+test('toolbar saved equipment choices refresh on interaction and equip via the shared Sets instance', async () => {
+  let listing = [{ name: 'farm.gset', path: 'nested/farm.gset' }];
+  const calls = [];
+  const chrome = createFromHost({ log: function () {} }, {
+    session: { signedIn: async () => false },
+    equipmentSets: { handle: async function (channel, event, args) {
+      calls.push([channel, args]);
+      return channel === 'listSets' ? { sets: listing } : { requested: 1, error: null };
+    } }
+  });
+  assert.deepStrictEqual((await chrome.state()).options.equipmentSet,
+    [{ label: 'farm.gset', value: 'nested/farm.gset' }]);
+  listing = [];
+  await chrome.state();
+  assert.strictEqual(calls.length, 1, 'routine state reads reuse the list');
+  const refreshed = await chrome.action('equipmentSet', { refresh: true });
+  assert.deepStrictEqual(refreshed.view.options.equipmentSet, []);
+  assert.strictEqual((await chrome.action('equipSavedSet', { value: 'nested/farm.gset' })).ok, true);
+  assert.deepStrictEqual(calls[2], ['equipSavedSet', ['nested/farm.gset']]);
+  const select = chrome.controls().find(control => control.id === 'equipmentSet');
+  assert.strictEqual(select.refreshOnFocus, true);
+  assert.match(select.placeholder, /Client → Sets/);
 });

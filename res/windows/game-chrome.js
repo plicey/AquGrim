@@ -104,7 +104,11 @@ function createGameChrome(deps) {
         if (!declaration || typeof declaration.controls !== 'function') return [];
         const list = declaration.controls() || [];
         return list.map(function (control) {
-            return { id: control.id, kind: control.kind, label: control.label };
+            const entry = { id: control.id, kind: control.kind, label: control.label };
+            ['refreshOnFocus', 'width', 'placeholder', 'valueFrom'].forEach(function (key) {
+                if (control[key] !== undefined) entry[key] = control[key];
+            });
+            return entry;
         });
     }
 

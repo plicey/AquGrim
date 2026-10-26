@@ -318,3 +318,83 @@ test('the wrapper page carries the strip above the surface and asks the platform
   assert.ok(page.indexOf('function focusGame()') !== -1, 'the toolbar can return focus to the game');
   assert.ok(page.indexOf('focusGame();') !== -1);
 });
+
+
+test('chrome passes generic choice metadata and values to the wrapper', async () => {
+  const controls = [
+    { id: 'saved', kind: 'select', label: 'Saved', refreshOnFocus: true, width: 130, placeholder: 'Empty' },
+    { id: 'apply', kind: 'button', label: 'Apply', valueFrom: 'saved' }
+  ];
+  const h = harness(Object.assign({}, DECLARATION, {
+    controls: () => controls,
+    state: () => ({ options: { saved: [{ label: 'file', value: 'folder/file' }] } })
+  }));
+  const view = await h.chrome.pageView(h.win);
+  assert.deepStrictEqual(view.controls, controls);
+  assert.deepStrictEqual(view.options.saved, [{ label: 'file', value: 'folder/file' }]);
+});
+
+test('wrapper refreshes saved choices without equipping, and applies only on button click', async () => {
+  const vm = require('vm');
+  const nodes = [];
+  function node(tag) {
+    const n = { tag: tag, children: [], style: {}, events: {}, value: '', attributes: {},
+      appendChild: function (child) {
+        this.children.push(child);
+        if (this.tag === 'select' && (this.children.length === 1 || child.selected)) this.value = child.value;
+      },
+      removeChild: function (child) { this.children.splice(this.children.indexOf(child), 1); },
+      addEventListener: function (event, fn) { this.events[event] = fn; },
+      setAttribute: function (key, value) { this.attributes[key] = value; },
+      focus: function () {},
+      querySelectorAll: function () { return this.children.filter(n => n.tag === 'select'); },
+      querySelector: function () { return this.children.find(n => n.attributes['data-value-from'] === 'saved'); }
+    };
+    Object.defineProperty(n, 'firstChild', { get: () => n.children[0] });
+    Object.defineProperty(n, 'lastChild', { get: () => n.children[n.children.length - 1] });
+    nodes.push(n);
+    return n;
+  }
+  ['chrome', 'stage', 'surface'].forEach(id => { node('div').id = id; });
+  const controls = [
+    { id: 'saved', kind: 'select', label: 'Saved', refreshOnFocus: true, width: 130, placeholder: 'Empty' },
+    { id: 'apply', kind: 'button', label: 'Equip', valueFrom: 'saved' }
+  ];
+  let choices = [{ label: 'farm.gset', value: 'folder/farm.gset' }];
+  const view = () => ({ enabled: true, height: 27, controls: controls, options: { saved: choices } });
+  const calls = [];
+  const events = {};
+  const page = fs.readFileSync(path.join(REPO, 'res/swf_wrapper.html'), 'utf8');
+  vm.runInNewContext(page.match(/<script>([\s\S]*?)<\/script>/)[1], {
+    URLSearchParams: URLSearchParams, URL: URL,
+    document: { createElement: node, getElementById: id => nodes.find(n => n.id === id && (id.indexOf('chrome-') !== 0 || nodes.find(n => n.id === 'chrome').children.includes(n))) },
+    window: { location: { search: '?swf=https://example.com/game.swf' },
+      addEventListener: (name, fn) => { events[name] = fn; },
+      aquastarChrome: { getView: async () => view(), action: async (id, args) => {
+        calls.push({ id: id, args: args }); return { view: view() };
+      } }
+    }
+  });
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+  await flush();
+  const strip = nodes.find(n => n.id === 'chrome');
+  const select = strip.children.find(n => n.id === 'chrome-saved');
+  assert.strictEqual(select.style.width, '130px');
+  select.events.change();
+  assert.strictEqual(calls.length, 0);
+  choices = [{ label: 'boss.gset', value: 'boss.gset' }];
+  select.events.focus();
+  await flush();
+  assert.strictEqual(select.value, 'boss.gset');
+  assert.strictEqual(calls[0].id, 'saved');
+  assert.strictEqual(calls[0].args.refresh, true);
+  strip.children.find(n => n.id === 'chrome-apply').events.click();
+  await flush();
+  assert.strictEqual(calls[1].id, 'apply');
+  assert.strictEqual(calls[1].args.value, 'boss.gset');
+  choices = [];
+  events.focus();
+  await flush();
+  const button = strip.children.find(n => n.id === 'chrome-apply');
+  assert.strictEqual(button.disabled, true);
+});

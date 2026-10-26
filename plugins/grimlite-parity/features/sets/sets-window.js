@@ -37,10 +37,19 @@ function createSetsWindow(deps) {
                 return Object.assign({}, result, !result.canceled && !result.error ? { entries: entries } : {});
             });
         }
-        if (channel === 'equipSet') {
+        if (channel === 'equipSet' || channel === 'equipSavedSet') {
             if (equipping) return Promise.resolve({ error: 'An equip sequence is already running.' });
             equipping = true;
-            return guard(function () { return sets.equipSet(game, args && args[0]); })
+            return guard(async function () {
+                let entries = args && args[0];
+                if (channel === 'equipSavedSet') {
+                    if (typeof entries !== 'string' || !entries) throw new Error('Select a saved set.');
+                    const opened = await dialogs.openByPath(entries);
+                    if (opened.error) throw new Error(opened.error);
+                    entries = opened.entries;
+                }
+                return sets.equipSet(game, entries);
+            })
                 .finally(function () { equipping = false; });
         }
         if (channel === 'setMessages') {

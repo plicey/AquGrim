@@ -147,15 +147,44 @@
       if (entry.kind === 'select') {
         var select = el('select');
         select.id = 'chrome-' + entry.id;
-        var options = (view.options && view.options[entry.id]) || [];
-        options.forEach(function (option) {
-          var one = el('option', null, option);
-          one.value = option;
-          if (String(option) === String(value)) one.selected = true;
-          select.appendChild(one);
-        });
+        select.setAttribute('aria-label', entry.label || entry.id);
+        if (entry.width) {
+          select.style.width = entry.width + 'px';
+          select.style.flex = '0 0 ' + entry.width + 'px';
+        }
+        function fill(view, selected) {
+          var options = (view.options && view.options[entry.id]) || [];
+          while (select.firstChild) select.removeChild(select.firstChild);
+          if (!options.length && entry.placeholder) {
+            select.appendChild(el('option', null, entry.placeholder));
+            select.firstChild.value = '';
+          }
+          options.forEach(function (option) {
+            var one = el('option', null, typeof option === 'object' ? option.label : option);
+            one.value = typeof option === 'object' ? option.value : option;
+            if (String(one.value) === String(selected)) one.selected = true;
+            select.appendChild(one);
+          });
+          select.title = options.length ? (entry.label || '') : (entry.placeholder || '');
+          if (entry.refreshOnFocus) {
+            var button = strip.querySelector('[data-value-from="' + entry.id + '"]');
+            if (button) button.disabled = !select.value;
+          }
+        }
+        fill(view, value);
+        if (entry.refreshOnFocus) {
+          function refresh() {
+            Promise.resolve(api.action(entry.id, { refresh: true })).then(function (result) {
+              if (result.error) show(result.error);
+              if (result.view) fill(result.view, select.value);
+            }, function (error) { show(String(error.message || error)); });
+          }
+          select.addEventListener('focus', refresh);
+          select.addEventListener('mousedown', refresh);
+          select.refreshChoices = refresh;
+        }
         select.addEventListener('change', function () {
-          send(entry.id, { value: select.value });
+          if (!entry.refreshOnFocus) send(entry.id, { value: select.value });
           focusGame();
         });
         return select;
@@ -176,8 +205,14 @@
       }
       var button = el('button', null, entry.label);
       button.id = 'chrome-' + entry.id;
+      if (entry.valueFrom) {
+        button.setAttribute('data-value-from', entry.valueFrom);
+        var source = document.getElementById('chrome-' + entry.valueFrom);
+        button.disabled = !source || !source.value;
+      }
       button.addEventListener('click', function () {
-        send(entry.id, {});
+        var source = entry.valueFrom && document.getElementById('chrome-' + entry.valueFrom);
+        send(entry.id, source ? { value: source.value } : {});
         if (entry.id !== 'autoSkillSet') focusGame();
       });
       return button;
@@ -220,6 +255,12 @@
     }
 
     function draw(view) {
+      var selected = {};
+      (view && view.controls || []).forEach(function (entry) {
+        var node = document.getElementById('chrome-' + entry.id);
+        if (entry.refreshOnFocus && node) selected[entry.id] = node.value;
+      });
+      if (view) view.values = Object.assign({}, view.values, selected);
       current = view;
       // The strip is hidden and the surface keeps the whole page: that is the no-chrome mode the
       // screenshot and recording paths size their capture from.
@@ -235,6 +276,12 @@
       strip.appendChild(el('span', 'status', view.error || ''));
       strip.lastChild.id = 'chromeStatus';
     }
+
+    window.addEventListener('focus', function () {
+      Array.prototype.forEach.call(strip.querySelectorAll('select'), function (select) {
+        if (select.refreshChoices) select.refreshChoices();
+      });
+    });
 
     if (typeof api.onView === 'function') {
       api.onView(function (view) { draw(view); });

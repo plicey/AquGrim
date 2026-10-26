@@ -263,3 +263,33 @@ test('Sets serializes requests across IPC clicks and saves the equipped snapshot
   assert.deepStrictEqual(saved, [{ type: 'Cape', name: 'Cape' }]);
   assert.strictEqual((await window.handle('equipSet', null, [[{ type: 'Cape', name: 'Cape' }]])).skipped, 1);
 });
+
+
+test('toolbar and Sets window share the equip guard, including file loading and failures', async () => {
+  let release;
+  let reads = 0;
+  const entries = [{ type: 'Cape', name: 'Cape' }];
+  const window = createSetsWindow({
+    dialogs: { openByPath: async function (target) {
+      reads++;
+      if (target === '../outside.gset') return { error: 'outside sets folder' };
+      return { entries: entries };
+    } },
+    game: { readInventory: async () => [{ name: 'Cape', category: 'Cape' }],
+      sleep: async () => {},
+      equipItem: () => new Promise(resolve => { release = resolve; }) }
+  });
+  const toolbar = window.handle('equipSavedSet', null, ['farm.gset']);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match((await window.handle('equipSet', null, [entries])).error, /already running/);
+  assert.match((await window.handle('equipSavedSet', null, ['farm.gset'])).error, /already running/);
+  assert.strictEqual(reads, 1);
+  release(true);
+  assert.strictEqual((await toolbar).requested, 1);
+  assert.match((await window.handle('equipSavedSet', null, ['../outside.gset'])).error, /outside/);
+  const editor = window.handle('equipSet', null, [entries]);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match((await window.handle('equipSavedSet', null, ['farm.gset'])).error, /already running/);
+  release(true);
+  assert.strictEqual((await editor).requested, 1);
+});

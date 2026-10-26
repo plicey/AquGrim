@@ -122,6 +122,7 @@ function createChrome(deps) {
     // The list cbCells is filled from, kept between reads so the page can still offer it while the
     // character is between cells; the reference keeps its own in the combo box itself.
     let cells = [];
+    let savedSets = null;
 
     function session() {
         try {
@@ -175,7 +176,10 @@ function createChrome(deps) {
             { id: 'pad', kind: 'select', label: words.pad || '' },
             { id: 'cell', kind: 'select', label: words.cell || '' },
             { id: 'refreshCell', kind: 'button', label: words.refreshCell || 'x' },
-            { id: 'bank', kind: 'button', label: words.bank || 'Bank' }
+            { id: 'bank', kind: 'button', label: words.bank || 'Bank' },
+            { id: 'equipmentSet', kind: 'select', label: 'Saved equipment set', refreshOnFocus: true,
+                width: 130, placeholder: 'No saved sets — Client → Sets: save loadout' },
+            { id: 'equipSavedSet', kind: 'button', label: 'Equip', valueFrom: 'equipmentSet' }
         ];
     }
 
@@ -195,6 +199,10 @@ function createChrome(deps) {
      * the reference shows nobody is in the world, and the reason travels beside them rather than
      * being swallowed.
      */
+    async function refreshSets() {
+        savedSets = deps.equipmentSets ? (await deps.equipmentSets.handle('listSets')).sets : [];
+    }
+
     async function state() {
         const alive = await signedIn();
         const values = {
@@ -204,7 +212,9 @@ function createChrome(deps) {
             cell: '',
             pad: ''
         };
-        const options = { cell: cells.slice(), pad: PADS };
+        if (savedSets === null) await refreshSets();
+        const options = { cell: cells.slice(), pad: PADS,
+            equipmentSet: savedSets.map(function (set) { return { label: set.name, value: set.path }; }) };
         if (alive.ok !== true) {
             return { values: values, options: options, error: alive.error || null };
         }
@@ -216,9 +226,10 @@ function createChrome(deps) {
         const here = await Promise.all([read('cell'), read('pad'), readCells()]);
         values.cell = cellText(here[0].value);
         values.pad = cellText(here[1].value);
+        options.cell = cells.slice();
         return {
             values: values,
-            options: { cell: cells.slice(), pad: PADS },
+            options: options,
             error: here[0].error || here[1].error || null
         };
     }
@@ -474,6 +485,16 @@ function createChrome(deps) {
                     ? deps.openAutoSkillSet()
                     : { ok: false, error: 'the Auto Attack skill set window is not available' };
             }
+            else if (id === 'equipmentSet') {
+                if (picked.refresh) await refreshSets();
+                answer = { ok: true, error: null };
+            }
+            else if (id === 'equipSavedSet') {
+                answer = deps.equipmentSets
+                    ? await deps.equipmentSets.handle('equipSavedSet', null, [picked.value])
+                    : { error: 'Saved equipment sets are unavailable.' };
+                answer.ok = !answer.error;
+            }
             else if (id === 'cell') answer = await moveTo({ cell: picked.value });
             else if (id === 'pad') answer = await moveTo({ pad: picked.value });
             else if (id === 'refreshCell') answer = await refreshCell();
@@ -519,6 +540,7 @@ function createFromHost(host, deps) {
     const windowKey = deps.windowKey || function () { return 'game'; };
     return createChrome({
         runtime: runtime,
+        equipmentSets: deps.equipmentSets,
         windowKey: windowKey,
         bot: deps.bot || function () { return {}; },
         session: deps.session || function () {
