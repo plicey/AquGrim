@@ -137,7 +137,7 @@ test('the menus open the Options and Hotkeys windows, and only registered ones',
     ['Bot', 'Packets', 'Options', 'Maid', 'About', 'Char Select', 'Client'],
     'the reference order, with its Tools entries in this plugin\'s own menu');
   const tools = (client && client.submenu || []).map(function (item) { return item.label; });
-  ['Bot file', 'Parity placeholder window', 'Sets'].forEach(function (hidden) {
+  ['Bot file', 'Parity placeholder window'].forEach(function (hidden) {
     assert.strictEqual(tools.indexOf(hidden), -1, hidden + ' must not have a visible entry');
   });
   ['Logs', 'Hotkeys', 'Bank', 'Loaders/grabbers'].forEach(function (kept) {

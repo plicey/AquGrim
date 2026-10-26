@@ -152,17 +152,17 @@ function createSetDialogs(deps) {
  */
 function createFromHost(host, deps) {
     deps = deps || {};
-    const electron = deps.electron || require('electron');
+    const electron = function () { return deps.electron || require('electron'); };
     return createSetDialogs({
         store: host.getStore(STORE_NAMESPACE),
         defaultDirectory: path.join(
             host.persistentAppDataDirectory || host.appDataDirectory, 'Sets'),
         messages: messagesFrom(host),
         showOpenDialog: function (owner, options) {
-            return electron.dialog.showOpenDialog(owner, options);
+            return electron().dialog.showOpenDialog(owner, options);
         },
         showSaveDialog: function (owner, options) {
-            return electron.dialog.showSaveDialog(owner, options);
+            return electron().dialog.showSaveDialog(owner, options);
         }
     });
 }

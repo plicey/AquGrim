@@ -2,6 +2,7 @@ const path = require('path');
 const url = require('url');
 
 const featureRoot = path.join(__dirname, 'features');
+const SETS_WINDOW_ID = 'grimlite-parity-sets';
 const BANK_WINDOW_ID = 'grimlite-parity-bank';
 const LOGIN_WINDOW_ID = 'grimlite-parity-char-select';
 const NOTEPAD_WINDOW_ID = 'grimlite-parity-notepad';
@@ -53,6 +54,12 @@ function pageUrl(featureDir, file) {
 
 function register(host, windowTitle) {
     host.registerFeatureWindows([
+        {
+            id: SETS_WINDOW_ID,
+            title: function () { return windowTitle('sets', 'Equipment Sets'); },
+            url: pageUrl('sets', 'sets.html'),
+            config: windowConfig(host, 'sets', 'preload_sets.js', { width: 640, height: 480 })
+        },
         {
             id: BANK_WINDOW_ID,
             title: function () {
@@ -244,6 +251,7 @@ module.exports = {
     // Every id this file registers, so a caller that has to look one up (the Hotkeys window's
     // action targets) reads the same list the registration uses instead of a second copy.
     WINDOW_IDS: [
+        SETS_WINDOW_ID,
         BANK_WINDOW_ID,
         DEVTEST_WINDOW_ID,
         COSMETICS_WINDOW_ID,
@@ -262,6 +270,7 @@ module.exports = {
         TRAVEL_WINDOW_ID,
         MAID_WINDOW_ID
     ],
+    SETS_WINDOW_ID: SETS_WINDOW_ID,
     BANK_WINDOW_ID: BANK_WINDOW_ID,
     LOGIN_WINDOW_ID: LOGIN_WINDOW_ID,
     DEVTEST_PAGE: DEVTEST_PAGE,

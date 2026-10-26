@@ -503,6 +503,7 @@ async function activate(host) {
     // Bank (#29) draws its own window and reaches the game only through the injected game access
     // in bridge.js, which sits on this plugin's bridge channel (ticket #28).
     bankWindow.createFromHost(host).attach();
+    require('./features/sets/sets-window.js').createFromHost(host).attach();
     // The Bot Manager's main-process half: the sheet, the parsed document, the two dialogs and the
     // folder tree, all of which a sandboxed page cannot reach for itself.
     botManager = require('./features/bot-manager/bot-manager.js').createBotManager({

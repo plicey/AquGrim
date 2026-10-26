@@ -1,5 +1,5 @@
 // The Sets window's main-process half. The page shows the file's list, the inventory combo and
-// the four buttons; every decision lives in sets.js and set-dialogs.js, and every game call
+// the controls; every decision lives in sets.js and set-dialogs.js, and every game call
 // goes through the injected game access (../../bridge.js).
 const sets = require('./sets.js');
 const { createFromHost: createDialogsFromHost } = require('./set-dialogs.js');
@@ -8,6 +8,7 @@ function createSetsWindow(deps) {
     deps = deps || {};
     const game = deps.game;
     const dialogs = deps.dialogs;
+    let equipping = false;
 
     function handle(channel, event, args) {
         void event;
@@ -29,8 +30,21 @@ function createSetsWindow(deps) {
             return Promise.resolve(dialogs.save((args && args[0]) || []))
                 .catch(function (error) { return { canceled: false, path: null, error: message(error) }; });
         }
+        if (channel === 'saveEquippedSet') {
+            return guard(async function () {
+                const entries = sets.equippedEntries(await game.readInventory());
+                const result = await dialogs.save(entries);
+                return Object.assign({}, result, !result.canceled && !result.error ? { entries: entries } : {});
+            });
+        }
+        if (channel === 'equipSet') {
+            if (equipping) return Promise.resolve({ error: 'An equip sequence is already running.' });
+            equipping = true;
+            return guard(function () { return sets.equipSet(game, args && args[0]); })
+                .finally(function () { equipping = false; });
+        }
         if (channel === 'setMessages') {
-            return Promise.resolve(deps.messages || {});
+            return Promise.resolve(typeof deps.messages === 'function' ? deps.messages() : deps.messages || {});
         }
         throw new Error('[AquGrim:grimlite-parity] unknown sets channel "' + channel + '"');
     }
@@ -60,6 +74,9 @@ function createSetsWindow(deps) {
         deps.host.ipc.handle('saveSet', function (event, entries) {
             return handle('saveSet', event, [entries]);
         });
+        ['saveEquippedSet', 'equipSet'].forEach(function (channel) {
+            deps.host.ipc.handle(channel, function (event, entries) { return handle(channel, event, [entries]); });
+        });
         deps.host.ipc.handle('setMessages', function (event) {
             return handle('setMessages', event, []);
         });
@@ -75,8 +92,9 @@ function createFromHost(host, deps) {
         host: host,
         game: deps.game || require('../../bridge.js').createGameAccess(host),
         dialogs: deps.dialogs || createDialogsFromHost(host, deps),
-        messages: (typeof host.getLocaleStrings === 'function' &&
-            host.getLocaleStrings('setsMessages')) || {}
+        messages: function () {
+            return (typeof host.getLocaleStrings === 'function' && host.getLocaleStrings('setsMessages')) || {};
+        }
     });
 }
 

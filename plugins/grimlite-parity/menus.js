@@ -96,9 +96,7 @@ function register(host, windowTitle, deps) {
             });
         }
 
-        // The reference's Tools entries, in their own order (Root.cs:747-763). The hidden Sets
-        // entry and the extra Bot file window are deliberately absent; Logs is the reference's
-        // own Tools -> Logs. Hotkeys remains here because the reference keeps it under Tools.
+        // Client tools, including saved equipment sets.
         menus.push({
             label: labels.grimliteMenu || 'Client',
             submenu: [{
@@ -129,6 +127,9 @@ function register(host, windowTitle, deps) {
                 click: function () {
                     host.windows.openFeatureWindow(windows.COSMETICS_WINDOW_ID);
                 }
+            }, {
+                label: labels.grimliteSets || 'Sets',
+                click: function () { host.windows.openFeatureWindow(windows.SETS_WINDOW_ID); }
             }, {
                 label: labels.grimliteBank || 'Bank',
                 accelerator: keybinds.grimliteBank,
