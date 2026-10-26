@@ -199,3 +199,107 @@ test('selection persistence failures return IPC errors without changing the live
   assert.strictEqual(source.draftFor('Shaman').name, 'Farm');
   assert.deepStrictEqual(used, []);
 });
+
+test('step controls generate only parser-supported HP/MP percentages and preserve insertion boundaries', () => {
+  const step = require('../../plugins/grimlite-parity/features/auto-attack/skill-step.js');
+  ['1', '2', '3', '4'].forEach(function (skill) {
+    assert.strictEqual(step.format(skill, '', '', ''), skill);
+    ['SH', 'SM'].forEach(function (condition) {
+      ['>=', '<=', '='].forEach(function (op) {
+        ['0', '50', '100'].forEach(function (value) {
+          assert.deepStrictEqual(presets.parsePreset(step.format(skill, condition, op, value)), [{
+            index: skill, safe: true, isMp: condition === 'SM', op: op, value: Number(value), wait: false
+          }]);
+        });
+      });
+    });
+  });
+  ['', '-1', '1.5', '101', 'NaN', '50;4', '1e2'].forEach(function (value) {
+    assert.throws(function () { step.format('2', 'SM', '<=', value); }, /percentage/);
+  });
+  assert.throws(function () { step.format('5', '', '', ''); }, /skill/);
+  assert.throws(function () { step.format('1', 'TH', '>=', '50'); }, /HP or MP/);
+  assert.throws(function () { step.format('1', 'SH', '>', '50'); }, /comparison/);
+  [
+    ['', 0, 0, '2:SM<=50', 8],
+    ['1', 1, 1, '1;2:SM<=50', 10],
+    ['1;4', 2, 2, '1;2:SM<=50;4', 11],
+    ['1;4', 0, 1, '2:SM<=50;4', 8],
+    ['1;4', 0, 3, '2:SM<=50', 8],
+    ['1;  4', 2, 4, '1;2:SM<=50;4', 11],
+    ['1,\n 4', 2, 2, '1,2:SM<=50\n 4', 10],
+    ['1  4', 2, 2, '1 ;2:SM<=50; 4', 12]
+  ].forEach(function (example) {
+    const result = step.insert(example[0], example[1], example[2], '2:SM<=50');
+    assert.strictEqual(result.text, example[3]);
+    assert.strictEqual(result.caret, example[4]);
+    assert.ok(presets.parsePreset(result.text).some(function (row) { return row.safe && row.isMp; }));
+  });
+});
+
+test('Insert uses the editor input flow and Default failures leave its text intact', async () => {
+  const vm = require('vm');
+  const step = require('../../plugins/grimlite-parity/features/auto-attack/skill-step.js');
+  const page = fs.readFileSync(path.join(__dirname,
+    '../../plugins/grimlite-parity/features/auto-attack/auto-attack.html'), 'utf8');
+  const nodes = {};
+  function element() {
+    return { value: '', dataset: {}, handlers: {}, options: [], selectedOptions: [{ dataset: {} }],
+      addEventListener: function (name, fn) { this.handlers[name] = fn; },
+      replaceChildren: function () { this.options = []; },
+      appendChild: function (node) { this.options.push(node); },
+      focus: function () {},
+      setSelectionRange: function (start, end) { this.selectionStart = start; this.selectionEnd = end; },
+      dispatchEvent: function (event) { this.handlers[event.type](event); }
+    };
+  }
+  let timer;
+  const drafts = [];
+  let rejected = false;
+  const api = {
+    get: function () { return Promise.resolve({ className: 'Shaman', text: '1;4', presets: [] }); },
+    draft: function (data) { drafts.push(data); return Promise.resolve({}); },
+    useDefault: function () {
+      return rejected ? Promise.reject(new Error('IPC unavailable')) : Promise.resolve({ ok: false, error: 'disk full' });
+    }
+  };
+  vm.runInNewContext(page.match(/<script>([\s\S]*?)<\/script>/)[1], {
+    window: { aquastarAutoAttack: api, autoAttackStep: step, addEventListener: function () {} },
+    document: { getElementById: function (id) { return nodes[id] || (nodes[id] = element()); },
+      createElement: element },
+    Event: function (type) { this.type = type; },
+    setTimeout: function (fn) { timer = fn; return 1; }, clearTimeout: function () { timer = null; }
+  });
+  await new Promise(setImmediate);
+  nodes.stepSkill = element();
+  nodes.stepSkill.value = '2';
+  nodes.stepCondition.value = 'SM';
+  nodes.stepComparator.value = '<=';
+  nodes.stepThreshold.value = '50';
+  nodes.stepCondition.handlers.change();
+  assert.strictEqual(nodes.stepThreshold.disabled, false);
+  nodes.skills.setSelectionRange(2, 2);
+  nodes.insertStep.handlers.click();
+  assert.strictEqual(nodes.skills.value, '1;2:SM<=50;4');
+  assert.strictEqual(drafts.length, 0, 'insertion uses the existing debounce');
+  timer();
+  await new Promise(setImmediate);
+  assert.strictEqual(drafts.length, 1);
+  assert.strictEqual(drafts[0].text, nodes.skills.value);
+  assert.strictEqual(drafts[0].className, 'Shaman');
+  nodes.stepThreshold.value = '1.5';
+  const before = nodes.skills.value;
+  nodes.insertStep.handlers.click();
+  assert.strictEqual(nodes.skills.value, before, 'invalid input never changes the draft');
+  assert.ok(/percentage/.test(nodes.status.textContent));
+  nodes.presets.value = '';
+  nodes.presets.handlers.change();
+  await new Promise(setImmediate);
+  assert.strictEqual(nodes.skills.value, before);
+  assert.strictEqual(nodes.status.textContent, 'disk full');
+  rejected = true;
+  nodes.presets.handlers.change();
+  await new Promise(setImmediate);
+  assert.strictEqual(nodes.skills.value, before);
+  assert.strictEqual(nodes.status.textContent, 'IPC unavailable');
+});

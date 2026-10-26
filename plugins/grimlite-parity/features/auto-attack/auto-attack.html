@@ -25,6 +25,13 @@
     flex: 1 1 auto; min-height: 110px; resize: none;
     padding: 8px; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
+  .builder { display: grid; grid-template-columns: 1fr 1.3fr 1fr 70px auto; gap: 6px; align-items: end; }
+  .builder select, .builder input { width: 100%; min-width: 0; }
+  .builder button { height: 28px; }
+  @media (max-width: 540px) {
+    .builder { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .builder button { justify-self: start; }
+  }
   .row { display: flex; align-items: center; gap: 8px; }
   .row .grow { flex: 1; }
   button {
@@ -50,11 +57,27 @@
     </select>
     <button id="delete" disabled>Delete</button>
   </div>
-  <textarea id="skills" spellcheck="false" placeholder="1,2,3,4"></textarea>
+  <div class="builder" role="group" aria-label="Insert a rotation step">
+    <label>Skill<select id="stepSkill">
+      <option value="1">Skill 1</option><option value="2">Skill 2</option>
+      <option value="3">Skill 3</option><option value="4">Skill 4</option>
+    </select></label>
+    <label>When<select id="stepCondition">
+      <option value="">Always</option><option value="SH">My health (%)</option><option value="SM">My mana (%)</option>
+    </select></label>
+    <label>Comparison<select id="stepComparator" disabled>
+      <option value=">=">At least</option><option value="<=">At most</option><option value="=">Exactly</option>
+    </select></label>
+    <label>Percent<input id="stepThreshold" type="number" min="0" max="100" step="1" value="50" disabled></label>
+    <button id="insertStep">Insert</button>
+  </div>
+  <p>Insert at the cursor or replace selected text. If the condition is false, that step is skipped.</p>
+  <textarea aria-label="Skill rotation" id="skills" spellcheck="false" placeholder="1,2,3,4"></textarea>
   <div class="row">
     <div class="grow" id="status" role="status"></div>
     <button id="save">Save</button>
   </div>
+<script src="skill-step.js"></script>
 <script>
 (function () {
   var api = window.aquastarAutoAttack;
@@ -65,6 +88,26 @@
   var status = document.getElementById('status');
   var remove = document.getElementById('delete');
   var pending = null;
+  var condition = document.getElementById('stepCondition');
+  var comparator = document.getElementById('stepComparator');
+  var threshold = document.getElementById('stepThreshold');
+
+  condition.addEventListener('change', function () {
+    comparator.disabled = threshold.disabled = !condition.value;
+  });
+  document.getElementById('insertStep').addEventListener('click', function () {
+    try {
+      var step = window.autoAttackStep.format(document.getElementById('stepSkill').value,
+        condition.value, comparator.value, threshold.value);
+      var inserted = window.autoAttackStep.insert(box.value, box.selectionStart, box.selectionEnd, step);
+      box.value = inserted.text;
+      box.focus();
+      box.setSelectionRange(inserted.caret, inserted.caret);
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    } catch (error) {
+      say(error.message, true);
+    }
+  });
 
   function say(text, error) {
     status.textContent = text || '';
@@ -120,10 +163,11 @@
 
     if (!selected) {
       Promise.resolve(api.useDefault({ className: className })).then(function (result) {
+        if (!result || result.ok !== true) return say((result && result.error) || 'Could not use Default.', true);
         apply(result);
         nameBox.value = '';
         say('Using the default 1,2,3,4 rotation.');
-      });
+      }).catch(function (error) { say(error.message || 'Could not use Default.', true); });
       return;
     }
 
