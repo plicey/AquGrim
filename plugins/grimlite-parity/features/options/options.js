@@ -50,7 +50,7 @@ function createOptionsFeature(host, deps) {
     let pass = 0;
     let generation = 0;
     let busy = false;
-    let ready = false;
+    let fastBusy = false;
     let stopped = false;
     let manuallyPaused = false;
     const isReady = deps.isReady || async function () {
@@ -116,22 +116,25 @@ function createOptionsFeature(host, deps) {
         }
     }
 
-    async function runPass(fast, initial) {
-        // Both clocks share one in-flight pass. Busy ticks are dropped, never queued.
-        if (busy || stopped || !applying || !hasSelection() ||
-            (fast && (!state.walkSpeed || !ready))) return;
+    async function fastPass() {
+        if (fastBusy || stopped || !applying || !state.walkSpeed) return;
+        fastBusy = true;
+        try {
+            // Readiness reads can fail or stall while world.WALKSPEED is still writable.
+            await send(toggles.byId('walkSpeed'), true);
+        } finally {
+            fastBusy = false;
+        }
+    }
+
+    async function runPass(initial) {
+        if (busy || stopped || !applying || !hasSelection()) return;
         busy = true;
         const current = generation;
         function active() { return !stopped && applying && current === generation; }
         try {
-            // Only the slow clock probes readiness; fast ticks share its latest answer.
-            const available = fast ? ready : await isReady();
-            if (!active()) return;
-            ready = available;
-            if (!ready || !hasSelection()) return;
-            // Slow readiness probes can occupy every fast tick; they must restore room resets too.
-            if (state.walkSpeed) await send(toggles.byId('walkSpeed'), true);
-            if (fast || !active()) return;
+            const available = await isReady();
+            if (!active() || !available || !hasSelection()) return;
             if (state.provoke && !respawnProvoke) await send(toggles.byId('provoke'), true);
             if (initial) return;
             pass += 1;
@@ -153,7 +156,7 @@ function createOptionsFeature(host, deps) {
         if (loop) return;
         pass = 0;
         loop = timers.setInterval(function () {
-            return runPass(false).catch(function (error) {
+            return runPass().catch(function (error) {
                 log('option loop failed: ' + (error && error.message ? error.message : error));
             });
         }, timerMs);
@@ -166,7 +169,7 @@ function createOptionsFeature(host, deps) {
     function settleWalkSpeedLoop() {
         if (applying && !stopped && state.walkSpeed && !fastLoop) {
             fastLoop = timers.setInterval(function () {
-                return runPass(true).catch(function (error) {
+                return fastPass().catch(function (error) {
                     log('walkspeed loop failed: ' + (error && error.message ? error.message : error));
                 });
             }, toggles.WALK_SPEED.intervalMs);
@@ -191,12 +194,11 @@ function createOptionsFeature(host, deps) {
         if (applying === next) return { ok: true, applying: applying };
         applying = next;
         generation += 1;
-        ready = false;
         settleLoops();
         notifyApplying();
         if (!applying) return { ok: true, applying: false };
         // ApplySettings starts with its Provoke check, then waits before its next pass.
-        await runPass(false, true);
+        await runPass(true);
         const answer = state.provoke && !respawnProvoke
             ? results.provoke || { ok: true } : { ok: true };
         return { ok: answer.ok, error: answer.error || null, applying: applying };
@@ -309,7 +311,6 @@ function createOptionsFeature(host, deps) {
         /** Give the timers back: a plugin that is stopping must not leave a loop ticking. */
         stop: function () {
             stopped = true;
-            ready = false;
             generation += 1;
             stopOptionsLoop();
             if (fastLoop) { timers.clearInterval(fastLoop); fastLoop = null; }

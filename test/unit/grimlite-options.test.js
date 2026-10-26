@@ -276,9 +276,8 @@ test('the walkspeed loop keeps pushing the value while the tick is on, and lets 
   run.calls.calls.length = 0;
   await run.timers.pass();
   assert.deepStrictEqual(run.calls.calls, [
-    ['callGameFunction', ['SetWalkSpeed', '20']],
     ['callGameFunction', ['SetWalkSpeed', '20']]
-  ], 'both ready clocks maintain the selected speed');
+  ], 'the independent fast clock maintains the selected speed');
 
   await run.feature.setToggle('walkSpeed', false);
   assert.deepStrictEqual(run.timers.running().filter(entry => entry.ms === toggles.WALK_SPEED.intervalMs), []);
@@ -474,7 +473,7 @@ test('startup waits for a connected player, retries failed setters and recovers 
       return { ok: true };
     } }
   });
-  const writes = () => calls.filter(call => call[0] !== 'getGameObject');
+  const writes = () => calls.filter(call => call[0] !== 'getGameObject' && call[1][0] !== 'SetWalkSpeed');
   await run.timers.pass();
   assert.deepStrictEqual(writes(), []);
   connected = true;
@@ -497,7 +496,7 @@ test('startup waits for a connected player, retries failed setters and recovers 
   await run.timers.pass();
   await run.timers.pass();
   assert.ok(writes().some(call => call[1][0] === 'SetInfiniteRange'));
-  assert.ok(writes().some(call => call[1][0] === 'SetWalkSpeed' && call[1][1] === '37'));
+  assert.ok(calls.some(call => call[1][0] === 'SetWalkSpeed' && call[1][1] === '37'));
   await run.feature.stop();
 });
 
@@ -533,7 +532,7 @@ test('checked Skip Cutscenes drains separate later movies through the actual loa
   await run.feature.stop();
 });
 
-test('both option clocks drop busy ticks and cancellation stops the rest of an in-flight pass', async () => {
+test('slow busy ticks drop while walkspeed continues and stop cancels remaining writes', async () => {
   let release;
   const entered = [];
   let reachedRange;
@@ -554,15 +553,17 @@ test('both option clocks drop busy ticks and cancellation stops the rest of an i
   await rangeEntered;
   assert.strictEqual(typeof release, 'function', 'the slow pass reaches its deferred write');
   for (let i = 0; i < 20; i++) { await slow.fn(); await fast.fn(); }
-  assert.deepStrictEqual(entered, ['SetWalkSpeed', 'SetInfiniteRange'], 'busy ticks do not overlap or accumulate');
+  assert.deepStrictEqual(entered, ['SetInfiniteRange'].concat(Array(20).fill('SetWalkSpeed')),
+    'slow ticks drop while the independent fast timer continues');
+  const beforeStop = entered.slice();
   await run.feature.setToggle('skipCutscenes', false);
   await run.feature.stop();
   release({ ok: true });
   await pending;
-  assert.deepStrictEqual(entered, ['SetWalkSpeed', 'SetInfiniteRange'], 'stop cancels the remaining writes');
+  assert.deepStrictEqual(entered, beforeStop, 'stop cancels the remaining writes');
   await slow.fn();
   await fast.fn();
-  assert.deepStrictEqual(entered, ['SetWalkSpeed', 'SetInfiniteRange'], 'stale callbacks stay cancelled');
+  assert.deepStrictEqual(entered, beforeStop, 'stale callbacks stay cancelled');
   assert.deepStrictEqual(run.timers.running(), []);
 });
 
@@ -601,7 +602,7 @@ test('no selected ticks means no bridge polling and native timers do not keep No
   await native.stop();
 });
 
-test('fast walkspeed ticks share slow readiness probes', async () => {
+test('fast walkspeed ticks do not depend on slow readiness probes', async () => {
   let probes = 0;
   const run = createOptions({
     store: memoryStore({ toggles: { walkSpeed: true } }),
@@ -610,11 +611,11 @@ test('fast walkspeed ticks share slow readiness probes', async () => {
   const slow = run.timers.running().find(entry => entry.ms === toggles.LOOP_MS);
   const fast = run.timers.running().find(entry => entry.ms === toggles.WALK_SPEED.intervalMs);
   await fast.fn();
-  assert.deepStrictEqual(run.calls.calls, [], 'wait for the first slow readiness probe');
+  assert.strictEqual(run.calls.calls.length, 1, 'speed writes before the first slow probe');
   await slow.fn();
   for (let i = 0; i < 4; i++) await fast.fn();
   assert.strictEqual(probes, 1);
-  assert.strictEqual(run.calls.calls.length, 5, 'the slow pass also maintains walkspeed');
+  assert.strictEqual(run.calls.calls.length, 5, 'only the fast clock maintains walkspeed');
   await run.feature.stop();
 });
 
@@ -690,7 +691,7 @@ test('room speed resets recover even when readiness occupies every fast tick', a
     const pending = slow.fn();
     await probeEntered;
     for (let i = 0; i < 4; i++) await fast.fn();
-    assert.strictEqual(writes.length, before, 'busy fast ticks never overlap the slow probe');
+    assert.strictEqual(writes.length, before + 4, 'fast ticks continue during the slow probe');
     release();
     release = null;
     await pending;
@@ -702,12 +703,12 @@ test('room speed resets recover even when readiness occupies every fast tick', a
   world.WALKSPEED = 8;
   await slow.fn();
   await fast.fn();
-  assert.strictEqual(world.WALKSPEED, 8, 'disconnected games remain gated');
+  assert.strictEqual(world.WALKSPEED, 37, 'a false socket read does not block a callable setter');
   connected = true;
   world.myAvatar.uid = null;
   await slow.fn();
   await fast.fn();
-  assert.strictEqual(world.WALKSPEED, 8, 'a connected socket still needs a loaded player');
+  assert.strictEqual(world.WALKSPEED, 37, 'a missing avatar does not block a callable setter');
   world.myAvatar.uid = 456;
   await slow.fn();
   assert.strictEqual(world.WALKSPEED, 37);
@@ -717,4 +718,85 @@ test('room speed resets recover even when readiness occupies every fast tick', a
   await fast.fn();
   assert.strictEqual(world.WALKSPEED, 8, 'explicit pause survives a room reset');
   await run.feature.stop();
+});
+
+test('walkspeed retries the real setter despite failed readiness and a pending slow probe', async () => {
+  let speed = 8;
+  let reply = 'false';
+  let release;
+  let defer = false;
+  let probing;
+  const calls = gameCallsModule.createGameCalls({ bridge: {
+    attach: async () => ({ ok: true }),
+    call: async (name, args) => {
+      if (name === 'getGameObject') {
+        if (defer) await new Promise(resolve => { release = resolve; probing(); });
+        return { ok: true, value: reply };
+      }
+      if (args[0] === 'SetWalkSpeed') return { ok: true,
+        value: '{"error":"no member SetWalkSpeed at SetWalkSpeed"}' };
+      assert.strictEqual(name, 'setGameObject');
+      assert.strictEqual(args[0], 'world.WALKSPEED');
+      speed = args[1];
+      return { ok: true, value: 'true' };
+    }
+  } });
+  const run = createOptions({ calls, productionReadiness: true,
+    store: memoryStore({ toggles: { walkSpeed: true }, walkSpeed: 37 }) });
+  const slow = run.timers.running().find(entry => entry.ms === toggles.LOOP_MS);
+  const fast = run.timers.running().find(entry => entry.ms === toggles.WALK_SPEED.intervalMs);
+  for (const value of ['false', 'null', '{"error":"no member sfc at sfc.isConnected"}', 'true']) {
+    reply = value;
+    await slow.fn();
+    speed = 8;
+    await fast.fn();
+    assert.strictEqual(speed, 37, 'room reset recovers with readiness reply ' + value);
+  }
+  defer = true;
+  const probeEntered = new Promise(resolve => { probing = resolve; });
+  const pending = slow.fn();
+  await probeEntered;
+  speed = 8;
+  await fast.fn();
+  assert.strictEqual(speed, 37, 'a pending readiness probe cannot starve walkspeed');
+  await run.feature.setApplying(false);
+  speed = 8;
+  await fast.fn();
+  assert.strictEqual(speed, 8, 'pause cancels stale fast ticks');
+  defer = false;
+  release();
+  await pending;
+  await run.feature.stop();
+});
+
+test('fast walkspeed drops busy ticks without queuing and respects untick and stop', async () => {
+  let release;
+  let writes = 0;
+  let defer = true;
+  const run = createOptions({
+    store: memoryStore({ toggles: { walkSpeed: true } }),
+    calls: { call: async (name, args) => {
+      writes++;
+      if (defer) return new Promise(resolve => { release = resolve; });
+      return { ok: true };
+    } }
+  });
+  const fast = run.timers.running().find(entry => entry.ms === toggles.WALK_SPEED.intervalMs);
+  const pending = fast.fn();
+  for (let i = 0; i < 20; i++) await fast.fn();
+  assert.strictEqual(writes, 1, 'at most one fast write is in flight');
+  defer = false;
+  await run.feature.setToggle('walkSpeed', false);
+  assert.strictEqual(writes, 2, 'untick restores native speed');
+  release({ ok: true });
+  await pending;
+  await fast.fn();
+  assert.strictEqual(writes, 2, 'untick cancels stale ticks and no dropped ticks are queued');
+  await run.feature.setToggle('walkSpeed', true);
+  const resumed = run.timers.running().find(entry => entry.ms === toggles.WALK_SPEED.intervalMs);
+  await resumed.fn();
+  assert.strictEqual(writes, 4, 'retick resumes direct and periodic writes');
+  await run.feature.stop();
+  await resumed.fn();
+  assert.strictEqual(writes, 4, 'stop cancels stale ticks');
 });
