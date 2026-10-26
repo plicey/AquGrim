@@ -399,28 +399,10 @@ const SURFACE = {
         set: 'world.visible',
         value: function (p) { return String(p[0]) === 'False'; }
     },
-    // Settings.as: drain mcExtSWF, show the game, show its interface. The loader's own while loop
-    // is unbounded; this bounds it and reports rather than spinning the app.
+    // Share the bridge's native lifecycle watcher with the Options route.
     SetSkipCutscenes: {
-        compute: function (ctx) {
-            const LIMIT = 100;
-            let tries = 0;
-            function next() {
-                return ctx.get('mcExtSWF.numChildren').then(function (children) {
-                    if (!children) return null;
-                    if (tries >= LIMIT) {
-                        throw new Error('mcExtSWF still had children after ' + LIMIT +
-                            ' tries, so this cutscene could not be cleared');
-                    }
-                    tries++;
-                    return ctx.call('mcExtSWF.removeChildAt', [0]).then(next);
-                });
-            }
-            return next().then(function () {
-                return ctx.set('world.visible', true);
-            }).then(function () {
-                return ctx.call('showInterface', []);
-            });
+        compute: function (ctx, p) {
+            return ctx.raw('SetSkipCutscenesEnabled', [p[0] !== false]);
         }
     },
     SetTargetPlayer: { call: 'world.getAvatarByUserName' },

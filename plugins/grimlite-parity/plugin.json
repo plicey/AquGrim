@@ -37,6 +37,7 @@
     "ForceUseSkill",
     "CancelTargetSelf",
     "SetTargetPvP",
-    "RejectDrop"
+    "RejectDrop",
+    "SetSkipCutscenesEnabled"
   ]
 }

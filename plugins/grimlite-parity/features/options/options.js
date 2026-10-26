@@ -94,10 +94,14 @@ function createOptionsFeature(host, deps) {
         }
     }
 
+    let skipQueue = Promise.resolve();
+
     async function send(toggle, on) {
         const args = toggles.argsFor(toggle, on, values);
         const name = args.length ? 'callGameFunction' : 'callGameFunction0';
-        const answer = await gameCalls.call(name, [toggle.call].concat(args));
+        const invoke = function () { return gameCalls.call(name, [toggle.call].concat(args)); };
+        const answer = await (toggle.id === 'skipCutscenes'
+            ? (skipQueue = skipQueue.then(invoke, invoke)) : invoke());
         results[toggle.id] = { ok: answer.ok === true, error: answer.error || null };
         return results[toggle.id];
     }
@@ -133,6 +137,9 @@ function createOptionsFeature(host, deps) {
         const current = generation;
         function active() { return !stopped && applying && current === generation; }
         try {
+            // Arm before socket/avatar readiness so first-login cutscenes are covered.
+            if (state.skipCutscenes) await send(toggles.byId('skipCutscenes'), true);
+            if (!active()) return;
             const available = await isReady();
             if (!active() || !available || !hasSelection()) return;
             if (state.provoke && !respawnProvoke) await send(toggles.byId('provoke'), true);
@@ -140,7 +147,7 @@ function createOptionsFeature(host, deps) {
             pass += 1;
             if (!active() || pass % 2 !== 0) return;
             // Infinite Range is a one-shot upstream, but fresh games and skills replace it.
-            const ids = ['infiniteRange'].concat(toggles.SECOND_PASS_ORDER);
+            const ids = ['infiniteRange'].concat(toggles.SECOND_PASS_ORDER).filter(id => id !== 'skipCutscenes');
             for (let i = 0; i < ids.length && active(); i++) {
                 const toggle = toggles.byId(ids[i]);
                 if (state[toggle.id] || toggle.id === 'lagKiller') {
@@ -196,10 +203,12 @@ function createOptionsFeature(host, deps) {
         generation += 1;
         settleLoops();
         notifyApplying();
-        if (!applying) return { ok: true, applying: false };
+        const skipResult = state.skipCutscenes
+            ? await send(toggles.byId('skipCutscenes'), applying) : { ok: true };
+        if (!applying) return { ok: skipResult.ok, error: skipResult.error || null, applying: false };
         // ApplySettings starts with its Provoke check, then waits before its next pass.
         await runPass(true);
-        const answer = state.provoke && !respawnProvoke
+        const answer = !skipResult.ok ? skipResult : state.provoke && !respawnProvoke
             ? results.provoke || { ok: true } : { ok: true };
         return { ok: answer.ok, error: answer.error || null, applying: applying };
     }
@@ -219,7 +228,9 @@ function createOptionsFeature(host, deps) {
             }
 
             let answer = { ok: true, error: null };
-            if (id === 'walkSpeed') {
+            if (id === 'skipCutscenes') {
+                answer = await send(toggle, wanted && applying && !stopped);
+            } else if (id === 'walkSpeed') {
                 // BotManager.cs:1696-1702: on, the value goes out and a 250 ms loop keeps it there;
                 // off, the reference restores its own 8.
                 if (wanted) {
@@ -305,6 +316,9 @@ function createOptionsFeature(host, deps) {
                 settleLoops();
                 if (applying) notifyApplying();
             }
+            if (applying && state.skipCutscenes) {
+                send(toggles.byId('skipCutscenes'), true).catch(error => log('could not arm Skip Cutscenes: ' + error.message));
+            }
             return feature;
         },
 
@@ -317,7 +331,8 @@ function createOptionsFeature(host, deps) {
             const wasApplying = applying;
             applying = false;
             if (wasApplying) notifyApplying();
-            return Promise.resolve();
+            return state.skipCutscenes || results.skipCutscenes
+                ? send(toggles.byId('skipCutscenes'), false) : Promise.resolve();
         },
 
         /** @internal test seam */

@@ -134,7 +134,7 @@ test('the one-shot toggles send when changed; provoke and enemy magnet wait for 
   assert.deepStrictEqual(run.calls.calls, [
     ['callGameFunction0', ['SetInfiniteRange']],
     ['callGameFunction0', ['DestroyPlayers']],
-    ['callGameFunction0', ['SetSkipCutscenes']]
+    ['callGameFunction', ['SetSkipCutscenes', true]]
   ]);
   await run.feature.stop();
 });
@@ -252,7 +252,7 @@ test('Respawn Provoke suppresses the provoke call the Options loop would make', 
 test('a toggle the reference never had an off call for sends nothing when switched off', async () => {
   // Root.cs:1264-1310 only sets the flag on untick for these five; the reference has no
   // "undo" call for them, so neither does this port (nothing invented in its place).
-  for (const id of ['infiniteRange', 'provoke', 'enemyMagnet', 'hidePlayers', 'skipCutscenes']) {
+  for (const id of ['infiniteRange', 'provoke', 'enemyMagnet', 'hidePlayers']) {
     const run = createOptions();
     await run.feature.setToggle(id, true);
     run.calls.calls.length = 0;
@@ -500,36 +500,22 @@ test('startup waits for a connected player, retries failed setters and recovers 
   await run.feature.stop();
 });
 
-test('checked Skip Cutscenes drains separate later movies through the actual loader surface', async () => {
-  const { createLoaderSurface } = require(path.join(pluginRoot, 'loader-surface.js'));
-  let children = 2;
-  let removed = 0;
-  const surface = createLoaderSurface(async function (name, args) {
-    if (name === 'getGameObject' && args[0] === 'mcExtSWF.numChildren') return children;
-    if (args[0] === 'mcExtSWF.removeChildAt') { children--; removed++; }
-    return true;
-  });
+test('restored Skip arms before readiness and untick/pause/stop disarm its native state', async () => {
   const run = createOptions({
     store: memoryStore({ toggles: { skipCutscenes: true } }),
-    calls: { call: async function (name, args) {
-      await surface.call(args[0], args.slice(1));
-      return { ok: true };
-    } }
+    isReady: async () => false
   });
-  await run.timers.pass();
-  await run.timers.pass();
-  assert.strictEqual(children, 0);
-  children = 3;
-  await run.timers.pass();
-  await run.timers.pass();
-  assert.strictEqual(children, 0, 'a later movie is cleared while the tick stays checked');
-  assert.strictEqual(removed, 5);
+  await new Promise(setImmediate);
+  assert.deepStrictEqual(run.calls.calls, [['callGameFunction', ['SetSkipCutscenes', true]]]);
+  await run.feature.setApplying(false);
+  assert.deepStrictEqual(run.calls.calls.at(-1), ['callGameFunction', ['SetSkipCutscenes', false]]);
+  await run.feature.setApplying(true);
+  assert.deepStrictEqual(run.calls.calls.at(-1), ['callGameFunction', ['SetSkipCutscenes', true]]);
   await run.feature.setToggle('skipCutscenes', false);
-  children = 1;
-  await run.timers.pass();
-  await run.timers.pass();
-  assert.strictEqual(children, 1, 'unticking leaves later movies alone');
+  assert.deepStrictEqual(run.calls.calls.at(-1), ['callGameFunction', ['SetSkipCutscenes', false]]);
+  await run.feature.setToggle('skipCutscenes', true);
   await run.feature.stop();
+  assert.deepStrictEqual(run.calls.calls.at(-1), ['callGameFunction', ['SetSkipCutscenes', false]]);
 });
 
 test('slow busy ticks drop while walkspeed continues and stop cancels remaining writes', async () => {
@@ -553,11 +539,11 @@ test('slow busy ticks drop while walkspeed continues and stop cancels remaining 
   await rangeEntered;
   assert.strictEqual(typeof release, 'function', 'the slow pass reaches its deferred write');
   for (let i = 0; i < 20; i++) { await slow.fn(); await fast.fn(); }
-  assert.deepStrictEqual(entered, ['SetInfiniteRange'].concat(Array(20).fill('SetWalkSpeed')),
+  assert.deepStrictEqual(entered, ['SetSkipCutscenes', 'SetInfiniteRange'].concat(Array(20).fill('SetWalkSpeed')),
     'slow ticks drop while the independent fast timer continues');
-  const beforeStop = entered.slice();
   await run.feature.setToggle('skipCutscenes', false);
   await run.feature.stop();
+  const beforeStop = entered.slice();
   release({ ok: true });
   await pending;
   assert.deepStrictEqual(entered, beforeStop, 'stop cancels the remaining writes');
@@ -575,13 +561,15 @@ test('pause during readiness prevents writes and does not auto-resume on game re
   });
   const stale = run.timers.running().slice();
   const pending = stale[0].fn();
+  await new Promise(setImmediate);
   await run.feature.setApplying(false);
   release(true);
   await pending;
-  assert.deepStrictEqual(run.calls.calls, []);
+  const pausedCalls = run.calls.calls.slice();
+  assert.deepStrictEqual(pausedCalls.at(-1), ['callGameFunction', ['SetSkipCutscenes', false]]);
   await stale[0].fn();
   await stale[1].fn();
-  assert.deepStrictEqual(run.calls.calls, []);
+  assert.deepStrictEqual(run.calls.calls, pausedCalls);
   assert.strictEqual(run.feature.state().applying, false);
   assert.deepStrictEqual(run.timers.running(), []);
   await run.feature.stop();
@@ -628,10 +616,11 @@ test('untick during readiness cancels Skip and a fresh tick starts automatic ski
   });
   const slow = run.timers.running()[0];
   const pending = slow.fn();
+  await new Promise(setImmediate);
   await run.feature.setToggle('skipCutscenes', false);
   release(true);
   await pending;
-  assert.deepStrictEqual(run.calls.calls, [], 'unticking during readiness prevents all writes');
+  assert.deepStrictEqual(run.calls.calls.at(-1), ['callGameFunction', ['SetSkipCutscenes', false]], 'unticking disarms the watcher even while readiness is pending');
   defer = false;
   await run.feature.stop();
 
@@ -799,4 +788,41 @@ test('fast walkspeed drops busy ticks without queuing and respects untick and st
   await run.feature.stop();
   await resumed.fn();
   assert.strictEqual(writes, 4, 'stop cancels stale ticks');
+});
+
+test('Skip resume arms even while an older readiness probe is still blocked', async () => {
+  let release;
+  const run = createOptions({
+    store: memoryStore({ toggles: { skipCutscenes: true } }),
+    isReady: () => new Promise(resolve => { release = resolve; })
+  });
+  const pending = run.timers.running()[0].fn();
+  await new Promise(setImmediate);
+  await run.feature.setApplying(false);
+  await run.feature.setApplying(true);
+  assert.deepStrictEqual(run.calls.calls.at(-1), ['callGameFunction', ['SetSkipCutscenes', true]]);
+  await run.feature.stop();
+  assert.deepStrictEqual(run.calls.calls.at(-1), ['callGameFunction', ['SetSkipCutscenes', false]]);
+  release(true);
+  await pending;
+  assert.deepStrictEqual(run.calls.calls.at(-1), ['callGameFunction', ['SetSkipCutscenes', false]]);
+});
+
+test('Skip enable and untick are serialized so a slow enable cannot outlive disable', async () => {
+  let release;
+  const entered = [];
+  const run = createOptions({ calls: { call: async function (name, args) {
+    entered.push(args[1]);
+    if (args[1] === true) await new Promise(resolve => { release = resolve; });
+    return { ok: true };
+  } } });
+  const enable = run.feature.setToggle('skipCutscenes', true);
+  await new Promise(setImmediate);
+  const disable = run.feature.setToggle('skipCutscenes', false);
+  await new Promise(setImmediate);
+  assert.deepStrictEqual(entered, [true], 'disable waits for the outstanding enable');
+  release();
+  await Promise.all([enable, disable]);
+  assert.deepStrictEqual(entered, [true, false]);
+  await run.feature.stop();
 });

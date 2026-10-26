@@ -57,7 +57,7 @@ const TOGGLES = [
         // toggle whose call has no route and reports the reason (game-calls.js NO_ROUTE).
         args: [], loop: 'second'
     },
-    { id: 'skipCutscenes', label: 'Skip Cutscenes', call: 'SetSkipCutscenes', args: [], loop: 'second' },
+    { id: 'skipCutscenes', label: 'Skip Cutscenes', call: 'SetSkipCutscenes', args: function (on) { return [on]; }, callAlways: true, loop: 'second' },
     {
         id: 'walkSpeed',
         label: 'Walkspeed',

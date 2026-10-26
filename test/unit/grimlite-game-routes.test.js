@@ -122,39 +122,37 @@ test('Walkspeed writes the game own WALKSPEED as a number', async () => {
     assert.deepStrictEqual(route(bridge.calls), [['setGameObject', ['world.WALKSPEED', 33]]]);
 });
 
-test('Skip Cutscenes empties the external movie, then shows the game again', async () => {
-    // Settings.as:SetSkipCutscenes: remove every child of mcExtSWF, world.visible = true,
-    // showInterface().
-    let children = 2;
-    const bridge = fakeBridge(function (key) {
-        if (key === 'mcExtSWF.numChildren') return children--;
-    });
-    const answer = await gameCalls(bridge).call('callGameFunction0', ['SetSkipCutscenes']);
-    assert.strictEqual(answer.ok, true, answer.error);
-    assert.deepStrictEqual(route(bridge.calls), [
-        ['getGameObject', ['mcExtSWF.numChildren']],
-        ['callGameFunction', ['mcExtSWF.removeChildAt', 0]],
-        ['getGameObject', ['mcExtSWF.numChildren']],
-        ['callGameFunction', ['mcExtSWF.removeChildAt', 0]],
-        ['getGameObject', ['mcExtSWF.numChildren']],
-        ['setGameObject', ['world.visible', true]],
-        ['callGameFunction0', ['showInterface']]
-    ]);
+test('Skip Cutscenes routes enabled state to the native lifecycle watcher', async () => {
+    const bridge = fakeBridge();
+    const calls = gameCalls(bridge);
+    assert.strictEqual((await calls.call('callGameFunction0', ['SetSkipCutscenes'])).ok, true);
+    assert.deepStrictEqual(bridge.calls, [['SetSkipCutscenesEnabled', [true]]]);
+    bridge.calls.length = 0;
+    assert.strictEqual((await calls.call('callGameFunction', ['SetSkipCutscenes', false])).ok, true);
+    assert.deepStrictEqual(bridge.calls, [['SetSkipCutscenesEnabled', [false]]]);
 });
 
-test('a cutscene that will not empty is reported rather than looped on forever', async () => {
-    // The loop is the loader's own while (numChildren > 0); against a live movie a child that
-    // cannot be removed must not hang the app, so the port bounds it and says what happened.
-    const bridge = fakeBridge(function (key) {
-        if (key === 'mcExtSWF.numChildren') return 3;   // never drops
-    });
+test('missing native skip support fails without draining any external movie', async () => {
+    const bridge = fakeBridge();
+    const original = bridge.call;
+    bridge.call = function (name, args) {
+        if (name === 'SetSkipCutscenesEnabled') return Promise.resolve({ ok: false, error: 'unsupported callback' });
+        return original(name, args);
+    };
     const answer = await gameCalls(bridge).call('callGameFunction0', ['SetSkipCutscenes']);
     assert.strictEqual(answer.ok, false);
-    assert.ok(/cutscene|mcExtSWF/i.test(answer.error), answer.error);
-    const removals = route(bridge.calls).filter(function (one) {
-        return one[0] === 'callGameFunction' && one[1][0] === 'mcExtSWF.removeChildAt';
+    assert.match(answer.error, /unsupported callback/);
+    assert.strictEqual(bridge.calls.length, 0);
+});
+
+test('Skip never probes a legacy destructive loader method', async () => {
+    const bridge = fakeBridge(key => {
+        if (key === 'SetSkipCutscenes') throw new Error('legacy drain must never run');
     });
-    assert.strictEqual(removals.length, 100, 'the loop must stop at its bound');
+    const calls = gameCalls(bridge);
+    assert.strictEqual((await calls.call('callGameFunction', ['SetSkipCutscenes', true])).ok, true);
+    assert.strictEqual((await calls.call('callGameFunction', ['SetSkipCutscenes', false])).ok, true);
+    assert.deepStrictEqual(bridge.calls, [['SetSkipCutscenesEnabled', [true]], ['SetSkipCutscenesEnabled', [false]]]);
 });
 
 test('Cancel Target calls the game own cancelTarget twice, as the loader does', async () => {

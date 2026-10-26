@@ -38,6 +38,8 @@ package {
         // Bounded so a page that never polls cannot grow the movie's memory without limit.
         private static const MAX_EVENTS:int = 200;
 
+        private var skipCutscenes:Boolean = false;
+        private var skipRoot:Object = null;
         private var game:Object = null;          // the game's own root object
         private var domain:ApplicationDomain;    // where the game's classes live (ours)
         private var events:Array = [];
@@ -101,6 +103,7 @@ package {
             addCallback('CancelTargetSelf', aqCancelTargetSelf);
             addCallback('SetTargetPvP', aqSetTargetPvP);
             addCallback('RejectDrop', aqRejectDrop);
+            addCallback('SetSkipCutscenesEnabled', aqSetSkipCutscenesEnabled);
         }
 
         private function addCallback(name:String, fn:Function):void {
@@ -108,6 +111,44 @@ package {
                 ExternalInterface.addCallback(name, fn);
             } catch (e:Error) {
                 emit('error', 'could not register ' + name + ': ' + e.message);
+            }
+        }
+
+        private function aqSetSkipCutscenesEnabled(enabled:Boolean):String {
+            if (skipCutscenes == enabled && (!enabled || skipRoot === game)) return toJson(enabled);
+            skipCutscenes = enabled;
+            if (skipRoot != null) {
+                skipRoot.removeEventListener(Event.ENTER_FRAME, onSkipCutsceneFrame);
+                skipRoot = null;
+            }
+            if (enabled && game != null) {
+                skipRoot = game;
+                // Run before the handler's readiness/overlay callbacks on the same root.
+                skipRoot.addEventListener(Event.ENTER_FRAME, onSkipCutsceneFrame, false, 2147483647, true);
+            }
+            return toJson(enabled);
+        }
+
+        private function onSkipCutsceneFrame(event:Event):void {
+            try {
+                var world:Object = game == null ? null : game.world;
+                var handler:Object = world == null ? null : world.cHandle;
+                if (handler == null) return;
+                if (!("isPending" in handler) || !("transfer" in handler)) {
+                    throw new Error("this game's cutscene handler does not support isPending/transfer");
+                }
+                if (!handler.isPending()) return;
+                // Match stock readiness before canceling the handler and moving its destination.
+                if (world.map == null || world.mapLoadInProgress) return;
+                // If enabled during an in-flight load, let INIT/COMPLETE finish before transfer.
+                var history:Object = game.ldrMC.history;
+                for (var key:String in history) {
+                    if (history[key].dest === game.mcExtSWF) return;
+                }
+                handler.transfer();
+            } catch (error:Error) {
+                aqSetSkipCutscenesEnabled(false);
+                emit('error', 'Skip Cutscenes disabled: ' + error.message);
             }
         }
 
@@ -634,6 +675,7 @@ package {
             }
 
             game = candidate;
+            aqSetSkipCutscenesEnabled(skipCutscenes);
             stopGameRootWait();
             emit('load', 'loaded ' + getQualifiedClassName(game));
             emit('ready', 'game root available');
