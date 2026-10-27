@@ -1,8 +1,7 @@
 // The option toggles' main-process half: hold the user's own ticks, push each one into the game,
 // and keep pushing the ones the reference keeps pushing on a loop.
 //
-// Selected values resume on launch and are retried as the game becomes ready. Explicit pause
-// remains temporary; only the user's ticks and walkspeed value are saved.
+// Selected values own reapplication; the legacy applying flag does not pause checked options.
 
 const toggles = require('./toggles.js');
 const { createGameCalls } = require('../../game-calls.js');
@@ -52,7 +51,6 @@ function createOptionsFeature(host, deps) {
     let busy = false;
     let fastBusy = false;
     let stopped = false;
-    let manuallyPaused = false;
     const isReady = deps.isReady || async function () {
         const connected = await gameCalls.call('getGameObject', ['sfc.isConnected']);
         if (!connected.ok || connected.value !== true) return false;
@@ -64,7 +62,7 @@ function createOptionsFeature(host, deps) {
     let timerMs = toggles.LOOP_MS;
     // BotManager's "Respawn Provoke": the reference's loop skips provoke while it is ticked.
     let respawnProvoke = false;
-    // The hotkey and Bot Manager still explicitly start/stop this runtime state.
+    // Running state reported to the hotkey and Bot Manager includes checked maintenance.
     let applying = false;
 
     function load() {
@@ -97,11 +95,17 @@ function createOptionsFeature(host, deps) {
     let skipQueue = Promise.resolve();
 
     async function send(toggle, on) {
-        const args = toggles.argsFor(toggle, on, values);
+        const args = toggle.id === 'walkSpeed' && !on
+            ? [String(toggles.WALK_SPEED.restore)] : toggles.argsFor(toggle, on, values);
         const name = args.length ? 'callGameFunction' : 'callGameFunction0';
         const invoke = function () { return gameCalls.call(name, [toggle.call].concat(args)); };
-        const answer = await (toggle.id === 'skipCutscenes'
-            ? (skipQueue = skipQueue.then(invoke, invoke)) : invoke());
+        let answer;
+        try {
+            answer = await (toggle.id === 'skipCutscenes'
+                ? (skipQueue = skipQueue.then(invoke, invoke)) : invoke());
+        } catch (error) {
+            answer = { ok: false, error: error && error.message ? error.message : String(error) };
+        }
         results[toggle.id] = { ok: answer.ok === true, error: answer.error || null };
         return results[toggle.id];
     }
@@ -110,7 +114,12 @@ function createOptionsFeature(host, deps) {
     let lastSkipStatus = '';
     async function pollSkipStatus() {
         if (!state.skipCutscenes) return;
-        const answer = await gameCalls.call('GetSkipCutscenesStatus', []);
+        let answer;
+        try {
+            answer = await gameCalls.call('GetSkipCutscenesStatus', []);
+        } catch (error) {
+            answer = { ok: false, error: error && error.message ? error.message : String(error) };
+        }
         const text = answer.ok ? JSON.stringify(answer.value) : 'error: ' + answer.error;
         if (text === lastSkipStatus) return;
         lastSkipStatus = text;
@@ -132,7 +141,7 @@ function createOptionsFeature(host, deps) {
     }
 
     async function fastPass() {
-        if (fastBusy || stopped || !applying || !state.walkSpeed) return;
+        if (fastBusy || stopped || !state.walkSpeed) return;
         fastBusy = true;
         try {
             // Readiness reads can fail or stall while world.WALKSPEED is still writable.
@@ -143,10 +152,10 @@ function createOptionsFeature(host, deps) {
     }
 
     async function runPass(initial) {
-        if (busy || stopped || !applying || !hasSelection()) return;
+        if (busy || stopped || !hasSelection()) return;
         busy = true;
         const current = generation;
-        function active() { return !stopped && applying && current === generation; }
+        function active() { return !stopped && current === generation; }
         try {
             // Arm before socket/avatar readiness so first-login cutscenes are covered.
             if (state.skipCutscenes) await send(toggles.byId('skipCutscenes'), true);
@@ -154,6 +163,7 @@ function createOptionsFeature(host, deps) {
             const available = await isReady();
             if (!active() || !available || !hasSelection()) return;
             await pollSkipStatus();
+            if (!active()) return;
             if (state.provoke && !respawnProvoke) await send(toggles.byId('provoke'), true);
             if (initial) return;
             pass += 1;
@@ -186,37 +196,34 @@ function createOptionsFeature(host, deps) {
     }
 
     function settleWalkSpeedLoop() {
-        if (applying && !stopped && state.walkSpeed && !fastLoop) {
+        if (!stopped && state.walkSpeed && !fastLoop) {
             fastLoop = timers.setInterval(function () {
                 return fastPass().catch(function (error) {
                     log('walkspeed loop failed: ' + (error && error.message ? error.message : error));
                 });
             }, toggles.WALK_SPEED.intervalMs);
-        } else if ((!applying || stopped || !state.walkSpeed) && fastLoop) {
+        } else if ((stopped || !state.walkSpeed) && fastLoop) {
             timers.clearInterval(fastLoop);
             fastLoop = null;
         }
     }
 
-    /** Pause and resume both clocks without changing selected values. */
+    /** Checked values keep their clocks independently of legacy applying callers. */
     function settleLoops() {
-        if (applying) startOptionsLoop();
+        if (!stopped && (applying || hasSelection())) startOptionsLoop();
         else stopOptionsLoop();
         settleWalkSpeedLoop();
     }
 
-    /** The reference's OptionsManager.Start/Stop. Ticks stay as the user left them. */
+    /** Compatibility flag for bot/hotkey callers; untick or feature.stop cancels maintenance. */
     async function setApplying(wanted) {
-        const next = wanted === true;
-        manuallyPaused = !next;
+        const next = wanted === true || (!stopped && hasSelection());
         if (next) stopped = false;
         if (applying === next) return { ok: true, applying: applying };
         applying = next;
-        generation += 1;
         settleLoops();
         notifyApplying();
-        // Pausing the loop only pauses its re-apply rounds; Skip is a passive watcher and stays
-        // armed while its tick is on. Resuming re-asserts it for a bridge that reconnected.
+        // Enabling through a legacy caller also reasserts Skip after reconnect.
         const skipResult = applying && state.skipCutscenes && !stopped
             ? await send(toggles.byId('skipCutscenes'), true) : { ok: true };
         if (!applying) return { ok: skipResult.ok, error: skipResult.error || null, applying: false };
@@ -235,7 +242,7 @@ function createOptionsFeature(host, deps) {
             const wanted = on === true;
             state[id] = wanted;
             save();
-            if (wanted && !manuallyPaused && !stopped && !applying) {
+            if (wanted && !stopped && !applying) {
                 applying = true;
                 settleLoops();
                 notifyApplying();
@@ -250,9 +257,7 @@ function createOptionsFeature(host, deps) {
                 if (wanted) {
                     answer = await send(toggle, true);
                 } else {
-                    answer = await gameCalls.call('callGameFunction',
-                        [toggle.call, String(toggles.WALK_SPEED.restore)]);
-                    results[id] = { ok: answer.ok === true, error: answer.error || null };
+                    answer = await send(toggle, false);
                 }
                 // The saved tick owns the fast loop as well as checkbox changes.
                 settleWalkSpeedLoop();
@@ -325,11 +330,9 @@ function createOptionsFeature(host, deps) {
         attach: function () {
             load();
             stopped = false;
-            if (!manuallyPaused) {
-                applying = hasSelection();
-                settleLoops();
-                if (applying) notifyApplying();
-            }
+            applying = hasSelection();
+            settleLoops();
+            if (applying) notifyApplying();
             if (state.skipCutscenes) {
                 send(toggles.byId('skipCutscenes'), true).catch(error => log('could not arm Skip Cutscenes: ' + error.message));
             }

@@ -20,6 +20,8 @@ const pluginRoot = path.join(__dirname, '../../plugins/grimlite-parity');
 const toggles = require(path.join(pluginRoot, 'features/options/toggles.js'));
 const { createOptionsFeature } = require(path.join(pluginRoot, 'features/options/options.js'));
 const gameCallsModule = require(path.join(pluginRoot, 'game-calls.js'));
+const { createEngine } = require(path.join(pluginRoot, 'bot/engine.js'));
+const { makeCommand } = require(path.join(pluginRoot, 'bot/command-catalog.js'));
 
 // A recorder shaped like the plugin's game-call surface (game-calls.js).
 function recorder(result) {
@@ -193,10 +195,11 @@ test('OptionsManager starts stopped, and Start follows Grimlite\'s immediate/one
   await run.feature.setToggle('provoke', true);
   run.calls.calls.length = 0;
 
-  // Pause remains explicit; Start immediately applies Provoke after checking readiness.
+  // Checked options stay active through lifecycle false; the first timer pass applies Provoke.
   await run.feature.setApplying(false);
   await run.feature.setApplying(true);
-  assert.deepStrictEqual(run.calls.calls, [['callGameFunction0', ['SetProvokeMonsters']]]);
+  assert.deepStrictEqual(run.calls.calls, []);
+  assert.strictEqual(run.feature.state().applying, true);
   assert.strictEqual(run.timers.running().length, 1);
   assert.strictEqual(run.timers.running()[0].ms, toggles.LOOP_MS);
   assert.strictEqual(toggles.LOOP_MS, 1000, 'OptionsManager.Timer ships at 1000 ms');
@@ -402,7 +405,7 @@ test('a persisted walkspeed tick resumes its loop on launch', async () => {
   await run.timers.pass();
   assert.ok(run.calls.calls.some(call => call[1][0] === 'SetWalkSpeed' && call[1][1] === '33'));
   await run.feature.setApplying(false);
-  assert.deepStrictEqual(run.timers.running(), []);
+  assert.strictEqual(run.timers.running().length, 2, 'checked values retain their clocks');
   await run.feature.stop();
 });
 
@@ -416,19 +419,20 @@ test('a stored tick that no longer exists is ignored rather than fatal', async (
   await run.feature.stop();
 });
 
-test('selected values resume on restart while explicit pause is temporary', async () => {
+test('selected values survive legacy applying changes and restart', async () => {
   const store = memoryStore({ toggles: { provoke: true }, walkSpeed: 35, applying: false });
   const changes = [];
   const run = createOptions({ store, onApplyingChanged: running => changes.push(running) });
   assert.strictEqual(run.feature.state().applying, true, 'saved runtime flags are ignored');
   assert.deepStrictEqual(changes, [true]);
   await run.feature.setApplying(false);
+  assert.strictEqual(run.feature.state().applying, true);
   await run.feature.setToggle('skipCutscenes', true);
-  assert.strictEqual(run.feature.state().applying, false, 'changing a tick respects explicit pause');
-  assert.deepStrictEqual(run.timers.running(), []);
+  assert.strictEqual(run.feature.state().applying, true, 'a selected tick can enable the compatibility flag');
+  assert.strictEqual(run.timers.running().length, 1);
   assert.strictEqual(store.read().applying, undefined);
   await run.feature.setApplying(true);
-  assert.deepStrictEqual(changes, [true, false, true]);
+  assert.deepStrictEqual(changes, [true], 'lifecycle false does not publish a false running indicator');
   await run.feature.stop();
   const restarted = createOptions({ store });
   assert.strictEqual(restarted.feature.state().applying, true);
@@ -556,25 +560,27 @@ test('slow busy ticks drop while walkspeed continues and stop cancels remaining 
   assert.deepStrictEqual(run.timers.running(), []);
 });
 
-test('pause during readiness prevents writes and does not auto-resume on game readiness', async () => {
+test('applying=false during readiness preserves checked maintenance', async () => {
   let release;
+  let defer = true;
   const run = createOptions({
-    store: memoryStore({ toggles: { walkSpeed: true, skipCutscenes: true } }),
-    isReady: () => new Promise(resolve => { release = resolve; })
+    store: memoryStore({ toggles: { walkSpeed: true, skipCutscenes: true, provoke: true } }),
+    isReady: () => defer ? new Promise(resolve => { release = resolve; }) : Promise.resolve(true)
   });
-  const stale = run.timers.running().slice();
-  const pending = stale[0].fn();
+  const clocks = run.timers.running().slice();
+  const pending = clocks[0].fn();
   await new Promise(setImmediate);
   await run.feature.setApplying(false);
+  defer = false;
   release(true);
   await pending;
-  const pausedCalls = run.calls.calls.slice();
-  assert.deepStrictEqual(pausedCalls.at(-1), ['callGameFunction', ['SetSkipCutscenes', true]]);
-  await stale[0].fn();
-  await stale[1].fn();
-  assert.deepStrictEqual(run.calls.calls, pausedCalls);
-  assert.strictEqual(run.feature.state().applying, false);
-  assert.deepStrictEqual(run.timers.running(), []);
+  assert.ok(run.calls.calls.some(call => call[1][0] === 'SetProvokeMonsters'));
+  run.calls.calls.length = 0;
+  await clocks[0].fn();
+  await clocks[1].fn();
+  assert.ok(run.calls.calls.some(call => call[1][0] === 'SetWalkSpeed'));
+  assert.strictEqual(run.feature.state().applying, true);
+  assert.strictEqual(run.timers.running().length, 2);
   await run.feature.stop();
 });
 
@@ -708,7 +714,7 @@ test('room speed resets recover even when readiness occupies every fast tick', a
   world.WALKSPEED = 8;
   await slow.fn();
   await fast.fn();
-  assert.strictEqual(world.WALKSPEED, 8, 'explicit pause survives a room reset');
+  assert.strictEqual(world.WALKSPEED, 37, 'applying=false cannot suppress room recovery');
   await run.feature.stop();
 });
 
@@ -754,7 +760,7 @@ test('walkspeed retries the real setter despite failed readiness and a pending s
   await run.feature.setApplying(false);
   speed = 8;
   await fast.fn();
-  assert.strictEqual(speed, 8, 'pause cancels stale fast ticks');
+  assert.strictEqual(speed, 37, 'applying=false leaves the fast clock independent');
   defer = false;
   release();
   await pending;
@@ -828,4 +834,140 @@ test('Skip enable and untick are serialized so a slow enable cannot outlive disa
   await Promise.all([enable, disable]);
   assert.deepStrictEqual(entered, [true, false]);
   await run.feature.stop();
+});
+
+
+test('real engine stop preserves all checked options through readiness loss and recreated game recovery', async () => {
+  let connected = false;
+  let game = {};
+  let uid = null;
+  const attempts = [];
+  const selected = Object.fromEntries(toggles.TOGGLES.map(t => [t.id, true]));
+  const run = createOptions({ productionReadiness: true,
+    store: memoryStore({ toggles: selected, walkSpeed: 37 }),
+    calls: { call: async (name, args) => {
+      if (name === 'getGameObject') return { ok: true,
+        value: args[0] === 'sfc.isConnected' ? connected : uid };
+      if (name === 'GetSkipCutscenesStatus') return { ok: true, value: {} };
+      attempts.push(args[0]);
+      if (!connected) return { ok: false, error: 'disconnected' };
+      if (args[0] === 'DestroyPlayers') return { ok: false, error: 'NO_ROUTE DestroyPlayers' };
+      game[args[0]] = args[1] === undefined ? true : args[1];
+      return { ok: true };
+    } }
+  });
+  const lifecycle = [];
+  // main.js exposes these methods, deliberately no stop: exercise engine options().stop fallback.
+  const engine = createEngine({
+    session: { signedIn: async () => true, username: async () => 'Tester' },
+    options: {
+      setApplying: on => { lifecycle.push(on); return run.feature.setApplying(on); },
+      setToggle: (id, on) => run.feature.setToggle(id, on),
+      state: () => run.feature.state()
+    }
+  });
+  await run.timers.pass();
+  assert.strictEqual(run.feature.state().results.skipCutscenes.ok, false);
+  assert.strictEqual(run.feature.state().results.walkSpeed.ok, false);
+  for (const event of ['room', 'map', 'relogin']) {
+    connected = true;
+    uid = 123;
+    assert.strictEqual((await engine.start({ Commands: [makeCommand('CmdBlank', {})] })).ok, true);
+    engine.stop();
+    assert.strictEqual(engine.running(), false);
+    assert.deepStrictEqual(lifecycle.slice(-2), [true, false], 'real stop reaches the fallback');
+    assert.strictEqual(run.feature.state().applying, true, 'checked clocks keep the indicator enabled');
+    connected = false;
+    uid = null;
+    game = {}; // Recreated game loses all previously applied settings.
+    attempts.length = 0;
+    await run.timers.pass();
+    assert.ok(attempts.includes('SetSkipCutscenes'), 'Skip arms before readiness');
+    assert.ok(attempts.includes('SetWalkSpeed'), 'fast writes retry without readiness');
+    assert.ok(!attempts.includes('SetInfiniteRange'), 'slow settings wait for the socket');
+    connected = true;
+    attempts.length = 0;
+    await run.timers.pass();
+    assert.ok(!attempts.includes('SetInfiniteRange'), 'socket alone is not player readiness');
+    uid = 456;
+    attempts.length = 0;
+    await run.timers.pass();
+    await run.timers.pass();
+    for (const t of toggles.TOGGLES) {
+      assert.ok(attempts.includes(t.call), event + ': retry ' + t.id);
+      assert.strictEqual(run.feature.state()[t.id === 'walkSpeed' ? 'walkSpeedOn' : t.id], true);
+      assert.strictEqual(run.feature.state().results[t.id].ok, t.id !== 'hidePlayers', t.id);
+      if (t.id !== 'hidePlayers') assert.ok(game[t.call], event + ': restore ' + t.id);
+    }
+    assert.strictEqual(game.SetWalkSpeed, '37');
+    assert.strictEqual(run.feature.state().results.hidePlayers.error, 'NO_ROUTE DestroyPlayers');
+    assert.deepStrictEqual(run.store.read(), { toggles: selected, walkSpeed: 37 });
+  }
+  await run.feature.stop();
+  attempts.length = 0;
+  await run.timers.pass();
+  assert.deepStrictEqual(attempts, []);
+  assert.deepStrictEqual(run.store.read().toggles, selected);
+});
+
+test('rejected status and per-setting writes report errors without blocking later options', async () => {
+  let reject = true;
+  const writes = [];
+  const selected = Object.fromEntries(toggles.TOGGLES.map(t => [t.id, true]));
+  const run = createOptions({ store: memoryStore({ toggles: selected }),
+    calls: { call: async (name, args) => {
+      if (name === 'GetSkipCutscenesStatus') throw new Error('status rejected');
+      writes.push(args[0]);
+      if (reject && ['SetSkipCutscenes', 'SetProvokeMonsters', 'SetInfiniteRange', 'SetEnemyMagnet', 'DestroyPlayers', 'SetWalkSpeed'].includes(args[0])) throw new Error(args[0] + ' rejected');
+      return { ok: true };
+    } }
+  });
+  await new Promise(setImmediate);
+  await run.timers.pass();
+  await run.timers.pass();
+  for (const t of toggles.TOGGLES) assert.ok(writes.includes(t.call), 'attempt ' + t.id);
+  assert.strictEqual(run.feature.state().results.enemyMagnet.error, 'SetEnemyMagnet rejected');
+  assert.strictEqual(run.feature.state().results.lagKiller.ok, true);
+  reject = false;
+  await run.timers.pass();
+  await run.timers.pass();
+  for (const t of toggles.TOGGLES) assert.strictEqual(run.feature.state().results[t.id].ok, true, t.id);
+  await run.feature.stop();
+});
+
+
+test('real engine stop during pending Skip status preserves checks; feature teardown cancels remaining writes', async () => {
+  let release;
+  const writes = [];
+  const selected = Object.fromEntries(toggles.TOGGLES.map(t => [t.id, true]));
+  const run = createOptions({ store: memoryStore({ toggles: selected }),
+    calls: { call: async (name, args) => {
+      if (name === 'GetSkipCutscenesStatus') return new Promise(resolve => { release = resolve; });
+      writes.push(args.slice());
+      return { ok: true };
+    } }
+  });
+  const engine = createEngine({
+    session: { signedIn: async () => true, username: async () => 'Tester' },
+    options: {
+      setApplying: on => run.feature.setApplying(on),
+      setToggle: (id, on) => run.feature.setToggle(id, on),
+      state: () => run.feature.state()
+    }
+  });
+  assert.strictEqual((await engine.start({ Commands: [makeCommand('CmdBlank', {})] })).ok, true);
+  const pending = run.timers.running()[0].fn();
+  await new Promise(setImmediate);
+  assert.strictEqual(typeof release, 'function');
+  engine.stop();
+  assert.strictEqual(run.feature.state().applying, true);
+  await run.feature.stop();
+  assert.strictEqual(run.feature.state().applying, false);
+  assert.deepStrictEqual(writes.at(-1), ['SetSkipCutscenes', false]);
+  const before = writes.slice();
+  release({ ok: true, value: {} });
+  await pending;
+  await run.timers.pass();
+  assert.deepStrictEqual(writes, before, 'pending status cannot resume writes after teardown');
+  assert.deepStrictEqual(run.timers.running(), []);
 });
