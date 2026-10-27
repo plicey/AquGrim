@@ -92,17 +92,17 @@ function createOptionsFeature(host, deps) {
         }
     }
 
-    let skipQueue = Promise.resolve();
+    const nativeQueues = { skipCutscenes: Promise.resolve(), walkSpeed: Promise.resolve() };
 
     async function send(toggle, on) {
-        const args = toggle.id === 'walkSpeed' && !on
-            ? [String(toggles.WALK_SPEED.restore)] : toggles.argsFor(toggle, on, values);
-        const name = args.length ? 'callGameFunction' : 'callGameFunction0';
-        const invoke = function () { return gameCalls.call(name, [toggle.call].concat(args)); };
+        const walk = toggle.id === 'walkSpeed';
+        const args = walk ? [on, values.walkSpeed] : toggles.argsFor(toggle, on, values);
+        const name = walk ? 'SetWalkSpeedEnabled' : args.length ? 'callGameFunction' : 'callGameFunction0';
+        const invoke = function () { return gameCalls.call(name, walk ? args : [toggle.call].concat(args)); };
         let answer;
         try {
-            answer = await (toggle.id === 'skipCutscenes'
-                ? (skipQueue = skipQueue.then(invoke, invoke)) : invoke());
+            answer = await (nativeQueues[toggle.id]
+                ? (nativeQueues[toggle.id] = nativeQueues[toggle.id].then(invoke, invoke)) : invoke());
         } catch (error) {
             answer = { ok: false, error: error && error.message ? error.message : String(error) };
         }
@@ -348,8 +348,10 @@ function createOptionsFeature(host, deps) {
             const wasApplying = applying;
             applying = false;
             if (wasApplying) notifyApplying();
-            return state.skipCutscenes || results.skipCutscenes
-                ? send(toggles.byId('skipCutscenes'), false) : Promise.resolve();
+            const pending = [];
+            if (state.skipCutscenes || results.skipCutscenes) pending.push(send(toggles.byId('skipCutscenes'), false));
+            if (state.walkSpeed || results.walkSpeed) pending.push(send(toggles.byId('walkSpeed'), false));
+            return Promise.all(pending);
         },
 
         /** @internal test seam */

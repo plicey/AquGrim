@@ -152,10 +152,10 @@ test('walkspeed carries its own value, defaulting to the reference\'s, and resto
   const run = createOptions();
   assert.strictEqual(run.feature.state().walkSpeed, 20, 'the field ships at the reference value');
   await run.feature.setToggle('walkSpeed', true);
-  assert.deepStrictEqual(run.calls.calls, [['callGameFunction', ['SetWalkSpeed', '20']]]);
+  assert.deepStrictEqual(run.calls.calls, [['SetWalkSpeedEnabled', [true, 20]]]);
 
   await run.feature.setToggle('walkSpeed', false);
-  assert.deepStrictEqual(run.calls.calls.slice(1), [['callGameFunction', ['SetWalkSpeed', '8']]]);
+  assert.deepStrictEqual(run.calls.calls.slice(1), [['SetWalkSpeedEnabled', [false, 20]]]);
   await run.feature.stop();
 });
 
@@ -169,7 +169,7 @@ test('the walkspeed value is clamped to the reference\'s field, and only applies
 
   // On: the number the user left in the field goes out, and stays out.
   await run.feature.setToggle('walkSpeed', true);
-  assert.deepStrictEqual(run.calls.calls, [['callGameFunction', ['SetWalkSpeed', '45']]]);
+  assert.deepStrictEqual(run.calls.calls, [['SetWalkSpeedEnabled', [true, 45]]]);
   assert.strictEqual(run.feature.state().walkSpeedOn, true);
 
   // numWalkSpeed is a 1..99 box, so a value outside it is clamped rather than pushed through -
@@ -279,7 +279,7 @@ test('the walkspeed loop keeps pushing the value while the tick is on, and lets 
   run.calls.calls.length = 0;
   await run.timers.pass();
   assert.deepStrictEqual(run.calls.calls, [
-    ['callGameFunction', ['SetWalkSpeed', '20']]
+    ['SetWalkSpeedEnabled', [true, 20]]
   ], 'the independent fast clock maintains the selected speed');
 
   await run.feature.setToggle('walkSpeed', false);
@@ -403,7 +403,7 @@ test('a persisted walkspeed tick resumes its loop on launch', async () => {
   assert.strictEqual(run.feature.state().walkSpeedOn, true);
   assert.strictEqual(run.timers.running().length, 2);
   await run.timers.pass();
-  assert.ok(run.calls.calls.some(call => call[1][0] === 'SetWalkSpeed' && call[1][1] === '33'));
+  assert.ok(run.calls.calls.some(call => call[0] === 'SetWalkSpeedEnabled' && call[1][0] === true && call[1][1] === 33));
   await run.feature.setApplying(false);
   assert.strictEqual(run.timers.running().length, 2, 'checked values retain their clocks');
   await run.feature.stop();
@@ -448,7 +448,7 @@ test('remembered selected options activate automatically and skip later cutscene
   await run.timers.pass();
   await run.timers.pass();
   assert.ok(run.calls.calls.some(call => call[1][0] === 'SetInfiniteRange'));
-  assert.ok(run.calls.calls.some(call => call[1][0] === 'SetWalkSpeed' && call[1][1] === '33'));
+  assert.ok(run.calls.calls.some(call => call[0] === 'SetWalkSpeedEnabled' && call[1][0] === true && call[1][1] === 33));
   run.calls.calls.length = 0;
   await run.timers.pass();
   await run.timers.pass();
@@ -477,7 +477,7 @@ test('startup waits for a connected player, retries failed setters and recovers 
       return { ok: true };
     } }
   });
-  const writes = () => calls.filter(call => call[0] !== 'getGameObject' && call[1][0] !== 'SetWalkSpeed');
+  const writes = () => calls.filter(call => call[0] !== 'getGameObject' && call[0] !== 'SetWalkSpeedEnabled');
   await run.timers.pass();
   assert.deepStrictEqual(writes(), []);
   connected = true;
@@ -500,7 +500,7 @@ test('startup waits for a connected player, retries failed setters and recovers 
   await run.timers.pass();
   await run.timers.pass();
   assert.ok(writes().some(call => call[1][0] === 'SetInfiniteRange'));
-  assert.ok(calls.some(call => call[1][0] === 'SetWalkSpeed' && call[1][1] === '37'));
+  assert.ok(calls.some(call => call[0] === 'SetWalkSpeedEnabled' && call[1][0] === true && call[1][1] === 37));
   await run.feature.stop();
 });
 
@@ -533,7 +533,7 @@ test('slow busy ticks drop while walkspeed continues and stop cancels remaining 
     store: memoryStore({ toggles: { infiniteRange: true, skipCutscenes: true, walkSpeed: true } }),
     calls: { call: function (name, args) {
       if (!args.length) return Promise.resolve({ ok: true, value: null });
-      entered.push(args[0]);
+      entered.push(name === 'SetWalkSpeedEnabled' ? name : args[0]);
       if (args[0] === 'SetInfiniteRange') return new Promise(resolve => { release = resolve; reachedRange(); });
       return Promise.resolve({ ok: true });
     } }
@@ -546,7 +546,7 @@ test('slow busy ticks drop while walkspeed continues and stop cancels remaining 
   await rangeEntered;
   assert.strictEqual(typeof release, 'function', 'the slow pass reaches its deferred write');
   for (let i = 0; i < 20; i++) { await slow.fn(); await fast.fn(); }
-  assert.deepStrictEqual(entered, ['SetSkipCutscenes', 'SetInfiniteRange'].concat(Array(20).fill('SetWalkSpeed')),
+  assert.deepStrictEqual(entered, ['SetSkipCutscenes', 'SetInfiniteRange'].concat(Array(20).fill('SetWalkSpeedEnabled')),
     'slow ticks drop while the independent fast timer continues');
   await run.feature.setToggle('skipCutscenes', false);
   await run.feature.stop();
@@ -578,7 +578,7 @@ test('applying=false during readiness preserves checked maintenance', async () =
   run.calls.calls.length = 0;
   await clocks[0].fn();
   await clocks[1].fn();
-  assert.ok(run.calls.calls.some(call => call[1][0] === 'SetWalkSpeed'));
+  assert.ok(run.calls.calls.some(call => call[0] === 'SetWalkSpeedEnabled'));
   assert.strictEqual(run.feature.state().applying, true);
   assert.strictEqual(run.timers.running().length, 2);
   await run.feature.stop();
@@ -660,13 +660,9 @@ test('room speed resets recover even when readiness occupies every fast tick', a
         assert.strictEqual(args[0], 'world.myAvatar.uid');
         return { ok: true, value: JSON.stringify(world.myAvatar.uid) };
       }
-      if (args[0] === 'SetWalkSpeed') {
-        return { ok: true, value: JSON.stringify({ error: 'no member SetWalkSpeed at SetWalkSpeed' }) };
-      }
-      assert.strictEqual(name, 'setGameObject');
-      assert.strictEqual(args[0], 'world.WALKSPEED');
-      world.WALKSPEED = args[1];
-      writes.push(args[1]);
+      assert.strictEqual(name, 'SetWalkSpeedEnabled');
+      world.WALKSPEED = args[0] ? args[1] : 8;
+      writes.push(world.WALKSPEED);
       return { ok: true, value: JSON.stringify(args[1]) };
     }
   } });
@@ -731,11 +727,8 @@ test('walkspeed retries the real setter despite failed readiness and a pending s
         if (defer) await new Promise(resolve => { release = resolve; probing(); });
         return { ok: true, value: reply };
       }
-      if (args[0] === 'SetWalkSpeed') return { ok: true,
-        value: '{"error":"no member SetWalkSpeed at SetWalkSpeed"}' };
-      assert.strictEqual(name, 'setGameObject');
-      assert.strictEqual(args[0], 'world.WALKSPEED');
-      speed = args[1];
+      assert.strictEqual(name, 'SetWalkSpeedEnabled');
+      speed = args[0] ? args[1] : 8;
       return { ok: true, value: 'true' };
     }
   } });
@@ -784,10 +777,11 @@ test('fast walkspeed drops busy ticks without queuing and respects untick and st
   for (let i = 0; i < 20; i++) await fast.fn();
   assert.strictEqual(writes, 1, 'at most one fast write is in flight');
   defer = false;
-  await run.feature.setToggle('walkSpeed', false);
-  assert.strictEqual(writes, 2, 'untick restores native speed');
+  const untick = run.feature.setToggle('walkSpeed', false);
+  assert.strictEqual(writes, 1, 'untick waits so an older enable cannot rearm upkeep');
   release({ ok: true });
-  await pending;
+  await Promise.all([pending, untick]);
+  assert.strictEqual(writes, 2, 'untick restores native speed after the pending enable');
   await fast.fn();
   assert.strictEqual(writes, 2, 'untick cancels stale ticks and no dropped ticks are queued');
   await run.feature.setToggle('walkSpeed', true);
@@ -796,7 +790,7 @@ test('fast walkspeed drops busy ticks without queuing and respects untick and st
   assert.strictEqual(writes, 4, 'retick resumes direct and periodic writes');
   await run.feature.stop();
   await resumed.fn();
-  assert.strictEqual(writes, 4, 'stop cancels stale ticks');
+  assert.strictEqual(writes, 5, 'stop disarms native upkeep and cancels stale ticks');
 });
 
 test('Skip resume arms even while an older readiness probe is still blocked', async () => {
@@ -849,10 +843,10 @@ test('real engine stop preserves all checked options through readiness loss and 
       if (name === 'getGameObject') return { ok: true,
         value: args[0] === 'sfc.isConnected' ? connected : uid };
       if (name === 'GetSkipCutscenesStatus') return { ok: true, value: {} };
-      attempts.push(args[0]);
+      attempts.push(name === 'SetWalkSpeedEnabled' ? name : args[0]);
       if (!connected) return { ok: false, error: 'disconnected' };
       if (args[0] === 'DestroyPlayers') return { ok: false, error: 'NO_ROUTE DestroyPlayers' };
-      game[args[0]] = args[1] === undefined ? true : args[1];
+      game[name === 'SetWalkSpeedEnabled' ? name : args[0]] = args[1] === undefined ? true : args[1];
       return { ok: true };
     } }
   });
@@ -883,7 +877,7 @@ test('real engine stop preserves all checked options through readiness loss and 
     attempts.length = 0;
     await run.timers.pass();
     assert.ok(attempts.includes('SetSkipCutscenes'), 'Skip arms before readiness');
-    assert.ok(attempts.includes('SetWalkSpeed'), 'fast writes retry without readiness');
+    assert.ok(attempts.includes('SetWalkSpeedEnabled'), 'fast writes retry without readiness');
     assert.ok(!attempts.includes('SetInfiniteRange'), 'slow settings wait for the socket');
     connected = true;
     attempts.length = 0;
@@ -894,12 +888,12 @@ test('real engine stop preserves all checked options through readiness loss and 
     await run.timers.pass();
     await run.timers.pass();
     for (const t of toggles.TOGGLES) {
-      assert.ok(attempts.includes(t.call), event + ': retry ' + t.id);
+      assert.ok(attempts.includes(t.id === 'walkSpeed' ? 'SetWalkSpeedEnabled' : t.call), event + ': retry ' + t.id);
       assert.strictEqual(run.feature.state()[t.id === 'walkSpeed' ? 'walkSpeedOn' : t.id], true);
       assert.strictEqual(run.feature.state().results[t.id].ok, t.id !== 'hidePlayers', t.id);
-      if (t.id !== 'hidePlayers') assert.ok(game[t.call], event + ': restore ' + t.id);
+      if (t.id !== 'hidePlayers') assert.ok(game[t.id === 'walkSpeed' ? 'SetWalkSpeedEnabled' : t.call], event + ': restore ' + t.id);
     }
-    assert.strictEqual(game.SetWalkSpeed, '37');
+    assert.strictEqual(game.SetWalkSpeedEnabled, 37);
     assert.strictEqual(run.feature.state().results.hidePlayers.error, 'NO_ROUTE DestroyPlayers');
     assert.deepStrictEqual(run.store.read(), { toggles: selected, walkSpeed: 37 });
   }
@@ -917,15 +911,15 @@ test('rejected status and per-setting writes report errors without blocking late
   const run = createOptions({ store: memoryStore({ toggles: selected }),
     calls: { call: async (name, args) => {
       if (name === 'GetSkipCutscenesStatus') throw new Error('status rejected');
-      writes.push(args[0]);
-      if (reject && ['SetSkipCutscenes', 'SetProvokeMonsters', 'SetInfiniteRange', 'SetEnemyMagnet', 'DestroyPlayers', 'SetWalkSpeed'].includes(args[0])) throw new Error(args[0] + ' rejected');
+      writes.push(name === 'SetWalkSpeedEnabled' ? name : args[0]);
+      if (reject && ['SetSkipCutscenes', 'SetProvokeMonsters', 'SetInfiniteRange', 'SetEnemyMagnet', 'DestroyPlayers', 'SetWalkSpeedEnabled'].includes(name === 'SetWalkSpeedEnabled' ? name : args[0])) throw new Error(args[0] + ' rejected');
       return { ok: true };
     } }
   });
   await new Promise(setImmediate);
   await run.timers.pass();
   await run.timers.pass();
-  for (const t of toggles.TOGGLES) assert.ok(writes.includes(t.call), 'attempt ' + t.id);
+  for (const t of toggles.TOGGLES) assert.ok(writes.includes(t.id === 'walkSpeed' ? 'SetWalkSpeedEnabled' : t.call), 'attempt ' + t.id);
   assert.strictEqual(run.feature.state().results.enemyMagnet.error, 'SetEnemyMagnet rejected');
   assert.strictEqual(run.feature.state().results.lagKiller.ok, true);
   reject = false;
@@ -963,11 +957,110 @@ test('real engine stop during pending Skip status preserves checks; feature tear
   assert.strictEqual(run.feature.state().applying, true);
   await run.feature.stop();
   assert.strictEqual(run.feature.state().applying, false);
-  assert.deepStrictEqual(writes.at(-1), ['SetSkipCutscenes', false]);
+  assert.ok(writes.some(args => args[0] === 'SetSkipCutscenes' && args[1] === false));
   const before = writes.slice();
   release({ ok: true, value: {} });
   await pending;
   await run.timers.pass();
   assert.deepStrictEqual(writes, before, 'pending status cannot resume writes after teardown');
   assert.deepStrictEqual(run.timers.running(), []);
+});
+
+
+test('main adapters preserve selected options and the Bot Manager walk value across real engine stop', async () => {
+  const fs = require('fs');
+  const os = require('os');
+  const { createPluginHost } = require('../../res/platform/plugin-host.js');
+  const runtimeModule = require(path.join(pluginRoot, 'bot/runtime.js'));
+  const optionsModule = require(path.join(pluginRoot, 'features/options/options.js'));
+  const managerModule = require(path.join(pluginRoot, 'features/bot-manager/bot-manager.js'));
+  const originals = [runtimeModule.createRuntimeManager, optionsModule.createOptionsFeature, managerModule.createBotManager];
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'aqugrim-options-lifecycle-'));
+  const timers = fakeTimers();
+  let runtime, feature, manager;
+  let speed = 8;
+  const writes = [];
+  const method = require('../helpers/as3-method.js');
+  const native = fs.readFileSync(path.join(pluginRoot, 'bridge/AquaBridge.as'), 'utf8');
+  const listeners = new Set();
+  const movie = { world: {
+    get WALKSPEED() { return speed; },
+    set WALKSPEED(value) { speed = value; writes.push(['world.WALKSPEED', value]); }
+  }, addEventListener: (type, fn) => listeners.add(fn), removeEventListener: (type, fn) => listeners.delete(fn) };
+  const watcher = { game: movie, walkSpeedEnabled: false, walkSpeed: 20, walkRoot: null,
+    toJson: JSON.stringify, jsonError: error => JSON.stringify({ error: error.message }),
+    aqSetWalkSpeedEnabled: method(native, 'aqSetWalkSpeedEnabled', 'enabled,speed'),
+    onWalkSpeedFrame: method(native, 'onWalkSpeedFrame', 'event') };
+  watcher.onWalkSpeedFrame = watcher.onWalkSpeedFrame.bind(watcher);
+  const nativeFrame = () => { for (const listener of listeners) listener({}); };
+  const host = createPluginHost({
+    manifest: JSON.parse(fs.readFileSync(path.join(pluginRoot, 'plugin.json'), 'utf8')),
+    pluginRoot, appVersion: '2.0.0', appDataDirectory: directory,
+    log: () => {}, deps: { startGameOrigin: async () => 'http://127.0.0.1:41234' }
+  });
+  // Only the Flash boundary is simulated; main.js supplies both real option adapters.
+  host.bridge.attach = async () => ({ ok: true });
+  host.bridge.call = async (name, args) => {
+    let value = null;
+    if (name === 'SetWalkSpeedEnabled') return { ok: true, value: watcher.aqSetWalkSpeedEnabled(args[0], args[1]) };
+    if (name === 'getGameObject') value = args[0] === 'sfc.isConnected' ? true
+      : args[0] === 'world.myAvatar.uid' ? 123 : args[0] === 'world.myAvatar.objData.strUsername' ? 'Tester' : null;
+    else if (name === 'callGameFunction' || name === 'callGameFunction0') {
+      value = { error: 'no member ' + args[0] + ' at world' };
+    } else if (name === 'setGameObject') {
+      writes.push(args.slice());
+      if (args[0] === 'world.WALKSPEED') speed = args[1];
+    }
+    return { ok: true, value: JSON.stringify(value) };
+  };
+  runtimeModule.createRuntimeManager = deps => (runtime = originals[0](deps));
+  optionsModule.createOptionsFeature = (owner, deps) => (feature = originals[1](owner, Object.assign({}, deps, { timers })));
+  managerModule.createBotManager = deps => (manager = originals[2](deps));
+  try {
+    await require(path.join(pluginRoot, 'main.js')).activate(host);
+    for (const toggle of toggles.TOGGLES) await feature.setToggle(toggle.id, true);
+    await feature.setWalkSpeed(37);
+    await timers.pass(); // Arm the native watcher with the selected number before resetting rooms.
+    const selected = feature.state();
+    const saved = JSON.parse(JSON.stringify(host.getStore('options').read()));
+    const botFile = path.join(directory, 'default-options.gbot');
+    fs.writeFileSync(botFile, JSON.stringify({ WalkSpeed: 8, Commands: [makeCommand('CmdBlank', {})] }));
+    await manager.handle('botManagerLoad', null, [botFile]);
+    assert.deepStrictEqual(host.getStore('options').read(), saved, 'loading bot defaults preserves user options');
+    const engine = runtime.forWindow('game').engine;
+    for (let cycle = 0; cycle < 2; cycle++) {
+      assert.strictEqual((await engine.start(manager.bot())).ok, true);
+      engine.stop();
+      await new Promise(setImmediate);
+      speed = 8; // World.cellSetup resets speed after the bot stops.
+      nativeFrame(); // No JavaScript timer pass can restore this value.
+      assert.strictEqual(listeners.size, 1, 'bot stop must not disarm native upkeep');
+      assert.strictEqual(speed, 37, 'native frame reapplies speed after stop and room change');
+      for (const toggle of toggles.TOGGLES) {
+        const key = toggle.id === 'walkSpeed' ? 'walkSpeedOn' : toggle.id;
+        assert.strictEqual(feature.state()[key], selected[key], key);
+      }
+      assert.deepStrictEqual(host.getStore('options').read(), saved, 'bot lifecycle must not rewrite saved selections');
+    }
+    // The Client tab sends the numeric value together with its walk checkbox.
+    await manager.handle('botManagerSetting', null, ['WalkSpeedOn', { on: true, value: 53 }]);
+    speed = 8;
+    await timers.pass();
+    assert.strictEqual(speed, 53, 'main must forward the Bot Manager walk value');
+    assert.strictEqual(host.getStore('options').read().walkSpeed, 53);
+    assert.strictEqual((await engine.start(manager.bot())).ok, true);
+    engine.stop();
+    speed = 8;
+    nativeFrame();
+    assert.strictEqual(speed, 53, 'the value selected in Bot Manager survives bot stop and another room');
+    assert.strictEqual(host.getStore('options').read().walkSpeed, 53);
+    assert.ok(writes.some(row => row[0] === 'world.WALKSPEED' && row[1] === 53));
+  } finally {
+    runtimeModule.createRuntimeManager = originals[0];
+    optionsModule.createOptionsFeature = originals[1];
+    managerModule.createBotManager = originals[2];
+    if (runtime) for (const key of runtime.windows()) await runtime.windowClosed(key);
+    if (feature) await feature.stop();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });

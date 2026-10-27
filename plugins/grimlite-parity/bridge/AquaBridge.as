@@ -38,6 +38,9 @@ package {
         // Bounded so a page that never polls cannot grow the movie's memory without limit.
         private static const MAX_EVENTS:int = 200;
 
+        private var walkSpeedEnabled:Boolean = false;
+        private var walkSpeed:Number = 20;
+        private var walkRoot:Object = null;
         private var skipCutscenes:Boolean = false;
         private var skipRoot:Object = null;
         private var skipScene:Object = null;
@@ -107,6 +110,7 @@ package {
             addCallback('CancelTargetSelf', aqCancelTargetSelf);
             addCallback('SetTargetPvP', aqSetTargetPvP);
             addCallback('RejectDrop', aqRejectDrop);
+            addCallback('SetWalkSpeedEnabled', aqSetWalkSpeedEnabled);
             addCallback('SetSkipCutscenesEnabled', aqSetSkipCutscenesEnabled);
             addCallback('GetSkipCutscenesStatus', aqGetSkipCutscenesStatus);
         }
@@ -116,6 +120,37 @@ package {
                 ExternalInterface.addCallback(name, fn);
             } catch (e:Error) {
                 emit('error', 'could not register ' + name + ': ' + e.message);
+            }
+        }
+
+        private function aqSetWalkSpeedEnabled(enabled:Boolean, speed:Number):String {
+            if (enabled && !isFinite(speed)) return jsonError(new Error('walk speed must be finite'));
+            walkSpeed = enabled ? Math.max(1, Math.min(99, Math.floor(speed))) : 8;
+            walkSpeedEnabled = enabled;
+            if (walkRoot != null && (!enabled || walkRoot !== game)) {
+                walkRoot.removeEventListener(Event.ENTER_FRAME, onWalkSpeedFrame);
+                walkRoot = null;
+            }
+            if (enabled && game != null && walkRoot == null) {
+                walkRoot = game;
+                walkRoot.addEventListener(Event.ENTER_FRAME, onWalkSpeedFrame, false, -2147483648, true);
+            }
+            if (enabled) onWalkSpeedFrame(null);
+            else {
+                try { if (game != null && game.world != null) game.world.WALKSPEED = 8; }
+                catch (e:Error) { }
+            }
+            return toJson(enabled);
+        }
+
+        private function onWalkSpeedFrame(event:Event):void {
+            if (!walkSpeedEnabled) return;
+            try {
+                // World.cellSetup resets speed; read the current world after the game's frame handlers.
+                var world:Object = game == null ? null : game.world;
+                if (world != null) world.WALKSPEED = walkSpeed;
+            } catch (e:Error) {
+                // A world being replaced is retried on the next frame while enabled.
             }
         }
 
@@ -745,6 +780,7 @@ package {
             }
 
             game = candidate;
+            if (walkSpeedEnabled || walkRoot != null) aqSetWalkSpeedEnabled(walkSpeedEnabled, walkSpeed);
             aqSetSkipCutscenesEnabled(skipCutscenes);
             stopGameRootWait();
             emit('load', 'loaded ' + getQualifiedClassName(game));

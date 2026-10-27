@@ -1,27 +1,11 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const vm = require('vm');
 
 // Execute actual AS3 callback bodies, stripping type annotations and identity casts only.
 // Stock excerpts are pinned alongside this test; the watcher is read from production source.
-function method(source, name, args) {
-  const start = source.indexOf('{', source.indexOf('function ' + name + '('));
-  assert.ok(start >= 0, name);
-  let end = start + 1, depth = 1;
-  while (depth) { const c = source[end++]; if (c === '{') depth++; if (c === '}') depth--; }
-  const body = source.slice(start + 1, end - 1)
-    .replace(/\b(var\s+\w+):(?:\*|\w+)/g, '$1')
-    .replace(/\s+as MovieClip/g, '')
-    .replace(/catch\s*\((\w+):Error\)/g, 'catch($1)')
-    .replace(/MovieClip\(parent\)/g, 'this.parent');
-  return vm.runInNewContext('(function(' + (args || '') + '){with(this){' + body + '}})', {
-    trace() {}, Loader: value => value, Boolean, getQualifiedClassName: () => 'Game',
-    Event: { ENTER_FRAME: 'frame', INIT: 'init', COMPLETE: 'complete' },
-    TimerEvent: { TIMER: 'timer' }, ProgressEvent: { PROGRESS: 'progress' },
-    IOErrorEvent: { IO_ERROR: 'io' }, SecurityErrorEvent: { SECURITY_ERROR: 'security' }
-  });
-}
+const method = require('../helpers/as3-method.js');
+
 const fixtures = path.join(__dirname, '../fixtures/grimlite-cutscene');
 const stock = fs.readFileSync(path.join(fixtures, 'cutsceneHandler.as'), 'utf8');
 const loaderSource = fs.readFileSync(path.join(fixtures, 'LoaderMC.as'), 'utf8');
@@ -55,10 +39,15 @@ function scenario(realReadiness = false) {
   g.world.mapEventTrigger = event => events.push(event.cmd);
   const bridge = { game: g, skipCutscenes: false, skipRoot: null, skipScene: null, skipObserved: null,
     skipTransfers: 0, skipLast: 'off', toJson: JSON.stringify,
+    walkSpeedEnabled: false, walkSpeed: 20, walkRoot: null,
+    jsonError: error => JSON.stringify({ error: error.message }),
+    aqSetWalkSpeedEnabled: method(native, 'aqSetWalkSpeedEnabled', 'enabled,speed'),
+    onWalkSpeedFrame: method(native, 'onWalkSpeedFrame', 'event'),
     emit: (type, message) => events.push(message),
     aqSetSkipCutscenesEnabled: method(native, 'aqSetSkipCutscenesEnabled', 'enabled'),
     onSkipCutsceneFrame: method(native, 'onSkipCutsceneFrame', 'event') };
   // AS3 bound method closures retain their receiver when registered as listeners.
+  bridge.onWalkSpeedFrame = bridge.onWalkSpeedFrame.bind(bridge);
   bridge.onSkipCutsceneFrame = bridge.onSkipCutsceneFrame.bind(bridge);
   handler.onOverlayPoll = handler.onOverlayPoll.bind(handler);
   if (realReadiness) {
@@ -364,4 +353,60 @@ test('captureGameRoot reattaches watcher and resets observed scene on root repla
   assert.equal(run.bridge.skipTransfers, 0, 'replacement is not mistaken for a native scene transition');
   assert.equal(next.g.mcExtSWF.numChildren, 0);
   assert.equal(run.bridge.skipLast, 'drained');
+});
+
+
+test('native walk upkeep survives cell speed resets and world/root replacement, and off stops writing', () => {
+  const run = scenario();
+  const bridge = run.bridge;
+  bridge.aqSetWalkSpeedEnabled(true, 37);
+  bridge.aqSetWalkSpeedEnabled(true, 37);
+  assert.strictEqual(run.count(), 1, 'rearming keeps one frame listener');
+  for (let room = 0; room < 3; room++) {
+    run.g.world = { WALKSPEED: 8 }; // World.cellSetup assigns intSpeed on every room change.
+    run.tick(); // No JavaScript Options timer pass.
+    assert.strictEqual(run.g.world.WALKSPEED, 37);
+  }
+  bridge.game = null;
+  run.tick();
+  const replacement = scenario();
+  bridge.resolveStatic = () => replacement.g;
+  bridge.stopGameRootWait = () => {};
+  bridge.captureGameRoot = method(native, 'captureGameRoot');
+  assert.strictEqual(bridge.captureGameRoot(), true);
+  bridge.aqSetWalkSpeedEnabled(true, 53);
+  assert.strictEqual(run.count(), 0, 'old root releases its listener');
+  assert.strictEqual(replacement.count(), 1);
+  replacement.g.world = { WALKSPEED: 8 };
+  replacement.tick();
+  assert.strictEqual(replacement.g.world.WALKSPEED, 53);
+  for (const [input, expected] of [[0, 1], [500, 99], [42.9, 42]]) {
+    bridge.aqSetWalkSpeedEnabled(true, input);
+    assert.strictEqual(replacement.g.world.WALKSPEED, expected);
+  }
+  for (const invalid of [NaN, Infinity, -Infinity]) {
+    assert.ok(JSON.parse(bridge.aqSetWalkSpeedEnabled(true, invalid)).error);
+    assert.strictEqual(bridge.walkSpeed, 42, 'invalid values preserve the selection');
+  }
+  bridge.aqSetWalkSpeedEnabled(false, 42);
+  assert.strictEqual(replacement.count(), 0);
+  assert.strictEqual(replacement.g.world.WALKSPEED, 8);
+  replacement.g.world.WALKSPEED = 12;
+  replacement.tick();
+  bridge.onWalkSpeedFrame({}); // A listener already in Flash's dispatch snapshot is harmless.
+  assert.strictEqual(replacement.g.world.WALKSPEED, 12, 'off stops subsequent writes');
+});
+
+
+test('capturing a fresh game with untouched walkspeed off preserves the map default', () => {
+  const run = scenario();
+  const replacement = scenario();
+  replacement.g.world.WALKSPEED = 13;
+  run.bridge.resolveStatic = () => replacement.g;
+  run.bridge.stopGameRootWait = () => {};
+  run.bridge.captureGameRoot = method(native, 'captureGameRoot');
+  assert.strictEqual(run.bridge.captureGameRoot(), true);
+  replacement.tick();
+  assert.strictEqual(replacement.g.world.WALKSPEED, 13);
+  assert.strictEqual(replacement.count(), 0);
 });

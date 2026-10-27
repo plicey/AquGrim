@@ -550,6 +550,11 @@ async function activate(host) {
                     ? optionsFeature.setToggle(id, on)
                     : Promise.resolve({ ok: false, error: 'options are not ready' });
             },
+            setWalkSpeed: function (value) {
+                return optionsFeature
+                    ? optionsFeature.setWalkSpeed(value)
+                    : Promise.resolve({ ok: false, error: 'options are not ready' });
+            },
             setTimer: function (ms) {
                 return optionsFeature
                     ? optionsFeature.setTimer(ms)
