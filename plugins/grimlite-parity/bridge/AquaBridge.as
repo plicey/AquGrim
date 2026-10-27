@@ -45,6 +45,7 @@ package {
         private var skipRoot:Object = null;
         private var skipScene:Object = null;
         private var skipObserved:Object = null;
+        private var skipMovie:Object = null;
         private var skipTransfers:int = 0;
         private var skipLast:String = 'off';
         private var game:Object = null;          // the game's own root object
@@ -159,6 +160,7 @@ package {
             skipCutscenes = enabled;
             skipScene = null;
             skipObserved = null;
+            skipMovie = null;
             if (skipRoot != null) {
                 skipRoot.removeEventListener(Event.ENTER_FRAME, onSkipCutsceneFrame);
                 skipRoot = null;
@@ -167,7 +169,8 @@ package {
                 skipRoot = game;
                 var world:Object = game.world;
                 var handler:Object = world == null ? null : world.cHandle;
-                skipObserved = { world:world, map:world == null ? null : world.map, handler:handler };
+                skipObserved = { world:world, map:world == null ? null : world.map, handler:handler,
+                    frame:world == null ? null : world.strFrame, children:game.mcExtSWF.numChildren };
                 // INIT and the overlay callback can finish before our first frame.
                 if (handler != null && ("isPending" in handler) && ("transfer" in handler) && handler.isPending()) {
                     skipScene = skipObserved;
@@ -218,19 +221,22 @@ package {
         }
 
         private function onSkipCutsceneFrame(event:Event):void {
+            if (!skipCutscenes || game == null) return;
             try {
-                var world:Object = game == null ? null : game.world;
+                if (game.mcExtSWF.numChildren == 0) skipMovie = null;
+                var world:Object = game.world;
                 var handler:Object = world == null ? null : world.cHandle;
-                var hadScene:Boolean = skipScene != null;
                 if (skipScene != null && (skipScene.world !== world || skipScene.handler !== handler ||
                     world == null || skipScene.map !== world.map)) skipScene = null;
                 var pending:Boolean = handler != null && ("isPending" in handler) &&
                     ("transfer" in handler) && handler.isPending();
-                // A new handler can start and display its scene between watcher frames.
-                var changed:Boolean = !hadScene && skipObserved != null && skipObserved.world === world &&
-                    skipObserved.map === (world == null ? null : world.map) && skipObserved.handler !== handler;
-                skipObserved = { world:world, map:world == null ? null : world.map, handler:handler };
-                if (pending || (changed && handler != null && ("transfer" in handler) && game.mcExtSWF.numChildren > 0)) {
+                // A reused handler can finish its overlay poll between watcher frames.
+                var moved:Boolean = skipObserved != null && skipObserved.world === world && world != null &&
+                    skipObserved.map === world.map && skipObserved.handler === handler &&
+                    skipObserved.children == 0 && skipObserved.frame !== world.strFrame;
+                skipObserved = { world:world, map:world == null ? null : world.map, handler:handler,
+                    frame:world == null ? null : world.strFrame, children:game.mcExtSWF.numChildren };
+                if (pending || (moved && handler != null && ("transfer" in handler) && game.mcExtSWF.numChildren > 0)) {
                     skipScene = skipObserved;
                 }
                 var loading:Boolean = false;
@@ -246,8 +252,28 @@ package {
                 } else {
                     skipLast = loading ? 'loading' : (skipScene != null ? 'waiting map' : 'idle');
                 }
-                // Settings.as drains every external movie, including direct playback and late enable.
+                // Late enable/new maps have no observed transition: use the movie's own skip exit.
                 if (game.mcExtSWF.numChildren > 0) {
+                    if (skipScene != null) return;
+                    for (var i:int = 0; i < game.mcExtSWF.numChildren; i++) {
+                        var movie:Object = game.mcExtSWF.getChildAt(i);
+                        var scene:Object = movie != null && ("CS" in movie) ? movie.CS : null;
+                        if (scene == null || !("currentLabels" in scene)) continue;
+                        for (var j:int = 0; j < scene.currentLabels.length; j++) {
+                            var label:Object = scene.currentLabels[j];
+                            if (label.name != 'Skipped') continue;
+                            // INIT can attach before frame 2 initializes the movie's rootClass.
+                            if (!loading && world != null && world.map != null && !world.mapLoadInProgress && scene.currentFrame > 1) {
+                                if (skipMovie !== scene) {
+                                    skipMovie = scene;
+                                    scene.gotoAndPlay(label.name);
+                                }
+                            }
+                            skipLast = 'movie exit';
+                            return;
+                        }
+                    }
+                    // Direct playback without a native skip timeline retains the baseline drain.
                     game.clearExternamSWF();
                     skipLast = 'drained';
                 }

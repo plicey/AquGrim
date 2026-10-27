@@ -9,6 +9,7 @@ const method = require('../helpers/as3-method.js');
 const fixtures = path.join(__dirname, '../fixtures/grimlite-cutscene');
 const stock = fs.readFileSync(path.join(fixtures, 'cutsceneHandler.as'), 'utf8');
 const loaderSource = fs.readFileSync(path.join(fixtures, 'LoaderMC.as'), 'utf8');
+const movieSource = fs.readFileSync(path.join(fixtures, 'native-movie.as'), 'utf8');
 const native = fs.readFileSync(path.join(__dirname, '../../plugins/grimlite-parity/bridge/AquaBridge.as'), 'utf8');
 
 function scenario(realReadiness = false) {
@@ -38,7 +39,7 @@ function scenario(realReadiness = false) {
   const events = [];
   g.world.mapEventTrigger = event => events.push(event.cmd);
   const bridge = { game: g, skipCutscenes: false, skipRoot: null, skipScene: null, skipObserved: null,
-    skipTransfers: 0, skipLast: 'off', toJson: JSON.stringify,
+    skipMovie: null, skipTransfers: 0, skipLast: 'off', toJson: JSON.stringify,
     walkSpeedEnabled: false, walkSpeed: 20, walkRoot: null,
     jsonError: error => JSON.stringify({ error: error.message }),
     aqSetWalkSpeedEnabled: method(native, 'aqSetWalkSpeedEnabled', 'enabled,speed'),
@@ -55,7 +56,21 @@ function scenario(realReadiness = false) {
     handler.startPoll = method(stock, 'startPoll');
     handler.onReadyPoll = method(stock, 'onReadyPoll', 'param1').bind(handler);
   }
+  let movieExit = null;
   return { g, handler, bridge, events, contentLoader,
+    nativeMovie() {
+      const scene = { rootClass: g, currentFrame: 2, currentLabels: [{ name: 'Skipped', frame: 164 }],
+        __setProp___id4__cs0() {}, stop() {},
+        finish: method(movieSource, 'frame171'),
+        gotoAndPlay(label) {
+          assert.equal(label, 'Skipped');
+          this.currentFrame = 164;
+          movieExit = () => this.finish();
+        } };
+      contentLoader.content.CS = scene;
+      return scene;
+    },
+    finishMovie() { assert.ok(movieExit, 'watcher must request the native skip timeline'); movieExit(); movieExit = null; },
     count: () => listeners.length,
     tick() {
       for (const entry of listeners.slice().sort((a, b) => b.priority - a.priority)) {
@@ -151,8 +166,9 @@ for (const handlerKind of ['missing', 'unsupported', 'stale']) {
   });
 }
 
-test('late enable after overlay ended pending still drains the displayed scene', () => {
+test('late enable after overlay ended pending exits through the movie timeline', () => {
   const run = scenario();
+  run.nativeMovie();
   run.handler.showCutscene('existing.swf', false, 'Cut1', 'Left');
   run.handler.fireCutscene();
   run.complete();
@@ -160,8 +176,15 @@ test('late enable after overlay ended pending still drains the displayed scene',
   assert.equal(run.handler.isPending(), false);
   run.bridge.aqSetSkipCutscenesEnabled(true);
   run.tick();
+  if (run.bridge.skipMovie) {
+    assert.equal(run.g.mcExtSWF.numChildren, 1, 'retain the movie until its native exit runs');
+    run.finishMovie();
+  }
+  assert.equal(run.g.world.strFrame, 'Enter', 'late enable must exit the blank cutscene cell');
   assert.equal(run.g.mcExtSWF.numChildren, 0);
-  assert.equal(run.bridge.skipTransfers, 0, 'no stale destination guess');
+  assert.equal(run.bridge.skipTransfers, 0, 'movie executes its own exit');
+  run.tick();
+  assert.equal(run.bridge.skipMovie, null, 'idle watcher releases the removed movie and its assets');
 });
 
 test('watcher tolerates no world and reads a replacement world each frame', () => {
@@ -315,21 +338,37 @@ test('cold load completed before first watcher frame still exits after pending r
   assert.equal(run.bridge.skipTransfers, 1);
 });
 
-test('handler transition between frames associates an already displayed native scene', () => {
-  const run = scenario();
-  run.bridge.aqSetSkipCutscenesEnabled(true);
-  run.tick();
-  const next = { ...run.handler };
-  for (const name of ['isPending', 'transfer', 'cancel']) next[name] = method(stock, name);
-  run.g.world.cHandle = next;
-  run.g.world.strFrame = 'Cut1';
-  run.g.mcExtSWF.children.push({});
-  run.tick();
-  assert.equal(run.g.world.strFrame, 'Enter');
-  assert.equal(run.bridge.skipTransfers, 1);
-  run.tick();
-  assert.equal(run.bridge.skipTransfers, 1);
-});
+for (const replacement of ['handler', 'map', 'world']) {
+  test('cached native movie exits after replacement of ' + replacement, () => {
+    const run = scenario();
+    run.bridge.aqSetSkipCutscenesEnabled(true);
+    run.tick();
+    if (replacement === 'map') run.g.world.map = {};
+    if (replacement === 'world') run.g.world = { ...run.g.world, map: {} };
+    const next = { ...run.handler };
+    for (const name of ['isPending', 'showCutscene', 'fireCutscene', 'onOverlayPoll', 'transfer', 'cancel']) {
+      next[name] = method(stock, name, name === 'showCutscene' ? 'param1,param2,param3,param4' : 'param1');
+    }
+    run.g.world.cHandle = next;
+    run.nativeMovie();
+    next.showCutscene('replacement.swf', false, 'CustomScene', 'Right');
+    next.fireCutscene();
+    run.complete();
+    next.onOverlayPoll();
+    assert.equal(next.isPending(), false);
+    assert.equal(run.g.world.strFrame, 'CustomScene');
+    run.tick();
+    if (run.bridge.skipMovie) {
+      assert.equal(run.g.mcExtSWF.numChildren, 1, 'native exit must survive clearing');
+      run.finishMovie();
+    }
+    assert.equal(run.g.world.strFrame, 'Enter', 'replacement scene must not strand its custom cell');
+    assert.equal(run.g.world.strPad, 'Spawn');
+    assert.equal(run.g.mcExtSWF.numChildren, 0);
+    run.tick();
+    assert.equal(run.bridge.skipTransfers, 0, 'no bridge transfer through a newly observed handler');
+  });
+}
 
 test('captureGameRoot reattaches watcher and resets observed scene on root replacement', () => {
   const run = scenario();
@@ -409,4 +448,126 @@ test('capturing a fresh game with untouched walkspeed off preserves the map defa
   replacement.tick();
   assert.strictEqual(replacement.g.world.WALKSPEED, 13);
   assert.strictEqual(replacement.count(), 0);
+});
+
+
+test('same handler cached overlay between watcher frames exits its native destination', () => {
+  const run = scenario();
+  run.bridge.aqSetSkipCutscenesEnabled(true);
+  run.tick();
+  run.handler.showCutscene('cached.swf', false, 'ArbitrarySceneCell', 'Left');
+  run.handler.fireCutscene();
+  run.complete();
+  run.handler.onOverlayPoll();
+  assert.equal(run.handler.isPending(), false);
+  assert.equal(run.g.world.strFrame, 'ArbitrarySceneCell');
+  run.tick();
+  assert.equal(run.g.mcExtSWF.numChildren, 0);
+  assert.equal(run.g.world.strFrame, 'Enter', 'draining must not strand the blank scene cell');
+  assert.equal(run.g.world.strPad, 'Spawn');
+  assert.equal(run.bridge.skipTransfers, 1);
+});
+
+
+for (const phase of ['init', 'near-end', 'map-loading']) {
+  test('native movie exit is requested once after readiness: ' + phase, () => {
+    const run = scenario();
+    const movie = run.nativeMovie();
+    run.handler.showCutscene('late.swf', false, 'UnusualBlank', 'Up');
+    run.handler.fireCutscene();
+    run.complete();
+    run.handler.onOverlayPoll();
+    if (phase === 'init') movie.currentFrame = 1;
+    if (phase === 'near-end') movie.currentFrame = 170;
+    if (phase === 'map-loading') run.g.world.mapLoadInProgress = true;
+    run.bridge.aqSetSkipCutscenesEnabled(true);
+    run.tick();
+    if (phase !== 'near-end') {
+      assert.equal(movie.currentFrame, phase === 'init' ? 1 : 2);
+      assert.equal(run.g.mcExtSWF.numChildren, 1, 'keep the exit callback alive until ready');
+      movie.currentFrame = 2;
+      run.g.world.mapLoadInProgress = false;
+      run.tick();
+    }
+    assert.equal(movie.currentFrame, 164, 'use the actual Skipped label even near the ending');
+    movie.currentFrame = 165;
+    run.tick();
+    assert.equal(movie.currentFrame, 165, 'never restart the exit timeline each watcher frame');
+    run.finishMovie();
+    assert.equal(run.g.world.strFrame, 'Enter');
+    assert.equal(run.g.mcExtSWF.numChildren, 0);
+  });
+}
+
+test('a newly observed stale handler on a replacement map cannot supply a direct movie destination', () => {
+  const run = scenario();
+  run.bridge.aqSetSkipCutscenesEnabled(true);
+  run.tick();
+  run.g.world.map = {};
+  run.g.world.cHandle = { transfer() { assert.fail('stale handler transfer'); }, isPending: () => false };
+  run.g.mcExtSWF.children.push({ name: 'direct' });
+  run.tick();
+  assert.equal(run.g.mcExtSWF.numChildren, 0);
+  assert.equal(run.g.world.strFrame, 'Enter');
+});
+
+
+test('a native movie exit never replays while its child remains attached', () => {
+  const run = scenario();
+  const movie = run.nativeMovie();
+  run.handler.showCutscene('late.swf', false, 'SceneRoom', 'Left');
+  run.handler.fireCutscene();
+  run.complete();
+  run.handler.onOverlayPoll();
+  run.bridge.aqSetSkipCutscenesEnabled(true);
+  run.tick();
+  let clears = 0;
+  run.g.clearExternamSWF = () => { clears++; };
+  run.finishMovie(); // Execute the real ending, but model a child that outlives clear.
+  assert.equal(clears, 1);
+  movie.currentFrame = 171;
+  run.tick();
+  run.tick();
+  assert.equal(movie.currentFrame, 171, 'never jump back to Skipped again');
+  assert.equal(clears, 1, 'never repeat the native exit');
+});
+
+test('the cell change made by our transfer cannot associate a subsequent direct movie', () => {
+  const run = scenario();
+  run.bridge.aqSetSkipCutscenesEnabled(true);
+  run.tick();
+  run.handler.showCutscene('cached.swf', false, 'SceneRoom', 'Left');
+  run.handler.fireCutscene();
+  run.complete();
+  run.handler.onOverlayPoll();
+  run.tick();
+  assert.equal(run.g.world.strFrame, 'Enter');
+  run.g.mcExtSWF.children.push({ name: 'direct-shop' });
+  run.handler.transfer = () => assert.fail('stale exit after the previous transfer');
+  run.tick();
+  assert.equal(run.g.mcExtSWF.numChildren, 0);
+  assert.equal(run.bridge.skipTransfers, 1);
+});
+
+
+test('late movie exit preserves the native cross-map target without guessing a cell', () => {
+  const run = scenario();
+  const destinations = [];
+  run.g.world.gotoTown = (...args) => destinations.push(args);
+  run.handler.changeMap = true;
+  run.handler.strMap = 'native-destination-42';
+  run.handler.strFrame = 'AfterMovie';
+  run.handler.strPad = 'UpperRight';
+  run.nativeMovie();
+  run.handler.showCutscene('cross-map-late.swf', false, 'AnyBlankCell', 'Left');
+  run.handler.fireCutscene();
+  run.complete();
+  run.handler.onOverlayPoll();
+  run.bridge.aqSetSkipCutscenesEnabled(true);
+  run.tick();
+  run.finishMovie();
+  run.tick();
+  assert.deepStrictEqual(destinations, [['native-destination-42', 'AfterMovie', 'UpperRight']]);
+  assert.equal(run.g.mcExtSWF.numChildren, 0);
+  assert.equal(run.bridge.skipMovie, null);
 });
