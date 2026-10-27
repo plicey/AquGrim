@@ -41,6 +41,7 @@ package {
         private var skipCutscenes:Boolean = false;
         private var skipRoot:Object = null;
         private var skipScene:Object = null;
+        private var skipObserved:Object = null;
         private var skipTransfers:int = 0;
         private var skipLast:String = 'off';
         private var game:Object = null;          // the game's own root object
@@ -122,12 +123,20 @@ package {
             if (skipCutscenes == enabled && (!enabled || skipRoot === game)) return toJson(enabled);
             skipCutscenes = enabled;
             skipScene = null;
+            skipObserved = null;
             if (skipRoot != null) {
                 skipRoot.removeEventListener(Event.ENTER_FRAME, onSkipCutsceneFrame);
                 skipRoot = null;
             }
             if (enabled && game != null) {
                 skipRoot = game;
+                var world:Object = game.world;
+                var handler:Object = world == null ? null : world.cHandle;
+                skipObserved = { world:world, map:world == null ? null : world.map, handler:handler };
+                // INIT and the overlay callback can finish before our first frame.
+                if (handler != null && ("isPending" in handler) && ("transfer" in handler) && handler.isPending()) {
+                    skipScene = skipObserved;
+                }
                 // Flash still invokes listeners removed during dispatch; let game callbacks finish first.
                 skipRoot.addEventListener(Event.ENTER_FRAME, onSkipCutsceneFrame, false, -2147483648, true);
             }
@@ -177,45 +186,36 @@ package {
             try {
                 var world:Object = game == null ? null : game.world;
                 var handler:Object = world == null ? null : world.cHandle;
+                var hadScene:Boolean = skipScene != null;
                 if (skipScene != null && (skipScene.world !== world || skipScene.handler !== handler ||
                     world == null || skipScene.map !== world.map)) skipScene = null;
-                if (handler == null) { skipLast = 'no handler'; return; }
-                if (!("isPending" in handler) || !("transfer" in handler)) {
-                    throw new Error("this game's cutscene handler does not support isPending/transfer");
+                var pending:Boolean = handler != null && ("isPending" in handler) &&
+                    ("transfer" in handler) && handler.isPending();
+                // A new handler can start and display its scene between watcher frames.
+                var changed:Boolean = !hadScene && skipObserved != null && skipObserved.world === world &&
+                    skipObserved.map === (world == null ? null : world.map) && skipObserved.handler !== handler;
+                skipObserved = { world:world, map:world == null ? null : world.map, handler:handler };
+                if (pending || (changed && handler != null && ("transfer" in handler) && game.mcExtSWF.numChildren > 0)) {
+                    skipScene = skipObserved;
                 }
-                var pending:Boolean = handler.isPending();
-                var history:Object = game.ldrMC.history;
                 var loading:Boolean = false;
+                var history:Object = game.ldrMC == null ? null : game.ldrMC.history;
                 for (var key:String in history) {
-                    var entry:Object = history[key];
-                    if (entry.dest !== game.mcExtSWF) continue;
-                    // Retain the actual loader: INIT deletes history before the overlay ends pending.
-                    if (pending && entry.evt && !loading) {
-                        skipScene = { world:world, map:world.map, handler:handler, loader:entry.ldr };
-                    } else {
-                        skipScene = null;
-                    }
-                    loading = true;
+                    if (history[key].dest === game.mcExtSWF) loading = true;
                 }
-                if (loading) { skipLast = 'loading'; return; }
-                if (skipScene != null) {
-                    skipLast = 'tracked';
-                    var content:Object = skipScene.loader.content;
-                    if (content == null) return;
-                    if (game.mcExtSWF.numChildren != 1 || game.mcExtSWF.getChildAt(0) !== content) {
-                        skipScene = null;
-                        return;
-                    }
+                if (skipScene != null && !loading && world.map != null && !world.mapLoadInProgress) {
+                    skipScene = null;
+                    handler.transfer();
+                    skipTransfers++;
+                    skipLast = 'exited';
                 } else {
-                    // A stale handler is not evidence that an arbitrary displayed movie is a cutscene.
-                    skipLast = pending ? 'pending' : 'idle';
-                    if (!pending || game.mcExtSWF.numChildren != 0) return;
+                    skipLast = loading ? 'loading' : (skipScene != null ? 'waiting map' : 'idle');
                 }
-                if (world.map == null || world.mapLoadInProgress) { skipLast = 'waiting map'; return; }
-                skipScene = null;
-                skipTransfers++;
-                skipLast = 'exited';
-                handler.transfer();
+                // Settings.as drains every external movie, including direct playback and late enable.
+                if (game.mcExtSWF.numChildren > 0) {
+                    game.clearExternamSWF();
+                    skipLast = 'drained';
+                }
             } catch (error:Error) {
                 aqSetSkipCutscenesEnabled(false);
                 emit('error', 'Skip Cutscenes disabled: ' + error.message);

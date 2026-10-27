@@ -16,7 +16,7 @@ function method(source, name, args) {
     .replace(/catch\s*\((\w+):Error\)/g, 'catch($1)')
     .replace(/MovieClip\(parent\)/g, 'this.parent');
   return vm.runInNewContext('(function(' + (args || '') + '){with(this){' + body + '}})', {
-    trace() {}, Loader: value => value, Boolean,
+    trace() {}, Loader: value => value, Boolean, getQualifiedClassName: () => 'Game',
     Event: { ENTER_FRAME: 'frame', INIT: 'init', COMPLETE: 'complete' },
     TimerEvent: { TIMER: 'timer' }, ProgressEvent: { PROGRESS: 'progress' },
     IOErrorEvent: { IO_ERROR: 'io' }, SecurityErrorEvent: { SECURITY_ERROR: 'security' }
@@ -53,7 +53,7 @@ function scenario(realReadiness = false) {
     parent: { removeChild() { detached = true; } }, onFileLoadComplete: method(loaderSource, 'onFileLoadComplete', 'param1') };
   const events = [];
   g.world.mapEventTrigger = event => events.push(event.cmd);
-  const bridge = { game: g, skipCutscenes: false, skipRoot: null, skipScene: null,
+  const bridge = { game: g, skipCutscenes: false, skipRoot: null, skipScene: null, skipObserved: null,
     skipTransfers: 0, skipLast: 'off', toJson: JSON.stringify,
     emit: (type, message) => events.push(message),
     aqSetSkipCutscenesEnabled: method(native, 'aqSetSkipCutscenesEnabled', 'enabled'),
@@ -77,7 +77,7 @@ function scenario(realReadiness = false) {
   };
 }
 
-test('native watcher cancels first/new cutscenes before load and leaves ordinary external movies alone', () => {
+test('native watcher cancels pending scenes and retains baseline external movie draining', () => {
   const run = scenario();
   run.bridge.aqSetSkipCutscenesEnabled(true);
   run.bridge.aqSetSkipCutscenesEnabled(true);
@@ -92,8 +92,10 @@ test('native watcher cancels first/new cutscenes before load and leaves ordinary
   run.g.mcExtSWF.children.push({ name: 'ordinary-shop' });
   run.g.world.visible = false;
   run.tick();
-  assert.equal(run.g.mcExtSWF.numChildren, 1);
-  assert.equal(run.g.world.visible, false, 'stale handler does not close ordinary external content');
+  assert.equal(run.g.mcExtSWF.numChildren, 0);
+  assert.equal(run.g.world.visible, true);
+  assert.equal(run.bridge.skipTransfers, 2, 'drain never transfers stale handler');
+  assert.equal(run.bridge.skipLast, 'drained');
   run.bridge.aqSetSkipCutscenesEnabled(false);
   assert.equal(run.count(), 0);
   run.handler.showCutscene('disabled.swf', false, 'Cut1', 'Left');
@@ -135,18 +137,32 @@ test('control reproduces old drain stranding Cut1; native transfer restores dest
   assert.equal(run.g.world.strFrame, 'Enter');
 });
 
-test('unsupported public handler reports failure and removes watcher without clearing content', () => {
-  const run = scenario();
-  delete run.handler.isPending;
-  run.g.mcExtSWF.children.push({ name: 'ordinary' });
-  run.bridge.aqSetSkipCutscenesEnabled(true);
-  run.tick();
-  assert.equal(run.count(), 0);
-  assert.equal(run.g.mcExtSWF.numChildren, 1);
-  assert.match(run.events[0], /does not support isPending\/transfer/);
-});
+for (const handlerKind of ['missing', 'unsupported', 'stale']) {
+  test('direct playback and late enable drain every movie with ' + handlerKind + ' handler', () => {
+    const run = scenario();
+    if (handlerKind === 'missing') run.g.world.cHandle = null;
+    if (handlerKind === 'unsupported') delete run.handler.isPending;
+    run.g.mcExtSWF.children.push({ name: 'direct-action5' }, { name: 'second-movie' });
+    run.g.world.visible = run.g.ui.visible = false;
+    run.bridge.aqSetSkipCutscenesEnabled(true);
+    run.tick();
+    assert.equal(run.g.mcExtSWF.numChildren, 0);
+    assert.equal(run.g.world.visible, true);
+    assert.equal(run.g.ui.visible, true);
+    assert.equal(run.bridge.skipTransfers, 0);
+    assert.equal(run.bridge.skipLast, 'drained');
+    assert.equal(run.count(), 1);
+    run.g.mcExtSWF.children.push({ name: 'next-direct' });
+    run.tick();
+    assert.equal(run.g.mcExtSWF.numChildren, 0);
+    run.bridge.aqSetSkipCutscenesEnabled(false);
+    run.g.mcExtSWF.children.push({});
+    run.tick();
+    assert.equal(run.g.mcExtSWF.numChildren, 1);
+  });
+}
 
-test('already displayed scene is left alone when pending has ended', () => {
+test('late enable after overlay ended pending still drains the displayed scene', () => {
   const run = scenario();
   run.handler.showCutscene('existing.swf', false, 'Cut1', 'Left');
   run.handler.fireCutscene();
@@ -155,8 +171,8 @@ test('already displayed scene is left alone when pending has ended', () => {
   assert.equal(run.handler.isPending(), false);
   run.bridge.aqSetSkipCutscenesEnabled(true);
   run.tick();
-  assert.equal(run.g.mcExtSWF.numChildren, 1);
-  assert.equal(run.g.world.strFrame, 'Cut1', 'never guess a stale destination');
+  assert.equal(run.g.mcExtSWF.numChildren, 0);
+  assert.equal(run.bridge.skipTransfers, 0, 'no stale destination guess');
 });
 
 test('watcher tolerates no world and reads a replacement world each frame', () => {
@@ -244,8 +260,8 @@ test('Flash snapshot dispatch cannot resurrect a canceled ready callback after s
     'removed onReadyPoll still ran in the current Flash event and loaded a canceled scene');
   if (Object.keys(run.g.ldrMC.history).length) {
     assert.equal(transfers, 0, 'do not transfer before the current ready callback finishes starting its load');
-    assert.strictEqual(run.bridge.skipScene.loader, run.contentLoader,
-      'same ENTER_FRAME observes the load before asynchronous INIT, including cache hits');
+    assert.strictEqual(run.bridge.skipScene.handler, run.handler,
+      'same ENTER_FRAME associates the native handler before asynchronous INIT');
     run.complete();
   }
   run.tick();
@@ -256,8 +272,8 @@ test('Flash snapshot dispatch cannot resurrect a canceled ready callback after s
   assert.equal(destinationTransfers, 1, 'destination transfer occurs once, after game callbacks');
 });
 
-for (const change of ['world', 'map', 'handler', 'movie', 'extra movie', 'disable']) {
-  test('tracked scene cannot transfer after changing ' + change, () => {
+for (const change of ['world', 'map', 'handler', 'disable']) {
+  test('tracked scene never transfers stale destination after changing ' + change, () => {
     const run = scenario();
     run.handler.showCutscene('tracked.swf', false, 'Cut1', 'Left');
     run.handler.fireCutscene();
@@ -270,42 +286,82 @@ for (const change of ['world', 'map', 'handler', 'movie', 'extra movie', 'disabl
     if (change === 'world') run.g.world = { ...run.g.world };
     if (change === 'map') run.g.world.map = {};
     if (change === 'handler') run.g.world.cHandle = { isPending: () => false, transfer() { transfers++; } };
-    if (change === 'movie') run.g.mcExtSWF.children[0] = { name: 'shop' };
-    if (change === 'extra movie') run.g.mcExtSWF.children.push({ name: 'shop' });
     if (change === 'disable') {
       run.bridge.aqSetSkipCutscenesEnabled(false);
       run.bridge.aqSetSkipCutscenesEnabled(true);
     }
     run.tick();
-    assert.equal(transfers, 0, 'never transfer a stale handler or clear unrelated movies');
-    assert.ok(run.g.mcExtSWF.numChildren > 0);
+    assert.equal(transfers, 0);
+    assert.equal(run.g.mcExtSWF.numChildren, 0, 'baseline removal does not require handler association');
   });
 }
 
-test('pending handler cannot clear an unrelated already displayed movie', () => {
-  const run = scenario();
-  run.g.mcExtSWF.children.push({ name: 'ordinary-shop' });
-  run.handler.showCutscene('queued.swf', false, 'Cut1', 'Left');
-  run.bridge.aqSetSkipCutscenesEnabled(true);
-  run.tick();
-  assert.equal(run.g.mcExtSWF.numChildren, 1);
-  assert.equal(run.handler.isPending(), true);
-});
-
-
-for (const competing of [false, true]) {
-  test('external load without unique pending cutscene association stays intact: competing=' + competing, () => {
+for (const extra of [false, true]) {
+  test('native exit survives multiple external movies and non-event loading: extra=' + extra, () => {
     const run = scenario();
     run.handler.showCutscene('tracked.swf', false, 'Cut1', 'Left');
     run.handler.fireCutscene();
-    if (competing) run.g.ldrMC.history.other = { dest: run.g.mcExtSWF, evt: true, ldr: {} };
-    else run.g.ldrMC.history.cold.evt = false;
+    run.g.ldrMC.history.cold.evt = false;
     run.bridge.aqSetSkipCutscenesEnabled(true);
     run.tick();
     run.complete();
-    delete run.g.ldrMC.history.other;
-    run.handler.onOverlayPoll();
+    if (extra) run.g.mcExtSWF.children.push({ name: 'second' });
     run.tick();
-    assert.equal(run.g.mcExtSWF.numChildren, 1, 'ambiguous external content is never drained');
+    assert.equal(run.g.mcExtSWF.numChildren, 0);
+    assert.equal(run.g.world.strFrame, 'Enter');
+    assert.equal(run.bridge.skipTransfers, 1);
+    assert.equal(run.bridge.skipLast, 'exited');
   });
 }
+
+test('cold load completed before first watcher frame still exits after pending resets', () => {
+  const run = scenario();
+  run.handler.showCutscene('cold.swf', false, 'Cut1', 'Left');
+  run.handler.fireCutscene();
+  run.bridge.aqSetSkipCutscenesEnabled(true);
+  run.complete();
+  run.tick();
+  assert.equal(run.g.world.strFrame, 'Enter');
+  assert.equal(run.g.mcExtSWF.numChildren, 0);
+  assert.equal(run.bridge.skipTransfers, 1);
+});
+
+test('handler transition between frames associates an already displayed native scene', () => {
+  const run = scenario();
+  run.bridge.aqSetSkipCutscenesEnabled(true);
+  run.tick();
+  const next = { ...run.handler };
+  for (const name of ['isPending', 'transfer', 'cancel']) next[name] = method(stock, name);
+  run.g.world.cHandle = next;
+  run.g.world.strFrame = 'Cut1';
+  run.g.mcExtSWF.children.push({});
+  run.tick();
+  assert.equal(run.g.world.strFrame, 'Enter');
+  assert.equal(run.bridge.skipTransfers, 1);
+  run.tick();
+  assert.equal(run.bridge.skipTransfers, 1);
+});
+
+test('captureGameRoot reattaches watcher and resets observed scene on root replacement', () => {
+  const run = scenario();
+  run.handler.showCutscene('old.swf', false, 'Cut1', 'Left');
+  run.handler.fireCutscene();
+  run.bridge.aqSetSkipCutscenesEnabled(true);
+  run.tick();
+  assert.ok(run.bridge.skipScene);
+  const next = scenario();
+  run.bridge.resolveStatic = () => next.g;
+  run.bridge.stopGameRootWait = () => {};
+  run.bridge.captureGameRoot = method(native, 'captureGameRoot');
+  assert.equal(run.bridge.captureGameRoot(), true);
+  assert.equal(run.count(), 1, 'only old overlay callback remains on old root');
+  assert.equal(next.count(), 1, 'watcher attached once to replacement root');
+  assert.equal(run.bridge.skipScene, null);
+  assert.strictEqual(run.bridge.skipObserved.world, next.g.world);
+  assert.strictEqual(run.bridge.skipObserved.handler, next.handler);
+  next.g.mcExtSWF.children.push({ name: 'direct' });
+  next.tick();
+  assert.equal(run.bridge.skipTransfers, 0, 'replacement is not mistaken for a native scene transition');
+  assert.equal(next.g.mcExtSWF.numChildren, 0);
+  assert.equal(run.bridge.skipLast, 'drained');
+});
