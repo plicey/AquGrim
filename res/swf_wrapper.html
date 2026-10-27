@@ -24,6 +24,14 @@
   #chrome .render-scale input[type=range] { width:96px; height:21px; padding:0; margin:0; }
   #chrome .render-scale output { min-width:32px; text-align:right; color:#c8c8c8; }
   #chrome span.status { margin-left:auto; overflow:hidden; text-overflow:ellipsis; }
+  #actionToast {
+    position:fixed; top:42px; right:16px; z-index:10000; box-sizing:border-box;
+    max-width:calc(100% - 32px); width:360px; padding:12px 16px;
+    background:#25292f; color:#f4f4f4; border-left:4px solid #71c294;
+    border-radius:6px; box-shadow:0 4px 18px #0008;
+    font:13px/1.5 system-ui,sans-serif; white-space:pre-wrap; pointer-events:none;
+  }
+  #actionToast[data-error="true"] { border-left-color:#ef8585; }
   #stage { flex:1 1 auto; position:relative; min-height:0; }
   #surface { position:absolute; left:0; top:0; width:100%; height:100%; transform-origin:0 0; }
   object { display:block; width:100%; height:100%; border:none; outline:none; }
@@ -32,6 +40,7 @@
 <body>
 <div id="chrome" role="toolbar"></div>
 <div id="stage"><div id="surface"></div></div>
+<div id="actionToast" role="status" aria-live="polite" hidden></div>
 <script>
   (function() {
     var params = new URLSearchParams(window.location.search);
@@ -123,14 +132,28 @@
       return node;
     }
 
-    function send(id, args) {
+    var toastTimer = null;
+    function toast(text, failed) {
+      var box = document.getElementById('actionToast');
+      if (!box || !text) return;
+      window.clearTimeout(toastTimer);
+      box.textContent = text;
+      box.setAttribute('data-error', failed ? 'true' : 'false');
+      box.hidden = false;
+      toastTimer = window.setTimeout(function () { box.hidden = true; }, failed ? 8000 : 4500);
+    }
+
+    function send(id, args, notify) {
       return Promise.resolve(api.action(id, args || {})).then(function (result) {
         if (result && result.view) draw(result.view);
-        // Keep action feedback inside the client toolbar.
-        show(result && (result.error || result.message) || '');
+        var text = result && (result.error || result.message) || '';
+        if (notify) toast(text, !!(result && result.error));
+        else show(text);
         if (id !== 'autoSkillSet') focusGame();
       }, function (error) {
-        show(String(error && error.message ? error.message : error));
+        var text = String(error && error.message ? error.message : error);
+        if (notify) toast(text, true);
+        else show(text);
         if (id !== 'autoSkillSet') focusGame();
       });
     }
@@ -215,9 +238,8 @@
         if (entry.pendingLabel) {
           button.disabled = true;
           button.textContent = entry.pendingLabel;
-          show(entry.pendingLabel);
         }
-        send(entry.id, source ? { value: source.value } : {}).then(function () {
+        send(entry.id, source ? { value: source.value } : {}, !!entry.pendingLabel).then(function () {
           button.textContent = entry.label;
           button.disabled = entry.valueFrom ? !source || !source.value : false;
         });

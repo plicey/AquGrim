@@ -408,15 +408,19 @@ test('toolbar carries in-app progress labels and completion feedback through dis
   assert.strictEqual((await h.chrome.dispatch(h.win, 'apply', {})).message, 'Finished.');
 });
 
-test('toolbar button shows progress until completion and displays action feedback in-app', async () => {
+test('toolbar button shows progress and reports success or failure in an expiring toast', async () => {
   const source = fs.readFileSync(path.join(REPO, 'res/swf_wrapper.html'), 'utf8');
-  const start = source.indexOf('    function send(');
+  const start = source.indexOf('    var toastTimer =');
   const end = source.indexOf("    /** The platform's render percentage", start);
   let finish;
   let status = '';
-  const nodes = {};
+  let expire;
+  let duration;
+  const toast = { hidden: true, setAttribute(key, value) { this[key] = value; } };
+  const nodes = { actionToast: toast };
   const context = {
     api: { action: () => new Promise(resolve => { finish = resolve; }) },
+    window: { clearTimeout() {}, setTimeout(fn, ms) { expire = fn; duration = ms; } },
     document: { getElementById: id => nodes[id] || null },
     focusGame() {}, draw() {},
     el(tag, klass, text) {
@@ -430,14 +434,22 @@ test('toolbar button shows progress until completion and displays action feedbac
   button.handlers.click();
   assert.strictEqual(button.textContent, 'Applying…');
   assert.strictEqual(button.disabled, true);
-  assert.strictEqual(status, 'Applying…');
+  assert.strictEqual(status, '', 'progress does not crowd the toolbar');
   finish({ ok: true, message: 'Finished.' });
   await new Promise(setImmediate);
-  assert.strictEqual(status, 'Finished.');
+  assert.strictEqual(toast.textContent, 'Finished.');
+  assert.strictEqual(toast.hidden, false);
+  assert.strictEqual(toast['data-error'], 'false');
+  assert.strictEqual(duration, 4500);
+  expire();
+  assert.strictEqual(toast.hidden, true);
   assert.strictEqual(button.disabled, false);
   button.handlers.click();
   finish({ ok: false, error: 'Could not apply.' });
   await new Promise(setImmediate);
-  assert.strictEqual(status, 'Could not apply.');
+  assert.strictEqual(toast.textContent, 'Could not apply.');
+  assert.strictEqual(toast['data-error'], 'true');
+  assert.strictEqual(duration, 8000);
+  assert.strictEqual(status, '');
   assert.strictEqual(button.disabled, false);
 });
