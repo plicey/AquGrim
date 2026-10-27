@@ -398,3 +398,46 @@ test('wrapper refreshes saved choices without equipping, and applies only on but
   const button = strip.children.find(n => n.id === 'chrome-apply');
   assert.strictEqual(button.disabled, true);
 });
+
+test('toolbar carries in-app progress labels and completion feedback through dispatch', async () => {
+  const h = harness(Object.assign({}, DECLARATION, {
+    controls: () => [{ id: 'apply', kind: 'button', label: 'Apply', pendingLabel: 'Applying…' }],
+    action: () => ({ ok: true, message: 'Finished.' })
+  }));
+  assert.strictEqual((await h.chrome.pageView(h.win)).controls[0].pendingLabel, 'Applying…');
+  assert.strictEqual((await h.chrome.dispatch(h.win, 'apply', {})).message, 'Finished.');
+});
+
+test('toolbar button shows progress until completion and displays action feedback in-app', async () => {
+  const source = fs.readFileSync(path.join(REPO, 'res/swf_wrapper.html'), 'utf8');
+  const start = source.indexOf('    function send(');
+  const end = source.indexOf("    /** The platform's render percentage", start);
+  let finish;
+  let status = '';
+  const nodes = {};
+  const context = {
+    api: { action: () => new Promise(resolve => { finish = resolve; }) },
+    document: { getElementById: id => nodes[id] || null },
+    focusGame() {}, draw() {},
+    el(tag, klass, text) {
+      return { textContent: text, disabled: false, handlers: {},
+        addEventListener(name, fn) { this.handlers[name] = fn; } };
+    }
+  };
+  nodes.chromeStatus = { set textContent(value) { status = value; } };
+  require('vm').runInNewContext(source.slice(start, end), context);
+  const button = context.control({ id: 'apply', label: 'Apply', pendingLabel: 'Applying…' }, {});
+  button.handlers.click();
+  assert.strictEqual(button.textContent, 'Applying…');
+  assert.strictEqual(button.disabled, true);
+  assert.strictEqual(status, 'Applying…');
+  finish({ ok: true, message: 'Finished.' });
+  await new Promise(setImmediate);
+  assert.strictEqual(status, 'Finished.');
+  assert.strictEqual(button.disabled, false);
+  button.handlers.click();
+  finish({ ok: false, error: 'Could not apply.' });
+  await new Promise(setImmediate);
+  assert.strictEqual(status, 'Could not apply.');
+  assert.strictEqual(button.disabled, false);
+});

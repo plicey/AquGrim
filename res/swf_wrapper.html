@@ -124,11 +124,10 @@
     }
 
     function send(id, args) {
-      Promise.resolve(api.action(id, args || {})).then(function (result) {
+      return Promise.resolve(api.action(id, args || {})).then(function (result) {
         if (result && result.view) draw(result.view);
-        // The strip's own words for the last press: a refusal is what the user needs to see, and a
-        // press that worked says nothing rather than leaving the previous refusal on screen.
-        show(result && result.error ? result.error : '');
+        // Keep action feedback inside the client toolbar.
+        show(result && (result.error || result.message) || '');
         if (id !== 'autoSkillSet') focusGame();
       }, function (error) {
         show(String(error && error.message ? error.message : error));
@@ -212,7 +211,16 @@
       }
       button.addEventListener('click', function () {
         var source = entry.valueFrom && document.getElementById('chrome-' + entry.valueFrom);
-        send(entry.id, source ? { value: source.value } : {});
+        if (button.disabled) return;
+        if (entry.pendingLabel) {
+          button.disabled = true;
+          button.textContent = entry.pendingLabel;
+          show(entry.pendingLabel);
+        }
+        send(entry.id, source ? { value: source.value } : {}).then(function () {
+          button.textContent = entry.label;
+          button.disabled = entry.valueFrom ? !source || !source.value : false;
+        });
         if (entry.id !== 'autoSkillSet') focusGame();
       });
       return button;
@@ -275,6 +283,8 @@
       strip.appendChild(renderScaleControl());
       strip.appendChild(el('span', 'status', view.error || ''));
       strip.lastChild.id = 'chromeStatus';
+      strip.lastChild.setAttribute('role', 'status');
+      strip.lastChild.setAttribute('aria-live', 'polite');
     }
 
     window.addEventListener('focus', function () {

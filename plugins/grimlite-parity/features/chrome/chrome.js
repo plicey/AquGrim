@@ -179,7 +179,7 @@ function createChrome(deps) {
             { id: 'bank', kind: 'button', label: words.bank || 'Bank' },
             { id: 'equipmentSet', kind: 'select', label: 'Saved equipment set', refreshOnFocus: true,
                 width: 130, placeholder: 'No saved sets — Client → Sets: save loadout' },
-            { id: 'equipSavedSet', kind: 'button', label: 'Equip', valueFrom: 'equipmentSet' }
+            { id: 'equipSavedSet', kind: 'button', label: 'Equip', valueFrom: 'equipmentSet', pendingLabel: 'Equipping…' }
         ];
     }
 
@@ -494,6 +494,9 @@ function createChrome(deps) {
                     ? await deps.equipmentSets.handle('equipSavedSet', null, [picked.value])
                     : { error: 'Saved equipment sets are unavailable.' };
                 answer.ok = !answer.error;
+                if (answer.ok) answer.message = answer.requested > 0
+                    ? 'Set equip requests sent: ' + answer.requested + ' changed, ' + (answer.skipped || 0) + ' already equipped.'
+                    : 'Set already equipped.';
             }
             else if (id === 'cell') answer = await moveTo({ cell: picked.value });
             else if (id === 'pad') answer = await moveTo({ pad: picked.value });
