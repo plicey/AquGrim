@@ -55,12 +55,14 @@ test('the Auto Attack editor loads named class presets, applies drafts, and save
   assert.deepStrictEqual(store.read(), {
     autoAttackSkillSet: '1,2,4',
     autoAttackPresets: { 'VOID HIGHLORD': { Boss: '2:SH>60;3,4' } },
-    autoAttackSelectedPresets: { 'VOID HIGHLORD': 'Boss' }
+    autoAttackSelectedPresets: { 'VOID HIGHLORD': 'Boss' },
+    autoAttackDrafts: { 'VOID HIGHLORD': { name: 'Boss', text: '2:SH>60;3,4' } }
   }, 'save stores the named class preset and leaves the old universal key untouched');
   assert.deepStrictEqual(used, ['1;2'], 'saving does not apply anything');
 
   await handlers.autoAttackPresetDelete(null, { className: 'Void Highlord', name: 'Boss' });
-  assert.deepStrictEqual(store.read(), { autoAttackSkillSet: '1,2,4' });
+  assert.deepStrictEqual(store.read(), { autoAttackSkillSet: '1,2,4',
+    autoAttackDrafts: { 'VOID HIGHLORD': { name: null, text: '2:SH>60;3,4' } } });
 
   await handlers.autoAttackSkillSetDefault(null, { className: 'Void Highlord' });
   assert.deepStrictEqual(used, ['1;2', ''], 'choosing Default applies the fallback');
@@ -94,16 +96,16 @@ test('named selections restore by normalized class across switches and source re
   source.savePreset('Void Highlord', 'Farm', '3;3');
   assert.strictEqual(source.draftFor('void highlord').text, '4;4', 'Save leaves the draft alone');
   assert.deepStrictEqual(store.read().autoAttackSelectedPresets, { 'VOID HIGHLORD': 'Boss' });
-  assert.strictEqual(fresh().draftFor('void highlord').text, '1;2', 'only the name survives restart');
+  assert.strictEqual(fresh().draftFor('void highlord').text, '4;4', 'editor text survives restart');
   source.loadPreset('shaman', 'farm');
   assert.strictEqual(source.draftFor('Void Highlord').name, 'Boss');
-  assert.strictEqual(source.draftFor('Void Highlord').text, '1;2', 'one transient draft, not one per class');
+  assert.strictEqual(source.draftFor('Void Highlord').text, '4;4', 'each class retains its editor text');
   assert.strictEqual(source.draftFor('SHAMAN').text, '2;4');
   assert.strictEqual(source.draftFor('Nobody'), null);
   assert.strictEqual(fresh().draftFor('Shaman').name, 'Farm');
   source.setDraft('Shaman', '4;3', null);
   assert.strictEqual(source.draftFor('Shaman').text, '4;3', 'custom draft wins for this session');
-  assert.strictEqual(fresh().draftFor('Shaman').text, '2;4', 'custom text is never persisted');
+  assert.strictEqual(fresh().draftFor('Shaman').text, '4;3', 'custom text survives restart');
   source.clearDraft(' shaman ');
   assert.strictEqual(source.draftFor('Shaman'), null);
   assert.strictEqual(fresh().draftFor('Shaman'), null, 'Default survives restart');
@@ -121,17 +123,17 @@ test('Save alone never selects, and deleted or missing selections safely fall ba
   source.deletePreset('Shaman', 'Farm');
   assert.strictEqual(source.draftFor('Shaman').name, null, 'delete retains the existing transient text');
   assert.strictEqual(source.draftFor('Shaman').text, '2;3');
-  assert.strictEqual(fresh().draftFor('Shaman'), null);
+  assert.strictEqual(fresh().draftFor('Shaman').text, '2;3');
   source.savePreset('Shaman', 'Farm', '4');
-  assert.strictEqual(fresh().draftFor('Shaman'), null, 'recreating a deleted name does not select it');
+  assert.strictEqual(fresh().draftFor('Shaman').name, null, 'recreating a deleted name does not select it');
   source.loadPreset('Shaman', 'Farm');
   source.setDraft('Shaman', '3;3', 'Farm');
   store.write({ autoAttackSelectedPresets: { SHAMAN: 'Farm' } });
   assert.strictEqual(source.draftFor('Shaman').name, null, 'externally missing preset unnames the draft');
   assert.strictEqual(source.draftFor('Shaman').text, '3;3', 'unsaved edits are preserved');
-  assert.strictEqual(fresh().draftFor('Shaman'), null);
+  assert.strictEqual(fresh().draftFor('Shaman').text, '3;3');
   source.savePreset('Shaman', 'Farm', '1');
-  assert.strictEqual(fresh().draftFor('Shaman'), null, 'stale selection was cleared');
+  assert.strictEqual(fresh().draftFor('Shaman').name, null, 'stale selection was cleared');
 });
 
 test('ClientConfig selections work without a writable store and restore only while available', () => {
@@ -151,9 +153,9 @@ test('ClientConfig selections work without a writable store and restore only whi
   fresh(store).loadPreset('Shaman', 'ClientConfig');
   assert.strictEqual(fresh(store).draftFor('Shaman').name, 'ClientConfig');
   config = '';
-  assert.strictEqual(fresh(store).draftFor('Shaman'), null);
+  assert.strictEqual(fresh(store).draftFor('Shaman').name, null);
   config = 'SS.SHAMAN=4';
-  assert.strictEqual(fresh(store).draftFor('Shaman'), null, 'missing file selection stays cleared');
+  assert.strictEqual(fresh(store).draftFor('Shaman').name, null, 'missing file selection stays cleared');
 });
 
 test('reopening the editor restores the remembered selection without applying or saving text', async () => {
@@ -258,7 +260,13 @@ test('Insert uses the editor input flow and Default failures leave its text inta
   let rejected = false;
   const api = {
     get: function () { return Promise.resolve({ className: 'Shaman', text: '1;4', presets: [] }); },
-    draft: function (data) { drafts.push(data); return Promise.resolve({}); },
+    draft: function (data) {
+      drafts.push(data);
+      return rejected ? Promise.reject(new Error('IPC unavailable')) : Promise.resolve({});
+    },
+    useDraft: function () {
+      return rejected ? Promise.reject(new Error('IPC unavailable')) : Promise.resolve({ ok: false, error: 'disk full' });
+    },
     useDefault: function () {
       return rejected ? Promise.reject(new Error('IPC unavailable')) : Promise.resolve({ ok: false, error: 'disk full' });
     }
@@ -302,4 +310,67 @@ test('Insert uses the editor input flow and Default failures leave its text inta
   await new Promise(setImmediate);
   assert.strictEqual(nodes.skills.value, before);
   assert.strictEqual(nodes.status.textContent, 'IPC unavailable');
+  nodes.skills.handlers.input();
+  timer();
+  await new Promise(setImmediate);
+  assert.strictEqual(nodes.status.textContent, 'IPC unavailable', 'draft rejection is handled');
+  nodes.presets.value = '__custom__';
+  nodes.presets.handlers.change();
+  await new Promise(setImmediate);
+  assert.strictEqual(nodes.status.textContent, 'IPC unavailable', 'Use Draft rejection is handled');
+  rejected = false;
+  nodes.presets.handlers.change();
+  await new Promise(setImmediate);
+  assert.strictEqual(nodes.status.textContent, 'disk full', 'failed writes never show success');
+  assert.strictEqual(nodes.skills.value, before);
+});
+
+
+test('disk-backed editor state survives store recreation per class without changing named presets', () => {
+  const directory = fs.mkdtempSync(path.join(require('os').tmpdir(), 'auto-attack-drafts-'));
+  const storage = require('../../res/platform/storage/namespaced-store.js');
+  function fresh() {
+    const store = storage.createNamespacedStore({ appDataDirectory: directory,
+      pluginId: 'grimlite-parity' }).getStore(presets.STORE_NAMESPACE);
+    return { store: store, source: presets.createPresetSource({ store: store, files: [] }) };
+  }
+  try {
+    const first = fresh();
+    first.source.savePreset('Shaman', 'Farm', '1;2');
+    first.source.loadPreset('Shaman', 'Farm');
+    first.source.setDraft(' shaman ', '3:SM<=50;4', 'Farm');
+    first.source.setDraft('Mage', '4;3', null);
+    const second = fresh();
+    assert.strictEqual(second.source.draftFor('SHAMAN').name, 'Farm');
+    assert.strictEqual(second.source.draftFor('Shaman').text, '3:SM<=50;4');
+    assert.strictEqual(second.source.draftFor('mage').text, '4;3');
+    assert.strictEqual(second.store.read().autoAttackPresets.SHAMAN.Farm, '1;2');
+    second.source.savePreset('Shaman', 'Farm', '2;2');
+    assert.strictEqual(fresh().source.draftFor('Shaman').text, '3:SM<=50;4', 'Save only updates the named preset');
+    second.source.setDraft('Mage', '', null);
+    assert.strictEqual(fresh().source.draftFor('Mage').text, '', 'empty editor text also survives');
+    second.source.clearDraft('Shaman');
+    assert.strictEqual(fresh().source.draftFor('Shaman'), null, 'Default survives store recreation');
+    assert.strictEqual(fresh().source.draftFor('Mage').text, '', 'Default affects only its class');
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('draft IPC write failures preserve accepted text and never apply the rejected rotation', async () => {
+  const store = memoryStore();
+  const source = presets.createPresetSource({ store: store, files: [] });
+  source.setDraft('Shaman', '1;2', null);
+  const handlers = {};
+  const used = [];
+  autoAttack.createAutoAttackWindow({ presets: source, onUse: function (text) { used.push(text); } })
+    .register({ ipc: { handle: function (name, fn) { handlers[name] = fn; } } });
+  store.write = function () { throw new Error('disk full'); };
+  for (const channel of ['autoAttackSkillSetDraft', 'autoAttackSkillSetUseDraft']) {
+    assert.deepStrictEqual(await handlers[channel](null, { className: 'Shaman', text: '4;3' }),
+      { ok: false, error: 'disk full' });
+    assert.strictEqual(source.draftFor('Shaman').text, '1;2');
+    assert.strictEqual(presets.createPresetSource({ store: store, files: [] }).draftFor('Shaman').text, '1;2');
+  }
+  assert.deepStrictEqual(used, []);
 });

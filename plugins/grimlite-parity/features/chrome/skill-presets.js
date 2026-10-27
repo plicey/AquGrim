@@ -1,7 +1,7 @@
 // Auto Attack's skill presets. Reference: Grimoire/UI/Root.cs:1515-1585 (getSkillPreset)
 // and Tools/ClientConfig.cs: `SS.<CLASS>=...` in ClientConfig.cfg.
 //
-// A saved preset always has a class and a name. The editor can hold one unsaved draft for the
+// A saved preset always has a class and a name. The editor remembers an unsaved draft for each
 // detected class; selecting a preset loads that saved text into the draft and applies it at once.
 // Edits stay in the draft and are read the next time Auto Attack is enabled. Save only writes the
 // draft to its named preset; it does not reload or apply anything.
@@ -16,6 +16,7 @@ const path = require('path');
 const STORE_NAMESPACE = 'auto-attack';
 const STORE_KEY = 'autoAttackPresets';
 const SELECTION_KEY = 'autoAttackSelectedPresets';
+const DRAFT_KEY = 'autoAttackDrafts';
 const CONFIG_FILE = 'ClientConfig.cfg';
 const FILE_PRESET_NAME = 'ClientConfig';
 const DEFAULT_SKILLS = [
@@ -210,7 +211,7 @@ function createPresetSource(deps) {
             ? selections[classKey(className)] : null;
     }
 
-    function remember(className, name) {
+    function remember(className, name, editor) {
         if (!store || typeof store.write !== 'function') return;
         const key = classKey(className);
         if (!key) return;
@@ -222,6 +223,15 @@ function createPresetSource(deps) {
         else delete selections[key];
         if (Object.keys(selections).length) data[SELECTION_KEY] = selections;
         else delete data[SELECTION_KEY];
+        if (editor !== undefined) {
+            const previousDrafts = data[DRAFT_KEY];
+            const drafts = previousDrafts && typeof previousDrafts === 'object' && !Array.isArray(previousDrafts)
+                ? Object.assign({}, previousDrafts) : {};
+            if (editor) drafts[key] = { name: editor.name, text: editor.text };
+            else delete drafts[key];
+            if (Object.keys(drafts).length) data[DRAFT_KEY] = drafts;
+            else delete data[DRAFT_KEY];
+        }
         store.write(data);
     }
 
@@ -253,27 +263,32 @@ function createPresetSource(deps) {
         if (!preset) return presetList(key);
         writeStored({ className: key, preset: preset }, null);
         if (cleanName(rememberedName(key)).toLowerCase() === preset.toLowerCase()) remember(key, null);
-        if (draft && draft.className === key &&
-            String(draft.name || '').toLowerCase() === preset.toLowerCase()) draft.name = null;
+        draftFor(key);
         return presetList(key);
     }
 
     function setDraft(className, text, name) {
-        draft = {
+        const next = {
             className: classKey(className),
             name: cleanName(name) || null,
             text: String(text === null || text === undefined ? '' : text)
         };
+        remember(next.className, next.name, next);
+        draft = next;
         return copyDraft(draft);
     }
 
     function draftFor(className) {
         const key = classKey(className);
+        if (!draft || draft.className !== key) {
+            const drafts = stored()[DRAFT_KEY];
+            const editor = drafts && typeof drafts === 'object' && !Array.isArray(drafts) ? drafts[key] : null;
+            draft = editor && typeof editor === 'object' && typeof editor.text === 'string'
+                ? { className: key, name: cleanName(editor.name) || null, text: editor.text } : null;
+        }
         if (draft && draft.className === key) {
             if (!draft.name || findName(key, draft.name)) return copyDraft(draft);
-            remember(key, null);
-            draft.name = null;
-            return copyDraft(draft);
+            return setDraft(key, draft.text, null);
         }
         const remembered = rememberedName(key);
         const preset = findName(key, remembered);
@@ -285,7 +300,7 @@ function createPresetSource(deps) {
     }
 
     function clearDraft(className) {
-        remember(className || (draft && draft.className), null);
+        remember(className || (draft && draft.className), null, null);
         if (!className || (draft && draft.className === classKey(className))) draft = null;
         return null;
     }
@@ -295,7 +310,6 @@ function createPresetSource(deps) {
         const preset = findName(key, name);
         if (!preset) return null;
         const raw = rawForClass(key)[preset];
-        remember(key, preset);
         return setDraft(key, raw.text, preset);
     }
 
@@ -318,6 +332,7 @@ module.exports = {
     STORE_NAMESPACE: STORE_NAMESPACE,
     STORE_KEY: STORE_KEY,
     SELECTION_KEY: SELECTION_KEY,
+    DRAFT_KEY: DRAFT_KEY,
     CONFIG_FILE: CONFIG_FILE,
     FILE_PRESET_NAME: FILE_PRESET_NAME,
     DEFAULT_SKILLS: DEFAULT_SKILLS,

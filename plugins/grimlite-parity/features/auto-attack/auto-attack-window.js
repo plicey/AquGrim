@@ -40,8 +40,12 @@ function createAutoAttackWindow(deps) {
 
         host.ipc.handle('autoAttackSkillSetDraft', function (event, data) {
             const args = payload(data);
-            source.setDraft(args.className, args.text, args.name);
-            return snapshot(args.className);
+            try {
+                source.setDraft(args.className, args.text, args.name);
+                return snapshot(args.className);
+            } catch (error) {
+                return { ok: false, error: (error && error.message) || String(error) };
+            }
         });
 
         host.ipc.handle('autoAttackPresetLoad', function (event, data) {
@@ -98,7 +102,12 @@ function createAutoAttackWindow(deps) {
 
         host.ipc.handle('autoAttackSkillSetUseDraft', function (event, data) {
             const args = payload(data);
-            const draft = source.setDraft(args.className, args.text, null);
+            let draft;
+            try {
+                draft = source.setDraft(args.className, args.text, null);
+            } catch (error) {
+                return { ok: false, error: (error && error.message) || String(error) };
+            }
             onUse(draft ? draft.text : '');
             return snapshot(args.className).then(function (state) {
                 return Object.assign({ ok: true, error: null }, state);

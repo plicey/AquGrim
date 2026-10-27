@@ -173,9 +173,10 @@
 
     if (selected === '__custom__') {
       Promise.resolve(api.useDraft({ className: className, text: box.value })).then(function (result) {
+        if (!result || result.ok !== true) return say((result && result.error) || 'Could not remember draft.', true);
         apply(result, true);
         say('Using the unsaved draft. It will be used again when Auto Attack is re-enabled.');
-      });
+      }).catch(function (error) { say(error.message || 'Could not remember draft.', true); });
       return;
     }
 
@@ -221,12 +222,13 @@
       var name = select.value && select.value !== '__custom__' ? select.value : null;
       Promise.resolve(api.draft({ className: currentClass(), text: box.value, name: name }))
         .then(function (result) {
+          if (!result || result.ok === false) return say((result && result.error) || 'Could not remember draft.', true);
           if (result && result.selected) select.value = result.selected;
           else select.value = box.value.trim() ? '__custom__' : '';
           remove.disabled = select.value === '' || select.value === '__custom__' ||
             select.selectedOptions[0].dataset.stored !== 'true';
-          say('Draft updated. It applies when Auto Attack is re-enabled.');
-        });
+          say('Draft remembered. It applies when Auto Attack is re-enabled.');
+        }).catch(function (error) { say(error.message || 'Could not remember draft.', true); });
     }, 150);
   });
 
