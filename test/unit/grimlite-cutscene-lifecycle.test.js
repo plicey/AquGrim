@@ -40,6 +40,8 @@ function scenario(realReadiness = false) {
   g.world.mapEventTrigger = event => events.push(event.cmd);
   const bridge = { game: g, skipCutscenes: false, skipRoot: null, skipScene: null, skipObserved: null,
     skipMovie: null, skipTransfers: 0, skipLast: 'off', toJson: JSON.stringify,
+    getQualifiedClassName: scene => scene.className || 'unrecognized',
+    cachedCutsceneExit: method(native, 'cachedCutsceneExit', 'scene,movie'),
     walkSpeedEnabled: false, walkSpeed: 20, walkRoot: null,
     jsonError: error => JSON.stringify({ error: error.message }),
     aqSetWalkSpeedEnabled: method(native, 'aqSetWalkSpeedEnabled', 'enabled,speed'),
@@ -81,7 +83,7 @@ function scenario(realReadiness = false) {
   };
 }
 
-test('native watcher cancels pending scenes and retains baseline external movie draining', () => {
+test('native watcher cancels pending scenes and preserves unrecognized external movies', () => {
   const run = scenario();
   run.bridge.aqSetSkipCutscenesEnabled(true);
   run.bridge.aqSetSkipCutscenesEnabled(true);
@@ -96,10 +98,10 @@ test('native watcher cancels pending scenes and retains baseline external movie 
   run.g.mcExtSWF.children.push({ name: 'ordinary-shop' });
   run.g.world.visible = false;
   run.tick();
-  assert.equal(run.g.mcExtSWF.numChildren, 0);
-  assert.equal(run.g.world.visible, true);
-  assert.equal(run.bridge.skipTransfers, 2, 'drain never transfers stale handler');
-  assert.equal(run.bridge.skipLast, 'drained');
+  assert.equal(run.g.mcExtSWF.numChildren, 1);
+  assert.equal(run.g.world.visible, false);
+  assert.equal(run.bridge.skipTransfers, 2, 'unknown movie never transfers stale handler');
+  assert.equal(run.bridge.skipLast, 'unrecognized movie');
   run.bridge.aqSetSkipCutscenesEnabled(false);
   assert.equal(run.count(), 0);
   run.handler.showCutscene('disabled.swf', false, 'Cut1', 'Left');
@@ -142,7 +144,7 @@ test('control reproduces old drain stranding Cut1; native transfer restores dest
 });
 
 for (const handlerKind of ['missing', 'unsupported', 'stale']) {
-  test('direct playback and late enable drain every movie with ' + handlerKind + ' handler', () => {
+  test('direct playback and late enable retain unrecognized movies with ' + handlerKind + ' handler', () => {
     const run = scenario();
     if (handlerKind === 'missing') run.g.world.cHandle = null;
     if (handlerKind === 'unsupported') delete run.handler.isPending;
@@ -150,19 +152,19 @@ for (const handlerKind of ['missing', 'unsupported', 'stale']) {
     run.g.world.visible = run.g.ui.visible = false;
     run.bridge.aqSetSkipCutscenesEnabled(true);
     run.tick();
-    assert.equal(run.g.mcExtSWF.numChildren, 0);
-    assert.equal(run.g.world.visible, true);
-    assert.equal(run.g.ui.visible, true);
+    assert.equal(run.g.mcExtSWF.numChildren, 2);
+    assert.equal(run.g.world.visible, false);
+    assert.equal(run.g.ui.visible, false);
     assert.equal(run.bridge.skipTransfers, 0);
-    assert.equal(run.bridge.skipLast, 'drained');
+    assert.equal(run.bridge.skipLast, 'unrecognized movie');
     assert.equal(run.count(), 1);
     run.g.mcExtSWF.children.push({ name: 'next-direct' });
     run.tick();
-    assert.equal(run.g.mcExtSWF.numChildren, 0);
+    assert.equal(run.g.mcExtSWF.numChildren, 3);
     run.bridge.aqSetSkipCutscenesEnabled(false);
     run.g.mcExtSWF.children.push({});
     run.tick();
-    assert.equal(run.g.mcExtSWF.numChildren, 1);
+    assert.equal(run.g.mcExtSWF.numChildren, 4);
   });
 }
 
@@ -304,7 +306,7 @@ for (const change of ['world', 'map', 'handler', 'disable']) {
     }
     run.tick();
     assert.equal(transfers, 0);
-    assert.equal(run.g.mcExtSWF.numChildren, 0, 'baseline removal does not require handler association');
+    assert.equal(run.g.mcExtSWF.numChildren, 1, 'lost association must preserve the native ending');
   });
 }
 
@@ -390,8 +392,8 @@ test('captureGameRoot reattaches watcher and resets observed scene on root repla
   next.g.mcExtSWF.children.push({ name: 'direct' });
   next.tick();
   assert.equal(run.bridge.skipTransfers, 0, 'replacement is not mistaken for a native scene transition');
-  assert.equal(next.g.mcExtSWF.numChildren, 0);
-  assert.equal(run.bridge.skipLast, 'drained');
+  assert.equal(next.g.mcExtSWF.numChildren, 1);
+  assert.equal(run.bridge.skipLast, 'unrecognized movie');
 });
 
 
@@ -507,7 +509,7 @@ test('a newly observed stale handler on a replacement map cannot supply a direct
   run.g.world.cHandle = { transfer() { assert.fail('stale handler transfer'); }, isPending: () => false };
   run.g.mcExtSWF.children.push({ name: 'direct' });
   run.tick();
-  assert.equal(run.g.mcExtSWF.numChildren, 0);
+  assert.equal(run.g.mcExtSWF.numChildren, 1);
   assert.equal(run.g.world.strFrame, 'Enter');
 });
 
@@ -545,7 +547,7 @@ test('the cell change made by our transfer cannot associate a subsequent direct 
   run.g.mcExtSWF.children.push({ name: 'direct-shop' });
   run.handler.transfer = () => assert.fail('stale exit after the previous transfer');
   run.tick();
-  assert.equal(run.g.mcExtSWF.numChildren, 0);
+  assert.equal(run.g.mcExtSWF.numChildren, 1);
   assert.equal(run.bridge.skipTransfers, 1);
 });
 
@@ -571,3 +573,123 @@ test('late movie exit preserves the native cross-map target without guessing a c
   assert.equal(run.g.mcExtSWF.numChildren, 0);
   assert.equal(run.bridge.skipMovie, null);
 });
+
+for (const destination of ['cell', 'map']) {
+  test('cached Vath Showdown without Skipped preserves its real ending: ' + destination, () => {
+    const run = scenario();
+    const destinations = [];
+    run.g.world.gotoTown = (...args) => destinations.push(args);
+    run.handler.changeMap = destination === 'map';
+    run.handler.strMap = 'native-vath-target';
+    run.handler.showCutscene('maps/Dwarfhold/Cutscene-VathShowdown-2023.swf', false, 'Cut1', 'Left');
+    run.contentLoader.content.loaderInfo = { url: 'https://game.aq.com/game/gamefiles/maps/Dwarfhold/Cutscene-VathShowdown-2023.swf?v=5.21' };
+    const scene = { className: 'Cutscene_fla::cutscene1_1', rootClass: null, currentFrame: 2, totalFrames: 292, framesLoaded: 292, currentLabels: [],
+      __setProp___id5__cutscene1_Actions_291() {}, stop() {},
+      finish: method(fs.readFileSync(path.join(fixtures, 'vath-showdown.as'), 'utf8'), 'frame292'),
+      gotoAndPlay(frame) {
+        assert.equal(frame, 292, 'skip directly to the audited native ending');
+        assert.strictEqual(this.rootClass, run.g, 'initialize the ending receiver before bypassing frame 197');
+        this.currentFrame = frame;
+        this.finish();
+      } };
+    run.contentLoader.content.CS = scene;
+    run.handler.fireCutscene();
+    run.complete();
+    run.handler.onOverlayPoll();
+    run.bridge.aqSetSkipCutscenesEnabled(true); // Pending is already false at late enable.
+    run.tick();
+    assert.equal(scene.currentFrame, 292, 'known no-label movie must actually skip, not play normally');
+    if (destination === 'cell') assert.equal(run.g.world.strFrame, 'Enter', 'movie removal stranded the blank Cut1 room');
+    else assert.deepStrictEqual(destinations, [['native-vath-target', 'Enter', 'Spawn']], 'movie removal lost the native map exit');
+    assert.equal(run.g.mcExtSWF.numChildren, 0);
+    assert.equal(run.g.world.visible, true);
+    assert.equal(run.g.ui.visible, true);
+    assert.equal(run.bridge.skipTransfers, 0, 'unobserved handler must not be guessed');
+  });
+}
+
+for (const movie of require('../fixtures/grimlite-cutscene/cached-movies.json')) {
+  test('audited cached timeline skips through its stock exit: ' + movie.path, () => {
+    const run = scenario();
+    const destinations = [], quests = [];
+    run.contentLoader.content.loaderInfo = { url: 'http://127.0.0.1:41234/game/gamefiles/' + movie.path + '#cached' };
+    run.g.world.gotoTown = (...args) => destinations.push(args);
+    run.g.world.myAvatar = { checkTempItem: () => true };
+    run.g.world.tryQuestComplete = id => quests.push(id);
+    run.g.world.map.objCutTarget = { strMap: 'None', strFrame: 'AfterMovie', strPad: 'Right' };
+    let requested = 0;
+    const scene = {
+      className: movie.scene, rootClass: null, currentFrame: 2, currentLabels: [],
+      totalFrames: movie.totalFrames, framesLoaded: movie.totalFrames - 1,
+      __setPropDict: {}, __id2_: 'ending-component', int: value => value, MovieClip: value => value,
+      stage: { getChildAt: () => run.g }, SoundMixer: { stopAll() {} }, stop() {},
+      gotoAndPlay(frame) { requested++; this.currentFrame = frame; }
+    };
+    for (const name of movie.ending.match(/__setProp\w+(?=\()/g) || []) scene[name] = () => {};
+    if (movie.ending.includes('function afterCutTransfer(')) scene.afterCutTransfer = method(movie.ending, 'afterCutTransfer');
+    scene.finish = method(movie.ending, 'frame' + movie.exitFrame);
+    run.contentLoader.content.CS = scene;
+    run.g.mcExtSWF.children.push(run.contentLoader.content);
+    run.g.world.visible = run.g.ui.visible = false;
+    run.bridge.aqSetSkipCutscenesEnabled(true);
+    run.tick();
+    assert.equal(requested, 0, 'do not jump beyond the loaded frames');
+    assert.equal(run.g.mcExtSWF.numChildren, 1);
+    scene.framesLoaded = scene.totalFrames;
+    run.tick();
+    assert.equal(scene.currentFrame, movie.exitFrame, 'use the audited ending, not totalFrames');
+    assert.strictEqual(scene.rootClass, run.g);
+    run.tick();
+    assert.equal(requested, 1, 'request the exit only once');
+    scene.finish();
+    assert.equal(run.g.mcExtSWF.numChildren, 0, 'the actual stock ending removes the movie');
+    assert.equal(run.g.world.visible, true);
+    assert.equal(run.g.ui.visible, true);
+    if (movie.ending.includes('cHandle.transfer()')) assert.equal(run.g.world.strFrame, 'Enter');
+    if (movie.ending.includes('gotoTown("dragonkoi"')) assert.deepStrictEqual(destinations, [['dragonkoi', 'Enter', 'Spawn']]);
+    if (movie.ending.includes('afterCutTransfer()')) assert.equal(run.g.world.strFrame, 'AfterMovie');
+    if (movie.ending.includes('tryQuestComplete(344)')) assert.deepStrictEqual(quests, [344]);
+    run.tick();
+    assert.equal(run.bridge.skipMovie, null);
+  });
+}
+
+test('an unaudited legacy-looking movie plays normally instead of guessing its exit', () => {
+  const run = scenario();
+  run.contentLoader.content.CS = {
+    className: 'Cutscene_fla::intro2_1', totalFrames: 999, framesLoaded: 999,
+    currentFrame: 2, currentLabels: [], btnSkip: true, rootClass: null,
+    gotoAndPlay() { assert.fail('unknown ending must not be guessed'); }
+  };
+  run.g.mcExtSWF.children.push(run.contentLoader.content);
+  run.bridge.aqSetSkipCutscenesEnabled(true);
+  run.tick();
+  assert.equal(run.g.mcExtSWF.numChildren, 1);
+  assert.equal(run.bridge.skipLast, 'unrecognized movie');
+});
+
+for (const url of [
+  'https://game.aq.com/game/gamefiles/maps/Other/Cutscene-Vath1-2023.swf',
+  'https://game.aq.com/game/gamefiles/maps/Dwarfhold/Unrelated.swf',
+  'https://game.aq.com/game/gamefiles/maps/Dwarfhold/Cutscene-Vath1-2023.swf.bak',
+  'https://game.aq.com/other.swf?asset=/game/gamefiles/maps/Dwarfhold/Cutscene-Vath1-2023.swf',
+  'not-a-url', ''
+]) {
+  test('matching legacy class/count at an unaudited URL stays attached: ' + url, () => {
+    const run = scenario();
+    let jumps = 0;
+    run.contentLoader.content.loaderInfo = { url };
+    run.contentLoader.content.CS = {
+      className: 'Cutscene_fla::intro2_1', totalFrames: 683, framesLoaded: 683,
+      currentFrame: 2, currentLabels: [], rootClass: null,
+      gotoAndPlay() { jumps++; }
+    };
+    run.g.mcExtSWF.children.push(run.contentLoader.content);
+    run.bridge.aqSetSkipCutscenesEnabled(true);
+    run.tick();
+    assert.equal(jumps, 0, 'unrelated movie must not jump to the audited exit');
+    assert.equal(run.g.mcExtSWF.numChildren, 1);
+    assert.equal(run.bridge.skipLast, 'unrecognized movie');
+    assert.equal(run.bridge.skipCutscenes, true);
+  });
+}

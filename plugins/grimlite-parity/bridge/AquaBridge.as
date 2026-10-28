@@ -220,6 +220,27 @@ package {
             return toJson(status);
         }
 
+        // Audited cached stock endings; provenance and native callbacks live in the cutscene fixtures.
+        private function cachedCutsceneExit(scene:Object, movie:Object):int {
+            var url:String = movie.loaderInfo == null ? '' : movie.loaderInfo.url;
+            var match:Array = /^https?:\/\/[^\/?#]+(\/[^?#]*)(?:[?#]|$)/i.exec(url);
+            if (match == null) return 0;
+            switch (match[1] + ':' + getQualifiedClassName(scene) + ':' + scene.totalFrames) {
+                case '/game/gamefiles/maps/watchtower/Cutscene-ChaosIsComing-1-r1.swf:Cutscene_fla::Item3_3_Item2_2_intro2_1:1960': return 1960;
+                case '/game/gamefiles/maps/TheSpan/Cutscene-TheSpan-01.swf:Cutscene_fla::Item3_3_Item2_2_intro2_1:392': return 375;
+                case '/game/gamefiles/maps/Dwarfhold/Cutscene-Vath1-2023.swf:Cutscene_fla::intro2_1:683': return 682;
+                case '/game/gamefiles/maps/Dwarfhold/Cutscene-Vath5-2023.swf:Cutscene_fla::intro2_1:677': return 677;
+                case '/game/gamefiles/maps/Yokai/Cutscene-Yokai-Kitsune-6r1.swf:Cutscene_fla::intro2_1:169': return 169;
+                case '/game/gamefiles/maps/Yokai/Cutscene-Yokai-2a.swf:Cutscene_fla::intro2_1:288': return 288;
+                case '/game/gamefiles/maps/Yokai/Cutscene-Yokai-3a-Ryoku.swf:Cutscene_fla::cutsceneryoku_1:623': return 623;
+                case '/game/gamefiles/maps/Dwarfhold/Cutscene-Vath2-2023.swf:Cutscene_fla::intro2_1:497': return 496;
+                case '/game/gamefiles/maps/Yokai/Cutscene-Yokai-1a.swf:Cutscene_fla::Map1_2_intro2_1:177': return 177;
+                case '/game/gamefiles/maps/Dwarfhold/Cutscene-Captured-19Jul18.swf:Cutscene_fla::cutscene1_1:255': return 255;
+                case '/game/gamefiles/maps/Dwarfhold/Cutscene-VathShowdown-2023.swf:Cutscene_fla::cutscene1_1:292': return 292;
+            }
+            return 0;
+        }
+
         private function onSkipCutsceneFrame(event:Event):void {
             if (!skipCutscenes || game == null) return;
             try {
@@ -259,23 +280,30 @@ package {
                         var movie:Object = game.mcExtSWF.getChildAt(i);
                         var scene:Object = movie != null && ("CS" in movie) ? movie.CS : null;
                         if (scene == null || !("currentLabels" in scene)) continue;
+                        var exitFrame:Object = null;
                         for (var j:int = 0; j < scene.currentLabels.length; j++) {
                             var label:Object = scene.currentLabels[j];
-                            if (label.name != 'Skipped') continue;
-                            // INIT can attach before frame 2 initializes the movie's rootClass.
-                            if (!loading && world != null && world.map != null && !world.mapLoadInProgress && scene.currentFrame > 1) {
-                                if (skipMovie !== scene) {
-                                    skipMovie = scene;
-                                    scene.gotoAndPlay(label.name);
-                                }
-                            }
-                            skipLast = 'movie exit';
-                            return;
+                            if (label.name == 'Skipped') exitFrame = label.name;
                         }
+                        // Some stock movies have no skip label, or end before totalFrames.
+                        var legacyFrame:int = exitFrame == null ? cachedCutsceneExit(scene, movie) : 0;
+                        var legacy:Boolean = legacyFrame > 0;
+                        if (legacy) exitFrame = legacyFrame;
+                        if (exitFrame == null) continue;
+                        // INIT can attach before initialization or the final frame has downloaded.
+                        if (!loading && world != null && world.map != null && !world.mapLoadInProgress &&
+                            scene.currentFrame > 1 && (!legacy || scene.framesLoaded == scene.totalFrames)) {
+                            if (skipMovie !== scene) {
+                                if (("rootClass" in scene) && scene.rootClass == null) scene.rootClass = game;
+                                skipMovie = scene;
+                                scene.gotoAndPlay(exitFrame);
+                            }
+                        }
+                        skipLast = 'movie exit';
+                        return;
                     }
-                    // Direct playback without a native skip timeline retains the baseline drain.
-                    game.clearExternamSWF();
-                    skipLast = 'drained';
+                    // Unknown movies may own the only room/map exit; let their native ending run.
+                    skipLast = 'unrecognized movie';
                 }
             } catch (error:Error) {
                 aqSetSkipCutscenesEnabled(false);
