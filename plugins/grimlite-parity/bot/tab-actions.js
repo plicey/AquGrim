@@ -485,6 +485,7 @@ const COMMAND_LISTS = {
 // Ticks that write Configuration straight away (the reference's *CheckedChanged handlers).
 const SETTINGS = {
     chkBankOnStop: 'BankOnStop',
+    chkPickup: 'EnablePickup',
     chkReject: 'EnableRejection',
     chkPickupAll: 'EnablePickupAll',
     chkPickupAcTag: 'EnablePickupAcTagged',

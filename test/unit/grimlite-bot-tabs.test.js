@@ -272,7 +272,7 @@ test('a list button contributes the rows the reference puts in each of the other
 
 test('a settings control writes the Configuration key the reference binds it to', () => {
   const expected = {
-    chkBankOnStop: 'BankOnStop', chkReject: 'EnableRejection',
+    chkBankOnStop: 'BankOnStop', chkPickup: 'EnablePickup', chkReject: 'EnableRejection',
     chkPickupAll: 'EnablePickupAll', chkPickupAcTag: 'EnablePickupAcTagged',
     chkRestartDeath: 'RestartUponDeath', chkRestartAFK: 'RestartOnAFK', chkRelog: 'AutoRelogin',
     chkRelogRetry: 'RelogRetryUponFailure', chkSkip: 'SkipDelayIndexIf', chkFollowOnly: 'FollowCheck',
@@ -316,12 +316,4 @@ test('a statement is built with the three fields the reference always carries', 
     Value1: 'Enter',
     Value2: ''
   });
-});
-
-
-test('whitelist auto-pickup is explained without a redundant enable checkbox', () => {
-  assert.strictEqual(find('chkPickup'), null);
-  assert.strictEqual(find('lblPickup').kind, 'label');
-  assert.strictEqual(find('lblPickup').text, 'Whitelist auto-pickup');
-  assert.strictEqual(actions.SETTINGS.chkPickup, undefined);
 });
