@@ -94,7 +94,7 @@ const LAYOUTS = {
       "darkGroupBox4": [387, 4, 151, 146],
       "chkInventOnStart": [11, 102, 136, 17],
       "chkPickupAll": [11, 19, 102, 17],
-      "chkPickup": [11, 39, 114, 17],
+      "lblPickup": [11, 39, 114, 17],
       "chkReject": [11, 81, 130, 17],
       "chkPickupAcTag": [11, 60, 135, 17],
       "chkBankOnStop": [11, 122, 134, 17],

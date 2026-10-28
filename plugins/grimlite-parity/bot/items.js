@@ -1127,7 +1127,8 @@ function handlers(access) {
             const state = number(command.state, 0);
             if (state === 0) setConfig(ctx, access, 'EnablePickup', true);
             else if (state === 1) setConfig(ctx, access, 'EnablePickup', false);
-            else if (state === 2) setConfig(ctx, access, 'EnablePickup', !config.EnablePickup);
+            else if (state === 2) setConfig(ctx, access, 'EnablePickup',
+                !(typeof ctx.whitelistPickupEnabled === 'function' ? ctx.whitelistPickupEnabled() : config.EnablePickup));
             else if (state === 3) {
                 const held = dropsOf(config);
                 if (!held.filter(function (name) { return lower(name) === lower(itemName); }).length) {

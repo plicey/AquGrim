@@ -191,6 +191,8 @@ function createEngine(deps) {
     let document = null;      // the parsed .gbot, mutated the way the editor mutates it
     let editorControls = {};  // the form-only values (invent on start, quest delay, auto-correct)
     let config = null;        // the Configuration view: the document plus the C# defaults
+    let whitelistPickup = new WeakMap(); // Explicit script switches, never loaded/default flags.
+    let killDrops = [];
     const vars = {};          // Configuration.Tempvariable, per engine
     const ints = {};          // Configuration.Tempvalues, per engine
     let username = '';
@@ -846,13 +848,14 @@ function createEngine(deps) {
         const dropConfig = config;
         const shouldReject = function () {
             return running && config === dropConfig && config.EnableRejection &&
-                config.Drops && !pushes(config.Drops);
+                config.Drops && !pushes(config.Drops) && !killTarget && !pushes(killDrops);
         };
         const pushes = function (list) {
             return (Array.isArray(list) ? list : []).some(function (entry) {
-                return String(entry).toLowerCase() === name.toLowerCase();
+                return String(entry).trim().toLowerCase() === name.toLowerCase();
             });
         };
+        const killTarget = pushes(killDrops);
         const id = drop.ItemID === undefined ? drop.Id : drop.ItemID;
 
         if (config.NotifyUponDrop && pushes(config.NotifyUponDrop) && typeof deps.beep === 'function') {
@@ -860,7 +863,7 @@ function createEngine(deps) {
         }
         if (config.EnablePickupAll) {
             if (id !== undefined && id !== null) await pickupDrop(id);
-        } else if (config.EnablePickup && config.Drops && pushes(config.Drops)) {
+        } else if (killTarget || (whitelistPickup.get(config) !== false && pushes(config.Drops))) {
             if (id !== undefined && id !== null) await pickupDrop(id);
         }
         if (config.EnablePickupAcTagged && isAcDrop(drop) && id !== undefined && id !== null) {
@@ -1058,7 +1061,11 @@ function createEngine(deps) {
             returnToPushed: returnToPushed,
             botsDirectory: botsDirectory,
             config: function () { return config; },
-            setConfig: function (key, value) { setConfig(document, config, key, value); },
+            whitelistPickupEnabled: function () { return whitelistPickup.get(config) !== false; },
+            setConfig: function (key, value) {
+                if (key === 'EnablePickup') whitelistPickup.set(config, value === true);
+                setConfig(document, config, key, value);
+            },
             /** CmdDelayedAnims' own `instance.paused`, which holds the loop but not running. */
             pauseFor: function (on) { paused = on === true; },
             delayed: delayed,
@@ -2791,7 +2798,17 @@ function createEngine(deps) {
         if (!handler) {
             log(className + ' is not implemented yet (#38-#42); skipping it');
         } else {
-            const outcome = await Promise.resolve(handler(context(), dispatchedCommand));
+            // Only the currently executing normal-item hunt owns these drop names.
+            const huntsItems = ['CmdKillFor', 'CmdShortHunt'].indexOf(className) !== -1 &&
+                !Number(dispatchedCommand.ItemType) &&
+                isNaN(parseInt(String(dispatchedCommand.QuestId), 10));
+            killDrops = huntsItems ? varOf(dispatchedCommand.ItemName).split(',') : [];
+            let outcome;
+            try {
+                outcome = await Promise.resolve(handler(context(), dispatchedCommand));
+            } finally {
+                killDrops = [];
+            }
             if (typeof outcome === 'string') log(className + ': ' + outcome);
         }
 
@@ -2838,6 +2855,8 @@ function createEngine(deps) {
         document = bot;
         editorControls = editor && typeof editor === 'object' ? editor : {};
         config = parsed;
+        whitelistPickup = new WeakMap();
+        killDrops = [];
         index = 0;
         running = true;
         paused = false;

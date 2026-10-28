@@ -440,10 +440,9 @@ const TABS = [
             text:  "Pick up all items"
           },
           {
-            id:  "chkPickup",
-            kind:  "tick",
-            checked:  true,
-            text:  "Pick up whitelisted"
+            id:  "lblPickup",
+            kind:  "label",
+            text:  "Whitelist auto-pickup"
           },
           {
             id:  "chkReject",
