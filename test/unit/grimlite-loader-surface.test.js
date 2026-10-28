@@ -557,3 +557,23 @@ test('GetAccessLevel matches the loader\'s dataLeaf username, not the tree usern
         assert.strictEqual(level, 60);
     });
 });
+
+test('player lookups accept map-packet uoName and username-keyed partial leaves', async () => {
+    // Game.as moveToArea copies uoName from uoBranch; World.uoTreeLeafSet keys by username.
+    for (const player of [
+        { uoName: 'Master', strFrame: 'Enter', strPad: 'Spawn', intHP: 25, intHPMax: 100 },
+        { strFrame: 'Enter', strPad: 'Spawn', intHP: 25, intHPMax: 100 },
+        { strUsername: 'Master', strFrame: 'Enter', strPad: 'Spawn', intHP: 25, intHPMax: 100 }
+    ]) {
+        const api = access(fakeBridge({
+            'world.uoTree': { master: player }, 'world.strFrame': 'Enter'
+        }, {}));
+        assert.deepStrictEqual(await api.call('PlayerByName', ['MASTER']), player);
+        assert.strictEqual(await api.call('GetCellPlayers', ['MASTER']), true);
+        assert.strictEqual(await api.call('CheckCellPlayer', ['MASTER', 'Enter']), true);
+        assert.strictEqual(await api.call('GetPlayerHealth', ['MASTER']), 25);
+        assert.strictEqual(await api.call('GetPlayerHealthPercentage', ['MASTER']), 25);
+        assert.strictEqual(await api.call('GetCellPlayers', ['absent']), false);
+        assert.strictEqual(await api.call('CheckCellPlayer', ['master', 'Other']), false);
+    }
+});

@@ -625,8 +625,7 @@ async function activate(host) {
     function toggleMaid() {
         if (!maid || !maid.maid) return { ok: false, error: 'the Maid window is not ready' };
         const on = !maid.maid.running();
-        maid.maid.setEnabled(on);
-        if (on) maid.maid.start();
+        maid.window.set({ enabled: on });
         return { ok: true, enabled: on };
     }
 

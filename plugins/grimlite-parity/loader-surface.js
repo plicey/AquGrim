@@ -61,7 +61,9 @@ function playerIn(tree, username) {
     const keys = tree && typeof tree === 'object' ? Object.keys(tree) : [];
     for (let i = 0; i < keys.length; i++) {
         const player = tree[keys[i]];
-        if (player && typeof player.strUsername === 'string' && player.strUsername.toLowerCase() === want) return player;
+        // Map packets use uoName; World.uoTreeLeafSet also keys partial leaves by username.
+        const name = player && (player.strUsername || player.uoName || keys[i]);
+        if (typeof name === 'string' && name.toLowerCase() === want) return player;
     }
     return null;
 }
