@@ -42,7 +42,7 @@ function scenario(realReadiness = false) {
     skipMovie: null, skipTransfers: 0, skipLast: 'off', toJson: JSON.stringify,
     getQualifiedClassName: scene => scene.className || 'unrecognized',
     cachedCutsceneExit: method(native, 'cachedCutsceneExit', 'scene,movie'),
-    walkSpeedEnabled: false, walkSpeed: 20, walkRoot: null,
+    rangeEnabled: false, walkSpeedEnabled: false, walkSpeed: 20, walkRoot: null,
     jsonError: error => JSON.stringify({ error: error.message }),
     aqSetWalkSpeedEnabled: method(native, 'aqSetWalkSpeedEnabled', 'enabled,speed'),
     onWalkSpeedFrame: method(native, 'onWalkSpeedFrame', 'event'),

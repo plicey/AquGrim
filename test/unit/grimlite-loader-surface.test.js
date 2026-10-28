@@ -303,27 +303,12 @@ test('selectArrayObjects projects one field off each entry, as the loader does',
     });
 });
 
-test('a compute row can write, not only read and call', () => {
-    // SetInfiniteRange is a compute row because its body is a loop over six writes. It used to
-    // reach for a set the context did not expose and fail with "ctx.set is not a function" - a
-    // compute row that cannot write is a hole in the surface, so this pins it.
-    const written = [];
-    const game = surface.createLoaderSurface(function (callback, args) {
-        if (callback === 'setGameObject') {
-            written.push(args);
-            return Promise.resolve(args[1]);
-        }
-        return Promise.resolve('ok');
-    });
-    return game.call('SetInfiniteRange', []).then(() => {
-        assert.strictEqual(written.length, 6, 'the loader writes slots 0 through 5');
-        assert.deepStrictEqual(written.map((w) => w[0]), [
-            'world.actions.active.0.range', 'world.actions.active.1.range',
-            'world.actions.active.2.range', 'world.actions.active.3.range',
-            'world.actions.active.4.range', 'world.actions.active.5.range'
-        ]);
-        written.forEach((w) => assert.strictEqual(w[1], 20000));
-    });
+test('Infinite Range loader surface keeps legacy calls one-shot through the native callback', async () => {
+    const calls = [];
+    const game = surface.createLoaderSurface(async (name, args) => { calls.push([name, args]); return true; });
+    await game.call('SetInfiniteRange', []);
+    await game.call('SetInfiniteRange', [false]);
+    assert.deepStrictEqual(calls, [['SetInfiniteRangeEnabled', [true, false]], ['SetInfiniteRangeEnabled', [false, true]]]);
 });
 
 test('the surface and the options adapter agree on the names they both route', () => {

@@ -367,12 +367,10 @@ const SURFACE = {
             'the six that needed one'
     },
     SetWalkSpeed: { set: 'world.WALKSPEED', value: function (p) { return parseInt(p[0], 10); } },
-    // Settings.as: while i <= 5, world.actions.active[i].range = 20000.
+    // Keep legacy one-shot semantics, with originals retained on the native action objects.
     SetInfiniteRange: {
-        compute: function (ctx) {
-            const jobs = [];
-            for (let i = 0; i <= 5; i++) jobs.push(ctx.set('world.actions.active.' + i + '.range', 20000));
-            return Promise.all(jobs);
+        compute: function (ctx, p) {
+            return ctx.raw('SetInfiniteRangeEnabled', [p[0] !== false, p.length > 0]);
         }
     },
     // Settings.as: the target's own clip is put where the player's is, but only where there IS a

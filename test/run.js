@@ -107,6 +107,7 @@ global.test = function (name, fn) {
   './unit/grimlite-travel.test.js',
   './unit/grimlite-travel-window.test.js',
   './unit/grimlite-options.test.js',
+  './unit/grimlite-infinite-range.test.js',
   './unit/grimlite-cutscene-lifecycle.test.js',
   './unit/grimlite-hotkeys.test.js',
   './unit/grimlite-options-hotkeys-windows.test.js',

@@ -75,11 +75,9 @@ const LOADER_ROUTE = {
         return g.call0('world.toggleBank');
     },
 
-    // Settings.as:SetInfiniteRange - while i <= 5, world.actions.active[i].range = 20000.
+    // Native callback keeps original action identities; legacy calls remain one-shot.
     SetInfiniteRange: async function (g) {
-        for (let i = 0; i <= 5; i++) {
-            await g.set('world.actions.active.' + i + '.range', 20000);
-        }
+        return g.raw('SetInfiniteRangeEnabled', [true, false]);
     },
 
     // Settings.as:SetProvokeMonsters - world.aggroAllMon().
@@ -230,6 +228,12 @@ function createGameCalls(opts) {
 
         /** Attach if needed, then call a bridge callback. Never rejects. */
         call: async function (name, args) {
+            // Never let a legacy loader mutate ranges before originals are retained.
+            if ((name === 'callGameFunction' || name === 'callGameFunction0') &&
+                args && args[0] === 'SetInfiniteRange') {
+                name = 'SetInfiniteRangeEnabled';
+                args = [args[1] !== false, args.length > 1];
+            }
             // Never probe a legacy loader's destructive drain, including on untick.
             if ((name === 'callGameFunction' || name === 'callGameFunction0') &&
                 args && args[0] === 'SetSkipCutscenes') {

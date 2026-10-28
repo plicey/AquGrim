@@ -134,7 +134,7 @@ test('the one-shot toggles send when changed; provoke and enemy magnet wait for 
   // Root.cs calls these as their CheckOnClick handlers run. Provoke and Enemy Magnet only set
   // their flag there; OptionsManager.ApplySettings sends those two (OptionsManager.cs:188-217).
   assert.deepStrictEqual(run.calls.calls, [
-    ['callGameFunction0', ['SetInfiniteRange']],
+    ['callGameFunction', ['SetInfiniteRange', true]],
     ['callGameFunction0', ['DestroyPlayers']],
     ['callGameFunction', ['SetSkipCutscenes', true]]
   ]);
@@ -255,7 +255,7 @@ test('Respawn Provoke suppresses the provoke call the Options loop would make', 
 test('a toggle the reference never had an off call for sends nothing when switched off', async () => {
   // Root.cs:1264-1310 only sets the flag on untick for these five; the reference has no
   // "undo" call for them, so neither does this port (nothing invented in its place).
-  for (const id of ['infiniteRange', 'provoke', 'enemyMagnet', 'hidePlayers']) {
+  for (const id of ['provoke', 'enemyMagnet', 'hidePlayers']) {
     const run = createOptions();
     await run.feature.setToggle(id, true);
     run.calls.calls.length = 0;
@@ -534,7 +534,7 @@ test('slow busy ticks drop while walkspeed continues and stop cancels remaining 
     calls: { call: function (name, args) {
       if (!args.length) return Promise.resolve({ ok: true, value: null });
       entered.push(name === 'SetWalkSpeedEnabled' ? name : args[0]);
-      if (args[0] === 'SetInfiniteRange') return new Promise(resolve => { release = resolve; reachedRange(); });
+      if (args[0] === 'SetInfiniteRange' && args[1] !== false) return new Promise(resolve => { release = resolve; reachedRange(); });
       return Promise.resolve({ ok: true });
     } }
   });
@@ -549,10 +549,11 @@ test('slow busy ticks drop while walkspeed continues and stop cancels remaining 
   assert.deepStrictEqual(entered, ['SetSkipCutscenes', 'SetInfiniteRange'].concat(Array(20).fill('SetWalkSpeedEnabled')),
     'slow ticks drop while the independent fast timer continues');
   await run.feature.setToggle('skipCutscenes', false);
-  await run.feature.stop();
-  const beforeStop = entered.slice();
+  const stopping = run.feature.stop();
   release({ ok: true });
   await pending;
+  await stopping;
+  const beforeStop = entered.slice();
   assert.deepStrictEqual(entered, beforeStop, 'stop cancels the remaining writes');
   await slow.fn();
   await fast.fn();

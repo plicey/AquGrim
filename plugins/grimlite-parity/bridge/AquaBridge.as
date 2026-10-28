@@ -38,6 +38,9 @@ package {
         // Bounded so a page that never polls cannot grow the movie's memory without limit.
         private static const MAX_EVENTS:int = 200;
 
+        private var rangeEnabled:Boolean = false;
+        private var rangeRoot:Object = null;
+        private var rangeOriginals:Array = [];
         private var walkSpeedEnabled:Boolean = false;
         private var walkSpeed:Number = 20;
         private var walkRoot:Object = null;
@@ -111,6 +114,7 @@ package {
             addCallback('CancelTargetSelf', aqCancelTargetSelf);
             addCallback('SetTargetPvP', aqSetTargetPvP);
             addCallback('RejectDrop', aqRejectDrop);
+            addCallback('SetInfiniteRangeEnabled', aqSetInfiniteRangeEnabled);
             addCallback('SetWalkSpeedEnabled', aqSetWalkSpeedEnabled);
             addCallback('SetSkipCutscenesEnabled', aqSetSkipCutscenesEnabled);
             addCallback('GetSkipCutscenesStatus', aqGetSkipCutscenesStatus);
@@ -122,6 +126,88 @@ package {
             } catch (e:Error) {
                 emit('error', 'could not register ' + name + ': ' + e.message);
             }
+        }
+
+        private function restoreInfiniteRange():void {
+            for (var i:int = 0; i < rangeOriginals.length; i++) {
+                var saved:Object = rangeOriginals[i];
+                if (saved.action == null) continue;
+                // A native refresh after our last frame already supplies the restored value.
+                if (saved.action.range === 20000) saved.action.range = saved.range;
+                saved.action = null;
+            }
+        }
+
+        private function applyInfiniteRange():void {
+            var world:Object = game == null ? null : game.world;
+            var actions:Object = world == null || world.actions == null ? null : world.actions.active;
+            var i:int;
+            var j:int;
+            var saved:Object;
+            // Retire identities before reusing their records; slots may move between skills.
+            for (i = 0; i < rangeOriginals.length; i++) {
+                saved = rangeOriginals[i];
+                if (saved.action == null) continue;
+                var present:Boolean = false;
+                for (j = 0; actions != null && j <= 5; j++) {
+                    if (actions[j] === saved.action) present = true;
+                }
+                if (!present) {
+                    if (saved.action.range === 20000) saved.action.range = saved.range;
+                    saved.action = null;
+                }
+            }
+            if (actions == null) return;
+            for (i = 0; i <= 5; i++) {
+                var action:Object = actions[i];
+                if (action == null || !("range" in action)) continue;
+                var record:Object = null;
+                var empty:Object = null;
+                for (j = 0; j < rangeOriginals.length; j++) {
+                    saved = rangeOriginals[j];
+                    if (saved.action === action) record = saved;
+                    else if (saved.action == null) empty = saved;
+                }
+                if (record == null) {
+                    record = empty;
+                    if (record == null) {
+                        record = { action:null, range:null };
+                        rangeOriginals.push(record);
+                    }
+                    record.action = action;
+                    record.range = action.range;
+                } else if (action.range !== 20000) {
+                    record.range = action.range;
+                }
+                action.range = 20000;
+            }
+        }
+
+        private function aqSetInfiniteRangeEnabled(enabled:Boolean, maintain:Boolean = false):String {
+            try {
+                if (rangeRoot != null && (!enabled || rangeRoot !== game)) {
+                    rangeRoot.removeEventListener(Event.ENTER_FRAME, onInfiniteRangeFrame);
+                    rangeRoot = null;
+                }
+                // Legacy bot/Maid calls apply once; they must not disarm an Options watcher.
+                if (!enabled) rangeEnabled = false;
+                else if (maintain) rangeEnabled = true;
+                if (rangeEnabled && game != null && rangeRoot == null) {
+                    rangeRoot = game;
+                    rangeRoot.addEventListener(Event.ENTER_FRAME, onInfiniteRangeFrame, false, -2147483648, true);
+                }
+                if (enabled) applyInfiniteRange();
+                else restoreInfiniteRange();
+            } catch (e:Error) {
+                return jsonError(e);
+            }
+            return toJson(enabled);
+        }
+
+        private function onInfiniteRangeFrame(event:Event):void {
+            if (!rangeEnabled) return;
+            try { applyInfiniteRange(); }
+            catch (e:Error) { }
         }
 
         private function aqSetWalkSpeedEnabled(enabled:Boolean, speed:Number):String {
@@ -834,6 +920,7 @@ package {
             }
 
             game = candidate;
+            if (rangeEnabled) aqSetInfiniteRangeEnabled(true, true);
             if (walkSpeedEnabled || walkRoot != null) aqSetWalkSpeedEnabled(walkSpeedEnabled, walkSpeed);
             aqSetSkipCutscenesEnabled(skipCutscenes);
             stopGameRootWait();

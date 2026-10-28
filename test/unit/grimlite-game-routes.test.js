@@ -57,19 +57,11 @@ function route(calls) {
     return calls.slice(1);
 }
 
-test('Infinite Range becomes the six action ranges the loader sets', async () => {
-    // Settings.as:SetInfiniteRange: while(i <= 5) world.actions.active[i].range = 20000.
+test('Infinite Range uses the identity-preserving native callback as a one-shot', async () => {
     const bridge = fakeBridge();
     const answer = await gameCalls(bridge).call('callGameFunction0', ['SetInfiniteRange']);
     assert.strictEqual(answer.ok, true, answer.error);
-    assert.deepStrictEqual(route(bridge.calls), [
-        ['setGameObject', ['world.actions.active.0.range', 20000]],
-        ['setGameObject', ['world.actions.active.1.range', 20000]],
-        ['setGameObject', ['world.actions.active.2.range', 20000]],
-        ['setGameObject', ['world.actions.active.3.range', 20000]],
-        ['setGameObject', ['world.actions.active.4.range', 20000]],
-        ['setGameObject', ['world.actions.active.5.range', 20000]]
-    ]);
+    assert.deepStrictEqual(bridge.calls, [['SetInfiniteRangeEnabled', [true, false]]]);
 });
 
 test('Provoke becomes the game own aggro call', async () => {

@@ -92,7 +92,7 @@ function createOptionsFeature(host, deps) {
         }
     }
 
-    const nativeQueues = { skipCutscenes: Promise.resolve(), walkSpeed: Promise.resolve() };
+    const nativeQueues = { infiniteRange: Promise.resolve(), skipCutscenes: Promise.resolve(), walkSpeed: Promise.resolve() };
 
     async function send(toggle, on) {
         const walk = toggle.id === 'walkSpeed';
@@ -168,7 +168,7 @@ function createOptionsFeature(host, deps) {
             if (initial) return;
             pass += 1;
             if (!active() || pass % 2 !== 0) return;
-            // Infinite Range is a one-shot upstream, but fresh games and skills replace it.
+            // Reassert Infinite Range maintenance after reconnect as well as ordinary reapply.
             const ids = ['infiniteRange'].concat(toggles.SECOND_PASS_ORDER).filter(id => id !== 'skipCutscenes');
             for (let i = 0; i < ids.length && active(); i++) {
                 const toggle = toggles.byId(ids[i]);
@@ -266,8 +266,7 @@ function createOptionsFeature(host, deps) {
                 // while its loop runs (OptionsManager.cs:188-217).
                 results[id] = { ok: true, error: null };
             } else if (wanted || toggle.callAlways) {
-                // Root.cs calls these the moment the tick goes on. The five without an off call
-                // in the reference send nothing on untick, so neither does this port.
+                // Stateful toggles also send untick; action-only toggles run when selected.
                 answer = await send(toggle, wanted);
             } else {
                 results[id] = { ok: true, error: null };
@@ -350,6 +349,7 @@ function createOptionsFeature(host, deps) {
             if (wasApplying) notifyApplying();
             const pending = [];
             if (state.skipCutscenes || results.skipCutscenes) pending.push(send(toggles.byId('skipCutscenes'), false));
+            if (state.infiniteRange || results.infiniteRange) pending.push(send(toggles.byId('infiniteRange'), false));
             if (state.walkSpeed || results.walkSpeed) pending.push(send(toggles.byId('walkSpeed'), false));
             return Promise.all(pending);
         },
