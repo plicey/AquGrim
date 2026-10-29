@@ -50,9 +50,9 @@
     "aqlite_old.swf"
   ],
   "storeAliases": {
-    "reminders": "aquastar_reminders.json",
-    "todo": "aquastar_todo.json",
-    "strategy": "aquastar_strategy.json",
-    "inventory": "aquastar_inventory.json"
+    "reminders": "aquagrim_reminders.json",
+    "todo": "aquagrim_todo.json",
+    "strategy": "aquagrim_strategy.json",
+    "inventory": "aquagrim_inventory.json"
   }
 }

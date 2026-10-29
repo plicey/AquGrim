@@ -1,4 +1,4 @@
-// Lightweight aquastar.json read for plugin boot flags (no Electron UI).
+// Lightweight aquagrim.json read for plugin boot flags (no Electron UI).
 const fs = require('fs');
 const path = require('path');
 const { resolvePluginFlags } = require('./plugin-loader.js');
@@ -19,7 +19,7 @@ function readSettingsObject(candidates) {
 }
 
 function readPluginFlagsFromDisk(appDataDirectory, env) {
-    const appdataJson = path.join(appDataDirectory, 'aquastar.json');
+    const appdataJson = path.join(appDataDirectory, 'aquagrim.json');
     const settings = readSettingsObject([appdataJson]);
     return {
         settings: settings,

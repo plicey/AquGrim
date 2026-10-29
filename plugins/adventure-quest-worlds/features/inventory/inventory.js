@@ -18,7 +18,7 @@ const constant = require('../../../../res/const.js');
 const locale   = require('../../../../res/locale.js');
 const wikiNameVariants = require('../wikiview/nameVariants.js');
 
-const inventoryJsonFileName = constant.appName.toLocaleLowerCase() + '_inventory.json'; // "aquastar_inventory.json"
+const inventoryJsonFileName = constant.appName.toLocaleLowerCase() + '_inventory.json'; // "aquagrim_inventory.json"
 const inventoryJsonPath = path.join(constant.appDataDirectory, inventoryJsonFileName);
 
 const INVENTORY_PAGE_SIZE = 100;

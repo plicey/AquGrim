@@ -1,6 +1,6 @@
 // Per-plugin JSON stores wrapping repositories/json-store.js.
 // A plugin may keep permanent legacy filenames by declaring storeAliases in its manifest;
-// otherwise stores are named aquastar.<id>.<ns>.json.
+// otherwise stores are named aquagrim.<id>.<ns>.json.
 const path = require('path');
 const jsonStore = require('../../repositories/json-store.js');
 
@@ -8,7 +8,7 @@ function resolveStoreFileName(pluginId, ns, aliases) {
     if (aliases && Object.prototype.hasOwnProperty.call(aliases, ns)) {
         return aliases[ns];
     }
-    return 'aquastar.' + pluginId + '.' + ns + '.json';
+    return 'aquagrim.' + pluginId + '.' + ns + '.json';
 }
 
 function resolveStorePath(appDataDirectory, pluginId, ns, aliases) {

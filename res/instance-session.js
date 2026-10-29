@@ -7,6 +7,10 @@ const os = require('os');
 const path = require('path');
 
 const INSTANCE_FLAG = '--aquastar-instance';
+const APP_NAME = 'AquGrim';
+const LEGACY_APP_NAME = 'AquaStar';
+const LEGACY_PREFIX = 'aquastar';
+const APP_PREFIX = 'aquagrim';
 const SKIP = {
     'Cache': true,
     'Code Cache': true,
@@ -25,6 +29,35 @@ const SKIP = {
     'SS': true
 };
 let current = null;
+
+// Existing installs keep their cookies, settings and stores: move the old folder and the files
+// named after it into the AquGrim names. A failed rename leaves the old copy readable.
+function migrateLegacyData(root) {
+    const target = path.join(root, APP_NAME);
+    const legacy = path.join(root, LEGACY_APP_NAME);
+    try {
+        if (!fs.existsSync(target) && fs.existsSync(legacy)) fs.renameSync(legacy, target);
+    } catch (error) {
+        console.error('[AquGrim] Could not move ' + legacy + ': ' + error.message);
+    }
+    let entries;
+    try {
+        entries = fs.readdirSync(target, { withFileTypes: true });
+    } catch (error) {
+        return target;
+    }
+    entries.forEach(function (entry) {
+        if (!entry.isFile() || entry.name.toLowerCase().indexOf(LEGACY_PREFIX) !== 0) return;
+        const to = path.join(target, APP_PREFIX + entry.name.slice(LEGACY_PREFIX.length));
+        if (fs.existsSync(to)) return;
+        try {
+            fs.renameSync(path.join(target, entry.name), to);
+        } catch (error) {
+            console.error('[AquGrim] Could not rename ' + entry.name + ': ' + error.message);
+        }
+    });
+    return target;
+}
 
 function seedCopy(source, destination) {
     let entries;
@@ -52,7 +85,7 @@ function seedCopy(source, destination) {
 }
 
 function configure(app, argv) {
-    const persistent = path.join(app.getPath('appData'), 'AquaStar');
+    const persistent = migrateLegacyData(app.getPath('appData'));
     const additional = (argv || []).slice(1).indexOf(INSTANCE_FLAG) !== -1;
     fs.mkdirSync(persistent, { recursive: true });
     const appData = additional
@@ -104,7 +137,9 @@ function cleanup() {
 }
 
 module.exports = {
+    APP_NAME: APP_NAME,
     INSTANCE_FLAG: INSTANCE_FLAG,
+    migrateLegacyData: migrateLegacyData,
     cleanup: cleanup,
     configure: configure,
     current: function () { return current; },

@@ -11,7 +11,7 @@ const locale   = require('../../../../res/locale.js');
 const jsonStore = require('../../../../res/repositories/json-store.js');
 const listState = require('../../core/list-state.js');
 
-const remindersJsonFileName = constant.appName.toLocaleLowerCase() + '_reminders.json'; // "aquastar_reminders.json"
+const remindersJsonFileName = constant.appName.toLocaleLowerCase() + '_reminders.json'; // "aquagrim_reminders.json"
 const legacyRemindersJsonPath = path.join(app.getPath('appData'), remindersJsonFileName);
 const remindersJsonPath = path.join(constant.appDataDirectory, remindersJsonFileName);
 const remindersDefaultPath = path.join(__dirname, 'reminders_default.json');
@@ -40,7 +40,7 @@ function _migrateQuest(q) {
 }
 
 // Quickstart list bundled with the app (res/reminders_default.json) - only used to seed
-// a brand new aquastar_reminders.json on first run. After that, the user's own copy on
+// a brand new aquagrim_reminders.json on first run. After that, the user's own copy on
 // disk is authoritative; editing or deleting these seeded entries works like any other.
 function _buildSeedState() {
     let raw = { quests: [] };
