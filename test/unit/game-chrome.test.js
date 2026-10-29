@@ -416,3 +416,56 @@ test('toolbar button shows progress and reports success or failure in an expirin
   assert.strictEqual(status, '');
   assert.strictEqual(button.disabled, false);
 });
+
+test('chrome passes context editor declarations and responses through dispatch', async () => {
+  const editor = { title: 'Presets', selected: 'Farm', text: '2;4', items: [] };
+  const h = harness(Object.assign({}, DECLARATION, {
+    controls: () => [{ id: 'edit', kind: 'button', label: 'Edit', contextEditor: true }],
+    action: () => ({ ok: true, editor: editor })
+  }));
+  assert.strictEqual((await h.chrome.pageView(h.win)).controls[0].contextEditor, true);
+  assert.deepStrictEqual((await h.chrome.dispatch(h.win, 'edit', { contextEditor: true })).editor, editor);
+});
+
+test('popover closes after remembering temporary edits without native dialogs', async () => {
+  const source = fs.readFileSync(path.join(REPO, 'res/swf_wrapper.html'), 'utf8');
+  const calls = [];
+  const nodes = [];
+  function el(tag, className, text) {
+    const node = { tag, className, textContent: text, value: '', style: {}, children: [], events: {},
+      setAttribute() {}, focus() {}, contains() { return false; },
+      appendChild(child) { this.children.push(child); },
+      removeChild(child) { this.children.splice(this.children.indexOf(child), 1); },
+      addEventListener(name, fn) { this.events[name] = fn; },
+      remove() { this.removed = true; }
+    };
+    Object.defineProperty(node, 'firstChild', { get: () => node.children[0] });
+    nodes.push(node);
+    return node;
+  }
+  const events = {};
+  const scope = {
+    el, focusGame() {}, document: { body: el('body'), getElementById: () => null },
+    window: { innerWidth: 800, clearTimeout() {}, setTimeout() { return 1; },
+      addEventListener(name, fn) { events[name] = fn; }, removeEventListener() {} },
+    api: { action: async (id, args) => {
+      calls.push(args);
+      return { editor: { title: 'Class', className: 'Class', selected: 'Farm',
+        text: args.text || '1;2', items: [{ name: 'Farm', label: 'Farm' }] } };
+    } }
+  };
+  require('vm').runInNewContext(source.slice(source.indexOf('    function openContextEditor'),
+    source.indexOf('    /** One control, drawn')), scope);
+  scope.openContextEditor({ id: 'edit', label: 'Skills' }, {
+    getBoundingClientRect: () => ({ left: 10, bottom: 27 })
+  });
+  await new Promise(setImmediate);
+  const text = nodes.find(node => node.tag === 'textarea');
+  text.value = '4;3';
+  text.events.input();
+  events.keydown({ key: 'Escape', preventDefault() {} });
+  await new Promise(setImmediate);
+  assert.strictEqual(calls[1].draft, true);
+  assert.strictEqual(calls[1].text, '4;3');
+  assert.strictEqual(nodes.find(node => node.id === 'contextEditor').removed, true);
+});
