@@ -22,15 +22,21 @@ function portLine(appVersion) {
     return version ? 'AquGrim ' + version : 'AquGrim';
 }
 
-// The project's own credit first, then the three upstream headings AboutForm.Designer.cs stacks
-// down the left (darkLabel3 y=100, darkLabel1 y=243, darkLabel5 y=349). `url: null` is a name
-// whose handler is commented out upstream (pictureBox1_Click covers the jib-akbr link), so it is
-// shown unlinked.
+// The project's own credit first, then the AquaStar shell it runs on, then the three upstream
+// headings AboutForm.Designer.cs stacks down the left (darkLabel3 y=100, darkLabel1 y=243,
+// darkLabel5 y=349). `url: null` is a name whose handler is commented out upstream
+// (pictureBox1_Click covers the jib-akbr link), so it is shown unlinked.
 const TEAMS = [
     {
         heading: 'The AquGrim Project',
         links: [
             { label: 'plicey/AquGrim', url: 'https://github.com/plicey/AquGrim' }
+        ]
+    },
+    {
+        heading: 'The AquaStar Platform',
+        links: [
+            { label: 'aquaspy/AquaStar', url: 'https://github.com/aquaspy/AquaStar' }
         ]
     },
     {
