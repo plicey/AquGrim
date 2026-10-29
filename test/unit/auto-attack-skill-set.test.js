@@ -264,7 +264,8 @@ test('Insert uses the editor input flow and Default failures leave its text inta
       drafts.push(data);
       return rejected ? Promise.reject(new Error('IPC unavailable')) : Promise.resolve({});
     },
-    useDraft: function () {
+    useDraft: function (data) {
+      drafts.push(data);
       return rejected ? Promise.reject(new Error('IPC unavailable')) : Promise.resolve({ ok: false, error: 'disk full' });
     },
     useDefault: function () {
@@ -318,6 +319,15 @@ test('Insert uses the editor input flow and Default failures leave its text inta
   nodes.presets.handlers.change();
   await new Promise(setImmediate);
   assert.strictEqual(nodes.status.textContent, 'IPC unavailable', 'Use Draft rejection is handled');
+  nodes.skills.value = '';
+  nodes.useRotation.handlers.click();
+  assert.strictEqual(nodes.status.textContent, 'Add at least one skill before using this rotation.');
+  nodes.skills.value = before;
+  nodes.useRotation.handlers.click();
+  await new Promise(setImmediate);
+  assert.strictEqual(nodes.status.textContent, 'IPC unavailable', 'apply button handles IPC errors');
+  assert.strictEqual(drafts[drafts.length - 1].text, before, 'apply sends current editor text');
+  assert.strictEqual(drafts[drafts.length - 1].className, 'Shaman');
   rejected = false;
   nodes.presets.handlers.change();
   await new Promise(setImmediate);
@@ -349,8 +359,8 @@ test('Insert uses the editor input flow and Default failures leave its text inta
   nodes.insertReady.handlers.click();
   assert.ok(nodes.skills.value.startsWith('ready 2;wait 500ms;'));
   assert.doesNotThrow(function () { presets.parsePreset(nodes.skills.value); });
-  assert.ok(/class="row block-builder"/.test(page));
-  assert.ok(/\.block-builder\s*\{[^}]*flex-wrap: wrap/.test(page));
+  assert.ok(/class="block-builder"/.test(page));
+  assert.ok(/class="wait-builder"/.test(page));
   assert.ok(/<details><summary>Syntax and behavior<\/summary>/.test(page));
 
 });
