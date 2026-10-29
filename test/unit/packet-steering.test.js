@@ -458,3 +458,42 @@ test('a refused relay leaves no loopback listener behind', async () => {
   });
   await layer.close();
 });
+
+test('login steering survives redirects to a URL outside the login pattern', async () => {
+  const runtime = require('../../res/platform/plugin-runtime.js');
+  const upstream = http.createServer((req, res) => {
+    req.resume();
+    if (req.url === '/login' || req.url === '/redirected') {
+      res.writeHead(307, { Location: req.url === '/login' ? '/redirected' : '/canonical' });
+      res.end();
+    } else res.end(LOGIN_BODY);
+  });
+  await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
+  const upstreamOrigin = 'http://127.0.0.1:' + upstream.address().port;
+  let layer;
+  runtime.clear();
+  runtime.setDependencies({ constant: {}, createOriginProxy,
+    packetLayer: () => layer });
+  try {
+    const baseUrl = await runtime.startGameOrigin({ routes: [{ prefix: '/', origin: upstreamOrigin }] });
+    layer = await packetLayer.createPacketLayer({
+      declarations: [Object.assign({}, DECLARATION, { urls: [upstreamOrigin + '/login*'] })],
+      ctx: { settings: { packetSteering: true } }
+    }).start();
+    const body = await new Promise((resolve, reject) => {
+      http.get(baseUrl + '/login', res => {
+        const chunks = [];
+        res.on('data', chunk => chunks.push(chunk));
+        res.on('end', () => resolve(Buffer.concat(chunks).toString()));
+      }).on('error', reject);
+    });
+    assert.ok(JSON.parse(body).servers.every(row => row.sIP === '127.0.0.1'),
+      'a redirected login must still send game traffic through the drop relay');
+  } finally {
+    if (layer) await layer.close();
+    await runtime.stopGameOrigin();
+    runtime.setDependencies({ packetLayer: () => null });
+    runtime.clear();
+    await new Promise(resolve => upstream.close(resolve));
+  }
+});

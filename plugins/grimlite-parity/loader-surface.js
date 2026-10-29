@@ -316,7 +316,7 @@ const SURFACE = {
     GetTempItems: { get: 'world.myAvatar.tempitems' },
     GetHouseItems: { get: 'world.myAvatar.houseitems' },
     HouseSlots: { get: 'world.myAvatar.objData.iHouseSlots' },
-    GetItemTree: { get: 'world.invTree' },
+    GetItemTree: { compute: function (ctx) { return ctx.raw('GetItemTree', []); } },
     RealAddress: { get: 'objServerInfo.RealAddress' },
     RealPort: { get: 'objServerInfo.RealPort' },
     ServerName: { get: 'objServerInfo.sName' },

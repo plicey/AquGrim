@@ -274,14 +274,16 @@ const originalOptions = {
 exports.originalOptions = originalOptions;
 
 // Finding out which one to load and if it should load...
-var keybingJsonFileName = appName.toLocaleLowerCase() + '.json';
+var keybingJsonFileName = 'aquagrim.json';
+var previousAppdataJsonPath = path.join(appDataDirectory, appName.toLowerCase() + '.json');
 var legacyAppdataJsonPath = path.join(app.getPath("appData"), keybingJsonFileName);
 var appdataJsonPath = path.join(appDataDirectory, keybingJsonFileName);
 var inPathJsonPath  = path.join(appCurrentDirectory, keybingJsonFileName);
 // One-time non-destructive migration. App-directory files remain readable so old
 // portable installations continue to work; the new canonical copy is independent.
 if (!fs.existsSync(appdataJsonPath)) {
-    var migrationSource = fs.existsSync(inPathJsonPath) ? inPathJsonPath : legacyAppdataJsonPath;
+    var migrationSource = fs.existsSync(inPathJsonPath) ? inPathJsonPath
+        : (fs.existsSync(legacyAppdataJsonPath) ? legacyAppdataJsonPath : previousAppdataJsonPath);
     if (fs.existsSync(migrationSource)) {
         try { fs.copyFileSync(migrationSource, appdataJsonPath); }
         catch (e) { console.log('[AquGrim] Could not migrate settings: ' + e.message); }

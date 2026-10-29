@@ -108,7 +108,6 @@ test('every read answers the path its own loader body reads', () => {
         GetTempItems: 'world.myAvatar.tempitems',
         GetHouseItems: 'world.myAvatar.houseitems',
         HouseSlots: 'world.myAvatar.objData.iHouseSlots',
-        GetItemTree: 'world.invTree',
         GetAvatars: 'world.avatars',
         Players: 'world.uoTree',
         PlayersInMap: 'world.areaUsers',
@@ -576,4 +575,19 @@ test('player lookups accept map-packet uoName and username-keyed partial leaves'
         assert.strictEqual(await api.call('GetCellPlayers', ['absent']), false);
         assert.strictEqual(await api.call('CheckCellPlayer', ['master', 'Other']), false);
     }
+});
+
+
+test('item-tree read uses a native projection rather than serializing the live Dictionary', async () => {
+    const asked = [];
+    const game = surface.createLoaderSurface(async (callback, args) => {
+        asked.push({ callback, args });
+        return [{ ItemID: 7, sName: 'Sword' }];
+    });
+    for (const name of ['GetItemTree']) {
+        assert.deepStrictEqual(await game.call(name, []), [{ ItemID: 7, sName: 'Sword' }]);
+    }
+    assert.deepStrictEqual(asked, [
+        { callback: 'GetItemTree', args: [] }
+    ]);
 });

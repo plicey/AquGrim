@@ -356,7 +356,7 @@ function createSession(deps) {
         return require('./auras.js').payloadOf(parsed);
     }
 
-    function accountDrop(drop) {
+    function accountDrop(drop, observers) {
         if (!drop || typeof drop !== 'object') return;
         const id = Number(drop.ItemID === undefined ? drop.Id : drop.ItemID);
         if (isFinite(id) && !drops.some(function (held) {
@@ -364,8 +364,9 @@ function createSession(deps) {
         })) {
             drops.push(drop);
         }
-        const watchers = dropWatchers.slice();
+        const watchers = (observers || dropWatchers).slice();
         watchers.forEach(function (watch) {
+            if (dropWatchers.indexOf(watch) === -1) return;
             try {
                 watch(drop);
             } catch (error) {
@@ -374,12 +375,39 @@ function createSession(deps) {
         });
     }
 
+    async function resolveDrop(drop) {
+        const watchers = dropWatchers.slice();
+        // Grimlite InventoryItem.Name falls back to World.ItemTree for ID-only packets.
+        for (let attempt = 0; attempt < 20 && !closed; attempt++) {
+            const tree = await listFrom('GetItemTree', loaderCall('GetItemTree'));
+            const item = tree.find(function (row) {
+                return row && String(row.ItemID) === String(drop.ItemID);
+            });
+            if (item && item.sName) {
+                if (!closed) accountDrop(Object.assign({}, item, drop, { sName: item.sName }), watchers);
+                return;
+            }
+            // The relay observes the packet before Flash updates its item tree.
+            await new Promise(function (resolve) { setTimeout(resolve, 100); });
+        }
+        if (!closed) throw refusal('the game item tree has no name for drop ' + drop.ItemID);
+    }
+
     function observeDrop(frame) {
         const payload = isDropFrame(frame);
         if (!payload) return;
         if (payload.cmd === 'dropItem') {
             const items = payload.items && (payload.items.$values || payload.items);
-            Object.keys(items || {}).forEach(function (key) { accountDrop(items[key]); });
+            Object.keys(items || {}).forEach(function (key) {
+                const drop = items[key];
+                if (drop && !drop.sName && !drop.Name) {
+                    resolveDrop(drop).catch(function (error) {
+                        log('could not resolve a drop: ' + message(error));
+                    });
+                } else {
+                    accountDrop(drop);
+                }
+            });
         } else if (payload.cmd === 'getDrop') {
             const success = Number(payload.bSuccess);
             if (success !== 1) return;

@@ -114,6 +114,7 @@ package {
             addCallback('CancelTargetSelf', aqCancelTargetSelf);
             addCallback('SetTargetPvP', aqSetTargetPvP);
             addCallback('RejectDrop', aqRejectDrop);
+            addCallback('GetItemTree', aqGetItemTree);
             addCallback('SetInfiniteRangeEnabled', aqSetInfiniteRangeEnabled);
             addCallback('SetWalkSpeedEnabled', aqSetWalkSpeedEnabled);
             addCallback('SetSkipCutscenesEnabled', aqSetSkipCutscenesEnabled);
@@ -760,6 +761,17 @@ package {
                 out = jsonError(e);
             }
             return out;
+        }
+
+        private function aqGetItemTree():String {
+            try {
+                var rows:Array = [];
+                for each (var item:Object in world().invTree) rows.push(item);
+                return JSON.stringify(rows);
+            } catch (e:Error) {
+                return jsonError(e);
+            }
+            return '[]';
         }
 
         /** World.as RejectDrop: false means the relay beat the stock drop UI to this call. */

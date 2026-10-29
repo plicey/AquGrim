@@ -27,29 +27,22 @@ const FILTER = { name: 'XML files', extensions: ['xml'] };
 /**
  * The bot lists, as the grabber's own actions use them: the Bot Manager's Drops, Items, Quests
  * and Commands lists (BotManager.AddDrop / AddItem / AddQuest / AddCommand, BotManager.cs
- * 2112-2140). \`deps.bot\` is the document the Bot Manager is editing; a list a document does not
- * hold yet is created empty, exactly as the reference's own listboxes start.
+ * 2112-2140). \`deps.bot\` is the document or a getter for the current document. A missing list
+ * is created empty, exactly as the reference's own listboxes start.
  *
  * Without a document there is nothing to add a row to, so each action reports that in words
  * rather than claiming to have added a row nobody kept.
  */
 function createBotLists(deps) {
-    const document = deps && deps.bot && typeof deps.bot === 'object' ? deps.bot : null;
+    function document() {
+        return deps && (typeof deps.bot === 'function' ? deps.bot() : deps.bot);
+    }
     function unwired() {
         return { added: 0, wired: false, reason: ERRORS.noLists };
     }
-    if (!document) {
-        return {
-            addDrops: unwired,
-            addItems: unwired,
-            addQuests: unwired,
-            addCommands: unwired
-        };
-    }
-    const editor = editorModel.create(document);
 
     /** The list itself, whether the document wraps it or holds it bare. */
-    function listOf(key) {
+    function listOf(document, key) {
         const value = document[key];
         if (Array.isArray(value)) return value;
         if (value && Array.isArray(value.$values)) return value.$values;
@@ -59,7 +52,9 @@ function createBotLists(deps) {
 
     /** AddDrop / AddItem / AddQuest all guard with Contains; AddCommand does not. */
     function add(key, values, unique) {
-        const list = listOf(key);
+        const current = document();
+        if (!current || typeof current !== 'object') return unwired();
+        const list = listOf(current, key);
         let added = 0;
         values.forEach(function (value) {
             const text = key === 'Quests' || typeof value !== 'string' ? String(value.Id) : value;
@@ -80,8 +75,8 @@ function createBotLists(deps) {
         // own AddCommand(cmd, true) does not - the grabber's Add buy command passes no list
         // position, so it goes on the end.
         addCommands: function (commands) { return add('Commands', list(commands), false); },
-        document: function () { return document; },
-        editor: function () { return editor; }
+        document: document,
+        editor: function () { return editorModel.create(document()); }
     };
 }
 

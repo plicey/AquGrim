@@ -964,3 +964,13 @@ test('repeated combat aura messages retain one entry per distinct match until co
   cache.observe(frames[0]);
   assert.deepStrictEqual(cache.lastAuraMessages(), ['Chi applied']);
 });
+
+test('the packet reader decodes the live SmartFox compressed-drop format and refuses invalid data', () => {
+  const reader = require('../../plugins/grimlite-parity/bot/auras.js').frameText;
+  const wire = require('fs').readFileSync(require('path').join(__dirname,
+    '../fixtures/grimlite-drops/dropItem-compressed.txt'), 'utf8').trim();
+  const payload = JSON.parse(reader(Buffer.from(wire))).b.o;
+  assert.strictEqual(payload.cmd, 'dropItem');
+  assert.strictEqual(payload.items[4713].sName, 'Unidentified 4');
+  assert.strictEqual(reader('Zbroken'), '');
+});

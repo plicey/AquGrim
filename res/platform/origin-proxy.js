@@ -61,7 +61,7 @@ function createOriginProxy(opts) {
     const log = opts.log || function () {};
     let publishedPort = null;
 
-    function forward(req, res, target, body, depth) {
+    function forward(req, res, target, body, depth, originalUrl) {
         const headers = Object.assign({}, req.headers);
         // The body is buffered so a redirect's Location can be followed and a redirect the
         // origin will not follow can be answered: ask for it uncompressed and plainly sized.
@@ -92,7 +92,7 @@ function createOriginProxy(opts) {
                     }
                     if (next) {
                         log('redirect ' + upRes.statusCode + ' ' + target.pathname + ' -> ' + next);
-                        forward(req, res, new URL(next), body, depth + 1);
+                        forward(req, res, new URL(next), body, depth + 1, originalUrl);
                         return;
                     }
                 }
@@ -100,6 +100,7 @@ function createOriginProxy(opts) {
                     try {
                         const replacement = await opts.rewriteResponse({
                             url: target.href,
+                            originalUrl: originalUrl,
                             method: req.method,
                             statusCode: upRes.statusCode,
                             requestHeaders: req.headers,
@@ -175,7 +176,7 @@ function createOriginProxy(opts) {
             const target = new URL(route.origin + route.path + url.search);
             // The request body is read once and reused across redirect hops: the login flow
             // POSTs credentials, and a GET-only origin leaves the client hanging.
-            forward(req, res, target, body.length ? body : null, 0);
+            forward(req, res, target, body.length ? body : null, 0, target.href);
         });
     });
 

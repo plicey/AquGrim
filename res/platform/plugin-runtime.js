@@ -79,8 +79,9 @@ function startGameOrigin(declaration) {
         rewriteResponse: function (context, body) {
             const layer = resolvePacketLayerApi && resolvePacketLayerApi();
             const matches = require('./session-rules.js').matchesPattern;
+            // Redirects can end outside the initiating request's declared URL pattern.
             const rule = layer && layer.rules.find(function (entry) {
-                return entry.urls.some(function (pattern) { return matches(pattern, context.url); });
+                return entry.urls.some(function (pattern) { return matches(pattern, context.originalUrl || context.url); });
             });
             return rule ? rule.onResponseBody(context, body) : undefined;
         },

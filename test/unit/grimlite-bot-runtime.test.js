@@ -275,3 +275,42 @@ test('the seams a misc command needs reach the engine the plugin actually runs',
   assert.deepStrictEqual(sent, [{ direction: 'toServer', text: 'hello' }],
     'CmdPacket writes through the injected relay');
 });
+
+test('a stop finishing its bank read cannot bank for or wait on a restarted bot', async () => {
+  let releaseInventory;
+  let inventoryStarted;
+  const reading = new Promise(resolve => { inventoryStarted = resolve; });
+  const banked = [];
+  const r = runtime({ createGame: () => ({
+    inventoryItems: () => {
+      inventoryStarted();
+      return new Promise(resolve => { releaseInventory = resolve; });
+    },
+    transferToBank: async name => { banked.push(name); }
+  }) });
+  const entry = r.manager.forWindow('win');
+  entry.engine.run = async () => {};
+  await r.manager.start('win', { Commands: [command('CmdRestart', {})],
+    BankOnStop: true, Items: ['Sword'] }, { inventOnStart: false });
+  const stopping = r.manager.stop('win');
+  await reading;
+  let finishNewLoop;
+  entry.engine.run = () => new Promise(resolve => { finishNewLoop = resolve; });
+  await r.manager.start('win', { Commands: [command('CmdRestart', {})] });
+  const newLoop = entry.loop;
+  releaseInventory([{ sName: 'Sword', bCoins: 1 }]);
+  let timeout;
+  try {
+    await Promise.race([stopping, new Promise((resolve, reject) => {
+      timeout = setTimeout(() => reject(new Error('old stop waited on the new run')), 100);
+    })]);
+    assert.deepStrictEqual(banked, []);
+    assert.strictEqual(r.manager.state('win').running, true);
+    assert.strictEqual(entry.loop, newLoop);
+  } finally {
+    clearTimeout(timeout);
+    finishNewLoop();
+    await stopping;
+    await r.manager.stop('win');
+  }
+});
