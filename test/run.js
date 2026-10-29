@@ -101,6 +101,7 @@ global.test = function (name, fn) {
   './integration/local-origin.test.js',
   './unit/grimlite-bank.test.js',
   './unit/grimlite-sets.test.js',
+  './unit/grimlite-sets-account.test.js',
   './unit/grimlite-bank-sets-windows.test.js',
   './unit/grimlite-bank-sets-pages.test.js',
   './unit/grimlite-bridge.test.js',

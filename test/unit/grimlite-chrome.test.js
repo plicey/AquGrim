@@ -726,15 +726,15 @@ test('toolbar saved equipment choices refresh on interaction and equip via the s
   assert.deepStrictEqual((await chrome.state()).options.equipmentSet,
     [{ label: 'farm.gset', value: 'nested/farm.gset' }]);
   listing = [];
-  await chrome.state();
-  assert.strictEqual(calls.length, 1, 'routine state reads reuse the list');
+  assert.strictEqual((await chrome.state()).values.equipmentSet, '');
+  assert.strictEqual(calls.length, 2, 'routine state reads refresh account sets');
   const refreshed = await chrome.action('equipmentSet', { refresh: true });
   assert.deepStrictEqual(refreshed.view.options.equipmentSet, []);
   const equipped = await chrome.action('equipSavedSet', { value: 'nested/farm.gset' });
   assert.strictEqual(equipped.ok, true);
   assert.match(equipped.message, /1 changed/);
   assert.strictEqual(chrome.controls().find(control => control.id === 'equipSavedSet').pendingLabel, 'Equipping…');
-  assert.deepStrictEqual(calls[2], ['equipSavedSet', ['nested/farm.gset']]);
+  assert.ok(calls.some(call => call[0] === 'equipSavedSet' && call[1][0] === 'nested/farm.gset'));
   const select = chrome.controls().find(control => control.id === 'equipmentSet');
   assert.strictEqual(select.refreshOnFocus, true);
   assert.match(select.placeholder, /Client → Sets/);

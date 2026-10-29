@@ -129,6 +129,8 @@ function createChrome(deps) {
     // character is between cells; the reference keeps its own in the combo box itself.
     let cells = [];
     let savedSets = null;
+    let setsAccount = '';
+    let setsAccountChanged = false;
 
     function session() {
         try {
@@ -206,7 +208,10 @@ function createChrome(deps) {
      * being swallowed.
      */
     async function refreshSets() {
-        savedSets = deps.equipmentSets ? (await deps.equipmentSets.handle('listSets')).sets : [];
+        const previous = setsAccount;
+        savedSets = deps.equipmentSets ? (await deps.equipmentSets.handle('listSets')).sets || [] : [];
+        setsAccount = savedSets.length ? savedSets[0].path.split(':')[0] : '';
+        setsAccountChanged = setsAccountChanged || previous !== setsAccount;
     }
 
     async function state() {
@@ -218,7 +223,9 @@ function createChrome(deps) {
             cell: '',
             pad: ''
         };
-        if (savedSets === null) await refreshSets();
+        await refreshSets();
+        if (setsAccountChanged) values.equipmentSet = '';
+        setsAccountChanged = false;
         const options = { cell: cells.slice(), pad: PADS,
             equipmentSet: savedSets.map(function (set) { return { label: set.name, value: set.path }; }) };
         if (alive.ok !== true) {

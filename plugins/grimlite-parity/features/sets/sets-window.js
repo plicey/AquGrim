@@ -13,10 +13,11 @@ function createSetsWindow(deps) {
     function handle(channel, event, args) {
         void event;
         if (channel === 'listSets') {
-            return dialogs.list().then(function (found) { return { sets: found }; });
+            return guard(async function () { return { sets: await dialogs.list() }; });
         }
         if (channel === 'setInventoryRows') {
-            return guard(function () {
+            return guard(async function () {
+                if (dialogs.bindAccount) await dialogs.bindAccount();
                 return Promise.resolve(game.readInventory()).then(function (inventory) {
                     return { rows: sets.inventoryRows(inventory), error: null };
                 });
@@ -24,7 +25,7 @@ function createSetsWindow(deps) {
         }
         if (channel === 'openSet') {
             const target = args && args[0];
-            return target ? dialogs.openByPath(target) : dialogs.open();
+            return guard(function () { return target ? dialogs.openByPath(target) : dialogs.open(); });
         }
         if (channel === 'saveSet') {
             return Promise.resolve(dialogs.save((args && args[0]) || []))
@@ -32,8 +33,10 @@ function createSetsWindow(deps) {
         }
         if (channel === 'saveEquippedSet') {
             return guard(async function () {
+                const owner = deps.account ? await deps.account() : null;
                 const entries = sets.equippedEntries(await game.readInventory());
-                const result = await dialogs.save(entries);
+                if (deps.account && (!owner || await deps.account() !== owner)) throw new Error('Account changed. Save the equipped set again.');
+                const result = await dialogs.save(entries, true);
                 return Object.assign({}, result, !result.canceled && !result.error ? { entries: entries } : {});
             });
         }
@@ -41,14 +44,23 @@ function createSetsWindow(deps) {
             if (equipping) return Promise.resolve({ error: 'An equip sequence is already running.' });
             equipping = true;
             return guard(async function () {
+                const owner = deps.account ? await deps.account() : null;
+                if (deps.account && !owner) throw new Error('Log in to the game before equipping sets.');
                 let entries = args && args[0];
                 if (channel === 'equipSavedSet') {
                     if (typeof entries !== 'string' || !entries) throw new Error('Select a saved set.');
                     const opened = await dialogs.openByPath(entries);
                     if (opened.error) throw new Error(opened.error);
+                    if (deps.account && !entries.startsWith((await deps.account()) + ':')) throw new Error('Account changed. Select the set again.');
                     entries = opened.entries;
                 }
-                return sets.equipSet(game, entries);
+                const equipGame = deps.account ? Object.assign({}, game, {
+                    equipItem: async function (name) {
+                        if (await deps.account() !== owner) throw new Error('Account changed. Select the set again.');
+                        return game.equipItem(name);
+                    }
+                }) : game;
+                return sets.equipSet(equipGame, entries);
             })
                 .finally(function () { equipping = false; });
         }
@@ -97,9 +109,12 @@ function createSetsWindow(deps) {
 /** The window as the plugin uses it: the page's channels, Electron's dialogs and the game access. */
 function createFromHost(host, deps) {
     deps = deps || {};
+    const game = deps.game || require('../../bridge.js').createGameAccess(host);
+    const account = deps.account || require('./set-dialogs.js').createAccountSource(game);
     return createSetsWindow({
         host: host,
-        game: deps.game || require('../../bridge.js').createGameAccess(host),
+        account: account,
+        game: game,
         dialogs: deps.dialogs || createDialogsFromHost(host, deps),
         messages: function () {
             return (typeof host.getLocaleStrings === 'function' && host.getLocaleStrings('setsMessages')) || {};

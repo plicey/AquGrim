@@ -17,6 +17,17 @@ const EXTENSION = '.gset';
 function createSetDialogs(deps) {
     deps = deps || {};
     const store = deps.store;
+    const account = deps.account;
+    let documentAccount;
+    async function identity() {
+        const key = await account();
+        if (!key) throw new Error('Log in to the game before using your account sets library.');
+        return key;
+    }
+    async function unchanged(key) {
+        if (await identity() !== key) throw new Error('Account changed. Reopen the set for the current account.');
+    }
+    function library(key) { return path.join(defaultDirectory, 'accounts', key); }
     const defaultDirectory = deps.defaultDirectory || '';
     const messages = deps.messages || {};
     const showOpenDialog = deps.showOpenDialog;
@@ -67,8 +78,14 @@ function createSetDialogs(deps) {
     }
 
     /** Every set in the folder the user last used, so the window can list them. */
-    function list() {
-        return Promise.resolve(listSets(lastDirectory()));
+    async function list() {
+        if (!account) return listSets(lastDirectory());
+        const key = await identity();
+        const found = listSets(library(key));
+        await unchanged(key);
+        return found.map(function (entry) {
+            return { name: entry.name, path: key + ':' + entry.path };
+        });
     }
 
     function readEntries(file) {
@@ -82,16 +99,19 @@ function createSetDialogs(deps) {
         return { entries: parsed.entries, error: parsed.error };
     }
 
-    function open() {
+    async function open() {
+        const key = account ? await account() : null;
         return Promise.resolve(showOpenDialog(null, {
             title: messages.openTitle || 'Load Set',
-            defaultPath: lastDirectory(),
+            defaultPath: account && key ? library(key) : lastDirectory(),
             filters: [filter()],
             properties: ['openFile']
-        })).then(function (result) {
+        })).then(async function (result) {
             if (!result || result.canceled || !result.filePaths || !result.filePaths.length) {
                 return { canceled: true };
             }
+            if (account && await account() !== key) throw new Error('Account changed. Open the set again.');
+            documentAccount = key;
             const file = result.filePaths[0];
             remember(path.dirname(file));
             const read = readEntries(file);
@@ -103,27 +123,42 @@ function createSetDialogs(deps) {
      * Open one of the listed sets directly. The path is relative to the sets folder and is
      * confined to it: a listing entry must not become a way to read any file on the disk.
      */
-    function openByPath(relativePath) {
-        const directory = lastDirectory();
+    async function openByPath(relativePath) {
+        const key = account ? await identity() : null;
+        if (account) {
+            if (typeof relativePath !== 'string' || !relativePath.startsWith(key + ':')) {
+                throw new Error('Account changed. Refresh and select a set for the current account.');
+            }
+            relativePath = relativePath.slice(key.length + 1);
+        }
+        const directory = account ? library(key) : lastDirectory();
         const full = path.resolve(directory, String(relativePath));
         const root = path.resolve(directory);
         if (full.indexOf(root + path.sep) !== 0) {
             return Promise.resolve({ canceled: false, path: null, entries: null, error: sets.ERRORS.outside });
         }
         const read = readEntries(full);
+        if (account) await unchanged(key);
+        documentAccount = key;
         return Promise.resolve({ canceled: false, path: full, entries: read.entries, error: read.error });
     }
 
-    function save(entries) {
-        const suggested = path.join(lastDirectory(), 'set' + EXTENSION);
+    async function save(entries, fresh) {
+        const key = account ? await identity() : null;
+        if (account && !fresh && documentAccount !== undefined && documentAccount !== key) {
+            throw new Error('Account changed. Reopen the set before saving.');
+        }
+        const suggested = path.join(account ? library(key) : lastDirectory(), 'set' + EXTENSION);
         return Promise.resolve(showSaveDialog(null, {
             title: messages.saveTitle || 'Save Set',
             defaultPath: suggested,
             filters: [filter()]
-        })).then(function (result) {
+        })).then(async function (result) {
             if (!result || result.canceled || !result.filePath) {
                 return { canceled: true };
             }
+            if (account) await unchanged(key);
+            documentAccount = key;
             // The reference's SaveFileDialog adds its default extension when the user gives none.
             const file = path.extname(result.filePath) ? result.filePath : result.filePath + EXTENSION;
             remember(path.dirname(file));
@@ -137,6 +172,7 @@ function createSetDialogs(deps) {
     }
 
     return {
+        bindAccount: async function () { if (account && documentAccount === undefined) documentAccount = await account(); },
         list: list,
         open: open,
         openByPath: openByPath,
@@ -155,6 +191,7 @@ function createFromHost(host, deps) {
     const electron = function () { return deps.electron || require('electron'); };
     return createSetDialogs({
         store: host.getStore(STORE_NAMESPACE),
+        account: deps.account || createAccountSource(deps.game || require('../../bridge.js').createGameAccess(host)),
         defaultDirectory: path.join(
             host.persistentAppDataDirectory || host.appDataDirectory, 'Sets'),
         messages: messagesFrom(host),
@@ -165,6 +202,19 @@ function createFromHost(host, deps) {
             return electron().dialog.showSaveDialog(owner, options);
         }
     });
+}
+
+// Fixed main-process game reads; no renderer-supplied username or directory.
+function createAccountSource(game) {
+    return async function () {
+        try {
+            const access = game.botGame();
+            if (await access.helper('IsLoggedIn', []) !== true) return null;
+            const name = await access.call('getGameObject', ['world.myAvatar.objData.strUsername']);
+            if (typeof name !== 'string' || !name.trim()) return null;
+            return Buffer.from(name.trim().toLowerCase(), 'utf8').toString('hex');
+        } catch (error) { return null; }
+    };
 }
 
 /** Dialog titles and the filter name, from the plugin's own locale catalog. */
@@ -179,6 +229,7 @@ function messagesFrom(host) {
 }
 
 module.exports = {
+    createAccountSource: createAccountSource,
     createSetDialogs: createSetDialogs,
     createFromHost: createFromHost,
     STORE_NAMESPACE: STORE_NAMESPACE,

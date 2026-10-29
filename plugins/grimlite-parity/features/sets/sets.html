@@ -139,6 +139,7 @@
     return api.list().then(function (result) {
       saved = (result && result.sets) || [];
       renderSaved();
+      if (result && result.error) setStatus(result.error, 'err');
     });
   }
 
