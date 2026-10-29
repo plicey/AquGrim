@@ -80,7 +80,7 @@ test('verify-staging fails a staged app that has no bundled game plugin (the rel
     assert.deepStrictEqual(verifyStaging(dir), []);
 
     // A default plugin whose entry file is gone is caught too.
-    fs.rmSync(path.join(dir, 'plugins', 'adventure-quest-worlds', 'main.js'));
+    fs.rmSync(path.join(dir, 'plugins', 'grimlite-parity', 'main.js'));
     assert.ok(verifyStaging(dir).some((p) => p.indexOf('default plugin main is missing') !== -1));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

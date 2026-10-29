@@ -44,7 +44,6 @@
   "web": {
     "contribute": "web/contribute.js"
   },
-  "bundledDefault": true,
   "unprefixedIpc": true,
   "customSwfAliases": [
     "aqlite_old.swf"

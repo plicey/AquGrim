@@ -79,21 +79,19 @@ test('the platform never requires a plugin by path or id', () => {
 });
 
 test('the bundled game plugin is the default because its manifest says so, not by name', () => {
-  const manifest = require('../../plugins/adventure-quest-worlds/plugin.json');
-  assert.strictEqual(manifest.bundledDefault, true);
   const platform = require('../../res/platform');
   const discovered = platform.discoverPlugins({
     bundledDir: path.join(root, 'plugins'),
     enableLocalPlugins: false,
     appVersion: '1.12.2'
   });
-  const chosen = platform.pickBundledDefault(discovered.plugins);
-  assert.ok(chosen && chosen.manifest.id === manifest.id);
   // Exactly one bundled plugin may claim to be the default.
   const claimants = discovered.plugins.filter(function (p) {
     return p.source === 'bundled' && p.manifest.bundledDefault === true;
   });
   assert.strictEqual(claimants.length, 1);
+  const chosen = platform.pickBundledDefault(discovered.plugins);
+  assert.ok(chosen && chosen.manifest.id === claimants[0].manifest.id);
 });
 
 function fakePlugin(id, source, extra) {
