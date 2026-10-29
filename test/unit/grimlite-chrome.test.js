@@ -109,6 +109,7 @@ function harness(options) {
     windowKey: function () { return 'game-window-1'; },
     bot: function () { return bot.document; },
     presets: options.presets,
+    now: options.now,
     openAutoSkillSet: options.openAutoSkillSet,
     messages: options.messages || {},
     log: function () {},
@@ -349,7 +350,7 @@ test('a refused skill is reported on the strip and the rotation keeps going', as
   assert.strictEqual(state.values.autoAttack, true, 'the loop keeps running; the refusal is shown');
 });
 
-test('Auto Attack waits out a preset skill\'s cooldown only when the preset says wait', async () => {
+test('Auto Attack polls a preset skill cooldown without sleeping when the preset says wait', async () => {
   const slept = [];
   const h = harness({ answers: { hasTarget: true, skillAvailable: 400 } });
   h.chrome.stop();
@@ -369,7 +370,11 @@ test('Auto Attack waits out a preset skill\'s cooldown only when the preset says
   });
   await chrome.action('autoAttack', { checked: true });
   await chrome.tick();
-  assert.deepStrictEqual(slept, [400], 'SkillAvailable ms are waited out, as the reference does');
+  assert.deepStrictEqual(slept, [], 'pending cooldown never blocks the tick');
+  assert.strictEqual(h.count('useSkill'), 0);
+  h.session.skillAvailable = async function () { return 0; };
+  await chrome.tick();
+  assert.deepStrictEqual(h.argsFor('useSkill'), ['1']);
   chrome.stop();
 });
 
@@ -401,7 +406,9 @@ test('the reference three class combos run before the rotation', async () => {
   ];
   for (let i = 0; i < cases.length; i++) {
     const one = cases[i];
+    let clock = 0;
     const h = harness({
+      now: function () { return clock; },
       answers: {
         hasTarget: true,
         className: one.className,
@@ -415,15 +422,14 @@ test('the reference three class combos run before the rotation', async () => {
       }
     });
     await h.chrome.action('autoAttack', { checked: true });
-    await h.chrome.tick();
+    for (let step = 0; step <= one.skills.length; step++) { await h.chrome.tick(); clock += 200; }
     // Skill.useSkill forces a Chrono Shadow's cast and uses the plain name for every other class,
     // so the combo is whatever the two names record between them, in the order they were called.
     const cast = h.calls.filter(function (call) {
       return call.call === 'useSkill' || call.call === 'forceUseSkill';
     })
       .map(function (call) { return call.args[0]; });
-    // The reference runs SpecialClassCombo and then still spends one slot of the rotation in the
-    // same pass (Root.cs:1608-1624), which here is the 1-4 fallback's first skill.
+    // The class combo retains its order across nonblocking ticks, then the main rotation resumes.
     assert.deepStrictEqual(cast, one.skills.concat(['1']),
       one.className + ' should run its own combo before the rotation');
   }
@@ -732,4 +738,130 @@ test('toolbar saved equipment choices refresh on interaction and equip via the s
   const select = chrome.controls().find(control => control.id === 'equipmentSet');
   assert.strictEqual(select.refreshOnFocus, true);
   assert.match(select.placeholder, /Client → Sets/);
+});
+
+function casts(h) {
+  return h.calls.filter(function (call) { return /^(useSkill|forceUseSkill)$/.test(call.call); })
+    .map(function (call) { return [call.call, call.args[0]]; });
+}
+
+async function rotationHarness(text, answers) {
+  const h = harness({ answers: answers,
+    presets: { draftFor: function () { return { skills: skillPresets.parsePreset(text) }; } } });
+  await h.chrome.action('autoAttack', { checked: true });
+  return h;
+}
+
+test('if blocks test strict HP/MP once on entry and finish their chosen steps in order', async () => {
+  const answers = { health: 50, mana: 20 };
+  const h = await rotationHarness('if SH<50 { 1;2 };if SM<30 { 3;4 }', answers);
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h), [['useSkill', '3']], 'equal HP skips strict less-than');
+  answers.mana = 100;
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h), [['useSkill', '3'], ['useSkill', '4']], 'block predicate is not retested');
+  h.chrome.stop();
+});
+
+test('cooldown casts rotate fairly without consuming or starving the main combo', async () => {
+  const h = await rotationHarness('1;2;cooldown { 3;4 }');
+  for (let i = 0; i < 8; i++) await h.chrome.tick();
+  assert.deepStrictEqual(casts(h).map(function (call) { return call[1]; }), ['3','1','4','2','3','1','4','2']);
+  h.chrome.stop();
+});
+
+test('pending explicit waits poll while cooldown casts continue and main resumes', async () => {
+  let clock = 0;
+  let ready = 400;
+  const h = harness({ now: function () { return clock; },
+    answers: { skillAvailable: function (index) { return index === '2' ? ready : 0; } },
+    presets: { draftFor: function () { return { skills: skillPresets.parsePreset('wait 500ms;ready 2;1;cooldown { 4 }') }; } }
+  });
+  await h.chrome.action('autoAttack', { checked: true });
+  for (let i = 0; i < 6; i++) await h.chrome.tick();
+  assert.deepStrictEqual(casts(h).map(function (call) { return call[1]; }), ['4','4','4']);
+  clock = 500;
+  for (let i = 0; i < 4; i++) await h.chrome.tick();
+  assert.ok(!casts(h).some(function (call) { return call[1] === '1'; }));
+  ready = 0;
+  for (let i = 0; i < 4; i++) await h.chrome.tick();
+  assert.strictEqual(casts(h).filter(function (call) { return call[1] === '1'; }).length, 1);
+  assert.ok(!casts(h).some(function (call) { return call[1] === '2'; }), 'ready never casts');
+  h.chrome.stop();
+});
+
+test('cooldown readiness failures skip optional casts; refusals are reported without forcing', async () => {
+  for (const value of [400, null, undefined, NaN, 'invalid']) {
+    const h = await rotationHarness('1;cooldown { 4 }');
+    h.session.skillAvailable = async function () { return value; };
+    await h.chrome.tick();
+    assert.deepStrictEqual(casts(h), [['useSkill', '1']]);
+    h.chrome.stop();
+  }
+  const h = await rotationHarness('1;cooldown { 4 }', { className: 'Chrono Shadow' });
+  h.session.useSkill = async function () { throw new Error('cast refused'); };
+  await h.chrome.tick();
+  assert.match((await h.chrome.state()).values.autoAttackError, /skill 4: cast refused/);
+  assert.strictEqual(h.count('forceUseSkill'), 0);
+  h.chrome.stop();
+});
+
+test('async ticks serialize and stale cooldown, readiness, condition and cast reads cannot advance replacement rotations', async () => {
+  for (const scenario of [
+    { text: '1;cooldown { 4 }', read: 'skillAvailable' },
+    { text: 'ready 2;1', read: 'skillAvailable' },
+    { text: 'if SH>20 { 1;2 };3', read: 'health' },
+    { text: '1;2', read: 'className', castOnly: true }
+  ]) {
+    for (const disable of [false, true]) {
+      const h = await rotationHarness(scenario.text);
+      let release;
+      let entered;
+      const waiting = new Promise(function (resolve) { entered = resolve; });
+      const original = h.session[scenario.read];
+      let classReads = 0;
+      h.session[scenario.read] = function () {
+        if (scenario.castOnly && ++classReads < 2) return original();
+        entered();
+        return new Promise(function (resolve) { release = resolve; });
+      };
+      const running = h.chrome.tick();
+      await waiting;
+      await h.chrome.tick();
+      assert.deepStrictEqual(casts(h), [], 'overlapping tick is ignored');
+      if (disable) await h.chrome.action('autoAttack', { checked: false });
+      else h.chrome.useSkillText('3;4');
+      release(scenario.read === 'className' ? 'No Class' : 0);
+      await running;
+      assert.deepStrictEqual(casts(h), [], 'stale operation cannot cast');
+      h.session[scenario.read] = original;
+      if (disable) { h.chrome.useSkillText('3;4'); await h.chrome.action('autoAttack', { checked: true }); h.chrome.useSkillText('3;4'); }
+      await h.chrome.tick();
+      assert.deepStrictEqual(casts(h), [['useSkill', '3']], 'replacement starts at first step');
+      h.chrome.stop();
+    }
+  }
+});
+
+test('a waiting main cast gets the shared cooldown before optional spam when both become ready', async () => {
+  let ready = false;
+  const h = await rotationHarness('1wait;2;cooldown { 4 }', {
+    skillAvailable: function (index) { return index === '1' && !ready ? 500 : 0; }
+  });
+  await h.chrome.tick(); // optional 4
+  await h.chrome.tick(); // pending main 1
+  await h.chrome.tick(); // optional 4
+  ready = true;
+  await h.chrome.tick(); // main wins despite optional being ready
+  assert.deepStrictEqual(casts(h).map(function (call) { return call[1]; }), ['4','4','1']);
+  h.chrome.stop();
+});
+
+test('invalid replacement text leaves the live rotation and cursor intact', async () => {
+  const h = await rotationHarness('1;2');
+  await h.chrome.tick();
+  assert.throws(function () { h.chrome.useSkillText('if SH<50 { 3'); }, /brace/);
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h).map(function (call) { return call[1]; }), ['1','2']);
+  h.chrome.stop();
 });

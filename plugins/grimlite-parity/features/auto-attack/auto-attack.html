@@ -34,6 +34,10 @@
   }
   .row { display: flex; align-items: center; gap: 8px; }
   .row .grow { flex: 1; }
+  .block-builder { flex-wrap: wrap; gap: 6px; }
+  .block-builder input { width: 90px; }
+  details { color: #9a9a9a; font-size: 12px; line-height: 1.4; }
+  summary { cursor: pointer; }
   button {
     background: #262626; color: #e6e6e6; border: 1px solid #383838;
     border-radius: 4px; padding: 5px 10px; cursor: pointer;
@@ -71,7 +75,21 @@
     <label>Percent<input id="stepThreshold" type="number" min="0" max="100" step="1" value="50" disabled></label>
     <button id="insertStep">Insert</button>
   </div>
-  <p>Insert at the cursor or replace selected text. If the condition is false, that step is skipped.</p>
+  <div class="row block-builder" role="group" aria-label="Insert blocks and waits">
+    <button id="insertBlock">Wrap selection in If</button>
+    <button id="insertCooldown">Wrap selection in Cooldown</button>
+    <label>Wait (ms)<input id="waitDuration" type="number" min="1" max="60000" value="500"></label>
+    <button id="insertWait">Insert wait</button>
+    <button id="insertReady">Wait for selected skill</button>
+  </div>
+  <p>Insert at the cursor or replace selected steps. If uses the HP/MP controls above; Cooldown uses selected skills. Wait for selected skill checks readiness without casting.</p>
+  <details><summary>Syntax and behavior</summary>
+    <p><code>1; if SH&lt;=50 { 2;3 }; wait 500ms; ready 2; 4; cooldown { 3 }</code></p>
+    <p>SH = my HP %, SM = my MP %. Block &lt; and &gt; are strict; &lt;= and &gt;= include equality. Legacy inline conditions keep inclusive comparisons.
+    If is tested once on entry; its steps continue in order. Blocks cannot nest; no else. Without a selection, If inserts 1;2 and Cooldown inserts the selected skill.</p>
+    <p>Wait is 1–60000ms; ready waits for skill 1–4 without casting it. The old global wait marker still waits before normal casts.
+    Cooldown skills are checked in rotating order between combo steps and during waits, cast only when available, never forced. At most one casts per gap; the main combo keeps its position and gets the next turn. A waiting main skill gets priority when it becomes ready.</p>
+  </details>
   <textarea aria-label="Skill rotation" id="skills" spellcheck="false" placeholder="1,2,3,4"></textarea>
   <div class="row">
     <div class="grow" id="status" role="status"></div>
@@ -107,6 +125,29 @@
     } catch (error) {
       say(error.message, true);
     }
+  });
+
+  function insertBuilt(build) {
+    try {
+      var selected = box.value.slice(box.selectionStart, box.selectionEnd);
+      var inserted = window.autoAttackStep.insert(box.value, box.selectionStart, box.selectionEnd, build(selected));
+      box.value = inserted.text;
+      box.focus();
+      box.setSelectionRange(inserted.caret, inserted.caret);
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    } catch (error) { say(error.message, true); }
+  }
+  document.getElementById('insertBlock').addEventListener('click', function () {
+    insertBuilt(function (text) { return window.autoAttackStep.block(condition.value, comparator.value, threshold.value, text); });
+  });
+  document.getElementById('insertCooldown').addEventListener('click', function () {
+    insertBuilt(function (text) { return window.autoAttackStep.cooldown(text, document.getElementById('stepSkill').value); });
+  });
+  document.getElementById('insertWait').addEventListener('click', function () {
+    insertBuilt(function () { return window.autoAttackStep.wait(document.getElementById('waitDuration').value); });
+  });
+  document.getElementById('insertReady').addEventListener('click', function () {
+    insertBuilt(function () { return 'ready ' + document.getElementById('stepSkill').value; });
   });
 
   function say(text, error) {

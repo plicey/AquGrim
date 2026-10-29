@@ -8,7 +8,9 @@
 //
 // Skills are separated by ';' (the reference's form) or ',' (common in hand-written configs).
 // One safe condition may follow a skill: `3:SH>60` or `2:SM<30`. `wait` makes every normal skill
-// wait out its own cooldown. With no draft, the caller falls back to skills 1-4.
+// wait out its own cooldown. Blocks: `if SH<50 { 2;3 }`, optional casts: `cooldown { 4 }`.
+// Explicit waits: `wait 500ms` (1-60000ms) and `ready 2` (readiness only, no cast).
+// With no draft, the caller falls back to skills 1-4.
 
 const fs = require('fs');
 const path = require('path');
@@ -31,7 +33,7 @@ function defaultSkills() {
 }
 
 /** One preset value into the skills the loop runs. */
-function parsePreset(value) {
+function parseLegacyPreset(value) {
     let text = String(value === null || value === undefined ? '' : value);
     const wait = /wait/i.test(text);
     text = text.replace(/wait/gi, '');
@@ -56,6 +58,64 @@ function parsePreset(value) {
         if (index) skills.push({ index: index, safe: false, wait: wait });
     });
     return skills;
+}
+
+/** Blocks are deliberately non-nested; legacy rotations keep their original parser. */
+function parsePreset(value) {
+    const text = String(value === null || value === undefined ? '' : value);
+    if (!/[{}]|\b(if|else|cooldown|ready)\b|\bwait\s+[^;,\s]/i.test(text)) return parseLegacyPreset(text);
+    const rows = [];
+    const parts = text.split(/([{};,\r\n])/).map(function (part) { return part.trim(); })
+        .filter(function (part) { return part && !/^[;,]$/.test(part); });
+    let block = null;
+    let globalWait = false;
+    for (let i = 0; i < parts.length; i++) {
+        const token = parts[i];
+        if (token === '}') {
+            if (!block || rows.length === block.start) throw new Error('Unexpected or empty block.');
+            if (block.row) block.row.skip = rows.length;
+            block = null;
+            continue;
+        }
+        const condition = /^if\s+(SH|SM)\s*([<>]=?|=)\s*(\d+)$/i.exec(token);
+        if (condition || /^cooldown$/i.test(token)) {
+            if (block || parts[++i] !== '{') throw new Error('Blocks need braces and cannot be nested.');
+            if (condition && Number(condition[3]) > 100) throw new Error('Percent must be from 0 to 100.');
+            const row = condition ? { type: 'if', isMp: condition[1].toUpperCase() === 'SM',
+                op: condition[2], value: Number(condition[3]) } : null;
+            if (row) rows.push(row);
+            block = { row: row, start: rows.length };
+            continue;
+        }
+        if (token === '{' || /\b(if|else|cooldown)\b/i.test(token)) throw new Error('Invalid block syntax.');
+        const delay = /^wait\s+(\d+)ms$/i.exec(token);
+        const ready = /^ready\s+([1-4])$/i.exec(token);
+        if (block && !block.row) {
+            if (!/^[1-4]$/.test(token)) throw new Error('Cooldown blocks contain only skills 1 to 4.');
+            if (!rows.some(function (row) { return row.type === 'cooldown' && row.index === token; })) {
+                rows.push({ type: 'cooldown', index: token });
+            }
+        } else if (delay) {
+            const ms = Number(delay[1]);
+            if (ms < 1 || ms > 60000) throw new Error('Wait must be from 1 to 60000ms.');
+            rows.push({ type: 'delay', ms: ms });
+        } else if (ready) {
+            rows.push({ type: 'ready', index: ready[1] });
+        } else if (/^wait$/i.test(token)) {
+            globalWait = true;
+        } else {
+            if (!/^[1-4](?:wait|:\s*(?:SH|SM)\s*[<>]=?\s*\d+|:\s*(?:SH|SM)\s*=\s*\d+)?$/i.test(token)) {
+                throw new Error('Invalid step: ' + token);
+            }
+            const skill = parseLegacyPreset(token)[0];
+            if (skill.safe && skill.value > 100) throw new Error('Percent must be from 0 to 100.');
+            if (/wait/i.test(token)) globalWait = true;
+            rows.push(skill);
+        }
+    }
+    if (block) throw new Error('Missing closing brace.');
+    if (globalWait) rows.forEach(function (row) { if (!row.type && !row.safe) row.wait = true; });
+    return rows;
 }
 
 /** The raw `SS.<CLASS>=...` values, before they are parsed into skill rows. */
@@ -163,12 +223,10 @@ function createPresetSource(deps) {
         return Object.keys(raw).sort(function (a, b) {
             return a.toLowerCase().localeCompare(b.toLowerCase());
         }).map(function (name) {
-            return {
-                name: name,
-                text: raw[name].text,
-                stored: raw[name].stored,
-                skills: parsePreset(raw[name].text)
-            };
+            let skills = [];
+            let error = null;
+            try { skills = parsePreset(raw[name].text); } catch (failure) { error = failure.message; }
+            return { name: name, text: raw[name].text, stored: raw[name].stored, skills: skills, error: error };
         });
     }
 
@@ -251,6 +309,7 @@ function createPresetSource(deps) {
         if (!key) throw new Error('choose a class before saving');
         if (!preset) throw new Error('enter a preset name before saving');
         if (!value.trim()) throw new Error('enter a skill rotation before saving');
+        parsePreset(value);
         // Saving "boss" over "Boss" updates that preset rather than creating a look-alike.
         const storedName = findName(key, preset) || preset;
         writeStored({ className: key, preset: storedName }, value);
@@ -273,6 +332,7 @@ function createPresetSource(deps) {
             name: cleanName(name) || null,
             text: String(text === null || text === undefined ? '' : text)
         };
+        parsePreset(next.text);
         remember(next.className, next.name, next);
         draft = next;
         return copyDraft(draft);

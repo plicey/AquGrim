@@ -323,6 +323,36 @@ test('Insert uses the editor input flow and Default failures leave its text inta
   await new Promise(setImmediate);
   assert.strictEqual(nodes.status.textContent, 'disk full', 'failed writes never show success');
   assert.strictEqual(nodes.skills.value, before);
+  nodes.skills.value = '1;2;3;4';
+  nodes.skills.setSelectionRange(2, 5);
+  nodes.stepThreshold.value = '50';
+  nodes.insertBlock.handlers.click();
+  assert.strictEqual(nodes.skills.value, '1;if SM<=50 {\n2;3\n};4');
+  const validBlock = nodes.skills.value;
+  nodes.stepCondition.value = '';
+  nodes.insertBlock.handlers.click();
+  assert.strictEqual(nodes.skills.value, validBlock, 'block errors never mutate text');
+  nodes.skills.value = '1;2;3;4';
+  nodes.skills.setSelectionRange(2, 5);
+  nodes.insertCooldown.handlers.click();
+  assert.strictEqual(nodes.skills.value, '1;cooldown { 2;3 };4');
+  nodes.waitDuration = element();
+  nodes.waitDuration.value = '500';
+  nodes.skills.setSelectionRange(0, 0);
+  nodes.insertWait.handlers.click();
+  assert.ok(nodes.skills.value.startsWith('wait 500ms;1;'));
+  const validWait = nodes.skills.value;
+  nodes.waitDuration.value = '60001';
+  nodes.insertWait.handlers.click();
+  assert.strictEqual(nodes.skills.value, validWait, 'invalid duration never mutates text');
+  nodes.skills.setSelectionRange(0, 0);
+  nodes.insertReady.handlers.click();
+  assert.ok(nodes.skills.value.startsWith('ready 2;wait 500ms;'));
+  assert.doesNotThrow(function () { presets.parsePreset(nodes.skills.value); });
+  assert.ok(/class="row block-builder"/.test(page));
+  assert.ok(/\.block-builder\s*\{[^}]*flex-wrap: wrap/.test(page));
+  assert.ok(/<details><summary>Syntax and behavior<\/summary>/.test(page));
+
 });
 
 
@@ -373,4 +403,58 @@ test('draft IPC write failures preserve accepted text and never apply the reject
     assert.strictEqual(presets.createPresetSource({ store: store, files: [] }).draftFor('Shaman').text, '1;2');
   }
   assert.deepStrictEqual(used, []);
+});
+
+test('Auto Attack parses blocks, cooldown skills and bounded waits without changing legacy rows', () => {
+  assert.deepStrictEqual(presets.parsePreset('1; if SH<50 { 2;3:SM>=20 }; wait 500ms; ready 2; cooldown { 4;3 }'), [
+    { index: '1', safe: false, wait: false },
+    { type: 'if', isMp: false, op: '<', value: 50, skip: 4 },
+    { index: '2', safe: false, wait: false },
+    { index: '3', safe: true, isMp: true, op: '>=', value: 20, wait: false },
+    { type: 'delay', ms: 500 }, { type: 'ready', index: '2' },
+    { type: 'cooldown', index: '4' }, { type: 'cooldown', index: '3' }
+  ]);
+  assert.strictEqual(presets.parsePreset('wait;1;wait 1ms')[0].wait, true);
+  ['if SH<50 { 1', 'if SH<50 1', 'if SH<50 {}', '1}', '{1}',
+    'if SM>101 { 1 }', 'if SH<50 { if SM>20 { 1 } }', 'if SH<50 { 1 } else { 2 }',
+    'cooldown { ready 1 }', 'cooldown { 5 }', 'wait 0ms', 'wait 60001ms',
+    'wait -5ms', 'wait 1.5ms', 'ready 5', 'cooldown { 1 };garbage'].forEach(function (text) {
+    assert.throws(function () { presets.parsePreset(text); }, Error, text);
+  });
+});
+
+test('enhanced preset text survives recreation; malformed edits and saves never overwrite accepted state', () => {
+  const store = memoryStore();
+  const source = presets.createPresetSource({ store: store, files: [] });
+  const text = '1;if SM>=30 { 2;wait 500ms;3 };ready 4;cooldown { 4 }';
+  source.savePreset('Shaman', 'Boss', text);
+  source.loadPreset('Shaman', 'Boss');
+  const before = store.read();
+  assert.throws(function () { source.setDraft('Shaman', 'if SH>50 { 1', null); }, /brace/);
+  assert.throws(function () { source.savePreset('Shaman', 'Boss', 'cooldown { wait 1ms }'); }, /Cooldown/);
+  assert.deepStrictEqual(store.read(), before);
+  const restored = presets.createPresetSource({ store: store, files: [] }).draftFor('Shaman');
+  assert.strictEqual(restored.name, 'Boss');
+  assert.strictEqual(restored.text, text);
+  assert.deepStrictEqual(restored.skills, presets.parsePreset(text));
+});
+
+test('block and wait builders validate before insertion and preserve surrounding steps', () => {
+  const step = require('../../plugins/grimlite-parity/features/auto-attack/skill-step.js');
+  const block = step.block('SH', '<=', '50', '2;3');
+  assert.strictEqual(block, 'if SH<=50 {\n2;3\n}');
+  const inserted = step.insert('1;2;3;4', 2, 5, block);
+  assert.strictEqual(inserted.text, '1;if SH<=50 {\n2;3\n};4');
+  assert.doesNotThrow(function () { presets.parsePreset(inserted.text); });
+  assert.strictEqual(step.wait('500'), 'wait 500ms');
+  assert.strictEqual(step.cooldown('2;3', '4'), 'cooldown { 2;3 }');
+  assert.deepStrictEqual(presets.parsePreset(step.cooldown('2 3', '4')),
+    [{ type: 'cooldown', index: '2' }, { type: 'cooldown', index: '3' }]);
+  assert.throws(function () { step.cooldown('2:SH<50', '4'); }, /only skills/);
+  assert.throws(function () { step.block('SH', '<=', '50', 'if SM>20 { 1 }'); }, /nested/);
+  assert.throws(function () { step.insert('if SH<50 { 1;2 }', 11, 11, block); }, /nested/);
+  assert.throws(function () { step.block('', '<=', '50', '2'); }, /HP or MP/);
+  ['0', '60001', '1.5', '-1', ''].forEach(function (ms) {
+    assert.throws(function () { step.wait(ms); }, /1 to 60000/);
+  });
 });
