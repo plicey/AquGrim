@@ -968,6 +968,7 @@ call, so that is what this section is for.
 - [ ] **Buff If StopAttack** fires the buff list once per pass while StopAttack is on, and cancelling the attack and target happens the moment StopAttack is ticked
 - [ ] **AttackPriority** walks its list in order (`id.N` goes to the by-id helper, and a target already held is not re-attacked), then the wildcard `*`
 - [ ] **Wait** holds each skill until `SkillAvailable` says it is ready
+- [ ] **Auto Attack Skill Set:** insert **Wait and cast selected skill**; `await 1;2` holds on skill 1 while it cools down, casts it when ready, then advances to 2. `ready 1` still only waits.
 - [ ] Dying sends the character to its spawn point and the loop picks up again
 - [ ] **Skill Preset** fills the skill list, the heal list, its percentage, the buff list and the two boxes; **AI** and **AM** leave the heal list and its percentage alone, and the SafeSkill box follows the preset's own carried flag
 
