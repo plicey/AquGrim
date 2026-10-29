@@ -256,19 +256,12 @@ exports.getMenu = (keybinds, funcTakeSS, isContext) => {
     return sanitizeMenuAccelerators(template);
 };
 
-exports.getGameMenu = (keybinds, win) => {
+exports.getGameMenu = (keybinds) => {
     const menuMessages = locale.strings.menuMessages || {};
     const template = [
         platformAquaStarMenu(menuMessages, keybinds),
         platformToolsMenu(menuMessages, keybinds)
     ];
-
-    // The game window's chrome strip, when the active plugin declared one (ticket #45). The
-    // label and the state are the plugin's; the platform only places the entry and moves the
-    // window, so this platform still names no game. One checkable entry, no group around it: the
-    // reference reaches the same toggle from one hotkey action (Hotkeys.cs:405-408).
-    const chromeItem = require('./game-chrome.js').gameChrome().menuItem({ win: win });
-    if (chromeItem) template.push(chromeItem);
 
     if (menuRegistry.hasGameMenuPages && menuRegistry.hasGameMenuPages()) {
         const pages = gamePagesFromDescriptor(

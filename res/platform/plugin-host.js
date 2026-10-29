@@ -445,8 +445,8 @@ function createPluginHost(options) {
          * What is declared here is the game-specific half - the controls, their labels, and what
          * each one does - because the platform names no game.
          *
-         * @param {{height: number, controls: Function, state: Function, action: Function,
-         *          menuLabel?: Function}} declaration
+         * @param {{height: number, controls: Function, state: Function, action: Function}}
+         *        declaration
          */
         registerGameChrome: function (declaration) {
             if (!declaration || typeof declaration !== 'object' || Array.isArray(declaration)) {
@@ -464,9 +464,6 @@ function createPluginHost(options) {
             }
             if (typeof declaration.action !== 'function') {
                 throw new Error('[AquGrim:plugins] registerGameChrome expects action(id, args)');
-            }
-            if (declaration.menuLabel != null && typeof declaration.menuLabel !== 'function') {
-                throw new Error('[AquGrim:plugins] registerGameChrome menuLabel must be a function');
             }
             const controls = declaration.controls();
             if (!Array.isArray(controls) || !controls.length) {
