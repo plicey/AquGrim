@@ -110,7 +110,7 @@ function register(host, windowTitle) {
                 return windowTitle('autoAttack', 'AquGrim - Auto Attack Skill Set');
             },
             url: pageUrl('auto-attack', 'auto-attack.html'),
-            config: windowConfig(host, 'auto-attack', 'preload_auto_attack.js', { width: 600, height: 560 })
+            config: windowConfig(host, 'auto-attack', 'preload_auto_attack.js', { width: 1000, height: 560 })
         },
         {
             id: ABOUT_WINDOW_ID,
