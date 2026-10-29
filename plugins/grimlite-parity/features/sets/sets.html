@@ -58,8 +58,10 @@
   <div class="line">
     <button id="save">Save</button>
     <button id="open">Load</button>
+    <button id="saveEquipped">Save Equipped…</button>
+    <button id="equip">Equip Set</button>
   </div>
-  <div id="status"></div>
+  <div id="status" role="status" aria-live="polite" style="white-space: pre-wrap"></div>
 <script>
 (function () {
   var api = window.aquastarSets;
@@ -71,6 +73,7 @@
   var entries = [];
   var saved = [];
   var rows = [];
+  var equipping = false;
 
   function setStatus(text, kind) {
     status.textContent = text || '';
@@ -89,6 +92,10 @@
       setList.appendChild(row);
     });
     document.getElementById('save').disabled = entries.length === 0;
+    document.getElementById('equip').disabled = equipping || entries.length === 0;
+    ['add', 'clear', 'open', 'saveEquipped'].forEach(function (id) {
+      document.getElementById(id).disabled = equipping;
+    });
   }
 
   function renderSaved() {
@@ -97,6 +104,11 @@
       var row = document.createElement('li');
       row.textContent = set.name;
       row.title = set.path;
+      row.tabIndex = 0;
+      row.setAttribute('role', 'button');
+      row.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openSet(set.path); }
+      });
       row.addEventListener('click', function () {
         openSet(set.path);
       });
@@ -127,6 +139,7 @@
     return api.list().then(function (result) {
       saved = (result && result.sets) || [];
       renderSaved();
+      if (result && result.error) setStatus(result.error, 'err');
     });
   }
 
@@ -134,12 +147,14 @@
     if (!result || result.canceled) return;
     if (result.error) { setStatus(result.error, 'err'); return; }
     entries = result.entries || [];
+    document.getElementById('setHeading').textContent = result.path ? result.path.split(/[\\/]/).pop() : 'Set';
     renderSet();
     renderSaved();
     setStatus(strings.loaded, 'ok');
   }
 
   function openSet(path) {
+    if (equipping) return;
     api.open(path).then(applyOpened).catch(fail);
   }
 
@@ -156,6 +171,26 @@
       document.getElementById('savedHeading').textContent = chrome.savedHeading;
       document.title = chrome.title;
     }).then(function () {
+      document.getElementById('saveEquipped').addEventListener('click', function () {
+        api.saveEquipped().then(function (result) {
+          if (!result || result.canceled) return;
+          if (result.error) { setStatus(result.error, 'err'); return; }
+          applyOpened(result);
+          setStatus(strings.saved || 'Saved.', 'ok');
+          return refreshSaved();
+        }).catch(fail);
+      });
+      document.getElementById('equip').addEventListener('click', function () {
+        if (equipping || !entries.length) return;
+        equipping = true;
+        renderSet();
+        setStatus('Sending ordinary equip requests…');
+        api.equip(entries).then(function (result) {
+          var text = typeof result.requested === 'number'
+            ? 'Requested ' + result.requested + ' equipment changes; ' + result.skipped + ' already equipped.' : '';
+          setStatus(text + (result.error ? '\n' + result.error : ''), result.error ? 'err' : '');
+        }).catch(fail).then(function () { equipping = false; renderSet(); });
+      });
       document.getElementById('refresh').addEventListener('click', function () {
         refreshItems().catch(fail);
       });
@@ -175,6 +210,7 @@
         api.save(entries).then(function (result) {
           if (!result || result.canceled) return;
           if (result.error) { setStatus(result.error, 'err'); return; }
+          if (result.path) document.getElementById('setHeading').textContent = result.path.split(/[\\/]/).pop();
           setStatus(strings.saved, 'ok');
           return refreshSaved();
         }).catch(fail);

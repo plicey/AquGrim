@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AquGrim - Auto Attack Skill Set</title>
+<link rel="stylesheet" href="../../../../res/features/common/focus.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #121212; color: #e6e6e6;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
+  }
+  body { display: flex; flex-direction: column; padding: 14px; gap: 10px; box-sizing: border-box; }
+  h1 { margin: 0; font-size: 15px; }
+  p { margin: 0; color: #9a9a9a; font-size: 12px; line-height: 1.4; }
+  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  label { display: flex; flex-direction: column; gap: 4px; color: #bdbdbd; font-size: 11px; }
+  input, select, textarea {
+    box-sizing: border-box; background: #1b1b1b; color: #e6e6e6;
+    border: 1px solid #383838; border-radius: 4px;
+  }
+  input, select { height: 28px; padding: 0 7px; }
+  input[readonly] { color: #9a9a9a; }
+  textarea {
+    flex: 1 1 auto; min-height: 110px; resize: none;
+    padding: 8px; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .builder { display: grid; grid-template-columns: 1fr 1.3fr 1fr 70px auto; gap: 6px; align-items: end; }
+  .builder select, .builder input { width: 100%; min-width: 0; }
+  .builder button { height: 28px; }
+  @media (max-width: 540px) {
+    .builder { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .builder button { justify-self: start; }
+  }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row .grow { flex: 1; }
+  .block-builder { flex-wrap: wrap; gap: 6px; }
+  .block-builder input { width: 90px; }
+  details { color: #9a9a9a; font-size: 12px; line-height: 1.4; }
+  summary { cursor: pointer; }
+  button {
+    background: #262626; color: #e6e6e6; border: 1px solid #383838;
+    border-radius: 4px; padding: 5px 10px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #303030; }
+  button:disabled { opacity: .45; cursor: default; }
+  #status { min-height: 16px; color: #7fd08a; }
+  #status.err { color: #ff8e8e; }
+</style>
+</head>
+<body>
+  <h1>Auto Attack Skill Set</h1>
+  <p>Presets are saved under a class and a name. Selecting one loads and uses it now. Edits apply the next time Auto Attack is enabled; Save only stores them.</p>
+  <div class="fields">
+    <label>Class <input id="className" readonly></label>
+    <label>Preset name <input id="presetName" spellcheck="false" placeholder="e.g. Boss"></label>
+  </div>
+  <div class="row">
+    <select id="presets" class="grow">
+      <option value="">Default (1,2,3,4)</option>
+    </select>
+    <button id="delete" disabled>Delete</button>
+  </div>
+  <div class="builder" role="group" aria-label="Insert a rotation step">
+    <label>Skill<select id="stepSkill">
+      <option value="1">Skill 1</option><option value="2">Skill 2</option>
+      <option value="3">Skill 3</option><option value="4">Skill 4</option>
+    </select></label>
+    <label>When<select id="stepCondition">
+      <option value="">Always</option><option value="SH">My health (%)</option><option value="SM">My mana (%)</option>
+    </select></label>
+    <label>Comparison<select id="stepComparator" disabled>
+      <option value=">=">At least</option><option value="<=">At most</option><option value="=">Exactly</option>
+    </select></label>
+    <label>Percent<input id="stepThreshold" type="number" min="0" max="100" step="1" value="50" disabled></label>
+    <button id="insertStep">Insert</button>
+  </div>
+  <div class="row block-builder" role="group" aria-label="Insert blocks and waits">
+    <button id="insertBlock">Wrap selection in If</button>
+    <button id="insertCooldown">Wrap selection in Cooldown</button>
+    <label>Wait (ms)<input id="waitDuration" type="number" min="1" max="60000" value="500"></label>
+    <button id="insertWait">Insert wait</button>
+    <button id="insertReady">Wait for selected skill</button>
+  </div>
+  <p>Insert at the cursor or replace selected steps. If uses the HP/MP controls above; Cooldown uses selected skills. Wait for selected skill checks readiness without casting.</p>
+  <details><summary>Syntax and behavior</summary>
+    <p><code>1; if SH&lt;=50 { 2;3 }; wait 500ms; ready 2; 4; cooldown { 3 }</code></p>
+    <p>SH = my HP %, SM = my MP %. Block &lt; and &gt; are strict; &lt;= and &gt;= include equality. Legacy inline conditions keep inclusive comparisons.
+    If is tested once on entry; its steps continue in order. Blocks cannot nest; no else. Without a selection, If inserts 1;2 and Cooldown inserts the selected skill.</p>
+    <p>Wait is 1–60000ms; ready waits for skill 1–4 without casting it. The old global wait marker still waits before normal casts.
+    Cooldown skills are checked in rotating order between combo steps and during waits, cast only when available, never forced. At most one casts per gap; the main combo keeps its position and gets the next turn. A waiting main skill gets priority when it becomes ready.</p>
+  </details>
+  <textarea aria-label="Skill rotation" id="skills" spellcheck="false" placeholder="1,2,3,4"></textarea>
+  <div class="row">
+    <div class="grow" id="status" role="status"></div>
+    <button id="save">Save</button>
+  </div>
+<script src="skill-step.js"></script>
+<script>
+(function () {
+  var api = window.aquastarAutoAttack;
+  var classBox = document.getElementById('className');
+  var nameBox = document.getElementById('presetName');
+  var select = document.getElementById('presets');
+  var box = document.getElementById('skills');
+  var status = document.getElementById('status');
+  var remove = document.getElementById('delete');
+  var pending = null;
+  var condition = document.getElementById('stepCondition');
+  var comparator = document.getElementById('stepComparator');
+  var threshold = document.getElementById('stepThreshold');
+
+  condition.addEventListener('change', function () {
+    comparator.disabled = threshold.disabled = !condition.value;
+  });
+  document.getElementById('insertStep').addEventListener('click', function () {
+    try {
+      var step = window.autoAttackStep.format(document.getElementById('stepSkill').value,
+        condition.value, comparator.value, threshold.value);
+      var inserted = window.autoAttackStep.insert(box.value, box.selectionStart, box.selectionEnd, step);
+      box.value = inserted.text;
+      box.focus();
+      box.setSelectionRange(inserted.caret, inserted.caret);
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    } catch (error) {
+      say(error.message, true);
+    }
+  });
+
+  function insertBuilt(build) {
+    try {
+      var selected = box.value.slice(box.selectionStart, box.selectionEnd);
+      var inserted = window.autoAttackStep.insert(box.value, box.selectionStart, box.selectionEnd, build(selected));
+      box.value = inserted.text;
+      box.focus();
+      box.setSelectionRange(inserted.caret, inserted.caret);
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    } catch (error) { say(error.message, true); }
+  }
+  document.getElementById('insertBlock').addEventListener('click', function () {
+    insertBuilt(function (text) { return window.autoAttackStep.block(condition.value, comparator.value, threshold.value, text); });
+  });
+  document.getElementById('insertCooldown').addEventListener('click', function () {
+    insertBuilt(function (text) { return window.autoAttackStep.cooldown(text, document.getElementById('stepSkill').value); });
+  });
+  document.getElementById('insertWait').addEventListener('click', function () {
+    insertBuilt(function () { return window.autoAttackStep.wait(document.getElementById('waitDuration').value); });
+  });
+  document.getElementById('insertReady').addEventListener('click', function () {
+    insertBuilt(function () { return 'ready ' + document.getElementById('stepSkill').value; });
+  });
+
+  function say(text, error) {
+    status.textContent = text || '';
+    status.className = error ? 'err' : '';
+  }
+
+  function currentClass() { return classBox.value.trim(); }
+
+  function options(state) {
+    select.replaceChildren();
+    var fallback = document.createElement('option');
+    fallback.value = '';
+    fallback.textContent = 'Default (1,2,3,4)';
+    select.appendChild(fallback);
+
+    var custom = document.createElement('option');
+    custom.value = '__custom__';
+    custom.textContent = 'Custom (unsaved)';
+    select.appendChild(custom);
+
+    (state.presets || []).forEach(function (preset) {
+      var option = document.createElement('option');
+      option.value = preset.name;
+      option.textContent = preset.name + (preset.stored ? '' : ' (ClientConfig)');
+      option.dataset.stored = preset.stored ? 'true' : 'false';
+      select.appendChild(option);
+    });
+
+    if (state.selected) {
+      var found = Array.prototype.some.call(select.options, function (option) {
+        return option.value === state.selected;
+      });
+      select.value = found ? state.selected : '__custom__';
+    } else {
+      select.value = state.text ? '__custom__' : '';
+    }
+    remove.disabled = select.value === '' || select.value === '__custom__' ||
+      select.selectedOptions[0].dataset.stored !== 'true';
+  }
+
+  function apply(state, keepName) {
+    classBox.value = (state && state.className) || '';
+    box.value = (state && state.text) || '';
+    if (!keepName) nameBox.value = (state && state.selected) || '';
+    options(state || {});
+  }
+
+  function useSelection() {
+    var selected = select.value;
+    var className = currentClass();
+    if (pending) { clearTimeout(pending); pending = null; }
+    if (!className) return say('No class was detected. Sign in and reopen this window.', true);
+
+    if (!selected) {
+      Promise.resolve(api.useDefault({ className: className })).then(function (result) {
+        if (!result || result.ok !== true) return say((result && result.error) || 'Could not use Default.', true);
+        apply(result);
+        nameBox.value = '';
+        say('Using the default 1,2,3,4 rotation.');
+      }).catch(function (error) { say(error.message || 'Could not use Default.', true); });
+      return;
+    }
+
+    if (selected === '__custom__') {
+      Promise.resolve(api.useDraft({ className: className, text: box.value })).then(function (result) {
+        if (!result || result.ok !== true) return say((result && result.error) || 'Could not remember draft.', true);
+        apply(result, true);
+        say('Using the unsaved draft. It will be used again when Auto Attack is re-enabled.');
+      }).catch(function (error) { say(error.message || 'Could not remember draft.', true); });
+      return;
+    }
+
+    Promise.resolve(api.loadPreset({ className: className, name: selected })).then(function (result) {
+      if (!result || result.ok !== true) return say((result && result.error) || 'Could not load the preset.', true);
+      apply(result);
+      nameBox.value = selected;
+      say('Using ' + selected + '. Edits apply when Auto Attack is re-enabled.');
+    });
+  }
+
+  function save() {
+    var className = currentClass();
+    var name = nameBox.value.trim();
+    if (!className) return say('No class was detected. Sign in and reopen this window.', true);
+    if (!name) return say('Enter a preset name before saving.', true);
+    if (!box.value.trim()) return say('Enter a skill rotation before saving.', true);
+
+    Promise.resolve(api.savePreset({ className: className, name: name, text: box.value }))
+      .then(function (result) {
+        if (!result || result.ok !== true) return say((result && result.error) || 'Could not save.', true);
+        apply(result, true);
+        nameBox.value = name;
+        say('Saved ' + className + ' / ' + name + '. Re-enable Auto Attack to use the current text.');
+      });
+  }
+
+  select.addEventListener('change', useSelection);
+  document.getElementById('save').addEventListener('click', save);
+  remove.addEventListener('click', function () {
+    if (!select.value || select.value === '__custom__') return;
+    Promise.resolve(api.deletePreset({ className: currentClass(), name: select.value })).then(function (result) {
+      if (!result || result.ok !== true) return say((result && result.error) || 'Could not delete.', true);
+      apply(result, true);
+      say('Deleted the saved preset. The editor text remains an unsaved draft.');
+    });
+  });
+
+  box.addEventListener('input', function () {
+    if (pending) clearTimeout(pending);
+    pending = setTimeout(function () {
+      pending = null;
+      var name = select.value && select.value !== '__custom__' ? select.value : null;
+      Promise.resolve(api.draft({ className: currentClass(), text: box.value, name: name }))
+        .then(function (result) {
+          if (!result || result.ok === false) return say((result && result.error) || 'Could not remember draft.', true);
+          if (result && result.selected) select.value = result.selected;
+          else select.value = box.value.trim() ? '__custom__' : '';
+          remove.disabled = select.value === '' || select.value === '__custom__' ||
+            select.selectedOptions[0].dataset.stored !== 'true';
+          say('Draft remembered. It applies when Auto Attack is re-enabled.');
+        }).catch(function (error) { say(error.message || 'Could not remember draft.', true); });
+    }, 150);
+  });
+
+  box.addEventListener('keydown', function (event) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+      event.preventDefault();
+      save();
+    }
+  });
+
+  function refresh() {
+    return Promise.resolve(api.get()).then(function (result) {
+      apply(result || {});
+      if (!currentClass()) say('No class was detected. Sign in and reopen this window.', true);
+      return result;
+    }, function (error) {
+      say((error && error.message) || 'Could not load.', true);
+    });
+  }
+
+  window.addEventListener('focus', function () {
+    if (!pending) refresh();
+  });
+
+  refresh().then(function () { box.focus(); });
+})();
+</script>
+</body>
+</html>

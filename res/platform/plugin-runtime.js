@@ -13,6 +13,7 @@ let BrowserWindowApi = null;
 let createOriginProxyApi = null;
 let packetTapApi = null;
 let resolvePacketSenderApi = null;
+let resolvePacketLayerApi = null;
 let settingsApi = null;
 let gameOriginProxy = null;
 let gameOriginBaseUrl = '';
@@ -36,6 +37,7 @@ function setDependencies(deps) {
     // A resolver, not the sender itself: the packet layer is composed after plugins activate, so
     // the write path only exists once the app is on its way to the first window.
     if (deps.packetSender) resolvePacketSenderApi = deps.packetSender;
+    if (deps.packetLayer) resolvePacketLayerApi = deps.packetLayer;
     if (deps.settings) settingsApi = deps.settings;
 }
 
@@ -73,7 +75,16 @@ function startGameOrigin(declaration) {
         routes: declared.routes,
         files: files,
         userAgent: typeof declared.userAgent === 'function' ? declared.userAgent : null,
-        log: function (line) { console.log('[AquaStar:origin] ' + line); }
+        // Resolve on each response: the origin starts before the packet layer exists.
+        rewriteResponse: function (context, body) {
+            const layer = resolvePacketLayerApi && resolvePacketLayerApi();
+            const matches = require('./session-rules.js').matchesPattern;
+            const rule = layer && layer.rules.find(function (entry) {
+                return entry.urls.some(function (pattern) { return matches(pattern, context.url); });
+            });
+            return rule ? rule.onResponseBody(context, body) : undefined;
+        },
+        log: function (line) { console.log('[AquGrim:origin] ' + line); }
     });
     return Promise.resolve(proxy.listen(0)).then(function (baseUrl) {
         gameOriginProxy = proxy;
@@ -81,7 +92,7 @@ function startGameOrigin(declaration) {
         if (typeof constant.setSwfWrapperBase === 'function') {
             constant.setSwfWrapperBase(baseUrl + '/wrapper.html');
         }
-        console.log('[AquaStar:origin] game origin on ' + baseUrl);
+        console.log('[AquGrim:origin] game origin on ' + baseUrl);
         return baseUrl;
     });
 }
@@ -329,7 +340,7 @@ function shouldSkipDuplicate(kind, key) {
     const now = Date.now();
     const prev = recentActions[id] || 0;
     if (now - prev < ACTION_DEDUP_MS) {
-        console.log('[AquaStar:plugins] Ignoring duplicate ' + kind + ' for ' + key);
+        console.log('[AquGrim:plugins] Ignoring duplicate ' + kind + ' for ' + key);
         return true;
     }
     recentActions[id] = now;
@@ -348,7 +359,7 @@ function openPrimaryGame(opts) {
 function openLaunch(launchId) {
     const entry = getLaunch(launchId);
     if (!entry || typeof entry.getUrl !== 'function') {
-        throw new Error('[AquaStar:plugins] Unknown launch id: ' + launchId);
+        throw new Error('[AquGrim:plugins] Unknown launch id: ' + launchId);
     }
     const instances = instancesApi || require('../instances.js');
     const url = entry.getUrl();
@@ -379,7 +390,7 @@ function openUrl(url, mode) {
 
 function openExternal(url) {
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
-        throw new Error('[AquaStar:plugins] openExternal requires an http(s) URL');
+        throw new Error('[AquGrim:plugins] openExternal requires an http(s) URL');
     }
     if (shouldSkipDuplicate('external', url)) {
         return Promise.resolve(undefined);
@@ -396,7 +407,7 @@ function openFeatureWindow(featureId) {
     if (typeof instances.openFeatureWindow === 'function') {
         return instances.openFeatureWindow(featureId);
     }
-    throw new Error('[AquaStar:plugins] openFeatureWindow not available');
+    throw new Error('[AquGrim:plugins] openFeatureWindow not available');
 }
 
 function fetchText(url, fetchOpts) {

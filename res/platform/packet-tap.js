@@ -36,7 +36,7 @@ function createPacketTap(options) {
          */
         subscribe: function (listener) {
             if (typeof listener !== 'function') {
-                throw new Error('[AquaStar:packets] the packet tap subscribes a function');
+                throw new Error('[AquGrim:packets] the packet tap subscribes a function');
             }
             if (listeners.indexOf(listener) === -1) listeners.push(listener);
             return function off() { unsubscribe(listener); };

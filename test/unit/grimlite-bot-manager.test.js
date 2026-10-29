@@ -78,6 +78,20 @@ test('the customiser offers every command class the reference enumerates, plus i
   assert.ok(names.indexOf('CmdCellIs') !== -1, 'a statement is customisable too');
 });
 
+test('Random Colors mixes every class halfway towards the RGB the form was given', () => {
+  const display = settings.create({ store: memoryStore() });
+  const random = Math.random;
+  Math.random = function () { return 0; };
+  try {
+    display.randomColours(255, 255, 255);
+  } finally {
+    Math.random = random;
+  }
+  display.customisableNames().forEach(function (name) {
+    assert.strictEqual(display.colour(name), 'FF7F7F7F', name);
+  });
+});
+
 test('a store that will not parse falls back to the reference defaults instead of throwing', () => {
   const broken = { read: function () { throw new Error('bad json'); },
     write: function () { throw new Error('bad json'); },

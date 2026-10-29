@@ -104,8 +104,28 @@ function createGameChrome(deps) {
         if (!declaration || typeof declaration.controls !== 'function') return [];
         const list = declaration.controls() || [];
         return list.map(function (control) {
-            return { id: control.id, kind: control.kind, label: control.label };
+            const entry = { id: control.id, kind: control.kind, label: control.label };
+            ['refreshOnFocus', 'width', 'placeholder', 'valueFrom', 'pendingLabel'].forEach(function (key) {
+                if (control[key] !== undefined) entry[key] = control[key];
+            });
+            return entry;
         });
+    }
+
+    /** The window's render percentage: 25-100, continuous. */
+    function renderScale(win) {
+        const asked = Number(win && win.aquaStarRenderScale);
+        if (!isFinite(asked) || asked <= 0) return 100;
+        return Math.max(25, Math.min(100, Math.round(asked * 10) / 10));
+    }
+
+    function setRenderScale(win, value) {
+        const asked = Number(value);
+        const next = isFinite(asked)
+            ? Math.max(25, Math.min(100, Math.round(asked * 10) / 10))
+            : 100;
+        if (win) win.aquaStarRenderScale = next;
+        return next;
     }
 
     /** Everything the page needs to draw the strip, including the plugin's live values. */
@@ -114,6 +134,7 @@ function createGameChrome(deps) {
             enabled: isEnabled(win),
             height: height(),
             controls: controls(),
+            renderScale: renderScale(win),
             values: {},
             options: {}
         };
@@ -214,6 +235,7 @@ function createGameChrome(deps) {
                     return {
                         ok: !!(result && result.ok),
                         error: (result && result.error) || null,
+                        message: (result && result.message) || null,
                         view: view
                     };
                 });
@@ -228,6 +250,8 @@ function createGameChrome(deps) {
         available: available,
         height: height,
         controls: controls,
+        renderScale: renderScale,
+        setRenderScale: setRenderScale,
         isEnabled: isEnabled,
         stripHeight: stripHeight,
         contentSize: contentSize,

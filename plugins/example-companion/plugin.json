@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "apiVersion": 1,
   "main": "main.js",
-  "description": "Reference plugin demonstrating AquaStar Host APIs (stage demo, navigation, settings, IPC, store, menus).",
-  "author": "AquaStar",
+  "description": "Reference plugin demonstrating AquGrim Host APIs (stage demo, navigation, settings, IPC, store, menus).",
+  "author": "AquGrim",
   "minAppVersion": "0.0.1",
   "capabilities": [
     "game-launch",

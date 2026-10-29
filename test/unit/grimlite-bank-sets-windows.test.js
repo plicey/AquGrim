@@ -20,7 +20,7 @@ const repoRoot = path.join(__dirname, '../..');
 const pluginRoot = path.join(repoRoot, 'plugins/grimlite-parity');
 const appVersion = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')).version;
 
-const WINDOW_IDS = ['grimlite-parity-bank'];
+const WINDOW_IDS = ['grimlite-parity-bank', 'grimlite-parity-sets'];
 
 function activateParity(deps) {
   return platform.activatePlugin({
@@ -60,11 +60,14 @@ test('the Bank window is registered in the app\'s window conventions', async () 
     assert.ok(source.indexOf("require('electron')") !== -1, id + ' preload needs electron');
     assert.strictEqual(source.indexOf("require('../"), -1, id + ' preload must stay self-contained');
   });
-  assert.strictEqual(windows.some(function (w) { return w.id === 'grimlite-parity-sets'; }), false,
-    'Sets has no shell surface and must not be registered');
+  assert.ok(windows.some(function (w) { return w.id === 'grimlite-parity-sets'; }));
+  const channels = activated.host._getState().ipcHandlers.map(function (entry) { return entry.channel; });
+  ['listSets', 'setInventoryRows', 'openSet', 'saveSet', 'saveEquippedSet', 'equipSet', 'setMessages'].forEach(function (name) {
+    assert.ok(channels.some(function (channel) { return channel.endsWith(':' + name); }), 'missing Sets IPC ' + name);
+  });
 });
 
-test('the Grimlite menu keeps Bank visible and hides Sets', async () => {
+test('the Grimlite menu shows Bank and Sets', async () => {
   const opened = [];
   const activated = await activateParity({
     openFeatureWindow: function (id) {
@@ -87,10 +90,11 @@ test('the Grimlite menu keeps Bank visible and hides Sets', async () => {
   const labels = submenu.map(function (item) { return item.label; });
   // Bank is reachable from Grimlite; Sets has no shell surface.
   assert.ok(labels.indexOf('Bank') !== -1, 'no Bank entry: ' + labels.join(', '));
-  assert.strictEqual(labels.indexOf('Sets'), -1, 'Sets must not have a visible menu entry');
+  assert.ok(labels.indexOf('Sets') !== -1);
+  submenu.filter(function (item) { return item.label === 'Sets'; })[0].click();
 
   submenu.filter(function (item) { return item.label === 'Bank'; })[0].click();
-  assert.deepStrictEqual(opened, [WINDOW_IDS[0]]);
+  assert.deepStrictEqual(opened, [WINDOW_IDS[1], WINDOW_IDS[0]]);
 });
 
 test('the reference\'s Show Bank hotkey action is bindable, and defaults to a key of its own', async () => {
@@ -228,9 +232,7 @@ test('the Sets window lists, adds, saves, opens, clears and equips through its c
     'Blinding Light of Destiny', 'ArchPaladin', "Sepulchure's Armor"
   ]);
 
-  // The extra equip path is gone: the channel is refused like any other unknown one.
-  assert.throws(function () { window.handle('equipSet', null, [opened.entries]); },
-    /unknown sets channel/);
+  assert.match((await window.handle('equipSet', null, [[]])).error, /Select/);
 
   const saveResult = await window.handle('saveSet', null, [opened.entries]);
   assert.strictEqual(saveResult.error, null);
@@ -238,4 +240,56 @@ test('the Sets window lists, adds, saves, opens, clears and equips through its c
 
   // An unknown channel is refused rather than answered with something plausible.
   assert.throws(function () { window.handle('nonsense'); }, /unknown sets channel/);
+});
+
+test('Sets serializes requests across IPC clicks and saves the equipped snapshot via existing dialog', async () => {
+  let release;
+  let count = 0;
+  let saved;
+  const item = { name: 'Cape', category: 'Cape', isEquipped: false };
+  const window = createSetsWindow({
+    game: { readInventory: async () => [item], sleep: async () => {},
+      equipItem: () => { count++; return new Promise(resolve => { release = resolve; }); } },
+    dialogs: { save: async entries => { saved = entries; return { error: null }; } }
+  });
+  const pending = window.handle('equipSet', null, [[{ type: 'Cape', name: 'Cape' }]]);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match((await window.handle('equipSet', null, [[{ type: 'Cape', name: 'Cape' }]])).error, /already running/);
+  release(true);
+  assert.strictEqual((await pending).requested, 1);
+  assert.strictEqual(count, 1);
+  item.isEquipped = true;
+  await window.handle('saveEquippedSet');
+  assert.deepStrictEqual(saved, [{ type: 'Cape', name: 'Cape' }]);
+  assert.strictEqual((await window.handle('equipSet', null, [[{ type: 'Cape', name: 'Cape' }]])).skipped, 1);
+});
+
+
+test('toolbar and Sets window share the equip guard, including file loading and failures', async () => {
+  let release;
+  let reads = 0;
+  const entries = [{ type: 'Cape', name: 'Cape' }];
+  const window = createSetsWindow({
+    dialogs: { openByPath: async function (target) {
+      reads++;
+      if (target === '../outside.gset') return { error: 'outside sets folder' };
+      return { entries: entries };
+    } },
+    game: { readInventory: async () => [{ name: 'Cape', category: 'Cape' }],
+      sleep: async () => {},
+      equipItem: () => new Promise(resolve => { release = resolve; }) }
+  });
+  const toolbar = window.handle('equipSavedSet', null, ['farm.gset']);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match((await window.handle('equipSet', null, [entries])).error, /already running/);
+  assert.match((await window.handle('equipSavedSet', null, ['farm.gset'])).error, /already running/);
+  assert.strictEqual(reads, 1);
+  release(true);
+  assert.strictEqual((await toolbar).requested, 1);
+  assert.match((await window.handle('equipSavedSet', null, ['../outside.gset'])).error, /outside/);
+  const editor = window.handle('equipSet', null, [entries]);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match((await window.handle('equipSavedSet', null, ['farm.gset'])).error, /already running/);
+  release(true);
+  assert.strictEqual((await editor).requested, 1);
 });

@@ -57,11 +57,6 @@ const LOADER_ONLY = {
     ShowBank: true
 };
 
-// How many times SetSkipCutscenes will empty the external movie before giving up. The loader's own
-// body is a while loop with no bound; against a live movie a child that will not come out would
-// spin the app, so the port stops and says so instead.
-const CUTSCENE_TRIES = 100;
-
 // The reference client's loader is a RENAMING LAYER, not a second implementation: each of the ten
 // names above has a body in it that reads and calls paths the stock game does carry. Its own
 // decompiled bodies (Grimoire/game/Settings.as, Player.as, Shops.as) are transcribed below, so a
@@ -80,11 +75,9 @@ const LOADER_ROUTE = {
         return g.call0('world.toggleBank');
     },
 
-    // Settings.as:SetInfiniteRange - while i <= 5, world.actions.active[i].range = 20000.
+    // Native callback keeps original action identities; legacy calls remain one-shot.
     SetInfiniteRange: async function (g) {
-        for (let i = 0; i <= 5; i++) {
-            await g.set('world.actions.active.' + i + '.range', 20000);
-        }
+        return g.raw('SetInfiniteRangeEnabled', [true, false]);
     },
 
     // Settings.as:SetProvokeMonsters - world.aggroAllMon().
@@ -116,19 +109,9 @@ const LOADER_ROUTE = {
         return g.set('world.WALKSPEED', parseInt(String(args[0]), 10));
     },
 
-    // Settings.as:SetSkipCutscenes - empty the external movie, show the game, show its interface.
-    SetSkipCutscenes: async function (g) {
-        for (let tries = 0; tries < CUTSCENE_TRIES; tries++) {
-            const children = await g.get('mcExtSWF.numChildren');
-            if (!children) break;
-            await g.call('mcExtSWF.removeChildAt', [0]);
-            if (tries === CUTSCENE_TRIES - 1) {
-                throw new Error('mcExtSWF still had children after ' + CUTSCENE_TRIES +
-                    ' tries, so this cutscene could not be cleared');
-            }
-        }
-        await g.set('world.visible', true);
-        return g.call0('showInterface');
+    // Native frame watcher owns the handler's transfer lifecycle; never drain external movies.
+    SetSkipCutscenes: function (g, args) {
+        return g.raw('SetSkipCutscenesEnabled', [args[0] !== false]);
     },
 
     // Player.as:CancelTarget - world.cancelTarget() twice, in that order.
@@ -226,6 +209,7 @@ function createGameCalls(opts) {
             });
         }
         return {
+            raw: send,
             get: function (path) { return send('getGameObject', [path]); },
             set: function (path, value) { return send('setGameObject', [path, value]); },
             call: function (path, args) { return send('callGameFunction', [path].concat(args || [])); },
@@ -244,6 +228,18 @@ function createGameCalls(opts) {
 
         /** Attach if needed, then call a bridge callback. Never rejects. */
         call: async function (name, args) {
+            // Never let a legacy loader mutate ranges before originals are retained.
+            if ((name === 'callGameFunction' || name === 'callGameFunction0') &&
+                args && args[0] === 'SetInfiniteRange') {
+                name = 'SetInfiniteRangeEnabled';
+                args = [args[1] !== false, args.length > 1];
+            }
+            // Never probe a legacy loader's destructive drain, including on untick.
+            if ((name === 'callGameFunction' || name === 'callGameFunction0') &&
+                args && args[0] === 'SetSkipCutscenes') {
+                name = 'SetSkipCutscenesEnabled';
+                args = [args[1] !== false];
+            }
             if (bridge && typeof bridge.attach === 'function') {
                 let attached;
                 try {

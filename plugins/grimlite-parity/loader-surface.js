@@ -61,7 +61,22 @@ function playerIn(tree, username) {
     const keys = tree && typeof tree === 'object' ? Object.keys(tree) : [];
     for (let i = 0; i < keys.length; i++) {
         const player = tree[keys[i]];
-        if (player && typeof player.strUsername === 'string' && player.strUsername.toLowerCase() === want) return player;
+        // Map packets use uoName; World.uoTreeLeafSet also keys partial leaves by username.
+        const name = player && (player.strUsername || player.uoName || keys[i]);
+        if (typeof name === 'string' && name.toLowerCase() === want) return player;
+    }
+    return null;
+}
+
+/** Player.GetAccessLevel walks world.avatars, matching dataLeaf.strUsername. */
+function avatarIn(avatars, username) {
+    const want = String(username === null || username === undefined ? '' : username).toLowerCase();
+    const keys = avatars && typeof avatars === 'object' ? Object.keys(avatars) : [];
+    for (let i = 0; i < keys.length; i++) {
+        const player = avatars[keys[i]];
+        const leaf = player && player.dataLeaf;
+        const name = leaf && typeof leaf.strUsername === 'string' ? leaf.strUsername : null;
+        if (name && name.toLowerCase() === want) return player;
     }
     return null;
 }
@@ -354,12 +369,10 @@ const SURFACE = {
             'the six that needed one'
     },
     SetWalkSpeed: { set: 'world.WALKSPEED', value: function (p) { return parseInt(p[0], 10); } },
-    // Settings.as: while i <= 5, world.actions.active[i].range = 20000.
+    // Keep legacy one-shot semantics, with originals retained on the native action objects.
     SetInfiniteRange: {
-        compute: function (ctx) {
-            const jobs = [];
-            for (let i = 0; i <= 5; i++) jobs.push(ctx.set('world.actions.active.' + i + '.range', 20000));
-            return Promise.all(jobs);
+        compute: function (ctx, p) {
+            return ctx.raw('SetInfiniteRangeEnabled', [p[0] !== false, p.length > 0]);
         }
     },
     // Settings.as: the target's own clip is put where the player's is, but only where there IS a
@@ -386,28 +399,10 @@ const SURFACE = {
         set: 'world.visible',
         value: function (p) { return String(p[0]) === 'False'; }
     },
-    // Settings.as: drain mcExtSWF, show the game, show its interface. The loader's own while loop
-    // is unbounded; this bounds it and reports rather than spinning the app.
+    // Share the bridge's native lifecycle watcher with the Options route.
     SetSkipCutscenes: {
-        compute: function (ctx) {
-            const LIMIT = 100;
-            let tries = 0;
-            function next() {
-                return ctx.get('mcExtSWF.numChildren').then(function (children) {
-                    if (!children) return null;
-                    if (tries >= LIMIT) {
-                        throw new Error('mcExtSWF still had children after ' + LIMIT +
-                            ' tries, so this cutscene could not be cleared');
-                    }
-                    tries++;
-                    return ctx.call('mcExtSWF.removeChildAt', [0]).then(next);
-                });
-            }
-            return next().then(function () {
-                return ctx.set('world.visible', true);
-            }).then(function () {
-                return ctx.call('showInterface', []);
-            });
+        compute: function (ctx, p) {
+            return ctx.raw('SetSkipCutscenesEnabled', [p[0] !== false]);
         }
     },
     SetTargetPlayer: { call: 'world.getAvatarByUserName' },
@@ -632,7 +627,7 @@ const SURFACE = {
     GetAccessLevel: {
         compute: function (ctx, p) {
             return ctx.get('world.avatars').then(function (avatars) {
-                const player = playerIn(avatars, p[0]);
+                const player = avatarIn(avatars, p[0]);
                 return player ? Number(player.objData && player.objData.intAccessLevel) : undefined;
             });
         }
@@ -694,11 +689,14 @@ const SURFACE = {
     ResetServers: { why: 'the reference loader clears its own server list; ticket #35 owns this' },
     AreServersLoaded: { why: 'the reference loader reads its own server list; ticket #35 owns this' },
     IsTemporarilyKicked: { why: 'the reference loader reads its own login movie; ticket #35 owns this' },
-    SetFPS: { why: 'the reference sets the SWF stage frame rate; the bridge has no stage path' },
+    // Root.as:SetFPS - this.stg.frameRate = parseInt(param1). The game root is a display object,
+    // so its own `stage` is the shared stage the wrapper and the game run on.
+    SetFPS: { set: 'stage.frameRate', value: function (p) { return parseInt(p[0], 10); } },
     SetTitle: { why: 'the reference writes its own login movie chrome; the game has no equivalent' },
     SendMessage: { why: 'the reference writes into its own chat box; the game has no such member' },
     GetConnMC: { why: 'the reference reads its own connection dialog, which the game does not expose' },
-    HideConnMC: { why: 'the reference hides its own connection dialog, not the game\'s' },
+    // Root.as:HideConnMC - Game.mcConnDetail.hideConn(), where Game is the game root.
+    HideConnMC: { call: 'mcConnDetail.hideConn' },
     IsConnMCBackButtonVisible: { why: 'the reference reads its own connection dialog control' },
     Buff: { why: 'the reference writes god-mode values onto itself; not a game call' },
     DestroyPlayers: { why: 'the reference calls destroyAvatar per live avatar object' },
@@ -735,7 +733,14 @@ const SURFACE = {
     ChangeColorName: { set: 'world.myAvatar.pMC.pname.ti.textColor' },
     GetShops: { why: 'the reference keeps its own list of shops it has seen (LoadedShops)' },
     LoadBankItems: { why: 'the loader sends its own loadBank frame; ticket #29\'s window uses the game path' },
-    MuteToggle: { why: 'the reference mutes its own chat box; not a game call' },
+    // Player.as:MuteToggle - true unmutes, false mutes the chat box for five minutes.
+    MuteToggle: {
+        compute: function (ctx, p) {
+            return truthy(p[0])
+                ? ctx.call('chatF.unmuteMe', [])
+                : ctx.call('chatF.muteMe', [300000]);
+        }
+    },
     // The one pair the reference never uses for its own statements: #42 derives aura state from
     // the packet tap instead (bot/auras.js), because the reference's statements read a cache the
     // frames fill rather than a lookup, and a lookup answers a packet stale. Kept named so a
@@ -768,7 +773,9 @@ const SURFACE = {
         compute: function (ctx) { return ctx.raw('CancelTargetSelf', []); }
     },
     MapLoadComplete: { why: 'the reference inspects its own display list; ticket #41 owns state' },
-    RejectDrop: { why: 'the reference walks its own drop stack UI; ticket #33 owns drops' },
+    RejectDrop: {
+        compute: function (ctx, p) { return ctx.raw('RejectDrop', [String(p[0]), String(p[1])]); }
+    },
 
     // ---- the generic array accessors, which sit beside the other generic callbacks --------
     getArrayObject: {

@@ -21,7 +21,6 @@ package {
     import flash.display.Loader;
     import flash.display.Sprite;
     import flash.display.Stage;
-    import flash.display.StageAlign;
     import flash.display.StageScaleMode;
     import flash.events.Event;
     import flash.events.IOErrorEvent;
@@ -39,6 +38,19 @@ package {
         // Bounded so a page that never polls cannot grow the movie's memory without limit.
         private static const MAX_EVENTS:int = 200;
 
+        private var rangeEnabled:Boolean = false;
+        private var rangeRoot:Object = null;
+        private var rangeOriginals:Array = [];
+        private var walkSpeedEnabled:Boolean = false;
+        private var walkSpeed:Number = 20;
+        private var walkRoot:Object = null;
+        private var skipCutscenes:Boolean = false;
+        private var skipRoot:Object = null;
+        private var skipScene:Object = null;
+        private var skipObserved:Object = null;
+        private var skipMovie:Object = null;
+        private var skipTransfers:int = 0;
+        private var skipLast:String = 'off';
         private var game:Object = null;          // the game's own root object
         private var domain:ApplicationDomain;    // where the game's classes live (ours)
         private var events:Array = [];
@@ -52,8 +64,10 @@ package {
             Security.allowInsecureDomain('*');
 
             domain = ApplicationDomain.currentDomain;
-            stage.scaleMode = StageScaleMode.NO_SCALE;
-            stage.align = StageAlign.TOP_LEFT;
+            // The reference's AxShockwaveFlash defaults to ShowAll, so the game follows the
+            // window's size instead of staying fixed at its authored stage size. Leave align at
+            // its default: with ShowAll, that centers the letterboxed stage in the window.
+            stage.scaleMode = StageScaleMode.SHOW_ALL;
 
             registerCallSurface();
 
@@ -99,6 +113,11 @@ package {
             addCallback('ForceUseSkill', aqForceUseSkill);
             addCallback('CancelTargetSelf', aqCancelTargetSelf);
             addCallback('SetTargetPvP', aqSetTargetPvP);
+            addCallback('RejectDrop', aqRejectDrop);
+            addCallback('SetInfiniteRangeEnabled', aqSetInfiniteRangeEnabled);
+            addCallback('SetWalkSpeedEnabled', aqSetWalkSpeedEnabled);
+            addCallback('SetSkipCutscenesEnabled', aqSetSkipCutscenesEnabled);
+            addCallback('GetSkipCutscenesStatus', aqGetSkipCutscenesStatus);
         }
 
         private function addCallback(name:String, fn:Function):void {
@@ -106,6 +125,275 @@ package {
                 ExternalInterface.addCallback(name, fn);
             } catch (e:Error) {
                 emit('error', 'could not register ' + name + ': ' + e.message);
+            }
+        }
+
+        private function restoreInfiniteRange():void {
+            for (var i:int = 0; i < rangeOriginals.length; i++) {
+                var saved:Object = rangeOriginals[i];
+                if (saved.action == null) continue;
+                // A native refresh after our last frame already supplies the restored value.
+                if (saved.action.range === 20000) saved.action.range = saved.range;
+                saved.action = null;
+            }
+        }
+
+        private function applyInfiniteRange():void {
+            var world:Object = game == null ? null : game.world;
+            var actions:Object = world == null || world.actions == null ? null : world.actions.active;
+            var i:int;
+            var j:int;
+            var saved:Object;
+            // Retire identities before reusing their records; slots may move between skills.
+            for (i = 0; i < rangeOriginals.length; i++) {
+                saved = rangeOriginals[i];
+                if (saved.action == null) continue;
+                var present:Boolean = false;
+                for (j = 0; actions != null && j <= 5; j++) {
+                    if (actions[j] === saved.action) present = true;
+                }
+                if (!present) {
+                    if (saved.action.range === 20000) saved.action.range = saved.range;
+                    saved.action = null;
+                }
+            }
+            if (actions == null) return;
+            for (i = 0; i <= 5; i++) {
+                var action:Object = actions[i];
+                if (action == null || !("range" in action)) continue;
+                var record:Object = null;
+                var empty:Object = null;
+                for (j = 0; j < rangeOriginals.length; j++) {
+                    saved = rangeOriginals[j];
+                    if (saved.action === action) record = saved;
+                    else if (saved.action == null) empty = saved;
+                }
+                if (record == null) {
+                    record = empty;
+                    if (record == null) {
+                        record = { action:null, range:null };
+                        rangeOriginals.push(record);
+                    }
+                    record.action = action;
+                    record.range = action.range;
+                } else if (action.range !== 20000) {
+                    record.range = action.range;
+                }
+                action.range = 20000;
+            }
+        }
+
+        private function aqSetInfiniteRangeEnabled(enabled:Boolean, maintain:Boolean = false):String {
+            try {
+                if (rangeRoot != null && (!enabled || rangeRoot !== game)) {
+                    rangeRoot.removeEventListener(Event.ENTER_FRAME, onInfiniteRangeFrame);
+                    rangeRoot = null;
+                }
+                // Legacy bot/Maid calls apply once; they must not disarm an Options watcher.
+                if (!enabled) rangeEnabled = false;
+                else if (maintain) rangeEnabled = true;
+                if (rangeEnabled && game != null && rangeRoot == null) {
+                    rangeRoot = game;
+                    rangeRoot.addEventListener(Event.ENTER_FRAME, onInfiniteRangeFrame, false, -2147483648, true);
+                }
+                if (enabled) applyInfiniteRange();
+                else restoreInfiniteRange();
+            } catch (e:Error) {
+                return jsonError(e);
+            }
+            return toJson(enabled);
+        }
+
+        private function onInfiniteRangeFrame(event:Event):void {
+            if (!rangeEnabled) return;
+            try { applyInfiniteRange(); }
+            catch (e:Error) { }
+        }
+
+        private function aqSetWalkSpeedEnabled(enabled:Boolean, speed:Number):String {
+            if (enabled && !isFinite(speed)) return jsonError(new Error('walk speed must be finite'));
+            walkSpeed = enabled ? Math.max(1, Math.min(99, Math.floor(speed))) : 8;
+            walkSpeedEnabled = enabled;
+            if (walkRoot != null && (!enabled || walkRoot !== game)) {
+                walkRoot.removeEventListener(Event.ENTER_FRAME, onWalkSpeedFrame);
+                walkRoot = null;
+            }
+            if (enabled && game != null && walkRoot == null) {
+                walkRoot = game;
+                walkRoot.addEventListener(Event.ENTER_FRAME, onWalkSpeedFrame, false, -2147483648, true);
+            }
+            if (enabled) onWalkSpeedFrame(null);
+            else {
+                try { if (game != null && game.world != null) game.world.WALKSPEED = 8; }
+                catch (e:Error) { }
+            }
+            return toJson(enabled);
+        }
+
+        private function onWalkSpeedFrame(event:Event):void {
+            if (!walkSpeedEnabled) return;
+            try {
+                // World.cellSetup resets speed; read the current world after the game's frame handlers.
+                var world:Object = game == null ? null : game.world;
+                if (world != null) world.WALKSPEED = walkSpeed;
+            } catch (e:Error) {
+                // A world being replaced is retried on the next frame while enabled.
+            }
+        }
+
+        private function aqSetSkipCutscenesEnabled(enabled:Boolean):String {
+            if (skipCutscenes == enabled && (!enabled || skipRoot === game)) return toJson(enabled);
+            skipCutscenes = enabled;
+            skipScene = null;
+            skipObserved = null;
+            skipMovie = null;
+            if (skipRoot != null) {
+                skipRoot.removeEventListener(Event.ENTER_FRAME, onSkipCutsceneFrame);
+                skipRoot = null;
+            }
+            if (enabled && game != null) {
+                skipRoot = game;
+                var world:Object = game.world;
+                var handler:Object = world == null ? null : world.cHandle;
+                skipObserved = { world:world, map:world == null ? null : world.map, handler:handler,
+                    frame:world == null ? null : world.strFrame, children:game.mcExtSWF.numChildren };
+                // INIT and the overlay callback can finish before our first frame.
+                if (handler != null && ("isPending" in handler) && ("transfer" in handler) && handler.isPending()) {
+                    skipScene = skipObserved;
+                }
+                // Flash still invokes listeners removed during dispatch; let game callbacks finish first.
+                skipRoot.addEventListener(Event.ENTER_FRAME, onSkipCutsceneFrame, false, -2147483648, true);
+            }
+            skipLast = enabled ? 'armed' : 'off';
+            return toJson(enabled);
+        }
+
+        /** What the watcher currently sees, for the Options log when a scene still plays. */
+        private function aqGetSkipCutscenesStatus():String {
+            var status:Object = {
+                armed: skipCutscenes,
+                game: game != null,
+                world: false,
+                handler: false,
+                pending: false,
+                history: 0,
+                tracked: skipScene != null,
+                children: -1,
+                mapReady: false,
+                transfers: skipTransfers,
+                last: skipLast
+            };
+            try {
+                var world:Object = game == null ? null : game.world;
+                status.world = world != null;
+                var handler:Object = world == null ? null : world.cHandle;
+                status.handler = handler != null;
+                status.pending = handler != null && handler.isPending();
+                status.mapReady = world != null && world.map != null && !world.mapLoadInProgress;
+            } catch (e:Error) {
+            }
+            try {
+                status.children = game == null ? -1 : game.mcExtSWF.numChildren;
+            } catch (e2:Error) {
+            }
+            try {
+                var history:Object = game == null ? null : game.ldrMC.history;
+                for (var key:String in history) {
+                    if (history[key].dest === game.mcExtSWF) status.history++;
+                }
+            } catch (e3:Error) {
+            }
+            return toJson(status);
+        }
+
+        // Audited cached stock endings; provenance and native callbacks live in the cutscene fixtures.
+        private function cachedCutsceneExit(scene:Object, movie:Object):int {
+            var url:String = movie.loaderInfo == null ? '' : movie.loaderInfo.url;
+            var match:Array = /^https?:\/\/[^\/?#]+(\/[^?#]*)(?:[?#]|$)/i.exec(url);
+            if (match == null) return 0;
+            switch (match[1] + ':' + getQualifiedClassName(scene) + ':' + scene.totalFrames) {
+                case '/game/gamefiles/maps/watchtower/Cutscene-ChaosIsComing-1-r1.swf:Cutscene_fla::Item3_3_Item2_2_intro2_1:1960': return 1960;
+                case '/game/gamefiles/maps/TheSpan/Cutscene-TheSpan-01.swf:Cutscene_fla::Item3_3_Item2_2_intro2_1:392': return 375;
+                case '/game/gamefiles/maps/Dwarfhold/Cutscene-Vath1-2023.swf:Cutscene_fla::intro2_1:683': return 682;
+                case '/game/gamefiles/maps/Dwarfhold/Cutscene-Vath5-2023.swf:Cutscene_fla::intro2_1:677': return 677;
+                case '/game/gamefiles/maps/Yokai/Cutscene-Yokai-Kitsune-6r1.swf:Cutscene_fla::intro2_1:169': return 169;
+                case '/game/gamefiles/maps/Yokai/Cutscene-Yokai-2a.swf:Cutscene_fla::intro2_1:288': return 288;
+                case '/game/gamefiles/maps/Yokai/Cutscene-Yokai-3a-Ryoku.swf:Cutscene_fla::cutsceneryoku_1:623': return 623;
+                case '/game/gamefiles/maps/Dwarfhold/Cutscene-Vath2-2023.swf:Cutscene_fla::intro2_1:497': return 496;
+                case '/game/gamefiles/maps/Yokai/Cutscene-Yokai-1a.swf:Cutscene_fla::Map1_2_intro2_1:177': return 177;
+                case '/game/gamefiles/maps/Dwarfhold/Cutscene-Captured-19Jul18.swf:Cutscene_fla::cutscene1_1:255': return 255;
+                case '/game/gamefiles/maps/Dwarfhold/Cutscene-VathShowdown-2023.swf:Cutscene_fla::cutscene1_1:292': return 292;
+            }
+            return 0;
+        }
+
+        private function onSkipCutsceneFrame(event:Event):void {
+            if (!skipCutscenes || game == null) return;
+            try {
+                if (game.mcExtSWF.numChildren == 0) skipMovie = null;
+                var world:Object = game.world;
+                var handler:Object = world == null ? null : world.cHandle;
+                if (skipScene != null && (skipScene.world !== world || skipScene.handler !== handler ||
+                    world == null || skipScene.map !== world.map)) skipScene = null;
+                var pending:Boolean = handler != null && ("isPending" in handler) &&
+                    ("transfer" in handler) && handler.isPending();
+                // A reused handler can finish its overlay poll between watcher frames.
+                var moved:Boolean = skipObserved != null && skipObserved.world === world && world != null &&
+                    skipObserved.map === world.map && skipObserved.handler === handler &&
+                    skipObserved.children == 0 && skipObserved.frame !== world.strFrame;
+                skipObserved = { world:world, map:world == null ? null : world.map, handler:handler,
+                    frame:world == null ? null : world.strFrame, children:game.mcExtSWF.numChildren };
+                if (pending || (moved && handler != null && ("transfer" in handler) && game.mcExtSWF.numChildren > 0)) {
+                    skipScene = skipObserved;
+                }
+                var loading:Boolean = false;
+                var history:Object = game.ldrMC == null ? null : game.ldrMC.history;
+                for (var key:String in history) {
+                    if (history[key].dest === game.mcExtSWF) loading = true;
+                }
+                if (skipScene != null && !loading && world.map != null && !world.mapLoadInProgress) {
+                    skipScene = null;
+                    handler.transfer();
+                    skipTransfers++;
+                    skipLast = 'exited';
+                } else {
+                    skipLast = loading ? 'loading' : (skipScene != null ? 'waiting map' : 'idle');
+                }
+                // Late enable/new maps have no observed transition: use the movie's own skip exit.
+                if (game.mcExtSWF.numChildren > 0) {
+                    if (skipScene != null) return;
+                    for (var i:int = 0; i < game.mcExtSWF.numChildren; i++) {
+                        var movie:Object = game.mcExtSWF.getChildAt(i);
+                        var scene:Object = movie != null && ("CS" in movie) ? movie.CS : null;
+                        if (scene == null || !("currentLabels" in scene)) continue;
+                        var exitFrame:Object = null;
+                        for (var j:int = 0; j < scene.currentLabels.length; j++) {
+                            var label:Object = scene.currentLabels[j];
+                            if (label.name == 'Skipped') exitFrame = label.name;
+                        }
+                        // Some stock movies have no skip label, or end before totalFrames.
+                        var legacyFrame:int = exitFrame == null ? cachedCutsceneExit(scene, movie) : 0;
+                        var legacy:Boolean = legacyFrame > 0;
+                        if (legacy) exitFrame = legacyFrame;
+                        if (exitFrame == null) continue;
+                        // INIT can attach before initialization or the final frame has downloaded.
+                        if (!loading && world != null && world.map != null && !world.mapLoadInProgress &&
+                            scene.currentFrame > 1 && (!legacy || scene.framesLoaded == scene.totalFrames)) {
+                            if (skipMovie !== scene) {
+                                if (("rootClass" in scene) && scene.rootClass == null) scene.rootClass = game;
+                                skipMovie = scene;
+                                scene.gotoAndPlay(exitFrame);
+                            }
+                        }
+                        skipLast = 'movie exit';
+                        return;
+                    }
+                    // Unknown movies may own the only room/map exit; let their native ending run.
+                    skipLast = 'unrecognized movie';
+                }
+            } catch (error:Error) {
+                aqSetSkipCutscenesEnabled(false);
+                emit('error', 'Skip Cutscenes disabled: ' + error.message);
             }
         }
 
@@ -474,6 +762,40 @@ package {
             return out;
         }
 
+        /** World.as RejectDrop: false means the relay beat the stock drop UI to this call. */
+        private function aqRejectDrop(name:String, id:String):String {
+            try {
+                var w:Object = world();
+                if (game.litePreference.data.bCustomDrops) {
+                    var ui:Object = game.cDropsUI;
+                    if (ui == null || w.invTree[id] == null) return 'false';
+                    for (var j:int = 0; j < ui.invTree.length; j++) {
+                        if (String(ui.invTree[j].ItemID) == id) {
+                            ui.onBtNo(w.invTree[id]);
+                            return 'true';
+                        }
+                    }
+                    return 'false';
+                }
+                var stack:Object = game.ui.dropStack;
+                var removed:Boolean = false;
+                // Walk backwards so removing adjacent matches cannot skip a child.
+                for (var i:int = stack.numChildren - 1; i >= 0; i--) {
+                    var clip:Object = stack.getChildAt(i);
+                    if (getQualifiedClassName(clip) == 'DFrame2MC' &&
+                        !clip.isClosing && clip.fData != null && String(clip.fData.ItemID) == id) {
+                        stack.removeChild(clip);
+                        removed = true;
+                    }
+                }
+                if (removed) game.cleanDropStack();
+                return removed ? 'true' : 'false';
+            } catch (e:Error) {
+                return jsonError(e);
+            }
+            return 'false';
+        }
+
         // ---------------------------------------------------------------- reading and writing
 
         private function resolve(path:String):Object {
@@ -598,6 +920,9 @@ package {
             }
 
             game = candidate;
+            if (rangeEnabled) aqSetInfiniteRangeEnabled(true, true);
+            if (walkSpeedEnabled || walkRoot != null) aqSetWalkSpeedEnabled(walkSpeedEnabled, walkSpeed);
+            aqSetSkipCutscenesEnabled(skipCutscenes);
             stopGameRootWait();
             emit('load', 'loaded ' + getQualifiedClassName(game));
             emit('ready', 'game root available');

@@ -57,6 +57,20 @@ const NO_DELAY = {
     CmdSkillSet: true
 };
 
+// Class names older Grimlite/Grimoire files still carry. They run through the modern handler
+// with the same meaning; the two quest commands moved their id into a Quest object.
+const LEGACY_ALIASES = {
+    CmdAcceptQuest2: 'CmdAcceptQuest',
+    CmdCompleteQuest2: 'CmdCompleteQuest',
+    CmdBotDelay2: 'CmdBotDelay',
+    CmdStopBotWithMessage: 'CmdStop'
+};
+
+const LEGACY_QUEST_COMMANDS = {
+    CmdAcceptQuest2: true,
+    CmdCompleteQuest2: true
+};
+
 function requiresDelay(command) {
     const className = catalog.classNameOf(command);
     if (NO_DELAY[className]) return false;
@@ -175,12 +189,13 @@ function createEngine(deps) {
     let externallyPaused = false;
     let index = 0;
     let document = null;      // the parsed .gbot, mutated the way the editor mutates it
+    let editorControls = {};  // the form-only values (invent on start, quest delay, auto-correct)
     let config = null;        // the Configuration view: the document plus the C# defaults
     const vars = {};          // Configuration.Tempvariable, per engine
     const ints = {};          // Configuration.Tempvalues, per engine
     let username = '';
     let lastCommand = null;
-    let dispatched = [];       // what the loop actually ran, for the window and for tests
+    let dispatched = [];       // recent dispatch diagnostics, bounded for long-running bots
     // Bot.Configurations / Bot.OldIndex / Bot.CurrentConfiguration: the stack a load-bot
     // pushes onto and CmdReturn pops from, keyed by the configuration the loop is in.
     const configurations = {};
@@ -405,11 +420,16 @@ function createEngine(deps) {
 
     /** Editor-only start option; a running bot gets it from the document, never from config. */
     function inventOnStart() {
+        if (editorControls.inventOnStart !== undefined) return editorControls.inventOnStart !== false;
         return !(document && document.InventOnStart === false);
     }
 
     /** The Bot Manager's numQuestDelay, carried on the document. */
     function questDelay() {
+        if (editorControls.questDelay !== undefined) {
+            const live = Number(editorControls.questDelay);
+            if (isFinite(live) && live >= 0) return live;
+        }
         const raw = document && (document.QuestDelay !== undefined
             ? document.QuestDelay : document.numQuestDelay);
         if (raw === undefined || raw === null || raw === '') return 1000;
@@ -461,9 +481,11 @@ function createEngine(deps) {
         }
         commands().forEach(function (command) {
             const name = catalog.classNameOf(command);
-            if (name === 'CmdAcceptQuest' || name === 'CmdCompleteQuest') {
+            if (name === 'CmdAcceptQuest' || name === 'CmdCompleteQuest' ||
+                name === 'CmdAcceptQuest2' || name === 'CmdCompleteQuest2') {
                 const quest = command.Quest;
-                add(quest && typeof quest === 'object' ? questIdOf(quest) : command.QuestId);
+                add(quest && typeof quest === 'object' ? questIdOf(quest) :
+                    (command.QuestID === undefined ? command.QuestId : command.QuestID));
             } else if (name === 'CmdAddQuestList') {
                 add(command.Id);
             } else if (name === 'CmdQuestHunt') {
@@ -777,7 +799,7 @@ function createEngine(deps) {
     }
 
     function dropName(drop) {
-        return String(drop.sName === undefined ? (drop.Name === undefined ? '' : drop.Name) : drop.sName);
+        return String(drop.sName === undefined ? (drop.Name === undefined ? '' : drop.Name) : drop.sName).trim();
     }
 
     /** World.DropStack.GetDrop: the room frame, with the reference's three-second cooldown. */
@@ -821,6 +843,11 @@ function createEngine(deps) {
     async function handleDrop(drop) {
         if (!running || !drop) return;
         const name = dropName(drop);
+        const dropConfig = config;
+        const shouldReject = function () {
+            return running && config === dropConfig && config.EnableRejection &&
+                config.Drops && !pushes(config.Drops);
+        };
         const pushes = function (list) {
             return (Array.isArray(list) ? list : []).some(function (entry) {
                 return String(entry).toLowerCase() === name.toLowerCase();
@@ -839,10 +866,10 @@ function createEngine(deps) {
         if (config.EnablePickupAcTagged && isAcDrop(drop) && id !== undefined && id !== null) {
             await pickupDrop(id);
         }
-        if (config.EnableRejection && config.Drops && !pushes(config.Drops)) {
+        if (shouldReject()) {
             if (session && typeof session.rejectDrop === 'function' && id !== undefined && id !== null) {
                 try {
-                    await session.rejectDrop(name.toLowerCase(), id);
+                    await session.rejectDrop(name.toLowerCase(), id, shouldReject);
                 } catch (error) {
                     reportOnce('drop-reject', 'the drop rejection was refused: ' + message(error));
                 }
@@ -1305,7 +1332,14 @@ function createEngine(deps) {
             if (itemName !== want) continue;
             if (String(qty) === '*') return true;
             const have = Number(item.iQty === undefined ? item.Quantity : item.iQty) || 0;
-            return have >= (Number(qty) || 1);
+            let needed = Number(qty) || 1;
+            // ClientConfig.AutoCorrect: an Item's own MaxStack is the ceiling, except Class items.
+            const stack = Number(item.iStk === undefined ? item.MaxStack : item.iStk);
+            const category = String(item.sType === undefined ? item.Category || '' : item.sType);
+            if (editorControls.autoCorrect !== false && category !== 'Class' && isFinite(stack) && stack > 0 && needed > stack) {
+                needed = stack;
+            }
+            return have >= needed;
         }
         return false;
     }
@@ -1544,7 +1578,10 @@ function createEngine(deps) {
                 const parsed = /^[+-]?\d+$/.test(text) ? Number(text) : NaN;
                 if (Number.isInteger(parsed) && Math.abs(parsed) <= 2147483647) amount = parsed;
             }
-            const type = Number(command.Type) || 0;
+            // CmdIndex.Type has no initializer upstream: an omitted enum member defaults to Up (0).
+            const writtenType = command.Type;
+            const type = writtenType === undefined || writtenType === null || writtenType === ''
+                ? 0 : Number(writtenType) || 0;
             // CmdIndex.cs: Down adds (n - 1) only when that is positive AND the result is still
             // inside the list; Up subtracts (n + 1) only when the result stays at or above zero.
             // Neither branch uses the Index setter, so neither wraps.
@@ -1879,6 +1916,32 @@ function createEngine(deps) {
                     const ready = await read('ready');
                     return ready.ok && ready.value === true;
                 }, {});
+            }
+            return undefined;
+        },
+
+        CmdJoin2: async function (ctx, command) {
+            // Older Grimlite revisions serialize joins as CmdJoin2 with a separate Room. Its
+            // 1e99 sentinel means "roll a room", the cell is entered after the map, and unlike
+            // CmdJoin it does not set the spawn point here.
+            const mapName = String(varOf(command.Map));
+            const roomValue = varOf(command.Room);
+            const rawRoom = String(roomValue === undefined ? '' : roomValue);
+            const room = rawRoom === '1e99' ? String(randomJoin2Room()) : rawRoom;
+            const cell = String(varOf(command.Cell));
+            const pad = String(varOf(command.Pad));
+            const here = await read('map');
+            if (!(here.ok && String(here.value).toLowerCase() === mapName.toLowerCase())) {
+                const joined = await tryJoin(mapName, room, cell, pad);
+                if (!joined.ok) return joined.error;
+            }
+            const arrived = await read('map');
+            if (!(arrived.ok && String(arrived.value).toLowerCase() === mapName.toLowerCase())) {
+                return 'could not reach ' + mapName;
+            }
+            const at = await read('cell');
+            if (!(at.ok && String(at.value).toLowerCase() === cell.toLowerCase())) {
+                await readN('jump', [cell, pad]);
             }
             return undefined;
         },
@@ -2450,6 +2513,11 @@ function createEngine(deps) {
         return 1000 + Math.floor(Math.random() * (99999 - 1000));
     }
 
+    /** CmdJoin2's own Room sentinel uses Random.Next(1001, 99999). */
+    function randomJoin2Room() {
+        return 1001 + Math.floor(Math.random() * (99999 - 1001));
+    }
+
     /**
      * CmdJoin's TryJoin: a safe cell first when the player is in combat, then the join with the
      * room, then the two waits its own body makes - 5s for the map and 40s for the reload.
@@ -2706,14 +2774,25 @@ function createEngine(deps) {
         }
         lastCommand = catalog.rowText(command);
 
-        const className = catalog.classNameOf(command);
-        dispatched.push({ index: at, className: className });
+        const originalName = catalog.classNameOf(command);
+        let className = LEGACY_ALIASES[originalName] || originalName;
+        let dispatchedCommand = command;
+        if (LEGACY_QUEST_COMMANDS[originalName]) {
+            dispatchedCommand = Object.assign({}, command, {
+                Quest: command.Quest && typeof command.Quest === 'object'
+                    ? command.Quest : { QuestID: command.QuestID }
+            });
+        } else if (originalName === 'CmdStopBotWithMessage' && command.Message) {
+            log(String(command.Message));
+        }
+        if (dispatched.length >= 200) dispatched.shift();
+        dispatched.push({ index: at, className: originalName });
         // The engine's own flow vocabulary first, then whatever a feature ticket registered.
         const handler = handlers[className] || extraHandlers[className];
         if (!handler) {
             log(className + ' is not implemented yet (#38-#42); skipping it');
         } else {
-            const outcome = await Promise.resolve(handler(context(), command));
+            const outcome = await Promise.resolve(handler(context(), dispatchedCommand));
             if (typeof outcome === 'string') log(className + ': ' + outcome);
         }
 
@@ -2743,7 +2822,7 @@ function createEngine(deps) {
      * an empty list or nobody signed in, and ActiveBotEngine's own "already running").
      * @returns {Promise<{ok: boolean, error?: string}>}
      */
-    async function start(bot) {
+    async function start(bot, editor) {
         if (running) return { ok: false, error: ERRORS.alreadyRunning };
         const parsed = bots.configuration(bot);
         const list = Array.isArray(parsed.Commands) ? parsed.Commands : [];
@@ -2758,6 +2837,7 @@ function createEngine(deps) {
         username = name.ok && name.value !== null && name.value !== undefined ? String(name.value) : '';
 
         document = bot;
+        editorControls = editor && typeof editor === 'object' ? editor : {};
         config = parsed;
         index = 0;
         running = true;
@@ -2810,7 +2890,7 @@ function createEngine(deps) {
         },
         index: function () { return index; },
         setIndex: setIndex,
-        /** The commands the loop has run, in order: the reference keeps only the last. */
+        /** The last 200 commands the loop ran, in order; the reference keeps only the last. */
         dispatched: function () { return dispatched; },
         lastCommand: function () { return lastCommand; },
         /** The reference keeps its index private; a test that has to place the bot needs it. */

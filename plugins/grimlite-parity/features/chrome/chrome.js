@@ -110,18 +110,27 @@ function createChrome(deps) {
         setInterval: function (fn, ms) { return setInterval(fn, ms); },
         clearInterval: function (id) { clearInterval(id); }
     };
-    const sleep = deps.sleep || function (ms) {
-        return new Promise(function (resolve) { setTimeout(resolve, ms); });
-    };
 
     let autoAttack = false;
     let autoAttackError = null;
     let autoStep = 0;
     let rotation = skillPresets.defaultSkills();
     let timer = null;
+    let ticking = false;
+    let generation = 0;
+    const cancelled = {};
+    let pendingWait = null;
+    let specialCombo = null;
+    let specialPauseUntil = 0;
+    let cooldownStep = 0;
+    let cooldownTurn = true;
+    const now = deps.now || Date.now;
     // The list cbCells is filled from, kept between reads so the page can still offer it while the
     // character is between cells; the reference keeps its own in the combo box itself.
     let cells = [];
+    let savedSets = null;
+    let setsAccount = '';
+    let setsAccountChanged = false;
 
     function session() {
         try {
@@ -171,10 +180,14 @@ function createChrome(deps) {
         return [
             { id: 'startBot', kind: 'check', label: words.startBot || 'Start Bot' },
             { id: 'autoAttack', kind: 'check', label: words.autoAttack || 'Auto Attack' },
+            { id: 'autoSkillSet', kind: 'button', label: words.autoSkillSet || 'Skill Set' },
             { id: 'pad', kind: 'select', label: words.pad || '' },
             { id: 'cell', kind: 'select', label: words.cell || '' },
             { id: 'refreshCell', kind: 'button', label: words.refreshCell || 'x' },
-            { id: 'bank', kind: 'button', label: words.bank || 'Bank' }
+            { id: 'bank', kind: 'button', label: words.bank || 'Bank' },
+            { id: 'equipmentSet', kind: 'select', label: 'Saved equipment set', refreshOnFocus: true,
+                width: 130, placeholder: 'No saved sets — Client → Sets: save loadout' },
+            { id: 'equipSavedSet', kind: 'button', label: 'Equip', valueFrom: 'equipmentSet', pendingLabel: 'Equipping…' }
         ];
     }
 
@@ -194,6 +207,13 @@ function createChrome(deps) {
      * the reference shows nobody is in the world, and the reason travels beside them rather than
      * being swallowed.
      */
+    async function refreshSets() {
+        const previous = setsAccount;
+        savedSets = deps.equipmentSets ? (await deps.equipmentSets.handle('listSets')).sets || [] : [];
+        setsAccount = savedSets.length ? savedSets[0].path.split(':')[0] : '';
+        setsAccountChanged = setsAccountChanged || previous !== setsAccount;
+    }
+
     async function state() {
         const alive = await signedIn();
         const values = {
@@ -203,7 +223,11 @@ function createChrome(deps) {
             cell: '',
             pad: ''
         };
-        const options = { cell: cells.slice(), pad: PADS };
+        await refreshSets();
+        if (setsAccountChanged) values.equipmentSet = '';
+        setsAccountChanged = false;
+        const options = { cell: cells.slice(), pad: PADS,
+            equipmentSet: savedSets.map(function (set) { return { label: set.name, value: set.path }; }) };
         if (alive.ok !== true) {
             return { values: values, options: options, error: alive.error || null };
         }
@@ -215,9 +239,10 @@ function createChrome(deps) {
         const here = await Promise.all([read('cell'), read('pad'), readCells()]);
         values.cell = cellText(here[0].value);
         values.pad = cellText(here[1].value);
+        options.cell = cells.slice();
         return {
             values: values,
-            options: { cell: cells.slice(), pad: PADS },
+            options: options,
             error: here[0].error || here[1].error || null
         };
     }
@@ -232,12 +257,17 @@ function createChrome(deps) {
         if (!runtime) return { ok: false, error: ERRORS.noEngine };
         if (checked !== true) {
             return Promise.resolve(runtime.stop(windowKey())).then(function () {
+                if (typeof deps.onEngineChange === 'function') deps.onEngineChange();
                 return { ok: true, error: null };
             }, function (error) {
                 return { ok: false, error: message(error) };
             });
         }
-        return Promise.resolve(runtime.start(windowKey(), deps.bot())).then(function (answer) {
+        const started = deps.editor
+            ? runtime.start(windowKey(), deps.bot(), deps.editor())
+            : runtime.start(windowKey(), deps.bot());
+        return Promise.resolve(started).then(function (answer) {
+            if (typeof deps.onEngineChange === 'function') deps.onEngineChange();
             return { ok: !!(answer && answer.ok), error: (answer && answer.error) || null };
         }, function (error) {
             return { ok: false, error: message(error) };
@@ -272,25 +302,18 @@ function createChrome(deps) {
             : null;
     }
 
-    /**
-     * The reference's own per-skill cast: wait out the skill's cooldown, then use it. A cast the
-     * game refuses is reported, and one refused cast does not end the rotation - the reference's
-     * loop keeps going whatever a cast does.
-     */
-    async function cast(index, waitForCooldown) {
-        if (waitForCooldown === true) {
-            const wait = await read('skillAvailable', [index]);
-            const ms = Number(wait.value);
-            if (isFinite(ms) && ms > 0) await sleep(ms);
-        }
+    /** Report refused casts; optional cooldown skills always use the plain cast. */
+    async function cast(index, version, plain) {
         // Skill.useSkill: a Chrono Shadow casts forced, everyone else plain (Skill.cs:106-115).
         // The engine's CmdUseSkill makes the same choice for the same reason (#38), so a rotation
         // and a bot command cast through one name rather than two.
         const name = await read('className');
-        const forced = String(name.value || '').toLowerCase().indexOf('chrono shadow') !== -1;
+        ensureCurrent(version);
+        const forced = !plain && String(name.value || '').toLowerCase().indexOf('chrono shadow') !== -1;
         const used = forced
             ? await read('forceUseSkill', [index])
             : await read('useSkill', [index]);
+        ensureCurrent(version);
         if (used.error) {
             autoAttackError = 'skill ' + index + ': ' + used.error;
             log(autoAttackError);
@@ -300,66 +323,151 @@ function createChrome(deps) {
     }
 
     /** Skill.ExecuteSkill's Safe branch: the condition decides whether this slot casts at all. */
-    async function safeAllows(skill) {
+    async function safeAllows(skill, version) {
         const currentName = skill.isMp ? 'mana' : 'health';
         const maxName = skill.isMp ? 'manaMax' : 'healthMax';
         const answers = await Promise.all([read(currentName), read(maxName)]);
+        ensureCurrent(version);
         const now = Number(answers[0].value);
         const max = Number(answers[1].value);
         if (answers[0].error || answers[1].error || !isFinite(now) || !isFinite(max) || max <= 0) {
-            autoAttackError = 'skill ' + skill.index + ': ' +
+            autoAttackError = (skill.type === 'if' ? 'condition' : 'skill ' + skill.index) + ': ' +
                 (answers[0].error || answers[1].error || 'the game reports no health or mana percentage');
             log(autoAttackError);
             return false;
         }
         const percent = now / max * 100;
+        if (skill.type === 'if' && skill.op === '>') return percent > skill.value;
+        if (skill.type === 'if' && skill.op === '<') return percent < skill.value;
         if (skill.op === '>' || skill.op === '>=') return percent >= skill.value;
         if (skill.op === '<' || skill.op === '<=') return percent <= skill.value;
         return percent === skill.value;
     }
 
-    /** The class's own SS.CLASS preset, reloaded when Auto Attack starts. */
+    /** The unsaved draft loaded for this character's class, read when Auto Attack starts. */
     async function rotationForClass() {
-        if (!deps.presets || typeof deps.presets.forClass !== 'function') return [];
-        if (typeof deps.presets.reload === 'function') deps.presets.reload();
+        if (!deps.presets || typeof deps.presets.draftFor !== 'function') return [];
         const answer = await read('className');
         if (answer.error) return [];
-        return deps.presets.forClass(answer.value) || [];
+        const draft = deps.presets.draftFor(answer.value);
+        return draft && Array.isArray(draft.skills) ? draft.skills : [];
     }
 
     /**
      * One pass of chkAutoAttack's own loop: attack when nothing is targeted, run the class combo,
      * then one step of the rotation. Driven by the interval below, and directly by the tests.
      */
+    function ensureCurrent(version) {
+        if (!autoAttack || generation !== version) throw cancelled;
+    }
+
     async function tick() {
+        if (ticking) return;
+        ticking = true;
+        try { await attackTick(generation); }
+        catch (error) { if (error !== cancelled) throw error; }
+        finally { ticking = false; }
+    }
+
+    async function attackTick(version) {
+        async function checked(promise) {
+            const value = await promise;
+            ensureCurrent(version);
+            return value;
+        }
         if (!autoAttack) return;
-        const alive = await signedIn();
+        const alive = await checked(signedIn());
         if (alive.ok !== true) {
             // The reference's loop condition: not signed in ends it, and the box goes back off.
             autoAttack = false;
             stopTimer();
             return;
         }
-        const target = await read('hasTarget');
+        const target = await checked(read('hasTarget'));
         if (target.value !== true) {
-            const attack = await read('attackMonster', ['*']);
+            const attack = await checked(read('attackMonster', ['*']));
             if (attack.error) {
                 autoAttackError = attack.error;
                 log(autoAttackError);
             }
-            const again = await read('hasTarget');
+            const again = await checked(read('hasTarget'));
             if (again.value !== true) return;
         }
-        const combo = await classCombo();
-        if (combo) {
-            for (let i = 0; i < combo.length; i++) await cast(combo[i], true);
-            await sleep(200);
+        const cooldowns = rotation.filter(function (row) { return row.type === 'cooldown'; });
+        // One optional cast per gap, rotating priority; the main cursor never moves here.
+        // A pending main cast gets first refusal when its cooldown finally expires.
+        if (pendingWait) {
+            if (pendingWait.until !== undefined && now() >= pendingWait.until) cooldownTurn = false;
+            else if (pendingWait.ready) {
+                const ready = await checked(read('skillAvailable', [pendingWait.ready]));
+                if (!ready.error && ready.value !== null && ready.value !== undefined &&
+                    isFinite(Number(ready.value)) && Number(ready.value) <= 0) cooldownTurn = false;
+            }
         }
-        const skill = rotation[autoStep];
-        autoStep = (autoStep + 1) % Math.max(1, rotation.length);
-        if (!skill) return;
-        if (skill.safe === true && !(await safeAllows(skill))) return;
-        await cast(skill.index, skill.wait === true);
+        if (cooldownTurn) {
+            for (let i = 0; i < cooldowns.length; i++) {
+                const slot = (cooldownStep + i) % cooldowns.length;
+                const skill = cooldowns[slot];
+                const ready = await checked(read('skillAvailable', [skill.index]));
+                if (!ready.error && ready.value !== null && ready.value !== undefined &&
+                    isFinite(Number(ready.value)) && Number(ready.value) <= 0) {
+                    await checked(cast(skill.index, version, true));
+                    cooldownStep = (slot + 1) % cooldowns.length;
+                    cooldownTurn = false;
+                    return;
+                }
+            }
+        }
+        cooldownTurn = true;
+        if (specialCombo === null) specialCombo = ((await checked(classCombo())) || []).slice();
+        if (specialCombo.length) {
+            const index = specialCombo[0];
+            const ready = await checked(read('skillAvailable', [index]));
+            if (ready.error || ready.value === null || ready.value === undefined ||
+                !isFinite(Number(ready.value)) || Number(ready.value) > 0) {
+                pendingWait = { ready: index };
+                return;
+            }
+            pendingWait = null;
+            await checked(cast(index, version));
+            specialCombo.shift();
+            if (!specialCombo.length) specialPauseUntil = now() + 200;
+            return;
+        }
+        if (now() < specialPauseUntil) return;
+        specialPauseUntil = 0;
+        // Walk control rows once at most, so an all-false combo cannot spin forever.
+        for (let visited = 0; visited < rotation.length; visited++) {
+            const skill = rotation[autoStep];
+            if (!skill) return;
+            if (skill.type === 'if') {
+                autoStep = (await checked(safeAllows(skill, version))) ? autoStep + 1 : skill.skip;
+                if (autoStep >= rotation.length) { autoStep = 0; return; }
+                continue;
+            }
+            if (skill.type === 'cooldown') {
+                autoStep = (autoStep + 1) % rotation.length;
+                continue;
+            }
+            if (skill.type === 'delay') {
+                if (!pendingWait) pendingWait = { until: now() + skill.ms };
+                if (now() < pendingWait.until) return;
+            } else if (skill.type === 'ready' || skill.wait === true) {
+                const ready = await checked(read('skillAvailable', [skill.index]));
+                if (ready.error || ready.value === null || ready.value === undefined ||
+                    !isFinite(Number(ready.value)) || Number(ready.value) > 0) {
+                    pendingWait = { ready: skill.index };
+                    return;
+                }
+            }
+            pendingWait = null;
+            const allowed = skill.safe !== true || await checked(safeAllows(skill, version));
+            autoStep = (autoStep + 1) % rotation.length;
+            specialCombo = null;
+            if (skill.type || !allowed) return;
+            await checked(cast(skill.index, version));
+            return;
+        }
     }
 
     function startTimer() {
@@ -378,6 +486,7 @@ function createChrome(deps) {
     }
 
     async function autoAttackToggle(checked) {
+        const requested = ++generation;
         if (checked !== true) {
             autoAttack = false;
             stopTimer();
@@ -388,13 +497,35 @@ function createChrome(deps) {
         if (botState()) return { ok: false, error: engine.ERRORS.alreadyRunning };
         const alive = await signedIn();
         if (alive.ok !== true) return { ok: false, error: alive.error || engine.ERRORS.notSignedIn };
+        if (requested !== generation) return { ok: false, error: 'Auto Attack selection changed.' };
         const preset = await rotationForClass();
+        if (requested !== generation) return { ok: false, error: 'Auto Attack selection changed.' };
         rotation = preset.length ? preset : skillPresets.defaultSkills();
         autoAttack = true;
         autoAttackError = null;
+        generation++;
         autoStep = 0;
+        specialCombo = null;
+        specialPauseUntil = 0;
+        pendingWait = null;
+        cooldownStep = 0;
+        cooldownTurn = true;
         startTimer();
         return { ok: true, error: null };
+    }
+
+    /** A preset was selected in the editor: use it now, before Auto Attack is re-enabled. */
+    function useSkillText(text) {
+        const skills = skillPresets.parsePreset(text);
+        rotation = skills.length ? skills : skillPresets.defaultSkills();
+        generation++;
+        autoStep = 0;
+        specialCombo = null;
+        specialPauseUntil = 0;
+        pendingWait = null;
+        cooldownStep = 0;
+        cooldownTurn = true;
+        return rotation.map(function (skill) { return Object.assign({}, skill); });
     }
 
     /** The hotkey action: tick or untick the same box the strip draws. */
@@ -455,6 +586,24 @@ function createChrome(deps) {
         try {
             if (id === 'startBot') answer = await startBot(picked.checked);
             else if (id === 'autoAttack') answer = await autoAttackToggle(picked.checked);
+            else if (id === 'autoSkillSet') {
+                answer = typeof deps.openAutoSkillSet === 'function'
+                    ? deps.openAutoSkillSet()
+                    : { ok: false, error: 'the Auto Attack skill set window is not available' };
+            }
+            else if (id === 'equipmentSet') {
+                if (picked.refresh) await refreshSets();
+                answer = { ok: true, error: null };
+            }
+            else if (id === 'equipSavedSet') {
+                answer = deps.equipmentSets
+                    ? await deps.equipmentSets.handle('equipSavedSet', null, [picked.value])
+                    : { error: 'Saved equipment sets are unavailable.' };
+                answer.ok = !answer.error;
+                if (answer.ok) answer.message = answer.requested > 0
+                    ? 'Set equip requests sent: ' + answer.requested + ' changed, ' + (answer.skipped || 0) + ' already equipped.'
+                    : 'Set already equipped.';
+            }
             else if (id === 'cell') answer = await moveTo({ cell: picked.value });
             else if (id === 'pad') answer = await moveTo({ pad: picked.value });
             else if (id === 'refreshCell') answer = await refreshCell();
@@ -475,9 +624,10 @@ function createChrome(deps) {
         /** One pass of the Auto Attack loop, the seam the tests drive. */
         tick: tick,
         /** Give the loop back: a plugin that stops must not leave a timer ticking. */
-        stop: function () { autoAttack = false; stopTimer(); },
+        stop: function () { generation++; autoAttack = false; stopTimer(); },
         autoAttack: function () { return autoAttack; },
         toggleAutoAttack: toggleAutoAttack,
+        useSkillText: useSkillText,
         /** One Auto Attack rotation, for the tests and for a window that wants to show it. */
         rotation: function () { return rotation.map(function (skill) { return Object.assign({}, skill); }); },
         /** @internal test seam */
@@ -499,6 +649,7 @@ function createFromHost(host, deps) {
     const windowKey = deps.windowKey || function () { return 'game'; };
     return createChrome({
         runtime: runtime,
+        equipmentSets: deps.equipmentSets,
         windowKey: windowKey,
         bot: deps.bot || function () { return {}; },
         session: deps.session || function () {
@@ -514,6 +665,7 @@ function createFromHost(host, deps) {
         messages: deps.messages || {},
         log: deps.log || function (line) { host.log('chrome: ' + line); },
         presets: deps.presets,
+        openAutoSkillSet: deps.openAutoSkillSet,
         sleep: deps.sleep,
         timers: deps.timers
     });

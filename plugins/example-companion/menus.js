@@ -13,7 +13,7 @@ function describeAppUsefulPages(ctx) {
     return [
         {
             id: 'ex-github',
-            label: labelOf(ctx, 'exampleGithub', 'AquaStar on GitHub (system browser)'),
+            label: labelOf(ctx, 'exampleGithub', 'AquGrim on GitHub (system browser)'),
             url: U.githubRepo,
             keybindId: 'openGithub',
             accelerator: keybinds.openGithub,

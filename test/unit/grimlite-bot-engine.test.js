@@ -9,6 +9,7 @@ const assert = require('assert');
 
 const engineModel = require('../../plugins/grimlite-parity/bot/engine.js');
 const catalog = require('../../plugins/grimlite-parity/bot/command-catalog.js');
+const items = require('../../plugins/grimlite-parity/bot/items.js');
 
 function command(className, properties) {
   return catalog.makeCommand(className, properties);
@@ -72,6 +73,8 @@ function engine(deps) {
     session: options.session || fakeSession(),
     relogin: options.relogin,
     options: options.options,
+    game: options.game,
+    handlers: options.handlers,
     // Delays are recorded rather than slept: the assertion is on the pacing the reference asks
     // for, and a real wait would only make the suite slow.
     sleep: function (ms) { waited.push(ms); return Promise.resolve(); },
@@ -80,6 +83,40 @@ function engine(deps) {
   made.waited = waited;
   made.records = records;
   return made;
+}
+
+function legacy(type, properties) {
+  return Object.assign({ $type: type + ', Grimoire' }, properties || {});
+}
+
+function questAccess() {
+  const accepted = [];
+  const completed = [];
+  const inProgress = {};
+  return {
+    accepted: accepted,
+    completed: completed,
+    sleep: function () { return Promise.resolve(); },
+    log: function () {},
+    hasQuest: function () { return Promise.resolve(true); },
+    quest: function () { return Promise.resolve({ iSlot: 0 }); },
+    isInProgress: function (id) { return Promise.resolve(inProgress[String(id)] === true); },
+    accept: function (id) {
+      accepted.push(Number(id));
+      inProgress[String(id)] = true;
+      return Promise.resolve();
+    },
+    actionAvailable: function () { return Promise.resolve(true); },
+    waitUntil: async function (condition) {
+      for (let tries = 0; tries < 20; tries++) {
+        if (await condition()) return;
+      }
+    },
+    complete: function (id) {
+      completed.push(Number(id));
+      return Promise.resolve();
+    }
+  };
 }
 
 test('a bot with nothing in it is refused, the way the reference refuses it', async () => {
@@ -187,6 +224,22 @@ test('Index Up moves back by the count asked for', async () => {
   await made.tick();
   // Up n at index i: Index -= (n + 1), then the loop's Index++ -> i - n.
   assert.strictEqual(made.index(), 1);
+});
+
+test('Index without a Type defaults to upstream Up (zero)', async () => {
+  const made = engine();
+  const jump = command('CmdIndex', { Index: 2 });
+  await made.start(bot([
+    command('CmdBlank', {}),
+    command('CmdBlank', {}),
+    command('CmdBlank', {}),
+    jump,
+    command('CmdBlank', {})
+  ]));
+  made.setIndex(3);
+  await made.tick();
+  assert.strictEqual(made.index(), 1, 'omitted enum Type is Up, so index 3 moves up two');
+  assert.strictEqual(catalog.rowText(jump), 'Index up: 2');
 });
 
 test('a label is a no-op and a goto finds it by name, case-insensitively', async () => {
@@ -531,6 +584,26 @@ test('a command this build cannot execute yet is reported by name, not run silen
   assert.strictEqual(made.running(), true, 'the bot keeps walking instead of hanging on it');
 });
 
+test('the legacy commands in downloaded reputation scripts run through their modern handlers', async () => {
+  const access = questAccess();
+  const made = engine({ game: access, handlers: items.handlers(access) });
+  const document = bot([
+    legacy('Grimoire.Botting.Commands.Quest.CmdAcceptQuest2', { QuestID: '916' }),
+    legacy('Grimoire.Botting.Commands.Quest.CmdAcceptQuest2', { QuestID: '922' }),
+    legacy('Grimoire.Botting.Commands.Quest.CmdCompleteQuest2', { QuestID: '922' }),
+    legacy('Grimoire.Botting.Commands.Quest.CmdCompleteQuest2', { QuestID: '916' }),
+    legacy('Grimoire.Botting.Commands.Misc.CmdBotDelay2', { Delay: '1000' }),
+    legacy('Grimoire.Botting.Commands.Misc.CmdStopBotWithMessage', { Message: 'Bot Done!, :)' })
+  ]);
+  await made.start(document);
+  for (let step = 0; step < 6; step++) await made.tick();
+  assert.deepStrictEqual(access.accepted, [916, 922]);
+  assert.deepStrictEqual(access.completed, [922, 916]);
+  assert.strictEqual(document.BotDelay, 1000);
+  assert.strictEqual(made.running(), false);
+  assert.ok(made.records.indexOf('Bot Done!, :)') !== -1, 'the stop message reaches the log');
+});
+
 test('the flow commands the engine owns are exactly the ones it can execute', () => {
   const made = engine();
   assert.ok(Object.keys(made.handlers()).length > 0);
@@ -539,4 +612,48 @@ test('the flow commands the engine owns are exactly the ones it can execute', ()
     assert.ok(catalog.GROUPS[className] !== undefined || statements.indexOf(className) !== -1,
       className + ' is not a command class the reference declares');
   });
+});
+
+test('auto reject respects padded mixed-case whitelist names and its original run guard', async () => {
+  const session = fakeSession();
+  let onDrop;
+  const rejected = [];
+  session.onDrop = function (fn) { onDrop = fn; return function () {}; };
+  session.rejectDrop = async function (name, id, guard) { rejected.push({ name, id, guard }); };
+  const made = engine({ session });
+  const doc = bot([command('CmdRestart', {})], { EnableRejection: true, Drops: ['Sword'] });
+  await made.start(doc);
+  onDrop({ ItemID: 1, sName: '  sWoRd  ' });
+  assert.strictEqual(rejected.length, 0);
+  onDrop({ ItemID: 2, sName: '  Junk  ' });
+  assert.strictEqual(rejected.length, 1);
+  assert.strictEqual(rejected[0].name, 'junk');
+  assert.strictEqual(rejected[0].guard(), true);
+  made.drops().push('JUNK');
+  assert.strictEqual(rejected[0].guard(), false, 'a newly whitelisted drop cancels retries');
+  made.drops().pop();
+  assert.strictEqual(rejected[0].guard(), true);
+  made.stop();
+  assert.strictEqual(rejected[0].guard(), false);
+  await made.start(doc);
+  assert.strictEqual(rejected[0].guard(), false, 'restart cannot revive an older rejection');
+  made.stop();
+});
+
+test('long-running bot dispatch diagnostics stay bounded without skipping commands', async () => {
+  let calls = 0;
+  const made = engine({ handlers: { CmdPerfProbe: function () { calls++; } } });
+  await made.start(bot([legacy('CmdPerfProbe')]));
+  for (let block = 0; block < 3; block++) {
+    for (let i = 0; i < 1000; i++) await made.tick();
+    assert.ok(made.dispatched().length <= 200,
+      'diagnostic history retained ' + made.dispatched().length + ' rows');
+  }
+  assert.equal(calls, 3000);
+  assert.equal(made.dispatched().length, 200);
+  assert.ok(made.dispatched().every(row => row.className === 'CmdPerfProbe'));
+  made.stop();
+  await made.start(bot([legacy('CmdPerfProbe')]));
+  assert.equal(made.dispatched().length, 0);
+  made.stop();
 });

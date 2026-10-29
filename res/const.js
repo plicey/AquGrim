@@ -20,9 +20,12 @@ const appRoot = __dirname.substring(0,__dirname.lastIndexOf(path.sep));
 const appCurrentDirectory = process.cwd();
 const appVersion  = require('electron').app.getVersion();
 const appName     = "AquaStar";
+const appDisplayName = "AquGrim";
 // Keep mutable data outside the installation. This also works for portable/readonly
 // installs and avoids replacing files that an older AquaStar still expects.
-const appDataDirectory = path.join(app.getPath("appData"), appName);
+const persistentAppDataDirectory = path.join(app.getPath("appData"), appName);
+// An extra instance runs from a temporary copy of the main data directory.
+const appDataDirectory = app.aquaStarDataDirectory || persistentAppDataDirectory;
 if (!fs.existsSync(appDataDirectory)) fs.mkdirSync(appDataDirectory, { recursive: true });
 // A downloaded update is staged as ruffle-next while the app is running. Promote
 // it only on the next launch, so no browser process ever reads files mid-replace.
@@ -34,16 +37,16 @@ if (fs.existsSync(restoreBundledRuffleMarker)) {
         if (fs.existsSync(currentRuffleDirectory)) fs.rmdirSync(currentRuffleDirectory, { recursive: true });
         if (fs.existsSync(stagedRuffleDirectory)) fs.rmdirSync(stagedRuffleDirectory, { recursive: true });
         fs.unlinkSync(restoreBundledRuffleMarker);
-    } catch (e) { console.log('[AquaStar] Could not restore bundled Ruffle: ' + e.message); }
+    } catch (e) { console.log('[AquGrim] Could not restore bundled Ruffle: ' + e.message); }
 } else if (fs.existsSync(path.join(stagedRuffleDirectory, 'ruffle.js'))) {
     try {
         if (fs.existsSync(currentRuffleDirectory)) fs.rmdirSync(currentRuffleDirectory, { recursive: true });
         fs.renameSync(stagedRuffleDirectory, currentRuffleDirectory);
-    } catch (e) { console.log('[AquaStar] Could not activate downloaded Ruffle: ' + e.message); }
+    } catch (e) { console.log('[AquGrim] Could not activate downloaded Ruffle: ' + e.message); }
 }
 
 /// Pictures save location.
-const sshotPath   = path.join(app.getPath("pictures"),"AquaStar Screenshots");
+const sshotPath   = path.join(app.getPath("pictures"),"AquGrim Screenshots");
 const iconPath    = path.join(appRoot, 'Icon', (isDebugBuild)? 'Icondeb_1024.png' : 'Icon_1024.png');
 const iconRedPath = path.join(appRoot, 'Icon', 'Iconred_1024.png');
 
@@ -54,10 +57,12 @@ const githubPage   = "https://github.com/plicey/AquGrim/releases";
 exports.githubPage       = githubPage;
 
 exports.appName          = appName;
+exports.appDisplayName   = appDisplayName;
 exports.appVersion       = appVersion;
 exports.appRootPath      = appRoot;
 exports.appDirectoryPath = appCurrentDirectory;
 exports.appDataDirectory = appDataDirectory;
+exports.persistentAppDataDirectory = persistentAppDataDirectory;
 exports.sshotPath        = sshotPath;
 
 /// Icon Stuff
@@ -113,7 +118,7 @@ let swfWrapperBase = '';
 exports.setSwfWrapperBase = function (base) {
     swfWrapperBase = typeof base === 'string' ? base : '';
 };
-// opts: optional { wmode, scale } forwarded to swf_wrapper.html query string.
+// opts: optional { wmode, scale, quality } forwarded to swf_wrapper.html query string.
 // Plugins pick the options per game through their wrap config; the default is wmode=direct.
 // The wrapper's base= param keeps relative loads resolving against the game's own origin.
 exports.wrapSwfUrl = function(swfUrl, opts) {
@@ -121,6 +126,7 @@ exports.wrapSwfUrl = function(swfUrl, opts) {
     var q = '?swf=' + encodeURIComponent(swfUrl);
     if (opts && opts.wmode) q += '&wmode=' + encodeURIComponent(opts.wmode);
     if (opts && opts.scale) q += '&scale=' + encodeURIComponent(opts.scale);
+    if (opts && opts.quality) q += '&quality=' + encodeURIComponent(opts.quality);
     return (swfWrapperBase || swfWrapperUrl) + q;
 }
 
@@ -222,6 +228,19 @@ exports.ruffleUpdateChannelChoices = Object.keys(ruffleUpdateChannels).map((id) 
     { id: id, label: ruffleUpdateChannels[id].label }
 ));
 
+// Flash quality affects the PPAPI renderer, not bot timing. "medium" is the performance-first
+// default; users can trade more appearance for speed in Settings.
+const gameQualities = {
+    'low': { label: 'Low (Fastest)' },
+    'medium': { label: 'Medium (Default)' },
+    'high': { label: 'High' },
+    'best': { label: 'Best (Highest Quality)' }
+};
+exports.defaultGameQuality = 'medium';
+exports.gameQualityChoices = Object.keys(gameQualities).map((id) => (
+    { id: id, label: gameQualities[id].label }
+));
+
 exports.appLanguageChoices = [
     { id: 'system', label: 'System default' },
     { id: 'en-US', label: 'English' },
@@ -243,6 +262,7 @@ const originalOptions = {
     localOrigin:       false,
     recordingFormat:   exports.defaultRecordingFormat,
     renderMode:        exports.defaultRenderMode,
+    gameQuality:       exports.defaultGameQuality,
     ruffleUpdateChannel: 'latest',
     ruffleAutoUpdate:  true,
     // Native menu bar on game windows (mirrors shortcuts). Default on.
@@ -264,7 +284,7 @@ if (!fs.existsSync(appdataJsonPath)) {
     var migrationSource = fs.existsSync(inPathJsonPath) ? inPathJsonPath : legacyAppdataJsonPath;
     if (fs.existsSync(migrationSource)) {
         try { fs.copyFileSync(migrationSource, appdataJsonPath); }
-        catch (e) { console.log('[AquaStar] Could not migrate settings: ' + e.message); }
+        catch (e) { console.log('[AquGrim] Could not migrate settings: ' + e.message); }
     }
 }
 var listValidKeybindLocations = [];

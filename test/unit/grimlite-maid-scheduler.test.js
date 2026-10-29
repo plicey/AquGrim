@@ -313,7 +313,7 @@ test('AttackPriority steps aside when the target it already holds is the one it 
   assert.strictEqual(game.count('AttackMonster'), 0, 'nor is the held name');
 });
 
-test('the wildcard attack is the last resort and a target that did not change is reported', async () => {
+test('the wildcard acquires through AttackMonster even when the availability probe disagrees', async () => {
   const game = fakeGame(standing({
     HasTarget: false,
     AttackMonster: true,
@@ -327,15 +327,15 @@ test('the wildcard attack is the last resort and a target that did not change is
   assert.deepStrictEqual(game.payload('AttackMonster'), ['*']);
   assert.ok(fake.maid.note() === null || !/not /.test(fake.maid.note()),
     'the wildcard does not compare names');
-  // The wildcard is only asked for when World.IsMonsterAvailable("*") says there is one: with
-  // the cell empty, no attack is sent at all (MaidRemake.cs:246).
+  // AutoAttack acquires through this same callback. The weaker availability probe can disagree
+  // with the live-object callback, so it must not be allowed to suppress target acquisition.
   const quiet = fakeGame(standing({ HasTarget: false, AttackMonster: true, IsMonsterAvailable: false }));
   const empty = fakeMaid(quiet, { config: config.stateFrom({ RelogDelay: 0, SkillDelay: 0 }) });
   empty.maid.setTarget('master');
   empty.maid.setEnabled(true);
   await settledTicks(empty);
-  assert.strictEqual(quiet.count('AttackMonster'), 0,
-    'no wildcard attack while World.IsMonsterAvailable("*") is false');
+  assert.deepStrictEqual(quiet.payload('AttackMonster'), ['*'],
+    'the working live-object callback still gets the wildcard');
   assert.ok(game.calls.some(function (one) {
     return one.name === 'read' && one.args[0] === maidModel.TARGET_NAME_PATH;
   }), 'the read-back is the one documented path read');
@@ -1080,4 +1080,60 @@ test('Chrono Shadow forces every cast, as the reference\'s useSkill helper does'
   assert.deepStrictEqual(game.payload('ForceUseSkill'), ['1'], 'the normal cast is forced');
   assert.strictEqual(game.count('UseSkill'), 0, 'UseSkill is never the CSH path');
   await fake.maid.stop();
+});
+
+// Game.as moveToArea copies uoBranch leaves verbatim into uoTree, keyed by uoName
+// (:2121-2149); strUsername is not required there. Exercise the actual loader adapter.
+function packetLeafMaid(stopAttack) {
+  const { createMaidGameAccess } = require('../../plugins/grimlite-parity/features/maid/game-access.js');
+  const callbacks = [];
+  let target = null;
+  const paths = {
+    'sfc.isConnected': true,
+    'world.strMapName': 'battleon', 'world.strFrame': 'Enter',
+    'world.mapLoadInProgress': false,
+    'world.areaUsers': ['master'],
+    'world.uoTree': { master: { uoName: 'Master', strFrame: 'Enter', strPad: 'Spawn' } },
+    'world.myAvatar.dataLeaf.intHP': 100, 'world.myAvatar.dataLeaf.intHPMax': 100,
+    'world.myAvatar.dataLeaf.intState': 1,
+    'world.myAvatar.objData.strClassName': 'Mage'
+  };
+  const game = createMaidGameAccess({ bridge: {
+    call: async function (name, args) {
+      callbacks.push({ name, args });
+      if (name === 'getGameObject') {
+        const path = args[0];
+        const value = path === 'world.myAvatar.target.dataLeaf.intHP' ? (target ? 100 : null)
+          : path === 'world.myAvatar.target.objData.strMonName' ? target : paths[path];
+        return { ok: true, value: JSON.stringify(value === undefined ? null : value) };
+      }
+      if (name === 'AttackMonster') target = 'Frogzard';
+      return { ok: true, value: '"ok"' };
+    }
+  } });
+  const fake = fakeMaid(game, { config: config.stateFrom({
+    RelogDelay: 0, BuffStopAttack: true, BuffStopAttackList: '2,3'
+  }) });
+  fake.maid.setTarget('master');
+  fake.maid.setEnabled(true);
+  if (stopAttack) fake.maid.setStopAttack(true);
+  return { fake, callbacks };
+}
+
+test('Maid attacks through the live adapter with a map-packet uoName player leaf', async () => {
+  const { fake, callbacks } = packetLeafMaid(false);
+  const answer = await settledTicks(fake);
+  assert.strictEqual(answer.status, maidModel.STATUS.fighting);
+  assert.ok(callbacks.some(one => one.name === 'AttackMonster'), 'reaches the live attack callback');
+  assert.ok(callbacks.some(one => one.name === 'UseSkill'), 'reaches the live skill callback');
+  assert.deepStrictEqual(fake.sent, [], 'a master in the same cell needs no goto');
+});
+
+test('Maid buffs with Stop Attack through the live adapter with a map-packet uoName leaf', async () => {
+  const { fake, callbacks } = packetLeafMaid(true);
+  const answer = await settledTicks(fake);
+  assert.strictEqual(answer.status, maidModel.STATUS.stopped);
+  assert.ok(callbacks.some(one => one.name === 'UseSkill' && one.args[0] === '2'), 'reaches the buff callback');
+  assert.ok(!callbacks.some(one => one.name === 'AttackMonster'), 'Stop Attack prevents acquisition');
+  assert.deepStrictEqual(fake.sent, []);
 });

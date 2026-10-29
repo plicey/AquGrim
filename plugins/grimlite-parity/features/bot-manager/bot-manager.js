@@ -24,6 +24,11 @@ const { createFromHost } = require('../../bot/bot-dialogs.js');
 // against the statement row's Text).
 const FORM_SKIP = ['Tag', 'Description1', 'Description2', '$type'];
 
+// The Bot Manager controls whose state is the window's rather than a Configuration member.
+const SPECIAL_SETTINGS = ['InventOnStart', 'QuestDelay', 'AutoCorrect', 'AntiMod', 'AntiModStopBot',
+    'AntiModLogout', 'WalkSpeedOn', 'SaveProgress', 'SaveProgressMinutes', 'GenderSwap', 'ToggleMute',
+    'MapSpoofName', 'MapSpoofer'];
+
 // The class an InventoryItem row carries in a .gbot (bots.js's LIST_TYPES names it for a list).
 const INVENTORY_ITEM_TYPE = 'Grimoire.Game.Data.InventoryItem, Grimoire';
 // Grimoire.Game.Data.InventoryItem's own JsonProperty names (InventoryItem.cs): the keys the
@@ -66,10 +71,34 @@ function createBotManager(deps) {
     let currentPath = null;
     let loaded = false;
     let optionsWatchers = [];
+    // The Bot Manager's own editor-only controls. None of these is a Configuration member, so
+    // they live here rather than in the document: a save must not add keys a .gbot never had.
+    const ui = {
+        inventOnStart: true,
+        questDelay: 1000,
+        autoCorrect: true,
+        saveProgress: false,
+        saveProgressMinutes: 60,
+        antiMod: true,
+        antiModStopBot: true,
+        antiModLogout: true
+    };
+    let saveTimer = null;
+    let antiModRelease = null;
+    let spoofRelease = null;
+    let realArea = null;
 
     function optionsRunning() {
         try {
             return !!(options && options.state && options.state().applying === true);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function optionsWalkSpeed() {
+        try {
+            return !!(options && options.state && options.state().walkSpeedOn === true);
         } catch (error) {
             return false;
         }
@@ -92,6 +121,223 @@ function createBotManager(deps) {
                 return false;
             }
         });
+    }
+
+    /** The editor-only values the engine reads: none of them is written into a .gbot. */
+    function editorOptions() {
+        return ui;
+    }
+
+    function currentKey() {
+        return typeof deps.currentWindowKey === 'function' ? deps.currentWindowKey() : windowKeyFor(null);
+    }
+
+    function logDebug(line) {
+        if (typeof deps.logDebug === 'function') deps.logDebug(line);
+    }
+
+    /** One tap frame's text, whichever shape the relay hands it in. */
+    function frameText(data) {
+        if (typeof data === 'string') return data;
+        if (typeof Buffer !== 'undefined' && Buffer.isBuffer(data)) return data.toString('utf8');
+        if (data === null || data === undefined) return '';
+        return String(data);
+    }
+
+    function jsonFrame(data) {
+        const text = frameText(data).trim();
+        if (text.charAt(0) !== '{') return null;
+        try {
+            return JSON.parse(text);
+        } catch (error) {
+            return null;
+        }
+    }
+
+    const STAFF_COLOURS = { 30: 'Dark Green', 40: 'Light Green', 50: 'Purple', 60: 'Yellow', 100: 'Dark Green' };
+
+    /** AntiMODHandler: any access level at or above 30 is staff. */
+    function staffFound(username, accessLevel) {
+        const level = Number(accessLevel);
+        const name = String(username === undefined || username === null ? '' : username);
+        if (!name || !isFinite(level) || level < 30) return;
+        const colour = STAFF_COLOURS[level] || 'Unknown';
+        const line = '==> [STAFF  | ' + level + '/' + colour + ' | ' + name + '] <==';
+        const strip = new Array(line.length + 1).join('-');
+        logDebug(strip + '\n ' + line + ' \n' + strip);
+        // modAction(): the two boxes decide what seeing a staff member does.
+        if (ui.antiModStopBot && runtime) {
+            try {
+                Promise.resolve(runtime.stop(currentKey())).then(syncAntiMod, function () {});
+            } catch (error) {
+                logDebug('could not stop the bot: ' + ((error && error.message) || error));
+            }
+        }
+        if (ui.antiModLogout) {
+            callLoader('Logout').catch(function (error) {
+                logDebug('could not log out: ' + ((error && error.message) || error));
+            });
+        }
+    }
+
+    function observeAntiMod(frame) {
+        if (!ui.antiMod || !botRunning(currentKey())) return;
+        const packet = jsonFrame(frame && frame.data);
+        if (!packet || !packet.params || packet.params.type !== 'json') return;
+        const data = packet.params.dataObj;
+        if (!data) return;
+        if (data.cmd === 'initUserDatas') {
+            const rows = data.a && (Array.isArray(data.a) ? data.a : data.a.$values);
+            (Array.isArray(rows) ? rows : []).forEach(function (row) {
+                const player = row && row.data ? row.data : row;
+                if (player) staffFound(player.strUsername, player.intAccessLevel);
+            });
+        } else if (data.cmd === 'uotls' && data.unm) {
+            callLoader('GetAccessLevel', [data.unm]).then(function (level) {
+                staffFound(data.unm, level);
+            }).catch(function () {});
+        }
+    }
+
+    /** Anti-mod listens only while this window's bot runs, as toggleAntiMod does. */
+    function syncAntiMod() {
+        const on = ui.antiMod && botRunning(currentKey());
+        if (on && !antiModRelease && deps.packets && typeof deps.packets.on === 'function') {
+            antiModRelease = deps.packets.on('frame', observeAntiMod);
+        } else if (!on && antiModRelease) {
+            antiModRelease();
+            antiModRelease = null;
+        }
+    }
+
+    function syncSaveProgress() {
+        if (saveTimer && typeof saveTimer !== 'number') {
+            try { saveTimer.unref(); } catch (error) { /* a browser timer has no unref */ }
+        }
+        if (saveTimer) {
+            (deps.clearInterval || clearInterval)(saveTimer);
+            saveTimer = null;
+        }
+        if (!ui.saveProgress) return;
+        const minutes = isFinite(ui.saveProgressMinutes) && ui.saveProgressMinutes > 0
+            ? ui.saveProgressMinutes : 60;
+        saveTimer = (deps.setInterval || setInterval)(function () {
+            callLoader('IsLoggedIn').then(function (signed) {
+                if (signed !== true) return null;
+                return callLoader('Logout');
+            }).then(function (done) {
+                if (done === null) return;
+                logDebug('[' + new Date().toTimeString().slice(0, 8) + '] Progress saved.');
+            }).catch(function (error) {
+                logDebug('Progress save failed: ' + ((error && error.message) || error));
+            });
+        }, minutes * 60000);
+        if (saveTimer && typeof saveTimer !== 'number' && typeof saveTimer.unref === 'function') {
+            saveTimer.unref();
+        }
+    }
+
+    /** chkGender_CheckedChanged: both directions of the tick send a swap. */
+    function genderSwap() {
+        return Promise.all([callLoader('UserID'), callLoader('Gender')]).then(function (answers) {
+            const gender = String(answers[1] || '').toUpperCase() === 'M' ? 'F' : 'M';
+            const packet = JSON.stringify({
+                t: 'xt',
+                b: { r: -1, o: {
+                    cmd: 'genderSwap', bitSuccess: 1, gender: gender, intCoins: 0,
+                    uid: String(answers[0]), strHairFileName: '', HairID: '', strHairName: ''
+                } }
+            });
+            return callChannel('sendClientPacket', [packet, 'xt']);
+        }).then(function (answer) {
+            return answer && answer.ok ? { ok: true } : { ok: false, error: (answer && answer.error) || 'the game did not answer' };
+        });
+    }
+
+    /** World.spoofMap: write world.strAreaName, then ask the game to redraw the area name. */
+    function observeArea(frame) {
+        if (!ui.mapSpoofing) return;
+        const packet = jsonFrame(frame && frame.data);
+        const data = packet && packet.params && packet.params.dataObj;
+        // Flash.ProcessPext keeps realmap current from every moveToArea frame.
+        if (data && data.cmd === 'moveToArea' && data.areaName) realArea = String(data.areaName);
+    }
+
+    function setMapSpoofer(on, name) {
+        ui.mapSpoofing = on;
+        ui.mapSpoofName = String(name === undefined || name === null ? (ui.mapSpoofName || 'ThisIsCool') : name);
+        if (on) {
+            if (!spoofRelease && deps.packets && typeof deps.packets.on === 'function') {
+                spoofRelease = deps.packets.on('frame', observeArea);
+            }
+            return callChannel('getGameObject', ['world.strAreaName']).then(function (area) {
+                realArea = area.ok && area.value !== undefined ? String(area.value) : null;
+                return callChannel('setGameObject', ['world.strAreaName', ui.mapSpoofName]);
+            }).then(function (written) {
+                if (!written.ok) return written;
+                return callChannel('callGameFunction0', ['updateAreaName']);
+            });
+        }
+        if (spoofRelease) {
+            spoofRelease();
+            spoofRelease = null;
+        }
+        if (realArea === null) return Promise.resolve({ ok: true });
+        return callChannel('setGameObject', ['world.strAreaName', realArea]).then(function (written) {
+            if (!written.ok) return written;
+            return callChannel('callGameFunction0', ['updateAreaName']);
+        });
+    }
+
+    /** One special control's own action; the caller turns a refusal into the window's status. */
+    function specialSetting(name, value) {
+        switch (name) {
+        case 'InventOnStart': ui.inventOnStart = value === true; return Promise.resolve({ ok: true });
+        case 'QuestDelay': {
+            const delay = Number(value);
+            ui.questDelay = isFinite(delay) && delay > 0 ? delay : 1000;
+            return Promise.resolve({ ok: true });
+        }
+        case 'AutoCorrect': ui.autoCorrect = value === true; return Promise.resolve({ ok: true });
+        case 'AntiMod':
+        case 'AntiModStopBot':
+        case 'AntiModLogout':
+            ui[name.charAt(0).toLowerCase() + name.slice(1)] = value === true;
+            syncAntiMod();
+            return Promise.resolve({ ok: true });
+        case 'WalkSpeedOn':
+            if (!options || typeof options.setToggle !== 'function') {
+                return Promise.resolve({ ok: false, error: 'the Options loop is not wired in this build' });
+            }
+            return Promise.resolve(value && value.value !== undefined && typeof options.setWalkSpeed === 'function'
+                ? options.setWalkSpeed(Number(value.value))
+                : null).then(function () {
+                return options.setToggle('walkSpeed', value === true || (value && value.on === true));
+            });
+        case 'SaveProgress':
+            ui.saveProgress = value === true;
+            syncSaveProgress();
+            return Promise.resolve({ ok: true });
+        case 'SaveProgressMinutes': {
+            const minutes = Number(value);
+            ui.saveProgressMinutes = isFinite(minutes) && minutes > 0 ? minutes : 60;
+            syncSaveProgress();
+            return Promise.resolve({ ok: true });
+        }
+        case 'GenderSwap': return genderSwap();
+        case 'ToggleMute':
+            // Player.ToggleMute(!checked): ticking "Toggle Mute" mutes the chat box.
+            return callLoader('MuteToggle', [value !== true]).then(function () {
+                return { ok: true };
+            });
+        case 'MapSpoofName':
+            ui.mapSpoofName = String(value === undefined || value === null ? '' : value);
+            return Promise.resolve({ ok: true });
+        case 'MapSpoofer':
+            return setMapSpoofer(value && value.on === true, value && value.name);
+        default:
+            return Promise.resolve({ ok: false, error: 'no such editor control: ' + name });
+        }
     }
 
     function enableOptions(enabled, event) {
@@ -139,14 +385,20 @@ function createBotManager(deps) {
         }
         if (enabled === false) {
             return Promise.resolve(runtime.stop(key)).then(function () {
+                // The reference's stop unticks its live zone handler when one is selected.
+                if (botDocument.AutoZone) specialZone(botDocument.AutoZone, false);
+                syncAntiMod();
                 return view({ enabled: false, error: null });
             });
         }
-        return Promise.resolve(runtime.start(key, botDocument)).then(function (result) {
+        return Promise.resolve(runtime.start(key, botDocument, editorOptions())).then(function (result) {
             if (!result || result.ok !== true) {
                 // A refused start leaves the tick off; the reason is what the window shows.
                 return view({ enabled: false, error: (result && result.error) || 'the bot did not start' });
             }
+            // chkEnableBot_CheckedChanged unticks Hide players once anti-mod is running.
+            if (ui.antiMod) editor.setSetting('HidePlayers', false);
+            syncAntiMod();
             // chkEnableBot_CheckedChanged: with a zone selected the start switches the live
             // handler on (`if (cmbSpecials.SelectedIndex != -1 && !chkSpecial.Checked)
             // chkSpecial.Checked = true`). A build without the panel is told, not shown a tick.
@@ -213,6 +465,7 @@ function createBotManager(deps) {
             style: style(),
             configuration: configuration,
             optionsRunning: optionsRunning(),
+            optionsWalkSpeed: optionsWalkSpeed(),
             description: bots.description(botDocument),
             author: configuration.Author === null || configuration.Author === undefined ? '' : configuration.Author,
             merge: settings.ui('Merge') === true
@@ -230,9 +483,6 @@ function createBotManager(deps) {
         const parsed = bots.parseBot(text);
         if (!parsed.ok) return { error: parsed.error };
         apply(parsed.bot, file, key);
-        // Every load stops the Options loop (btnLoad_Click, treeBots_AfterSelect and the drop
-        // handler all call OptionsManager.Stop()).
-        stopOptions();
         return null;
     }
 
@@ -287,6 +537,13 @@ function createBotManager(deps) {
             // numWalkSpeed.Value = (config.WalkSpeed <= 0) ? 8 : config.WalkSpeed.
             const value = key === 'WalkSpeed' && !(config.WalkSpeed > 0) ? 8 : config[key];
             editor.setSetting(key, value);
+            // numOptionsTimer_ValueChanged: loading a bot moves the loop's own delay too.
+            if (key === 'optionDelay' && options && typeof options.setTimer === 'function') {
+                options.setTimer(Number(value));
+            }
+            if (key === 'respawnProvoke' && options && typeof options.setRespawnProvoke === 'function') {
+                options.setRespawnProvoke(value === true);
+            }
         });
     }
 
@@ -295,23 +552,6 @@ function createBotManager(deps) {
         const incoming = Array.isArray(bot.NotifyUponDrop) ? bot.NotifyUponDrop : [];
         const own = Array.isArray(botDocument.NotifyUponDrop) ? botDocument.NotifyUponDrop : [];
         if (incoming.length) botDocument.NotifyUponDrop = own.concat(incoming);
-    }
-
-    /** OptionsManager.Stop(), which every load calls before it returns. */
-    function stopOptions() {
-        if (!options || typeof options.setApplying !== 'function' || !optionsRunning()) return;
-        let answer;
-        try {
-            answer = options.setApplying(false);
-        } catch (error) {
-            optionsStateChanged(optionsRunning());
-            return;
-        }
-        Promise.resolve(answer).then(function () {
-            optionsStateChanged(optionsRunning());
-        }, function () {
-            optionsStateChanged(optionsRunning());
-        });
     }
 
     function statements() {
@@ -410,7 +650,6 @@ function createBotManager(deps) {
             if (!result || result.canceled) return { canceled: true };
             if (result.error) return view({ canceled: false, error: result.error });
             apply(result.bot, result.path, key);
-            stopOptions();
             currentPath = result.path;
             return view({ canceled: false, error: null });
         });
@@ -583,7 +822,7 @@ function createBotManager(deps) {
         case 'find': return Object.assign({ hit: editor.find(options.text) }, view());
         case 'label': return labelKey(options);
         default:
-            throw new Error('[AquaStar:grimlite-parity] unknown bot manager key "' + action + '"');
+            throw new Error('[AquGrim:grimlite-parity] unknown bot manager key "' + action + '"');
         }
         return view();
     }
@@ -607,9 +846,11 @@ function createBotManager(deps) {
         case 'centered': settings.setCentered(options.name, options.value); break;
         case 'size': settings.setCommandsSize(options.value); break;
         case 'font': settings.setFont(options.value); break;
+        case 'random': settings.randomColours(options.r, options.g, options.b); break;
+        case 'reload': settings.reload(); break;
         case 'read': break;
         default:
-            throw new Error('[AquaStar:grimlite-parity] unknown bot manager style action "' + options.action + '"');
+            throw new Error('[AquGrim:grimlite-parity] unknown bot manager style action "' + options.action + '"');
         }
         return view();
     }
@@ -673,7 +914,34 @@ function createBotManager(deps) {
      * rest report the helper they wait for, so a press is never a silent no-op.
      */
     function gameAction(id, modifiers) {
-        if (GAME_ACTIONS[id]) return GAME_ACTIONS[id]((modifiers && modifiers.fields) || {});
+        // btnGetMapF_Click: the ctrl branch appends the literal "-[room]" and the alt branch also
+        // appends the current cells; both transforms happen before the page fills the boxes.
+        if (id === 'btnGetMapF') {
+            return readGame(['map', 'cell', 'pad']).then(function (result) {
+                if (!result.ok) return result;
+                const mods = modifiers || {};
+                const fields = mods.fields || {};
+                if (mods.alt === true || mods.ctrl === true) {
+                    result.values.map = String(result.values.map) + '-[room]';
+                }
+                if (mods.alt === true) {
+                    result.values.cell = String(fields.tbCellF || '') + ',' + result.values.cell;
+                    result.values.pad = String(fields.tbPadF || '') + ',' + result.values.pad;
+                }
+                return result;
+            });
+        }
+        if (GAME_ACTIONS[id]) {
+            let answer;
+            try {
+                answer = GAME_ACTIONS[id]((modifiers && modifiers.fields) || {});
+            } catch (error) {
+                return Promise.resolve({ ok: false, error: (error && error.message) || String(error) });
+            }
+            return Promise.resolve(answer).catch(function (error) {
+                return { ok: false, error: (error && error.message) || String(error) };
+            });
+        }
         const spec = gameReads.GAME_BUTTONS[id];
         if (!spec) return Promise.resolve({ ok: false, error: 'not a game control: ' + id });
         const variant = gameReads.variantOf(spec, modifiers);
@@ -703,13 +971,182 @@ function createBotManager(deps) {
             }
             return callChannel('callGameFunction', ['world.getMapItem', id]).then(function (answer) {
                 return answer.ok
-                    ? { ok: true, message: 'got the map item' }
+                    ? { ok: true }
                     : { ok: false, error: answer.error };
             });
         },
         btnGetInfo: function () { return readGame(['cell', 'map', 'pad']); },
-        cbBoosts: function () { return readServerUse(); }
+        cbBoosts: function () { return readServerUse(); },
+
+        // These loader helpers were already implemented by the bridge after game-reads.js was
+        // written. Route them through the same loader surface instead of refusing them.
+        btnWalkCur: function () {
+            return callLoader('Position').then(function (position) {
+                return { ok: true, values: { x: position && position[0], y: position && position[1] } };
+            });
+        },
+        btnCellSwap: function (fields) {
+            return Promise.all([callLoader('Map'), callLoader('RoomNumber')]).then(function (answers) {
+                return {
+                    ok: true,
+                    values: {
+                        join: String(answers[0] || '') + '-' + String(answers[1] || ''),
+                        cell: fields.txtCell,
+                        pad: fields.txtPad
+                    }
+                };
+            });
+        },
+        btnSetSpawn2: function () {
+            return callLoader('SetSpawnPoint').then(function () {
+                return Promise.all([callLoader('Cell'), callLoader('Pad')]);
+            }).then(function (where) {
+                // btnSetSpawn2_Click's own confirmation, sent to the client as %xt%server%.
+                return callChannel('sendClientPacket', [
+                    '%xt%server%-1%Spawnpoint set: ' + where[0] + ', ' + where[1] + '%', 'str'
+                ]);
+            }).then(function (answer) {
+                return answer.ok ? { ok: true } : { ok: false, error: answer.error };
+            });
+        },
+        btnReloadMap: function () {
+            return callLoader('ReloadMap').then(function () {
+                return { ok: true };
+            });
+        },
+        btnHideLoading: function () {
+            return callLoader('HideConnMC').then(function () { return { ok: true }; });
+        },
+        btnSetFPS: function (fields) {
+            const fps = Number(fields.numSetFPS);
+            if (!isFinite(fps) || fps <= 0) return Promise.resolve({ ok: false, error: 'give the FPS box a number first' });
+            return callLoader('SetFPS', [fps]).then(function () { return { ok: true }; });
+        },
+        btnchangeName: function (fields) {
+            return callLoader('ChangeName', [String(fields.txtUsername || '')]).then(function () {
+                return { ok: true };
+            });
+        },
+        btnchangeGuild: function (fields) {
+            return callLoader('ChangeGuild', [String(fields.txtGuild || '')]).then(function () {
+                return { ok: true };
+            });
+        },
+        btnSetLevel: function (fields) {
+            const level = String(fields.tbLevel === undefined ? '' : fields.tbLevel).trim();
+            if (!/^[0-9]+$/.test(level)) return { ok: false, error: 'type a level number first' };
+            const packet = '{"t":"xt","b":{"r":-1,"o":{"cmd":"levelUp","intExpToLevel":"2000","intLevel":' + level + '}}}';
+            return callChannel('sendClientPacket', [packet, 'xt']).then(function (answer) {
+                return answer.ok ? { ok: true }
+                    : { ok: false, error: answer.error };
+            });
+        },
+
+        // btnQAddToWhitelist_Click: load the quest, then add its rewards and/or requirements to
+        // Drops. The quest row is the loader's GetQuestTree row, the same one the item commands use.
+        btnQAddToWhitelist: async function (fields) {
+            const id = Number(fields.numQQuestId);
+            const game = deps.game;
+            if (!isFinite(id) || id <= 0) return { ok: false, error: 'give the quest an id first' };
+            if (!game || typeof game.loadQuest !== 'function') {
+                return { ok: false, error: 'this window has no quest access' };
+            }
+            try {
+                await game.loadQuest(id);
+            } catch (error) {
+                return { ok: false, error: (error && error.message) || String(error) };
+            }
+            let row = null;
+            for (let tries = 0; tries < 20 && !row; tries++) {
+                row = await game.quest(id).catch(function () { return null; });
+                if (!row) await new Promise(function (resolve) { setTimeout(resolve, 200); });
+            }
+            if (!row) return { ok: false, error: 'quest #' + id + ' did not load' };
+            const names = [];
+            function collect(list) {
+                (Array.isArray(list) ? list : []).forEach(function (item) {
+                    const name = item && (item.sName === undefined ? item.Name : item.sName);
+                    if (name) names.push(String(name));
+                });
+            }
+            if (fields.chkQRewards) collect(row.rewards || row.Rewards);
+            if (fields.chkQRequirements) collect(row.reqd || row.RequiredItems);
+            if (!names.length) {
+                return { ok: false, error: 'the quest has no rewards or requirements to add' };
+            }
+            fillLists([{ list: 'Drops', items: names, unique: true, insensitive: true }]);
+            return { ok: true, message: 'added ' + names.length + ' quest item/items to Drops', state: view() };
+        },
+
+        // btnLoadMap_Click: World.LoadMap(tbLoadMap.Text), when a .swf name was typed.
+        btnLoadMap: function (fields) {
+            const map = String(fields.tbLoadMap || '').trim();
+            if (!/\.swf$/i.test(map) || /\(\.swf\)/.test(map)) {
+                return Promise.resolve({ ok: false, error: 'type a .swf map name first' });
+            }
+            return callChannel('callGameFunction', ['world.loadMap', map]).then(function (answer) {
+                return answer.ok ? { ok: true, message: 'loading ' + map }
+                    : { ok: false, error: answer.error };
+            });
+        },
+
+        // Player.ChangeAccessLevel: the loader's own visible fields. Filters are live objects the
+        // generic bridge cannot carry; colour and upgrade/access fields are enough to show the
+        // change in the client and are what the reference writes beside them.
+        btnSetMem: function () { return setAccess('Member'); },
+        btnSetNonMem: function () { return setAccess('Non Member'); },
+        btnSetModerator: function () { return setAccess('Moderator'); },
+
+        // The four alignment buttons are the reference's own updateQuest frames.
+        btnSetGood: function () { return sendServerFrame('%xt%zm%updateQuest%218701%41%1%'); },
+        btnSetEvil: function () { return sendServerFrame('%xt%zm%updateQuest%218701%41%2%'); },
+        btnSetChaos: function () { return sendServerFrame('%xt%zm%updateQuest%218701%41%3%'); },
+        btnSetUndecided: function () { return sendServerFrame('%xt%zm%updateQuest%218701%41%5%'); }
     };
+
+    /** The field bindings for the action rows above; the page's read-fill path uses these. */
+    const ACTION_ROWS = {
+        btnWalkCur: { plain: { numWalkX: 'x', numWalkY: 'y' } },
+        btnCellSwap: { plain: { txtJoin: 'join', txtJoinCell: 'cell', txtJoinPad: 'pad' } }
+    };
+
+    function callLoader(name, args) {
+        if (typeof deps.loaderCall !== 'function') {
+            return Promise.reject(new Error('this window has no loader surface'));
+        }
+        return Promise.resolve(deps.loaderCall(name, args || []));
+    }
+
+    function setAccess(level) {
+        const colour = level === 'Member' ? 9229823 : level === 'Moderator' ? 16698168 : 16777215;
+        const writes = [
+            ['world.myAvatar.pMC.pname.ti.textColor', colour]
+        ];
+        if (level === 'Member') writes.push(['world.myAvatar.objData.iUpgDays', 30],
+            ['world.myAvatar.objData.iUpg', 1]);
+        else if (level === 'Non Member') writes.push(['world.myAvatar.objData.iUpgDays', -1],
+            ['world.myAvatar.objData.iUpg', 0]);
+        else writes.push(['world.myAvatar.objData.intAccessLevel', 60]);
+        return writes.reduce(function (chain, pair) {
+            return chain.then(function (state) {
+                if (!state.ok) return state;
+                return callChannel('setGameObject', pair).then(function (answer) {
+                    return answer.ok ? state : { ok: false, error: answer.error };
+                });
+            });
+        }, Promise.resolve({ ok: true })).then(function (state) {
+            return state.ok ? { ok: true, message: 'access level set to ' + level } : state;
+        });
+    }
+
+    function sendServerFrame(text) {
+        if (typeof deps.sendFrame !== 'function') {
+            return { ok: false, error: 'this window has no packet relay' };
+        }
+        const sent = deps.sendFrame({ direction: 'toServer', text: text });
+        return sent ? { ok: true, message: 'sent ' + text }
+            : { ok: false, error: 'the client is not connected to the relay' };
+    }
 
     /** A read's own value, with a member error kept apart from a value JSON cannot carry. */
     function decodeValue(raw) {
@@ -836,14 +1273,9 @@ function createBotManager(deps) {
                     // are waiting. The page draws them either way; none is a dead button. The
                     // three this window serves itself (GAME_ACTIONS) travel with them.
                     gameButtons: gameReads.ids().concat(Object.keys(GAME_ACTIONS)),
-                    gameReasons: gameReads.ids().reduce(function (out, id) {
-                        const spec = gameReads.GAME_BUTTONS[id];
-                        if (!spec.reads) out[id] = gameReads.why(spec, id);
-                        return out;
-                    }, {}),
                     // The reachable controls' own field branches, so the page fills the boxes the
                     // reference fills rather than guessing at them.
-                    gameRows: gameReads.ids().reduce(function (out, id) {
+                    gameRows: Object.assign(gameReads.ids().reduce(function (out, id) {
                         const spec = gameReads.GAME_BUTTONS[id];
                         if (spec.reads) {
                             out[id] = {};
@@ -852,7 +1284,7 @@ function createBotManager(deps) {
                             });
                         }
                         return out;
-                    }, {}),
+                    }, {}), ACTION_ROWS),
                     settings: actions.SETTINGS,
                     numbers: actions.NUMBERS,
                     optionsRunning: optionsRunning()
@@ -867,6 +1299,18 @@ function createBotManager(deps) {
                     return view(Object.assign({ canceled: false }, failure || { error: null }));
                 }
                 return loadDialog(windowKeyFor(event));
+            case 'botManagerPickBot':
+                // btnLoadCmd_Click: the dialog chooses a bot to embed as a CmdLoadBot; it does
+                // not load that bot into this window.
+                return Promise.resolve(dialogs.open(null, { title: 'Select bot to load' })).then(function (result) {
+                    if (!result || result.canceled || !result.path) return { canceled: true };
+                    const root = settings.botsDirectory() || deps.defaultBotsDirectory || '';
+                    const made = botTree.loadCommand(root, result.path);
+                    return {
+                        canceled: false, path: result.path,
+                        fileName: made.BotFileName, filePath: made.BotFilePath
+                    };
+                });
             case 'botManagerSave':
                 return save(argv[0]);
             case 'botManagerAdd':
@@ -893,7 +1337,23 @@ function createBotManager(deps) {
                 if (argv[0] === 'Merge') settings.setUi('Merge', argv[1] === true);
                 // The server combo holds a Server object in Configuration, not its name.
                 else if (argv[0] === 'Server') setServer(argv[1]);
-                else editor.setSetting(argv[0], argv[1]);
+                else if (argv[0] === 'optionDelay') {
+                    editor.setSetting('optionDelay', Number(argv[1]));
+                    if (options && typeof options.setTimer === 'function') options.setTimer(Number(argv[1]));
+                }
+                else if (argv[0] === 'respawnProvoke') {
+                    editor.setSetting('respawnProvoke', argv[1] === true);
+                    if (options && typeof options.setRespawnProvoke === 'function') {
+                        options.setRespawnProvoke(argv[1] === true);
+                    }
+                }
+                else if (SPECIAL_SETTINGS.indexOf(argv[0]) !== -1) {
+                    return specialSetting(argv[0], argv[1]).then(function (answer) {
+                        return view({ error: answer && answer.ok === false ? answer.error : null });
+                    }, function (error) {
+                        return view({ error: (error && error.message) || String(error) });
+                    });
+                } else editor.setSetting(argv[0], argv[1]);
                 return view();
             case 'botManagerOptionsEnable':
                 return enableOptions(argv[0], event);
@@ -901,6 +1361,7 @@ function createBotManager(deps) {
                 return enableBot(argv[0], event);
             case 'botManagerState':
                 watchOptionsWindow(event);
+                syncAntiMod();
                 return (function () {
                     if (!runtime) return view({ bot: null, enabled: false });
                     const state = runtime.state(windowKeyFor(event));
@@ -932,8 +1393,26 @@ function createBotManager(deps) {
                 return true;
             case 'botManagerPaste':
                 return String(clipboard.read() == null ? '' : clipboard.read());
+            case 'botManagerOpenLink': {
+                const target = String(argv[0] == null ? '' : argv[0]);
+                let parsed;
+                try {
+                    parsed = new URL(target);
+                } catch (error) {
+                    return { ok: false, error: 'not a link: ' + target };
+                }
+                if (['http:', 'https:', 'mailto:'].indexOf(parsed.protocol) === -1) {
+                    return { ok: false, error: 'this link cannot be opened: ' + target };
+                }
+                const shell = deps.shell || require('electron').shell;
+                return Promise.resolve(shell.openExternal(target)).then(function () {
+                    return { ok: true };
+                }, function (error) {
+                    return { ok: false, error: (error && error.message) || String(error) };
+                });
+            }
             default:
-                throw new Error('[AquaStar:grimlite-parity] unknown bot manager channel "' + channel + '"');
+                throw new Error('[AquGrim:grimlite-parity] unknown bot manager channel "' + channel + '"');
             }
         },
 
@@ -944,7 +1423,8 @@ function createBotManager(deps) {
                 'botManagerRaw', 'botManagerSetting', 'botManagerOptionsEnable', 'botManagerStyle', 'botManagerTree',
                 'botManagerChooseDirectory', 'botManagerAddFolder', 'botManagerTreeSelect',
                 'botManagerDrop', 'botManagerCopy', 'botManagerPaste', 'botManagerGame',
-                'botManagerBeep', 'botManagerEnable', 'botManagerState', 'botManagerSpecial'];
+                'botManagerBeep', 'botManagerEnable', 'botManagerState', 'botManagerSpecial',
+                'botManagerOpenLink', 'botManagerPickBot'];
             channels.forEach(function (channel) {
                 host.ipc.handle(channel, function (event) {
                     const rest = Array.prototype.slice.call(arguments, 1);
@@ -952,7 +1432,11 @@ function createBotManager(deps) {
                 });
             });
         },
-        optionsStateChanged: optionsStateChanged
+        optionsStateChanged: optionsStateChanged,
+        /** Chrome's Start Bot drives the same engine; this keeps anti-mod's watch in step. */
+        engineStateChanged: function () { syncAntiMod(); },
+        /** The editor-only values a second Start path (the chrome strip) must hand the engine. */
+        editorOptions: editorOptions
     };
 
     return feature;

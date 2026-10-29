@@ -34,7 +34,7 @@ const WALK_SPEED = {
 };
 
 const TOGGLES = [
-    { id: 'infiniteRange', label: 'Infinite Range', call: 'SetInfiniteRange', args: [] },
+    { id: 'infiniteRange', label: 'Infinite Range', call: 'SetInfiniteRange', args: function (on) { return [on]; }, callAlways: true },
     { id: 'provoke', label: 'Provoke', call: 'SetProvokeMonsters', args: [], loop: 'each' },
     { id: 'enemyMagnet', label: 'Enemy Magnet', call: 'SetEnemyMagnet', args: [], loop: 'second' },
     {
@@ -57,7 +57,7 @@ const TOGGLES = [
         // toggle whose call has no route and reports the reason (game-calls.js NO_ROUTE).
         args: [], loop: 'second'
     },
-    { id: 'skipCutscenes', label: 'Skip Cutscenes', call: 'SetSkipCutscenes', args: [], loop: 'second' },
+    { id: 'skipCutscenes', label: 'Skip Cutscenes', call: 'SetSkipCutscenes', args: function (on) { return [on]; }, callAlways: true, loop: 'second' },
     {
         id: 'walkSpeed',
         label: 'Walkspeed',

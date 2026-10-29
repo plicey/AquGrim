@@ -97,6 +97,7 @@ function createMaidWindow(deps) {
     function applyFileConfig(patch) {
         const beforeMode = Number(state.UltraBossExtra) || 0;
         state = config.apply(patch, state);
+        if (patch.Target) maid.setTarget(state.Target);
         if (!Object.prototype.hasOwnProperty.call(patch, 'UltraBossExtra')) return;
         const nextMode = Number(state.UltraBossExtra) || 0;
         if (beforeMode === nextMode) return;
@@ -173,6 +174,7 @@ function createMaidWindow(deps) {
                 }
                 state[key] = String(value);
             });
+            if (Object.prototype.hasOwnProperty.call(next, 'Target')) maid.setTarget(state.Target);
         }
         if (Object.prototype.hasOwnProperty.call(change, 'specialAnims')) {
             specialAnims = change.specialAnims === true;
@@ -196,7 +198,10 @@ function createMaidWindow(deps) {
             // commands do, and starting runs the loop; stopping ends it.
             const on = change.enabled === true;
             maid.setEnabled(on);
-            if (on) maid.start();
+            if (on) {
+                prefillTarget();
+                maid.start();
+            }
         }
         announce(change, before);
         return view();
@@ -296,7 +301,7 @@ function createMaidWindow(deps) {
                 set({ target: name });
                 return true;
             });
-        }, function () { return false; });
+        }).catch(function () { return false; });
     }
 
     /** World.PlayersInMap, the combo's own list (cmbGotoUsername_Clicked, :1370-1376). */
@@ -399,7 +404,8 @@ function createMaidWindow(deps) {
         const first = args && args[0];
         switch (channel) {
         case 'maidView':
-            return Promise.resolve(view());
+            // Activation precedes login; retry the form's constructor prefill when it opens.
+            return prefillTarget().then(function () { return view(); });
         case 'maidMessages':
             return Promise.resolve(messages);
         case 'maidPresets':
@@ -439,7 +445,7 @@ function createMaidWindow(deps) {
         case 'maidAutoload':
             return Promise.resolve(Object.assign(autoload(), { view: view() }));
         default:
-            throw new Error('[AquaStar:grimlite-parity] unknown maid channel "' + channel + '"');
+            throw new Error('[AquGrim:grimlite-parity] unknown maid channel "' + channel + '"');
         }
     }
 
@@ -724,7 +730,7 @@ function createFromHost(host, deps) {
 
     window = deps.window || createMaidWindow({
         host: host,
-        appDataDirectory: host.appDataDirectory,
+        appDataDirectory: host.persistentAppDataDirectory || host.appDataDirectory,
         maid: maid,
         party: party,
         game: bridge,

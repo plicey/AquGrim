@@ -1,0 +1,112 @@
+[
+  {
+    "path": "maps/watchtower/Cutscene-ChaosIsComing-1-r1.swf?v=5.31",
+    "cache": "AquaStar-24f2be260f407368_0",
+    "sha256": "7beabe95fb48f8d1240bcdf140a2fb985eb41a9634ff8e8d979a2fe70a7f8121",
+    "scene": "Cutscene_fla::Item3_3_Item2_2_intro2_1",
+    "totalFrames": 1960,
+    "exitFrame": 1960,
+    "rootInitFrame": 7,
+    "ending": "      internal function frame1960() : *\n      {\n         __setProp___id9__Item3_3_Item2_2_intro2_Actions_1959();\n         afterCutTransfer();\n         stop();\n      }\n\n      public function afterCutTransfer() : *\n      {\n         if(rootClass.world.map.objCutTarget != null)\n         {\n            trace(\"objFound: \" + rootClass.world.map.objCutTarget.strMap + \", \" + rootClass.world.map.objCutTarget.strFrame + \", \" + rootClass.world.map.objCutTarget.strPad);\n            if(rootClass.world.map.objCutTarget.strMap != \"Reset\")\n            {\n               if(rootClass.world.map.objCutTarget.strMap != \"None\")\n               {\n                  rootClass.world.gotoTown(rootClass.world.map.objCutTarget.strMap,rootClass.world.map.objCutTarget.strFrame,rootClass.world.map.objCutTarget.strPad);\n               }\n               else\n               {\n                  rootClass.world.moveToCell(rootClass.world.map.objCutTarget.strFrame,rootClass.world.map.objCutTarget.strPad);\n               }\n            }\n            rootClass.world.map.objCutTarget.strMap = \"Reset\";\n         }\n         MovieClip(stage.getChildAt(0)).clearExternamSWF();\n      }"
+  },
+  {
+    "path": "maps/TheSpan/Cutscene-TheSpan-01.swf?v=5.3",
+    "cache": "AquaStar-bda1bec192519e33_0",
+    "sha256": "3080e0a2bec898456ce0d3b62abd623c859948d35826b799ed572d187b4eb800",
+    "scene": "Cutscene_fla::Item3_3_Item2_2_intro2_1",
+    "totalFrames": 392,
+    "exitFrame": 375,
+    "rootInitFrame": 7,
+    "ending": "      internal function frame375() : *\n      {\n         __setProp___id6__Item3_3_Item2_2_intro2_SoundFX_374();\n         MovieClip(stage.getChildAt(0)).clearExternamSWF();\n         stop();\n      }"
+  },
+  {
+    "path": "maps/Dwarfhold/Cutscene-Vath1-2023.swf?v=5.21",
+    "cache": "AquGrim-05c49ed167cc447d_0",
+    "sha256": "2b6b53236535c83b3ecb83f2e8d697636b897190dba725e022144bcd345c9748",
+    "scene": "Cutscene_fla::intro2_1",
+    "totalFrames": 683,
+    "exitFrame": 682,
+    "rootInitFrame": 682,
+    "ending": "      internal function frame682() : *\n      {\n         rootClass = MovieClip(stage.getChildAt(0));\n         if(rootClass.world.myAvatar.checkTempItem(1646,1))\n         {\n            rootClass.world.tryQuestComplete(344);\n         }\n         rootClass.clearExternamSWF();\n         stop();\n      }"
+  },
+  {
+    "path": "maps/Dwarfhold/Cutscene-Vath5-2023.swf?v=5.21",
+    "cache": "AquGrim-0d0a166b80c27254_0",
+    "sha256": "07578645dc8b4b5477ab4a7eada0ddd8c6eaa363749d52f68abf25071f3a0081",
+    "scene": "Cutscene_fla::intro2_1",
+    "totalFrames": 677,
+    "exitFrame": 677,
+    "rootInitFrame": 2,
+    "ending": "      internal function frame677() : *\n      {\n         __setProp___id9__intro2_Sounds_676();\n         rootClass.world.cHandle.transfer();\n         stop();\n      }"
+  },
+  {
+    "path": "maps/Yokai/Cutscene-Yokai-Kitsune-6r1.swf?v=5.21",
+    "cache": "AquGrim-4000953ddb49a65b_0",
+    "sha256": "15b69859590be5d5d0ec87a752bf2bbd3b7f100841340bd1374ef8e17a4038db",
+    "scene": "Cutscene_fla::intro2_1",
+    "totalFrames": 169,
+    "exitFrame": 169,
+    "rootInitFrame": 7,
+    "ending": "      internal function frame169() : *\n      {\n         __setProp___id1__intro2_Actions_168();\n         rootClass.world.cHandle.transfer();\n         stop();\n      }"
+  },
+  {
+    "path": "maps/Yokai/Cutscene-Yokai-2a.swf?v=5.21",
+    "cache": "AquGrim-67ff89c7c234a691_0",
+    "sha256": "1e0b15a9613de1e16c63870d9659e9c8a6564c7fd11c77880767ce7576a4a863",
+    "scene": "Cutscene_fla::intro2_1",
+    "totalFrames": 288,
+    "exitFrame": 288,
+    "rootInitFrame": 31,
+    "ending": "      internal function frame288() : *\n      {\n         if(__setPropDict[__id2_] == undefined || !(int(__setPropDict[__id2_]) >= 287 && int(__setPropDict[__id2_]) <= 288))\n         {\n            __setPropDict[__id2_] = currentFrame;\n            __setProp___id2__intro2_Scenes_287();\n         }\n         rootClass.world.gotoTown(\"dragonkoi\",\"Enter\",\"Spawn\");\n         rootClass.clearExternamSWF();\n         stop();\n      }"
+  },
+  {
+    "path": "maps/Yokai/Cutscene-Yokai-3a-Ryoku.swf?v=5.21",
+    "cache": "AquGrim-6eb84ee1d9e7c482_0",
+    "sha256": "fa7bebf640fadba1c0d97ce9132af6d038154b4c6db7a3d20a71a7f3e05b0f63",
+    "scene": "Cutscene_fla::cutsceneryoku_1",
+    "totalFrames": 623,
+    "exitFrame": 623,
+    "rootInitFrame": 2,
+    "ending": "      internal function frame623() : *\n      {\n         SoundMixer.stopAll();\n         rootClass.clearExternamSWF();\n         stop();\n      }"
+  },
+  {
+    "path": "maps/Dwarfhold/Cutscene-Vath2-2023.swf?v=5.21",
+    "cache": "AquGrim-6fe3a8508e508100_0",
+    "sha256": "f75b8d5e9a1a57d99d29b8c49a63cb8a8f9c1b72edd97aea285df198bc3bb0e2",
+    "scene": "Cutscene_fla::intro2_1",
+    "totalFrames": 497,
+    "exitFrame": 496,
+    "rootInitFrame": 31,
+    "ending": "      internal function frame496() : *\n      {\n         __setProp___id5__intro2_Scenes_495();\n         rootClass.clearExternamSWF();\n         stop();\n      }"
+  },
+  {
+    "path": "maps/Yokai/Cutscene-Yokai-1a.swf?v=5.21",
+    "cache": "AquGrim-7fab49623930674b_0",
+    "sha256": "7c151cdd414d919554b986902995417ff0bd8fa480e8448ac0d03bcf9090b0d7",
+    "scene": "Cutscene_fla::Map1_2_intro2_1",
+    "totalFrames": 177,
+    "exitFrame": 177,
+    "rootInitFrame": 154,
+    "ending": "      internal function frame177() : *\n      {\n         rootClass.clearExternamSWF();\n         stop();\n      }"
+  },
+  {
+    "path": "maps/Dwarfhold/Cutscene-Captured-19Jul18.swf?v=5.21",
+    "cache": "AquGrim-926ac1cf88940597_0",
+    "sha256": "23e3f7ec8ef69e61ab54d4c26da9edf6a3610530036ead7572156abd595a70e3",
+    "scene": "Cutscene_fla::cutscene1_1",
+    "totalFrames": 255,
+    "exitFrame": 255,
+    "rootInitFrame": 13,
+    "ending": "      internal function frame255() : *\n      {\n         __setProp___id9__cutscene1_Actions_254();\n         rootClass.world.cHandle.transfer();\n         stop();\n      }"
+  },
+  {
+    "path": "maps/Dwarfhold/Cutscene-VathShowdown-2023.swf?v=5.21",
+    "cache": "AquGrim-94eb0527aa978c73_0",
+    "sha256": "2cfe8b2079d1eec2baa887434f68aa0c009a3cda775280ceb17f5ed8eadd9a80",
+    "scene": "Cutscene_fla::cutscene1_1",
+    "totalFrames": 292,
+    "exitFrame": 292,
+    "rootInitFrame": 197,
+    "ending": "      internal function frame292() : *\n      {\n         __setProp___id5__cutscene1_Actions_291();\n         rootClass.world.cHandle.transfer();\n         stop();\n      }"
+  }
+]

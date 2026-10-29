@@ -37,7 +37,7 @@ function createBotFileFeature(host, deps) {
         if (channel === 'getBotFileMessages') {
             return Promise.resolve(host.getLocaleStrings('botFileMessages') || {});
         }
-        throw new Error('[AquaStar:grimlite-parity] unknown bot file channel "' + channel + '"');
+        throw new Error('[AquGrim:grimlite-parity] unknown bot file channel "' + channel + '"');
     }
 
     function attach() {

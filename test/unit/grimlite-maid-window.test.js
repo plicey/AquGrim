@@ -985,3 +985,45 @@ test('the page carries the reference labels, limits and startUI lockouts', () =>
   assert.ok(/INPUT\|TEXTAREA\|SELECT/.test(source), 'and is suppressed inside a box or combo');
   assert.ok(/drawStopwatch/.test(source), 'StopAttack carries the elapsed-time title');
 });
+
+test('Maid retries its target prefill when the window opens after login', async () => {
+  let signedIn = false;
+  const game = fakeGame({ 'world.myAvatar.objData.strUsername': 'Kirin' });
+  game.loaderCall = async function () { return signedIn; };
+  const maid = maidModel.createMaid({ game, sleep: async function () {} });
+  const window = maidWindow.createMaidWindow({ maid, game });
+  await window.prefillTarget();
+  assert.strictEqual(maid.getTarget(), '');
+  signedIn = true;
+  await window.handle('maidView');
+  assert.strictEqual(maid.getTarget(), 'kirin', 'login after plugin activation must initialize the master');
+  window.set({ target: 'Other' });
+  await window.handle('maidView');
+  assert.strictEqual(maid.getTarget(), 'other', 'opening again preserves an explicit master');
+});
+
+test('Maid loaded and edited Target config reaches the scheduler master', async () => {
+  const fixture = maidFixture();
+  await fixture.window.prefillTarget();
+  fixture.window.load('{"Target":"Other"}', 'maid.json');
+  assert.strictEqual(fixture.maid.getTarget(), 'other', 'loading a config must update follow/combat gates');
+  fixture.window.set({ config: { Target: 'Third' } });
+  assert.strictEqual(fixture.maid.getTarget(), 'third');
+});
+
+test('Maid enable retries prefill after activation before login without opening its window', async () => {
+  let signedIn = false;
+  const game = fakeGame({ 'world.myAvatar.objData.strUsername': 'Kirin' });
+  game.loaderCall = async function () { return signedIn; };
+  const maid = maidModel.createMaid({ game, sleep: async function () {} });
+  let starts = 0;
+  maid.start = function () { starts++; };
+  const window = maidWindow.createMaidWindow({ maid, game });
+  await window.prefillTarget();
+  signedIn = true;
+  window.set({ enabled: true });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.strictEqual(starts, 1);
+  assert.strictEqual(maid.getTarget(), 'kirin');
+  window.set({ enabled: false });
+});

@@ -32,7 +32,7 @@ const LOAD_TARGETS = [
 
 // cbGrab.Items. `source` is the read in game.js that fills it, in the reference's order.
 const GRAB_TARGETS = [
-    { id: 'shopItems', label: 'Shop items', source: 'readShopInfo', menu: 'shop' },
+    { id: 'shopItems', label: 'Shop items', source: 'readLoadedShops', menu: 'shop' },
     { id: 'questIds', label: 'Quest IDs', source: 'readQuestTree', orderable: true },
     { id: 'questItems', label: 'Quest items, drop rates', source: 'readQuestTree', orderable: true },
     { id: 'inventoryItems', label: 'Inventory items', source: 'readInventory' },

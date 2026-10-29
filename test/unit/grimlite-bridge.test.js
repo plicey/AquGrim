@@ -250,3 +250,11 @@ test('an equip reaches the game through the surface, so a loader-only name is no
     'world.myAvatar.items', 'world.sendEquipItemRequest'
   ]);
 });
+
+test('ordinary equip preserves a rejected game request for the sets window', async () => {
+  const channel = fakeChannel({
+    'world.myAvatar.items': JSON.stringify([{ ItemID: 42, sName: 'Sword of Awe' }]),
+    'world.sendEquipItemRequest': 'false'
+  });
+  assert.strictEqual(await bridge.createGameAccess(fakeHost(channel)).equipItem('Sword of Awe'), false);
+});

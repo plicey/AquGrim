@@ -146,7 +146,8 @@ function createFromHost(host, deps) {
     const electron = deps.electron || require('electron');
     return createBotDialogs({
         store: host.getStore(STORE_NAMESPACE),
-        defaultDirectory: path.join(host.appDataDirectory, 'Bots'),
+        defaultDirectory: path.join(
+            host.persistentAppDataDirectory || host.appDataDirectory, 'Bots'),
         messages: messagesFrom(host),
         showOpenDialog: function (owner, options) {
             return electron.dialog.showOpenDialog(owner, options);

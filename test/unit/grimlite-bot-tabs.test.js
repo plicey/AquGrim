@@ -70,13 +70,34 @@ test('each tab holds the controls the reference puts in it', () => {
   assert.ok(textsOf(tabs[1]).indexOf('Set Spawnpoint') !== -1, 'Map tab');
   assert.ok(textsOf(tabs[2]).indexOf('Buy fast') !== -1, 'Item tab');
   assert.ok(textsOf(tabs[3]).indexOf('Complete (cmd)') !== -1, 'Quest tab');
-  assert.ok(textsOf(tabs[4]).indexOf('Clear Var&Int') !== -1, 'Misc tab');
+  assert.ok(textsOf(tabs[4]).indexOf('Clear VarInt') !== -1, 'Misc tab');
   assert.ok(textsOf(tabs[5]).indexOf('Overall \r\nDelay') !== -1, 'Misc 2 tab');
   assert.ok(textsOf(tabs[6]).indexOf('Options Timer') !== -1, 'Options tab');
   assert.ok(textsOf(tabs[7]).indexOf('Gender swap') !== -1, 'Client tab');
   assert.ok(textsOf(tabs[8]).indexOf('Add Command') !== -1, 'Hunt tab');
   assert.ok(textsOf(tabs[9]).indexOf('Number of Bots:') !== -1, 'Bots tab');
   assert.ok(textsOf(tabs[10]).indexOf('Test here') !== -1, 'Info tab');
+
+  // The reference's Rest box rows: Rest / Rest fully, then "Rest if", then HP and MP.
+  assert.deepStrictEqual(find('darkGroupBox19').children.map(function (control) { return control.id; }), [
+    'btnRest', 'btnRestF', 'label12', 'chkHP', 'numRest', 'label10', 'chkMP', 'numRestMP', 'label11'
+  ]);
+  assert.ok(/once/i.test(find('btnRest').title), 'Rest is the one-shot command');
+  assert.ok(/full/i.test(find('btnRestF').title), 'Rest fully is the full-rest command');
+
+  // Every page keeps the designer's coordinates for every control, not just the Combat tab.
+  tabs.forEach(function (tab) {
+    assert.ok(tab.layout, tab.id + ' has a designer layout');
+    assert.deepStrictEqual([tab.layout.width, tab.layout.height], [544, tab.id === 'bots' ? 314 : 298]);
+    const missing = [];
+    (function walk(list) {
+      (list || []).forEach(function (control) {
+        if (control.id && !tab.layout.positions[control.id]) missing.push(control.id);
+        walk(control.children);
+      });
+    })(tab.controls);
+    assert.deepStrictEqual(missing, [], tab.id + ' controls without a reference position');
+  });
 
   assert.deepStrictEqual(find('cbCategories').options,
     ['Aura', 'Item', 'This player', 'Player', 'Map', 'Monster', 'Quest', 'Misc']);
@@ -88,6 +109,17 @@ test('each tab holds the controls the reference puts in it', () => {
 test('the reference list selector values are the six lists the editor switches between', () => {
   assert.deepStrictEqual(find('cbLists').options,
     ['Commands', 'Skills', 'Quests', 'Drops', 'Boosts', 'Items']);
+  // The reference's three single-selection list boxes; the six bot lists are MultiExtended.
+  ['lbLabels', 'lstLogText', 'lstSoundItems'].forEach(function (id) {
+    assert.strictEqual(find(id).kind, 'list', id + ' is a ListBox');
+    assert.strictEqual(find(id).single, true, id + ' is SelectionMode.One');
+  });
+  assert.strictEqual(find('numWalkSpeed').min, 1);
+  assert.strictEqual(find('numWalkSpeed').max, 99);
+  assert.strictEqual(find('txtDescription').multiline, true);
+  assert.strictEqual(find('txtLog').multiline, true);
+  assert.strictEqual(find('txtSavedDesc').multiline, true);
+  assert.strictEqual(find('txtSavedDesc').readonly, true);
 });
 
 test('a command is built from the tab fields the reference reads', () => {
@@ -124,8 +156,10 @@ test('ctrl inserts above, and alt flips the variant the reference flips', () => 
     catalog.fullType('CmdMoveToCell2'), 'alt jumps a set of cells instead of walking to one');
   assert.strictEqual(actions.build('btnAddCmdHunt', inputs({ tbItemNameF: 'x', tbItemQtyF: '3' }), { alt: true }).$type,
     catalog.fullType('CmdQuestHunt'), 'alt uses the quest hunt');
-  assert.strictEqual(actions.build('btnSetInt', inputs({ txtSetInt: 'i' }), { alt: true }).$type,
-    catalog.fullType('CmdInt2'), 'alt sets an int from a resolvable value');
+  assert.deepStrictEqual(actions.build('btnSetInt', inputs({ txtSetInt: 'i' }), { alt: true }).map(function (cmd) {
+    return cmd.$type;
+  }), [catalog.fullType('CmdInt2'), catalog.fullType('CmdInt')],
+  'alt sets an int from a resolvable value and then sets it too');
   assert.strictEqual(actions.build('btnWalkRdm', inputs({ numWalkX: '1' }), {}).Type, 'Random');
   assert.strictEqual(actions.build('btnWhitelistToggle', inputs({}), {}).state, 2);
   assert.strictEqual(actions.build('btnWhitelistOn', inputs({}), {}).state, 0);
@@ -220,6 +254,12 @@ test('a list button contributes the rows the reference puts in each of the other
     inputs({ numQuestListID: '8814', chkQuestListItem: true, numQuestListItem: '5', chkReloginCompleteQuest: true }),
     {})[0].items[0].Text, '8814:5');
 
+  // Add Command's "Add to whitelist" fetches the item names into Drops first.
+  assert.deepStrictEqual(actions.buildLists('btnAddCmdHunt',
+    inputs({ tbItemNameF: 'ore, key', chkAddToWhitelistF: true }), {}),
+    [{ list: 'Drops', items: ['ore', ' key'], unique: true, insensitive: true }]);
+  assert.deepStrictEqual(actions.buildLists('btnAddCmdHunt', inputs({ tbItemNameF: 'ore' }), {}), []);
+
   // Add boost: the object the game sent, which is what the reference adds; nothing without one,
   // and nothing from a box the reference would have refused (an empty item name).
   const boost = { $type: 'Grimoire.Game.Data.InventoryItem, Grimoire', Name: 'Scroll of Might' };
@@ -241,7 +281,7 @@ test('a settings control writes the Configuration key the reference binds it to'
     chkDisableAnims: 'DisableAnimations', chkAFK: 'AFK', chkAntiCounter: 'AntiCounter',
     chkAllSkillsCD: 'WaitForAllSkills', chkSkillCD: 'WaitForSkill',
     chkExistQuest: 'ExitCombatBeforeQuest', chkExitRest: 'ExitCombatBeforeRest',
-    chkHP: 'RestIfHp', chkMP: 'RestIfMp'
+    chkHP: 'RestIfHp', chkMP: 'RestIfMp', chkRespawnProvoke: 'respawnProvoke'
   };
   Object.keys(expected).forEach(function (id) {
     assert.strictEqual(actions.SETTINGS[id], expected[id], id);

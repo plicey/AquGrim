@@ -9,7 +9,7 @@
 const SETTING_KEY = 'packetSteering';
 const SETTING_NAME = 'Steer game traffic through a local relay';
 const NOTICE = 'Packet steering is off, so the tap carries nothing. Turn on "' + SETTING_NAME +
-    '" in Settings \u2192 Grimlite Parity \u2192 Packets and restart AquaStar to apply.';
+    '" in Settings \u2192 AquGrim \u2192 Packets and restart AquGrim to apply.';
 
 function steeringEnabled(host) {
     try {

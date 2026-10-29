@@ -5,7 +5,7 @@ function expand (keyb) {if(Array.isArray(keyb)) return keyb.join(', '); else ret
 
 exports.charPageStudioMessages = {
     locale: "pt-BR",
-    title: "AquaStar — Char Page Studio",
+    title: "AquGrim — Char Page Studio",
     heading: "Char Page Studio",
     description: "Personalize uma Char Page com o Flash Player nativo.",
     sceneModeLabel: "Modo de cena",
@@ -59,6 +59,7 @@ exports.dialogMessages = {
 };
 
 exports.menuMessages = {
+    menuNewInstance: "Abrir Outra Instância",
     menuOtherPages: "Páginas úteis",
     menuOtherPages2: "Outras páginas úteis",
     menuSocialMedia: "Redes sociais",
@@ -110,9 +111,9 @@ exports.settingsMessages = {
         liveLoaderUrl: "Seguir o Loader do Jogo da Artix",
     },
     optionHints: {
-        liveLoaderUrl: "Ao iniciar, lê qual loader do jogo o Artix Game Launcher usa no momento (em artix.com) para o AquaStar continuar funcionando quando a Artix trocar de loader. Usa o loader embutido se a página não puder ser lida. Ignorado quando URL Personalizada ou um SWF personalizado está definido. Reinicie para aplicar.",
+        liveLoaderUrl: "Ao iniciar, lê qual loader do jogo o Artix Game Launcher usa no momento (em artix.com) para o AquGrim continuar funcionando quando a Artix trocar de loader. Usa o loader embutido se a página não puder ser lida. Ignorado quando URL Personalizada ou um SWF personalizado está definido. Reinicie para aplicar.",
         playerCharacter: "Apenas letras e números. Usado pelo atalho da Char Page (Alt+P) para abrir direto neste personagem.",
-        featurePlayerName: "Quando ativado, substitui \"AquaStar\" no título da janela principal pelo Personagem acima.",
+        featurePlayerName: "Quando ativado, substitui \"AquGrim\" no título da janela principal pelo Personagem acima.",
         autoSync: "Sincroniza periodicamente seus dados de Inventário/BuyBack do account.aq.com em segundo plano (a cada ~2 horas), depois de você logar lá pelo menos uma vez via Alt+A. Quando desligado, a sincronização só acontece quando você usa um botão Sincronizar Agora (na janela de Inventário ou no account.aq.com/Home).",
     },
     settingsSections: {
@@ -122,7 +123,7 @@ exports.settingsMessages = {
 };
 
 exports.remindersMessages = {
-    title: "AquaStar - Lembretes",
+    title: "AquGrim - Lembretes",
     heading: "Lembretes",
     description: "Acompanhe tarefas diárias e semanais do jogo por personagem. Os resets seguem o horário do servidor da AE (America/New_York) - diário à meia-noite, semanal na virada de quinta para sexta.",
     showCompletedLabel: "Mostrar concluídas",
@@ -233,7 +234,7 @@ exports.remindersMessages = {
 };
 
 exports.todoMessages = {
-    title: "AquaStar - Lista de Tarefas",
+    title: "AquGrim - Lista de Tarefas",
     heading: "Lista de Tarefas",
     description: "Acompanhe drops, itens de loja e recompensas de quest para pegar, por personagem.",
     serverTimeLabel: "Horário do Servidor",
@@ -343,7 +344,7 @@ exports.todoMessages = {
 };
 
 exports.strategyMessages = {
-    title: "AquaStar - Estratégia",
+    title: "AquGrim - Estratégia",
     heading: "Estratégia",
     description: "Planeje composições, táticas e mecânicas cronometradas para Ultra e Challenge Bosses.",
     addBoss: "Adicionar Boss",
@@ -433,7 +434,7 @@ exports.strategyMessages = {
 };
 
 exports.inventoryMessages = {
-    title: "AquaStar - Inventário",
+    title: "AquGrim - Inventário",
     heading: "Inventário",
     description: "Navegue pelos dados de Inventário e BuyBack sincronizados do account.aq.com, por personagem.",
     inventoryTabLabel: "Inventário",
@@ -489,7 +490,7 @@ exports.inventoryMessages = {
 };
 
 exports.wikiMessages = {
-    mergeMaterialsTitle: "AquaStar: Materiais da loja",
+    mergeMaterialsTitle: "AquGrim: Materiais da loja",
     mergeDependencies: "Incluir dependências",
     mergeBuyback: "Dependências com Buy Back",
     mergeEmpty: "Nenhum material listado.",

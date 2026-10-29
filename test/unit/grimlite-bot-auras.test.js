@@ -944,3 +944,23 @@ test('the plugin builds its bot sessions with the packet tap wired in', () => {
     'the session factory must hand host.packets to createSession: ' + body);
   assert.ok(/createSession\(\{/.test(body), 'and it must be the session factory: ' + body);
 });
+
+test('repeated combat aura messages retain one entry per distinct match until consumed', () => {
+  const cache = store();
+  cache.setSelf(SELF_KEY);
+  const frames = ['Chi applied', 'Focus applied'].map(message =>
+    fromServer(auraFrame(SELF_KEY, auraOf('Chi', 2, 10, { msgOn: message }))));
+  for (let block = 0; block < 3; block++) {
+    for (let i = 0; i < 10000; i++) cache.observe(frames[i % frames.length]);
+    assert.equal(cache.lastAuraMessages().length, 2,
+      'repeated messages must not accumulate or increase each statement read');
+    assert.deepStrictEqual(cache.lastAuraMessages(), ['Chi applied', 'Focus applied']);
+  }
+  const snapshot = cache.lastAuraMessages();
+  snapshot.push('outside mutation');
+  assert.equal(cache.lastAuraMessages().length, 2);
+  cache.clearAuraMessages();
+  assert.deepStrictEqual(cache.lastAuraMessages(), []);
+  cache.observe(frames[0]);
+  assert.deepStrictEqual(cache.lastAuraMessages(), ['Chi applied']);
+});

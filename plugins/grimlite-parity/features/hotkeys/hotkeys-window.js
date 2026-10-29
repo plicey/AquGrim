@@ -84,7 +84,7 @@ function createHotkeysWindow(deps) {
         if (channel === 'hotkeysClear') return Promise.resolve(clear(args && args[0]));
         if (channel === 'hotkeysSave') return Promise.resolve(save());
         if (channel === 'hotkeysRun') return run(args && args[0]);
-        throw new Error('[AquaStar:grimlite-parity] unknown hotkeys channel "' + channel + '"');
+        throw new Error('[AquGrim:grimlite-parity] unknown hotkeys channel "' + channel + '"');
     }
 
     function attachTo(host) {

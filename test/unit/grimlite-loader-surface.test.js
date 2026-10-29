@@ -303,27 +303,12 @@ test('selectArrayObjects projects one field off each entry, as the loader does',
     });
 });
 
-test('a compute row can write, not only read and call', () => {
-    // SetInfiniteRange is a compute row because its body is a loop over six writes. It used to
-    // reach for a set the context did not expose and fail with "ctx.set is not a function" - a
-    // compute row that cannot write is a hole in the surface, so this pins it.
-    const written = [];
-    const game = surface.createLoaderSurface(function (callback, args) {
-        if (callback === 'setGameObject') {
-            written.push(args);
-            return Promise.resolve(args[1]);
-        }
-        return Promise.resolve('ok');
-    });
-    return game.call('SetInfiniteRange', []).then(() => {
-        assert.strictEqual(written.length, 6, 'the loader writes slots 0 through 5');
-        assert.deepStrictEqual(written.map((w) => w[0]), [
-            'world.actions.active.0.range', 'world.actions.active.1.range',
-            'world.actions.active.2.range', 'world.actions.active.3.range',
-            'world.actions.active.4.range', 'world.actions.active.5.range'
-        ]);
-        written.forEach((w) => assert.strictEqual(w[1], 20000));
-    });
+test('Infinite Range loader surface keeps legacy calls one-shot through the native callback', async () => {
+    const calls = [];
+    const game = surface.createLoaderSurface(async (name, args) => { calls.push([name, args]); return true; });
+    await game.call('SetInfiniteRange', []);
+    await game.call('SetInfiniteRange', [false]);
+    assert.deepStrictEqual(calls, [['SetInfiniteRangeEnabled', [true, false]], ['SetInfiniteRangeEnabled', [false, true]]]);
 });
 
 test('the surface and the options adapter agree on the names they both route', () => {
@@ -547,4 +532,48 @@ test('the refusals that remain are not the six', () => {
     const refused = surface.names().filter((name) => surface.implemented().indexOf(name) === -1);
     assert.deepStrictEqual(LIVE_OBJECT_CALLS.filter((name) => refused.indexOf(name) !== -1), [],
         'these used to refuse and must not any more');
+});
+
+test('SetFPS writes the shared stage and HideConnMC hides the game connection dialog', () => {
+    const made = [];
+    const game = surface.createLoaderSurface(function (callback, args) {
+        made.push({ callback: callback, args: args });
+        return Promise.resolve('ok');
+    });
+    return Promise.all([game.call('SetFPS', ['60']), game.call('HideConnMC', [])]).then(() => {
+        assert.deepStrictEqual(made[0].args, ['stage.frameRate', 60]);
+        assert.deepStrictEqual(made[1], { callback: 'callGameFunction0', args: ['mcConnDetail.hideConn'] });
+    });
+});
+
+test('GetAccessLevel matches the loader\'s dataLeaf username, not the tree username', () => {
+    const bridge = fakeBridge({
+        'world.avatars': {
+            1: { uid: '7', dataLeaf: { strUsername: 'ModName' }, objData: { intAccessLevel: 60 } },
+            2: { uid: '8', dataLeaf: { strUsername: 'Player' }, objData: { intAccessLevel: 0 } }
+        }
+    }, {});
+    return access(bridge).call('GetAccessLevel', ['modname']).then((level) => {
+        assert.strictEqual(level, 60);
+    });
+});
+
+test('player lookups accept map-packet uoName and username-keyed partial leaves', async () => {
+    // Game.as moveToArea copies uoName from uoBranch; World.uoTreeLeafSet keys by username.
+    for (const player of [
+        { uoName: 'Master', strFrame: 'Enter', strPad: 'Spawn', intHP: 25, intHPMax: 100 },
+        { strFrame: 'Enter', strPad: 'Spawn', intHP: 25, intHPMax: 100 },
+        { strUsername: 'Master', strFrame: 'Enter', strPad: 'Spawn', intHP: 25, intHPMax: 100 }
+    ]) {
+        const api = access(fakeBridge({
+            'world.uoTree': { master: player }, 'world.strFrame': 'Enter'
+        }, {}));
+        assert.deepStrictEqual(await api.call('PlayerByName', ['MASTER']), player);
+        assert.strictEqual(await api.call('GetCellPlayers', ['MASTER']), true);
+        assert.strictEqual(await api.call('CheckCellPlayer', ['MASTER', 'Enter']), true);
+        assert.strictEqual(await api.call('GetPlayerHealth', ['MASTER']), 25);
+        assert.strictEqual(await api.call('GetPlayerHealthPercentage', ['MASTER']), 25);
+        assert.strictEqual(await api.call('GetCellPlayers', ['absent']), false);
+        assert.strictEqual(await api.call('CheckCellPlayer', ['master', 'Other']), false);
+    }
 });

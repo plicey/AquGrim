@@ -6,6 +6,7 @@ const { ipcRenderer, contextBridge } = require("electron");
 contextBridge.exposeInMainWorld("aquastarChrome", {
   getView: function () { return ipcRenderer.invoke("getGameChromeView"); },
   action: function (id, args) { return ipcRenderer.invoke("gameChromeAction", id, args); },
+  setRenderScale: function (value) { return ipcRenderer.invoke("setGameRenderScale", value); },
   onView: function (listener) {
     const wrapped = function (_event, view) { listener(view); };
     ipcRenderer.on("gameChromeView", wrapped);
@@ -31,7 +32,7 @@ async function pickFormat(hasAudio) {
   try {
     desired = await ipcRenderer.invoke('getRecordingFormat', hasAudio);
   } catch (e) {
-    console.log("[AquaStar] getRecordingFormat error:", e);
+    console.log("[AquGrim] getRecordingFormat error:", e);
   }
 
   const candidates = [];
@@ -60,12 +61,12 @@ function releaseCaptureStream() {
     try {
       matchedSource = await ipcRenderer.invoke('getDesktopCapturerSourceForWindow');
     } catch (error) {
-      console.log("[AquaStar] desktopCapturer error:", error);
+      console.log("[AquGrim] desktopCapturer error:", error);
       return false;
     }
 
     if (!matchedSource) {
-      console.log("[AquaStar] Could not find desktopCapturer source for this window.");
+      console.log("[AquGrim] Could not find desktopCapturer source for this window.");
       return false;
     }
 
@@ -88,13 +89,13 @@ function releaseCaptureStream() {
       try {
         captureStream = await navigator.mediaDevices.getUserMedia(withAudioConstraints);
       } catch (audioErr) {
-        console.log("[AquaStar] Desktop audio capture unavailable, recording video only:", audioErr);
+        console.log("[AquGrim] Desktop audio capture unavailable, recording video only:", audioErr);
         captureStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: videoConstraint });
       }
       await setupRecorder(captureStream);
       return true;
     } catch (e) {
-      console.log("[AquaStar] getUserMedia error:", e);
+      console.log("[AquGrim] getUserMedia error:", e);
       return false;
     }
   }
@@ -126,7 +127,7 @@ function releaseCaptureStream() {
     if (!mediaRecorder) {
       const ready = await initRecorder();
       if (!ready || !mediaRecorder) {
-        console.log("[AquaStar] mediaRecorder is not initialized yet — cannot record.");
+        console.log("[AquGrim] mediaRecorder is not initialized yet — cannot record.");
         return;
       }
     }

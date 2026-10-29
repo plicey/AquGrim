@@ -143,6 +143,22 @@ test('a button that needs a field it has not got contributes nothing', async () 
   assert.strictEqual(hunt.refused, true, 'the page is told the button did nothing');
 });
 
+test('Kill for keeps its untouched quantity wildcard and whitelists the item', async () => {
+  // The page shows "Quantity (* = any)" as a placeholder, so an untouched box sends no value.
+  // The reference reads that visible text as "*", so the command and its Drops entry both stay.
+  const o = await opened('plain.gbot');
+  const state = await o.feature.handle('botManagerAdd', null, ['btnKillF', {
+    txtKillFItem: 'Dragon Scale', txtKillFQ: '', txtKillFMon: '',
+    rbItems: true, rbTemp: false, chkAddToWhiteList: true
+  }, {}]);
+  assert.strictEqual(state.refused, false);
+  const last = o.feature.editor().items().pop();
+  assert.strictEqual(catalog.classNameOf(last), 'CmdKillFor');
+  assert.strictEqual(last.ItemType, 0, 'Items is the normal inventory');
+  assert.strictEqual(last.Quantity, '*');
+  assert.deepStrictEqual(o.feature.editor().object().Drops, ['Dragon Scale']);
+});
+
 test('a list button fills one of the other five lists, deduped where the reference dedupes', async () => {
   const o = await opened('plain.gbot');
   await o.feature.handle('botManagerAddList', null, ['btnWhitelist', { txtWhitelist: 'rusted key' }, {}]);
@@ -159,6 +175,20 @@ test('a list button fills one of the other five lists, deduped where the referen
   assert.strictEqual(skills.counters.Skills, 3);
   assert.strictEqual(skills.lists.Skills[2].text, '[HP >= 70%] 5: 5',
     'Skill.ToString with the index as the name until the bridge can read one');
+});
+
+test('Add Skill Set creates the label row, and Use Skill Set adds its command', async () => {
+  const o = await opened('plain.gbot');
+
+  const added = await o.feature.handle('botManagerAddList', null,
+    ['btnAddSkillSet', { txtSkillSet: 'Nuke' }, {}]);
+  assert.ok(added.lists.Skills.some(function (row) { return row.text === '[NUKE]'; }),
+    'the label row belongs in Skills: ' + JSON.stringify(added.lists.Skills));
+
+  const used = await o.feature.handle('botManagerAdd', null,
+    ['btnUseSkillSet', { txtSkillSet: 'Nuke' }, {}]);
+  assert.ok(used.lists.Commands.some(function (row) { return row.text === 'Skill Set: NUKE'; }),
+    'Use Skill Set writes CmdSkillSet into Commands: ' + JSON.stringify(used.lists.Commands));
 });
 
 test('the keymap reaches the same document the buttons do', async () => {
@@ -419,7 +449,8 @@ test('the window reaches its page only through its own namespaced channels', asy
     'botManagerEdit', 'botManagerForm', 'botManagerKey', 'botManagerLoad', 'botManagerMessages',
     'botManagerRaw', 'botManagerSave', 'botManagerSelect', 'botManagerSetting', 'botManagerSheet',
     'botManagerStatements', 'botManagerStyle', 'botManagerTree', 'botManagerTreeSelect',
-    'botManagerEnable', 'botManagerOptionsEnable', 'botManagerSpecial', 'botManagerState'
+    'botManagerEnable', 'botManagerOptionsEnable', 'botManagerSpecial', 'botManagerState',
+    'botManagerOpenLink', 'botManagerPickBot'
   ].sort());
 
   const featureRoot = path.join(__dirname, '../../plugins/grimlite-parity/features/bot-manager');
@@ -431,6 +462,17 @@ test('the window reaches its page only through its own namespaced channels', asy
   const preload = fs.readFileSync(path.join(__dirname, '../../plugins/grimlite-parity/features/bot-manager/preload_bot_manager.js'), 'utf8');
   assert.ok(preload.indexOf("require('electron')") !== -1);
   assert.strictEqual(preload.indexOf("require('../.."), -1, 'no project requires in a sandboxed preload');
+});
+
+test('the static left-column buttons are wired to the editor actions', () => {
+  const renderer = fs.readFileSync(path.join(__dirname,
+    '../../plugins/grimlite-parity/features/bot-manager/bot-manager-renderer.js'), 'utf8');
+  ['btnUp', 'btnDown', 'btnClear', 'btnRemove', 'btnSearchCmd'].forEach(function (id) {
+    assert.ok(renderer.indexOf("'" + id + "'") !== -1,
+      id + ' must be bound to a press action');
+  });
+  assert.ok(/\['btnUp', 'btnDown', 'btnClear', 'btnRemove', 'btnSearchCmd'\]/.test(renderer),
+    'the static column buttons are wired together');
 });
 
 test('the bots directory this window shows is the one the bot engine resolves against', async () => {
@@ -458,4 +500,117 @@ test('the bots directory this window shows is the one the bot engine resolves ag
   await w2.feature.handle('botManagerChooseDirectory', null, []);
   assert.strictEqual(shared.botsDirectory(), other,
     'the tree control writes the instance the engine resolves against');
+});
+
+test('the editor-only Client tab values travel with Start without entering the bot file', async () => {
+  const starts = [];
+  const w = window({
+    runtime: {
+      start: function (key, bot, editor) { starts.push(editor); return Promise.resolve({ ok: true }); },
+      state: function () { return { running: true }; },
+      stop: function () { return Promise.resolve({ ok: true }); }
+    },
+    currentWindowKey: function () { return 'game-window-1'; }
+  });
+  await w.feature.handle('botManagerSetting', null, ['InventOnStart', false]);
+  await w.feature.handle('botManagerSetting', null, ['QuestDelay', 250]);
+  await w.feature.handle('botManagerSetting', null, ['AutoCorrect', false]);
+  await w.feature.handle('botManagerEnable', null, [true]);
+  assert.strictEqual(starts.length, 1);
+  assert.strictEqual(starts[0].inventOnStart, false);
+  assert.strictEqual(starts[0].questDelay, 250);
+  assert.strictEqual(starts[0].autoCorrect, false);
+  assert.strictEqual(w.feature.bot().InventOnStart, undefined,
+    'the save must not grow an InventOnStart key the reference never writes');
+  assert.strictEqual(w.feature.bot().QuestDelay, undefined);
+});
+
+test('anti-mod watches staff frames only while a bot runs, then stops and logs out', async () => {
+  let listener = null;
+  const loggedOut = [];
+  const stopped = [];
+  const w = window({
+    runtime: {
+      start: function () { return Promise.resolve({ ok: true }); },
+      state: function () { return { running: true }; },
+      stop: function (key) { stopped.push(key); return Promise.resolve({ ok: true }); }
+    },
+    currentWindowKey: function () { return 'game-window-1'; },
+    packets: {
+      on: function (event, fn) {
+        assert.strictEqual(event, 'frame');
+        listener = fn;
+        return function () { listener = null; };
+      }
+    },
+    loaderCall: function (name) {
+      if (name === 'Logout') loggedOut.push(name);
+      return Promise.resolve(true);
+    },
+    logDebug: function () {}
+  });
+  await w.feature.handle('botManagerEnable', null, [true]);
+  assert.ok(listener, 'starting a bot with anti-mod on subscribes to the tap');
+  listener({ data: JSON.stringify({ params: { type: 'json', dataObj: {
+    cmd: 'initUserDatas',
+    a: [{ data: { strUsername: 'NotStaff', intAccessLevel: 10 } }]
+  } } }) });
+  assert.deepStrictEqual(stopped, [], 'an access level under 30 is not staff');
+  listener({ data: JSON.stringify({ params: { type: 'json', dataObj: {
+    cmd: 'initUserDatas',
+    a: [{ data: { strUsername: 'StaffName', intAccessLevel: 60 } }]
+  } } }) });
+  assert.deepStrictEqual(stopped, ['game-window-1']);
+  assert.deepStrictEqual(loggedOut, ['Logout']);
+});
+
+test('an Info link opens in the browser, and only web or mail links do', async () => {
+  const opened = [];
+  const w = window({ shell: { openExternal: function (url) { opened.push(url); return Promise.resolve(); } } });
+  const web = await w.feature.handle('botManagerOpenLink', null, ['https://example.com/guide']);
+  assert.deepStrictEqual(web, { ok: true });
+  assert.deepStrictEqual(opened, ['https://example.com/guide']);
+  const local = await w.feature.handle('botManagerOpenLink', null, ['file:///etc/passwd']);
+  assert.strictEqual(local.ok, false);
+  assert.deepStrictEqual(opened, ['https://example.com/guide'], 'a local file is refused');
+});
+
+test('Load (cmd) picks a file without loading it, and writes the reference relative path', async () => {
+  const w = window({
+    dialogs: {
+      open: function () { return Promise.resolve({ canceled: false, path: path.join(w.dir, 'sub', 'x.gbot') }); },
+      save: function () { return Promise.resolve({ canceled: true }); }
+    }
+  });
+  const picked = await w.feature.handle('botManagerPickBot', null, []);
+  assert.deepStrictEqual(picked, {
+    canceled: false, path: path.join(w.dir, 'sub', 'x.gbot'),
+    fileName: 'x.gbot', filePath: path.join('Bots', 'sub', 'x.gbot')
+  });
+});
+
+test('loading documents preserves selected Options and an explicit pause remains available', async () => {
+  let applying = true;
+  const changes = [];
+  const w = window({
+    options: {
+      state: () => ({ applying }),
+      setApplying: async value => { applying = value; changes.push(value); return { ok: true }; }
+    },
+    dialogs: { open: async () => ({ canceled: false, bot: bots.parseBot(fixture('plain.gbot')).bot, path: '/tmp/plain.gbot' }) }
+  });
+  const file = path.join(w.dir, 'plain.gbot');
+  fs.writeFileSync(file, fixture('plain.gbot'));
+  try {
+    await w.feature.handle('botManagerLoad', null, [file]);
+    await w.feature.handle('botManagerLoad', null, []);
+    await w.feature.handle('botManagerDrop', null, [[file]]);
+    await w.feature.handle('botManagerTreeSelect', null, [['plain.gbot'], false]);
+    assert.deepStrictEqual(changes, [], 'file, dialog, drop and tree loads never pause Options');
+    assert.strictEqual(w.feature.handle('botManagerSheet', null, []).optionsRunning, true);
+    await w.feature.handle('botManagerOptionsEnable', null, [false]);
+    assert.deepStrictEqual(changes, [false]);
+    await w.feature.handle('botManagerLoad', null, [file]);
+    assert.strictEqual(applying, false, 'document loads also preserve explicit pause');
+  } finally { fs.rmSync(w.dir, { recursive: true, force: true }); }
 });

@@ -88,7 +88,7 @@ function createRuntimeManager(deps) {
      * itself, so a command that writes a Configuration key (CmdBotDelay) edits the very document
      * the editor is holding - the reference behaves the same way with the form's own copy.
      */
-    async function start(key, bot) {
+    async function start(key, bot, editor) {
         const entry = forWindow(key);
         // One wording for this refusal: the engine's own ERRORS.alreadyRunning, so a window says
         // the same thing whichever layer caught it.
@@ -100,7 +100,7 @@ function createRuntimeManager(deps) {
         // Manager is still showing, and a cancel or reload would keep the bot's changes.
         const runningDocument = bot && typeof bot === 'object'
             ? JSON.parse(JSON.stringify(bot)) : bot;
-        const result = await entry.engine.start(runningDocument);
+        const result = await entry.engine.start(runningDocument, editor);
         if (!result.ok) return result;
         entry.document = runningDocument;
         // The loop runs on its own; nothing awaits it except the tests and stop().

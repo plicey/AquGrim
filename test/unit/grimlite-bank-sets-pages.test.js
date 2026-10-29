@@ -21,6 +21,7 @@ function element() {
     // A real <select> reports its first option as selected; the pages rely on that.
     title: '',
     value: '',
+    setAttribute: function () {},
     appendChild: function (child) {
       el.children.push(child);
       return child;
@@ -75,7 +76,7 @@ function settled() {
 const BANK_IDS = ['category', 'ac', 'allExcept', 'status', 'categoryLabel', 'acLabel',
   'allExceptLabel', 'bank', 'bankAll'];
 const SETS_IDS = ['item', 'setList', 'savedList', 'status', 'refresh', 'add', 'clear', 'save',
-  'open', 'setHeading', 'savedHeading'];
+  'open', 'setHeading', 'savedHeading', 'equip', 'saveEquipped'];
 
 test('the Bank page fills both lists from the window and names its controls', async () => {
   const asked = [];
@@ -223,9 +224,7 @@ test('the Sets page lists saved sets, fills the item combo and adds the selectio
   await settled();
   assert.deepStrictEqual(page.byId.setList.children, []);
   assert.strictEqual(page.byId.save.disabled, true);
-  assert.strictEqual(/\.equip\b/.test(fs.readFileSync(
-    path.join(pluginRoot, 'features/sets/sets.html'), 'utf8')), false,
-    'the Sets page must carry no Equip control');
+  assert.strictEqual(page.byId.equip.disabled, true);
 });
 
 test('clicking a saved set opens it, and opening shows the file\'s own list', async () => {
@@ -257,4 +256,39 @@ test('clicking a saved set opens it, and opening shows the file\'s own list', as
     '[Class] : ArchPaladin'
   ]);
   assert.strictEqual(page.byId.status.textContent, 'Loaded.');
+});
+
+test('Sets page saves equipped via the dialog and guards overlapping equip clicks with honest status', async () => {
+  let release;
+  let requests = 0;
+  let saves = 0;
+  const page = loadPage(path.join(pluginRoot, 'features/sets/sets.html'), SETS_IDS, {
+    getMessages: async () => ({ window: {}, saved: 'Saved.' }),
+    inventoryRows: async () => ({ rows: [] }), list: async () => ({ sets: [] }),
+    open: async () => ({ entries: [{ type: 'Cape', name: 'Cape' }] }),
+    saveEquipped: async () => { saves++; return { error: null, path: '/sets/current.gset', entries: [{ type: 'Cape', name: 'Cape' }] }; },
+    equip: entries => {
+      assert.deepStrictEqual(plain(entries), [{ type: 'Cape', name: 'Cape' }]);
+      requests++;
+      return new Promise(resolve => { release = resolve; });
+    }
+  });
+  await settled();
+  click(page.byId.saveEquipped);
+  await settled();
+  assert.strictEqual(saves, 1);
+  assert.strictEqual(page.byId.setHeading.textContent, 'current.gset');
+  assert.strictEqual(page.byId.setList.children[0].textContent, '[Cape] : Cape');
+  click(page.byId.open);
+  await settled();
+  click(page.byId.equip);
+  click(page.byId.equip);
+  assert.strictEqual(requests, 1);
+  assert.strictEqual(page.byId.equip.disabled, true);
+  release({ requested: 0, skipped: 0, error: 'Cape: Game did not accept the equip request.' });
+  await settled();
+  assert.match(page.byId.status.textContent, /Requested 0 equipment changes/);
+  assert.match(page.byId.status.textContent, /Game did not accept/);
+  assert.strictEqual(page.byId.status.className, 'err');
+  assert.strictEqual(page.byId.equip.disabled, false);
 });

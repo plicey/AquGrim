@@ -4,7 +4,7 @@ exports.dialogMessages = {
             if (Array.isArray(keyb)) return keyb.join(', ');
             return keyb || '';
         }
-        return 'Grimlite Parity\n' +
+        return 'AquGrim\n' +
             'Bot - Bot Manager\n' +
             expand(k.grimliteBank) + ' - Bank window\n' +
             expand(k.grimliteLoaders) + ' - Loaders and grabbers: load a shop, a quest or\n' +
@@ -23,10 +23,11 @@ exports.dialogMessages = {
             expand(k.grimliteDrop) + ' - Drop Ui: what has dropped, and taking it\n' +
             expand(k.grimliteFastTravels) + ' - Fast travels: the destination buttons and the map bypasser\n' +
             expand(k.grimliteMaid) + ' - Maid Remake: the party assistant\n' +
-            'Auto Attack presets - SS.<CLASS>=1;2;3:SH>60;4 (or commas) in ClientConfig.cfg in the\n' +
-            '                   app data directory, or the autoAttackPresets object in\n' +
-            '                   aquastar.grimlite-parity.auto-attack.json. Add "wait" to wait for each\n' +
-            '                   skill cooldown. A class with no preset uses skills 1-4.';
+            'Auto Attack presets - Client -> Auto Attack Skill Set. Save named presets per class.\n' +
+            '                   Selecting one uses it immediately; edits apply when Auto Attack is\n' +
+            '                   enabled again, and Save only stores them. SS.<CLASS> lines in\n' +
+            '                   ClientConfig.cfg appear as the read-only ClientConfig preset.\n' +
+            '                   With no preset loaded, Auto Attack uses skills 1-4.';
     }
 };
 
@@ -36,7 +37,8 @@ exports.logsMessages = {
 };
 
 exports.menuMessages = {
-    grimliteMenu: 'Grimlite',
+    menuNewInstance: 'Open Another Instance',
+    grimliteMenu: 'Client',
     grimliteBot: 'Bot',
     grimliteBotManager: 'Bot Manager',
     grimliteEyedropper: 'Eye Dropper',
@@ -76,7 +78,8 @@ exports.botFileMessages = {
 };
 
 exports.windowTitles = {
-    primary: 'AquaStar - Grimlite Parity',
+    primary: 'AquGrim',
+    autoAttack: 'Auto Attack Skill Set',
     botFile: 'Bot File',
     bank: 'Bank',
     loaders: 'Loaders and grabbers',
@@ -192,6 +195,10 @@ exports.botManagerMessages = {
     opened: 'Opened.',
     saved: 'Saved.',
     customizer: 'Command Customizer',
+    colors: 'Colors',
+    rgb: 'RGB',
+    randomColors: 'Random Colors based on RGB',
+    reloadColors: 'Reload Colors',
     fonts: 'Change Fonts',
     multiline: 'Multiline Toggle',
     tabpages: 'Toggle Tabpages',
@@ -403,6 +410,7 @@ exports.maidMessages = {
 exports.chromeMessages = {
     startBot: 'Start Bot',
     autoAttack: 'Auto Attack',
+    autoSkillSet: 'Skill Set',
     pad: '',
     cell: '',
     refreshCell: 'x',

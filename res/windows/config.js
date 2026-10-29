@@ -23,7 +23,7 @@ function _browserPreloadPath() {
 // The game's own content size. A game window's page may also carry the chrome strip above the
 // surface (res/windows/game-chrome.js): that page is the one place a strip can be drawn, so the
 // window that loads it opens taller, and every other game window keeps this size exactly.
-const gameContentSize = { width: 960, height: 530 };
+const gameContentSize = { width: 960, height: 550 };
 
 function _getWinConfig(type){
     const isGame = (type == "game" || type == "main");
@@ -84,5 +84,5 @@ exports.settingsUrl = toFileUrl(path.join(appRoot, 'res', 'features', 'settings'
 // Local feature windows all use the same singleton lifecycle.  Keeping their
 // declarative metadata here prevents every caller from reimplementing it.
 exports.featureWindows = {
-    settings:  { config: exports.settingsConfig,  url: exports.settingsUrl,  title: 'AquaStar - Settings' }
+    settings:  { config: exports.settingsConfig,  url: exports.settingsUrl,  title: 'AquGrim - Settings' }
 };

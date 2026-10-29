@@ -1,5 +1,5 @@
 exports.dialogMessages = {
-    helpMessage: 'Example Companion — demo de plugin do AquaStar',
+    helpMessage: 'Example Companion — demo de plugin do AquGrim',
     helpDetailExtra: function (k) {
         function expand(keyb) {
             if (Array.isArray(keyb)) return keyb.join(', ');
@@ -58,14 +58,14 @@ exports.menuMessages = {
     exampleStaticRect: 'Abrir rectangle.swf estático',
     exampleDashboard: 'Painel de demo',
     exampleInjectDemo: 'Página de demo de injeção',
-    exampleGithub: 'AquaStar no GitHub (navegador do sistema)',
+    exampleGithub: 'AquGrim no GitHub (navegador do sistema)',
     exampleReleases: 'Releases no GitHub (navegador do sistema)',
     examplePluginsDocs: 'Guia de plugins (navegador do sistema)',
     exampleDesignDocs: 'Design da arquitetura de plugins (navegador do sistema)'
 };
 
 exports.windowTitles = {
-    primary: 'AquaStar - Example Companion',
-    staticRect: 'AquaStar - rectangle.swf estático',
+    primary: 'AquGrim - Example Companion',
+    staticRect: 'AquGrim - rectangle.swf estático',
     dashboard: 'Painel de exemplo'
 };

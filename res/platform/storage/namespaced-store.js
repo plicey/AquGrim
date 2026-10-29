@@ -31,10 +31,10 @@ function bindStore(filePath) {
 
 function createNamespacedStore(options) {
     if (!options || !options.appDataDirectory) {
-        throw new Error('[AquaStar:plugins] createNamespacedStore requires appDataDirectory');
+        throw new Error('[AquGrim:plugins] createNamespacedStore requires appDataDirectory');
     }
     if (typeof options.pluginId !== 'string' || !options.pluginId) {
-        throw new Error('[AquaStar:plugins] createNamespacedStore requires pluginId');
+        throw new Error('[AquGrim:plugins] createNamespacedStore requires pluginId');
     }
 
     const appDataDirectory = options.appDataDirectory;
@@ -43,7 +43,7 @@ function createNamespacedStore(options) {
 
     function getStore(ns) {
         if (typeof ns !== 'string' || !ns) {
-            throw new Error('[AquaStar:plugins] getStore requires a namespace string');
+            throw new Error('[AquGrim:plugins] getStore requires a namespace string');
         }
         return bindStore(resolveStorePath(appDataDirectory, pluginId, ns, aliases));
     }
@@ -52,7 +52,7 @@ function createNamespacedStore(options) {
         getStore: getStore,
         resolveStorePath: function (ns) {
             if (typeof ns !== 'string' || !ns) {
-                throw new Error('[AquaStar:plugins] resolveStorePath requires a namespace string');
+                throw new Error('[AquGrim:plugins] resolveStorePath requires a namespace string');
             }
             return resolveStorePath(appDataDirectory, pluginId, ns, aliases);
         }

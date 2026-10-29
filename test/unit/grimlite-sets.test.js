@@ -103,7 +103,9 @@ test('the item combo lists the reference\'s five groups in its order, headers no
     '', '[Classes]', '', 'ArchPaladin',
     '', '[Armors]', '', "Sepulchure's Armor",
     '', '[Helmets]', '', 'Golden Helm',
-    '', '[Capes]', '', 'Moglin Cape'
+    '', '[Capes]', '', 'Moglin Cape',
+    '', '[Pets]', '', '', '[Necklaces]', '', '', '[Misc]', '', '', '[Earrings]', '', '', '[Amulets]', '',
+    '', '[Belts]', '', '', '[Rings]', ''
   ]);
   // Only a real item can be added; the separators and headers are text.
   assert.deepStrictEqual(rows.filter(function (row) { return row.entry !== null; }).map(function (row) {
@@ -245,9 +247,33 @@ test('loading a set found by the listing needs no second dialog', async () => {
   assert.strictEqual(escaped.error, sets.ERRORS.outside);
 });
 
-// The reference's Set.cs has no Equip button and no CmdEquipSet wiring; the port keeps the
-// document, the combo and the four file buttons only.
-test('the Sets window carries no equip path', () => {
-  assert.strictEqual(sets.equipSet, undefined);
-  assert.strictEqual(sets.EQUIPPABLE_CATEGORIES, undefined);
+
+test('snapshot keeps every equipped slot and round trips as an ordinary named gset', () => {
+  const categories = sets.WEAPON_CATEGORIES.concat(['Class', 'Armor', 'Helm', 'Cape', 'Pet', 'Necklace', 'Misc', 'Earring', 'Amulet', 'Belt', 'Ring']);
+  const inventory = categories.map((category) => inventoryItem(category, category, true));
+  inventory.push(inventoryItem('Not worn', 'Cape', false), inventoryItem('Potion', 'Item', true));
+  const entries = sets.equippedEntries(inventory);
+  assert.strictEqual(entries.length, categories.length);
+  assert.deepStrictEqual(sets.parseSet(sets.serializeSet(entries)).entries, entries);
+  assert.throws(() => sets.equippedEntries([]), /No equipped/);
+});
+
+test('equip sends sequential paced ordinary requests, skips worn items and reports failures', async () => {
+  const calls = [];
+  const inventory = ['Class', 'Cape', 'Pet', 'Misc'].map((type) => inventoryItem(type, type, type === 'Class'));
+  const game = {
+    readInventory: async () => inventory,
+    sleep: async (ms) => calls.push(ms),
+    equipItem: async (name) => { calls.push(name); if (name === 'Pet') return false; if (name === 'Misc') throw new Error('restricted'); }
+  };
+  const entries = inventory.map(sets.entryFor).concat([{ type: 'Armor', name: 'Banked' }]);
+  const result = await sets.equipSet(game, entries);
+  assert.deepStrictEqual(calls, [1600, 'Cape', 1600, 'Pet', 1600, 'Misc']);
+  assert.strictEqual(result.requested, 1);
+  assert.strictEqual(result.skipped, 1);
+  assert.strictEqual(result.failures.length, 3);
+  assert.match(result.error, /Pet: Game did not accept/);
+  assert.match(result.error, /Misc: restricted/);
+  assert.match(result.error, /Banked: Not in inventory/);
+  await assert.rejects(() => sets.equipSet(game, [{ name: 1 }]), /Select/);
 });

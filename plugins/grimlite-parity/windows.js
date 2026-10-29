@@ -2,9 +2,11 @@ const path = require('path');
 const url = require('url');
 
 const featureRoot = path.join(__dirname, 'features');
+const SETS_WINDOW_ID = 'grimlite-parity-sets';
 const BANK_WINDOW_ID = 'grimlite-parity-bank';
 const LOGIN_WINDOW_ID = 'grimlite-parity-char-select';
 const NOTEPAD_WINDOW_ID = 'grimlite-parity-notepad';
+const AUTO_ATTACK_WINDOW_ID = 'grimlite-parity-auto-attack';
 const EYEDROPPER_WINDOW_ID = 'grimlite-parity-eyedropper';
 const ABOUT_WINDOW_ID = 'grimlite-parity-about';
 const DEVTEST_PAGE = path.join(featureRoot, 'devtest', 'devtest.html');
@@ -53,9 +55,15 @@ function pageUrl(featureDir, file) {
 function register(host, windowTitle) {
     host.registerFeatureWindows([
         {
+            id: SETS_WINDOW_ID,
+            title: function () { return windowTitle('sets', 'Equipment Sets'); },
+            url: pageUrl('sets', 'sets.html'),
+            config: windowConfig(host, 'sets', 'preload_sets.js', { width: 640, height: 480 })
+        },
+        {
             id: BANK_WINDOW_ID,
             title: function () {
-                return windowTitle('bank', 'Grimlite Parity - Bank');
+                return windowTitle('bank', 'AquGrim - Bank');
             },
             url: pageUrl('bank', 'bank.html'),
             // The reference's Bank form is a 194x151 client area; the app's own font needs a
@@ -73,7 +81,7 @@ function register(host, windowTitle) {
         {
             id: COSMETICS_WINDOW_ID,
             title: function () {
-                return windowTitle('cosmetics', 'Grimlite Parity - SWF Cosmetics');
+                return windowTitle('cosmetics', 'AquGrim - SWF Cosmetics');
             },
             url: pageUrl('cosmetics', 'cosmetics.html'),
             // The reference's form is a 533x473 client area; the grid the port draws needs a
@@ -83,7 +91,7 @@ function register(host, windowTitle) {
         {
             id: EYEDROPPER_WINDOW_ID,
             title: function () {
-                return windowTitle('eyedropper', 'Grimlite Parity - Eye Dropper');
+                return windowTitle('eyedropper', 'AquGrim - Eye Dropper');
             },
             url: pageUrl('eyedropper', 'eyedropper.html'),
             config: windowConfig(host, 'eyedropper', 'preload_eyedropper.js', { width: 420, height: 480 })
@@ -91,15 +99,23 @@ function register(host, windowTitle) {
         {
             id: NOTEPAD_WINDOW_ID,
             title: function () {
-                return windowTitle('notepad', 'Grimlite Parity - Notepad');
+                return windowTitle('notepad', 'AquGrim - Notepad');
             },
             url: pageUrl('notepad', 'notepad.html'),
             config: windowConfig(host, 'notepad', 'preload_notepad.js', { width: 560, height: 420 })
         },
         {
+            id: AUTO_ATTACK_WINDOW_ID,
+            title: function () {
+                return windowTitle('autoAttack', 'AquGrim - Auto Attack Skill Set');
+            },
+            url: pageUrl('auto-attack', 'auto-attack.html'),
+            config: windowConfig(host, 'auto-attack', 'preload_auto_attack.js', { width: 600, height: 560 })
+        },
+        {
             id: ABOUT_WINDOW_ID,
             title: function () {
-                return windowTitle('about', 'Grimlite Parity - About');
+                return windowTitle('about', 'AquGrim - About');
             },
             url: pageUrl('about', 'about.html'),
             config: windowConfig(host, 'about', 'preload_about.js', { width: 520, height: 560 })
@@ -110,7 +126,7 @@ function register(host, windowTitle) {
             // removal, so criterion 4 and the Remove half of criterion 5 get a window.
             id: LOGIN_WINDOW_ID,
             title: function () {
-                return windowTitle('charSelect', 'Grimlite Parity - Char Select');
+                return windowTitle('charSelect', 'AquGrim - Char Select');
             },
             url: pageUrl('login', 'login.html'),
             config: windowConfig(host, 'login', 'preload_login.js', { width: 460, height: 480 })
@@ -128,7 +144,7 @@ function register(host, windowTitle) {
         {
             id: LOADERS_WINDOW_ID,
             title: function () {
-                return windowTitle('loaders', 'Grimlite Parity - Loaders and grabbers');
+                return windowTitle('loaders', 'AquGrim - Loaders and grabbers');
             },
             url: pageUrl('loaders', 'loaders.html'),
             // The reference's own client size for Loaders.cs, which is a small tool window.
@@ -235,6 +251,7 @@ module.exports = {
     // Every id this file registers, so a caller that has to look one up (the Hotkeys window's
     // action targets) reads the same list the registration uses instead of a second copy.
     WINDOW_IDS: [
+        SETS_WINDOW_ID,
         BANK_WINDOW_ID,
         DEVTEST_WINDOW_ID,
         COSMETICS_WINDOW_ID,
@@ -253,12 +270,14 @@ module.exports = {
         TRAVEL_WINDOW_ID,
         MAID_WINDOW_ID
     ],
+    SETS_WINDOW_ID: SETS_WINDOW_ID,
     BANK_WINDOW_ID: BANK_WINDOW_ID,
     LOGIN_WINDOW_ID: LOGIN_WINDOW_ID,
     DEVTEST_PAGE: DEVTEST_PAGE,
     DEVTEST_WINDOW_ID: DEVTEST_WINDOW_ID,
     COSMETICS_WINDOW_ID: COSMETICS_WINDOW_ID,
     NOTEPAD_WINDOW_ID: NOTEPAD_WINDOW_ID,
+    AUTO_ATTACK_WINDOW_ID: AUTO_ATTACK_WINDOW_ID,
     EYEDROPPER_WINDOW_ID: EYEDROPPER_WINDOW_ID,
     ABOUT_WINDOW_ID: ABOUT_WINDOW_ID,
     LOGGER_WINDOW_ID: LOGGER_WINDOW_ID,

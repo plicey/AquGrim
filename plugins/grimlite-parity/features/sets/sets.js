@@ -1,10 +1,5 @@
-// The Sets window's own logic (ticket #29). Reference: Grimoire/UI/Set.cs - class SetItem,
-// class Item and interface ISetInterface at :282-305, the Add handler at :53-67 and Refresh at
-// :150-198. The reference ships no Equip button on this form and its menu entry is hidden
-// upstream, so the port keeps the document mechanics only.
-//
-// A .gset is a user document written where the user points the dialog, so this module only
-// reads and writes its bytes; the window and the dialogs own the paths (set-dialogs.js).
+// Equipment snapshots, ordinary equip sequences and .gset documents.
+// The window and dialogs own file paths (set-dialogs.js).
 
 const SET_ITEM_TYPE = 'Grimoire.UI.SetItem, Grimoire';
 const SET_LIST_TYPE =
@@ -21,17 +16,26 @@ const ITEM_MESSAGES = {
     ac: 'Please select AC or Non-AC'
 };
 
-// The item combo's five groups, in the reference's order, matched on the item's category.
+// Keep the original groups first, followed by the other normal equipment categories.
 const GROUPS = [
     { header: '[Weapons]', match: 'weapon' },
     { header: '[Classes]', match: 'Class' },
     { header: '[Armors]', match: 'Armor' },
     { header: '[Helmets]', match: 'Helm' },
-    { header: '[Capes]', match: 'Cape' }
+    { header: '[Capes]', match: 'Cape' },
+    { header: '[Pets]', match: 'Pet' },
+    { header: '[Necklaces]', match: 'Necklace' },
+    { header: '[Misc]', match: 'Misc' },
+    { header: '[Earrings]', match: 'Earring' },
+    { header: '[Amulets]', match: 'Amulet' },
+    { header: '[Belts]', match: 'Belt' },
+    { header: '[Rings]', match: 'Ring' }
 ];
 
-// InventoryItem.Weapons: every category the reference folds into the single "Weapon" type.
-const WEAPON_CATEGORIES = ['Sword', 'Axe', 'Dagger', 'Gun', 'Bow', 'Mace', 'Polearm', 'Staff', 'Wand'];
+// Stock LPFFrameInvAQ.INV_FILTER_MAP weapon categories.
+const WEAPON_CATEGORIES = ['Sword', 'Axe', 'Gauntlet', 'Dagger', 'HandGun', 'Rifle', 'Gun', 'Whip', 'Bow', 'Mace', 'Polearm', 'Staff', 'Wand'];
+
+const EQUIPMENT_CATEGORIES = WEAPON_CATEGORIES.concat(GROUPS.slice(1).map(function (group) { return group.match; }));
 
 /**
  * The entry a file stores for an inventory item: its name, and its category unless that
@@ -168,6 +172,42 @@ function listSets(directory, fsModule) {
     }
 }
 
+// Save normal equipment only; consumables use a separate game action.
+function equippedEntries(inventory) {
+    if (!Array.isArray(inventory)) throw new Error('Inventory is unavailable.');
+    const entries = inventory.filter(function (item) { return item.isEquipped && EQUIPMENT_CATEGORIES.indexOf(item.category) !== -1; }).map(entryFor);
+    if (!entries.length) throw new Error('No equipped items found.');
+    return entries;
+}
+
+async function equipSet(game, entries) {
+    if (!Array.isArray(entries) || !entries.length || entries.some(function (entry) {
+        return !entry || typeof entry.name !== 'string' || !entry.name.trim() ||
+            typeof entry.type !== 'string' || (entry.type !== 'Weapon' && EQUIPMENT_CATEGORIES.indexOf(entry.type) === -1);
+    })) throw new Error('Select a non-empty set containing only supported equipment.');
+    const inventory = await game.readInventory();
+    if (!Array.isArray(inventory)) throw new Error('Inventory is unavailable.');
+    let requested = 0;
+    let skipped = 0;
+    const failures = [];
+    for (const entry of entries) {
+        try {
+            const item = inventory.find(function (item) {
+                return item.name.toLowerCase() === entry.name.toLowerCase() && entryFor(item).type === entry.type;
+            });
+            if (!item) throw new Error('Not in inventory (no bank retrieval).');
+            if (item.isEquipped) { skipped++; continue; }
+            // World.equipItem cooldown is 1500ms; include a margin and preceding manual equips.
+            await game.sleep(1600);
+            if (await game.equipItem(item.name) === false) throw new Error('Game did not accept the equip request.');
+            requested++;
+        } catch (error) {
+            failures.push(entry.name + ': ' + ((error && error.message) || String(error)));
+        }
+    }
+    return { requested: requested, skipped: skipped, failures: failures, error: failures.length ? failures.join('\n') : null };
+}
+
 module.exports = {
     SET_ITEM_TYPE: SET_ITEM_TYPE,
     SET_LIST_TYPE: SET_LIST_TYPE,
@@ -175,6 +215,8 @@ module.exports = {
     ERRORS: ERRORS,
     GROUPS: GROUPS,
     WEAPON_CATEGORIES: WEAPON_CATEGORIES,
+    equippedEntries: equippedEntries,
+    equipSet: equipSet,
     entryFor: entryFor,
     inventoryRows: inventoryRows,
     parseSet: parseSet,

@@ -1,4 +1,4 @@
-# Grimlite Parity
+# AquGrim
 
 A second bundled game plugin: Grimlite-Li's user-facing surface (client-side tools, packet
 tools, the bot engine) for Adventure Quest Worlds, kept out of the bundled game plugin so a
@@ -35,7 +35,7 @@ typed helpers), **Eye Dropper** (a pixel printed as ARGB hex, decimal channels a
 and **About** (version, the reference's credit links, and a control that reloads the game
 movie). `Grimlite` in the window menu opens all three.
 
-The **Bot Manager** (Grimlite → Bot Manager, Alt+Shift+M) is the reference's editor window: its
+The **Bot Manager** (Client → Bot Manager, Alt+Shift+M) is the reference's editor window: its
 eleven tabs and the controls it puts in each of them, the left list that switches between
 commands, skills, quests, drops, boosts and items, the live counters under it, a search that
 wraps, and the reference's editing keymap (move, duplicate, delete, copy as text, cut and paste,
@@ -79,7 +79,7 @@ it, see the result, with the reference's own modes), the three packet tools open
 Sniffer / Spammer / Tamperer, the Bank and Sets windows, the three display windows above, and the
 placeholder window the scaffold shipped.
 
-The **Cosmetics** window (Grimlite → Cosmetics, Alt+Shift+C) is the reference's own grid: eight
+The **Cosmetics** window (Client → Cosmetics, Alt+Shift+C) is the reference's own grid: eight
 rows (Helm, Armor, Class, Weapon, Off.H, Pet, Cape, Misc), each with a file box, a link box and a
 **Set** button, the seven per-slot grab links above it, a player picker filled from the room, and
 **Grab / Equip All / Equip Selected / Clear All / Remove / Save / Load**. A set saves in the same
@@ -140,7 +140,7 @@ this module may make on its own.
 
 ## Options and Hotkeys
 
-The **Options** window (Grimlite → Options, Alt+Shift+O) holds the seven toggles the reference
+The **Options** window (Client → Options, Alt+Shift+O) holds the seven toggles the reference
 actually ships, in its own order - Infinite Range, Provoke, Enemy Magnet, Lag Killer, Hide Players,
 Skip Cutscenes, Walkspeed - with the walkspeed value field beside them. Every one is off until the
 user ticks it, and the ticks and the number are kept in this plugin's own store, so they survive a
@@ -148,7 +148,7 @@ restart. The re-apply loops are the reference's: a one-second pass, the group be
 gate in the order `OptionsManager.cs` re-applies it, and a 250 ms push for walkspeed alone while
 its tick is on. The client never turns one of these on by itself.
 
-The **Hotkeys** window (Grimlite → Hotkeys, Alt+Shift+H) binds one key to one action from the
+The **Hotkeys** window (Client → Hotkeys, Alt+Shift+H) binds one key to one action from the
 reference's own 23-item vocabulary, in its order, and fires it. The set ships empty, the picker
 offers single keys only, a bound key fires while this app has focus except **Minimize to tray**,
 and a key the app or the game plugin already holds is refused with its owner named rather than

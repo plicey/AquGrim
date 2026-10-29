@@ -136,7 +136,7 @@ function _loadInventory() {
             labels: _migrateLabels(parsed.labels)
         };
     } catch (e) {
-        console.log('[AquaStar] Failed to parse ' + inventoryJsonPath + ': ' + e.message);
+        console.log('[AquGrim] Failed to parse ' + inventoryJsonPath + ': ' + e.message);
         return { characters: {}, lastActiveCharId: '', labels: _migrateLabels({}) };
     }
 }
@@ -466,7 +466,7 @@ ipcMain.handle('syncInventoryNow', async (event) => {
     try {
         return await syncActiveCharacter();
     } catch (e) {
-        console.log('[AquaStar] Inventory sync failed: ' + e.message);
+        console.log('[AquGrim] Inventory sync failed: ' + e.message);
         return { ok: false, error: 'network' };
     }
 });
@@ -562,7 +562,7 @@ function _isAutoSyncEnabled() {
 function _autoSyncTick() {
     if (!_isAutoSyncEnabled()) return;
     syncActiveCharacter().catch((e) => {
-        console.log('[AquaStar] Background inventory sync failed: ' + e.message);
+        console.log('[AquGrim] Background inventory sync failed: ' + e.message);
     });
 }
 

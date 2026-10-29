@@ -279,7 +279,7 @@ function createGameAccess(host) {
                 })[0];
                 if (!match) throw new Error('no item named "' + name + '" in the inventory');
                 return surface().call('Equip', [match.ItemID]);
-            }).then(function () {});
+            });
         },
 
         // Pacing is not game access, so it is real: a feature that waits keeps working whatever

@@ -22,7 +22,7 @@ const BLOCKED_LOCAL_REQUIRES = {
 };
 
 function defaultLog(msg) {
-    console.log('[AquaStar:plugins] ' + msg);
+    console.log('[AquGrim:plugins] ' + msg);
 }
 
 function isInsidePluginRoot(candidatePath, rootResolved) {
@@ -263,6 +263,7 @@ function activatePlugin(plugin, options) {
             appVersion: options.appVersion,
             appRootPath: options.appRootPath,
             appDataDirectory: options.appDataDirectory,
+            persistentAppDataDirectory: options.persistentAppDataDirectory,
             pluginDataDirectory: options.pluginDataDirectory ||
                 path.join(options.appDataDirectory || '', 'plugins', plugin.manifest.id),
             platformSettings: settings,

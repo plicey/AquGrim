@@ -131,7 +131,7 @@ function validateManifest(manifest, opts) {
             } else if (compareSemver(have, needed) < 0) {
                 errors.push(
                     'minAppVersion ' + manifest.minAppVersion +
-                    ' requires a newer AquaStar (have ' + opts.appVersion + ')'
+                    ' requires a newer AquGrim (have ' + opts.appVersion + ')'
                 );
             }
         }
