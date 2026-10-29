@@ -105,7 +105,7 @@ function createGameChrome(deps) {
         const list = declaration.controls() || [];
         return list.map(function (control) {
             const entry = { id: control.id, kind: control.kind, label: control.label };
-            ['refreshOnFocus', 'width', 'placeholder', 'valueFrom', 'pendingLabel'].forEach(function (key) {
+            ['refreshOnFocus', 'width', 'placeholder', 'valueFrom', 'pendingLabel', 'contextEditor'].forEach(function (key) {
                 if (control[key] !== undefined) entry[key] = control[key];
             });
             return entry;
@@ -206,6 +206,7 @@ function createGameChrome(deps) {
                         ok: !!(result && result.ok),
                         error: (result && result.error) || null,
                         message: (result && result.message) || null,
+                        editor: (result && result.editor) || null,
                         view: view
                     };
                 });

@@ -877,3 +877,38 @@ test('await holds the rotation until ready and casts before advancing', async ()
   assert.deepStrictEqual(casts(h), [['useSkill', '2'], ['useSkill', '3']]);
   h.chrome.stop();
 });
+
+test('right-click skill editor lists, selects and validates saves for the detected class', async () => {
+  let data = { autoAttackPresets: { SHAMAN: { Farm: '2;4' } } };
+  const source = skillPresets.createPresetSource({ files: [], store: {
+    read: () => data, write: next => { data = next; }
+  } });
+  const h = harness({ presets: source, answers: { className: 'Shaman' } });
+  const open = await h.chrome.action('autoSkillSet', { contextEditor: true });
+  assert.strictEqual(open.ok, true);
+  assert.deepStrictEqual(open.editor.items.map(item => item.label), ['Default', 'Custom (unsaved)', 'Farm']);
+  const selected = await h.chrome.action('autoSkillSet', { contextEditor: true, name: 'Farm' });
+  assert.strictEqual(selected.editor.text, '2;4');
+  const temporary = await h.chrome.action('autoSkillSet', {
+    contextEditor: true, draft: true, className: 'Shaman', name: 'Farm', text: '3;2'
+  });
+  assert.strictEqual(temporary.editor.text, '3;2');
+  assert.strictEqual(data.autoAttackPresets.SHAMAN.Farm, '2;4', 'temporary edits leave the saved preset alone');
+  const reopened = await h.chrome.action('autoSkillSet', { contextEditor: true });
+  assert.strictEqual(reopened.editor.text, '3;2', 'reopening keeps the temporary draft');
+  const invalid = await h.chrome.action('autoSkillSet', {
+    contextEditor: true, save: true, name: 'Farm', text: 'if SH<50 {'
+  });
+  assert.strictEqual(invalid.ok, false);
+  assert.strictEqual(data.autoAttackPresets.SHAMAN.Farm, '2;4');
+  const saved = await h.chrome.action('autoSkillSet', {
+    contextEditor: true, className: 'Shaman', save: true, name: 'Farm', text: '4;3'
+  });
+  assert.strictEqual(saved.editor.text, '4;3');
+  assert.strictEqual(data.autoAttackPresets.SHAMAN.Farm, '4;3');
+  const changed = await h.chrome.action('autoSkillSet', {
+    contextEditor: true, className: 'Other', save: true, name: 'Farm', text: '1'
+  });
+  assert.strictEqual(changed.ok, false);
+  assert.strictEqual(data.autoAttackPresets.SHAMAN.Farm, '4;3');
+});

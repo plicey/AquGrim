@@ -32,6 +32,17 @@
     font:13px/1.5 system-ui,sans-serif; white-space:pre-wrap; pointer-events:none;
   }
   #actionToast[data-error="true"] { border-left-color:#ef8585; }
+  #contextEditor { position:fixed; z-index:10001; width:440px; max-width:calc(100vw - 16px);
+    height:240px; max-height:calc(100vh - 42px); padding:8px; box-sizing:border-box;
+    background:#1e1e24; color:#c8c8c8; border:1px solid #484852; border-radius:4px;
+    box-shadow:0 6px 24px #0009; font:12px system-ui,sans-serif; }
+  #contextEditor .editor-title { margin-bottom:6px; }
+  #contextEditor .editor-body { display:flex; gap:8px; height:calc(100% - 40px); }
+  #contextEditor select { width:130px; min-width:0; overflow:auto; }
+  #contextEditor textarea { flex:1; min-width:0; resize:none; overflow:auto; padding:6px;
+    font:12px/1.5 monospace; tab-size:2; }
+  #contextEditor select, #contextEditor textarea { background:#272727; color:inherit; border:1px solid #3a3a44; }
+  #contextEditor .editor-status { margin-top:4px; font-size:11px; }
   #stage { flex:1 1 auto; position:relative; min-height:0; }
   #surface { position:absolute; left:0; top:0; width:100%; height:100%; transform-origin:0 0; }
   object { display:block; width:100%; height:100%; border:none; outline:none; }
@@ -163,6 +174,122 @@
       if (box) box.textContent = text;
     }
 
+    function openContextEditor(entry, button) {
+      var previous = document.getElementById('contextEditor');
+      if (previous) { previous.focus(); return; }
+      var panel = el('div');
+      panel.id = 'contextEditor';
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-label', entry.label);
+      var title = el('div', 'editor-title', entry.label);
+      var presetName = el('input');
+      presetName.type = 'text';
+      presetName.placeholder = 'Preset name';
+      presetName.setAttribute('aria-label', 'Preset name');
+      presetName.style.cssText = 'width:120px;float:right;background:#272727;color:inherit;border:1px solid #3a3a44';
+      var body = el('div', 'editor-body');
+      var list = el('select');
+      list.size = 8;
+      list.setAttribute('aria-label', 'Presets');
+      var text = el('textarea');
+      text.spellcheck = false;
+      text.setAttribute('aria-label', 'Skill rotation');
+      var status = el('div', 'editor-status', 'Ctrl+S to save · Esc to close');
+      status.setAttribute('role', 'status');
+      panel.appendChild(presetName);
+      panel.appendChild(title);
+      body.appendChild(list);
+      body.appendChild(text);
+      panel.appendChild(body);
+      panel.appendChild(status);
+      var rect = button.getBoundingClientRect();
+      panel.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 448)) + 'px';
+      panel.style.top = rect.bottom + 4 + 'px';
+      document.body.appendChild(panel);
+      var state;
+      var dirty = false;
+      var busy = false;
+      var pending = null;
+      var drafts = Promise.resolve();
+      function remember() {
+        window.clearTimeout(pending);
+        pending = null;
+        drafts = drafts.then(function () {
+          if (!dirty || !state) return true;
+          var value = text.value;
+          var name = state.selected === '__custom__' ? null : state.selected || null;
+          return Promise.resolve(api.action(entry.id, {
+            contextEditor: true, draft: true, className: state.className, name: name, text: value
+          })).then(function (result) {
+            if (!result || result.error || !result.editor) throw new Error(result && result.error || 'Could not remember draft.');
+            state = result.editor;
+            if (text.value === value) dirty = false;
+            list.value = state.selected;
+            status.textContent = 'Temporary draft · Re-enable Auto Attack to apply';
+            return true;
+          }).catch(function (error) { status.textContent = error.message || String(error); return false; });
+        });
+        return drafts;
+      }
+      async function close() {
+        if (busy || !(await remember())) return;
+        panel.remove();
+        window.removeEventListener('mousedown', outside);
+        window.removeEventListener('keydown', key);
+        focusGame();
+      }
+      function outside(event) { if (!panel.contains(event.target)) close(); }
+      function key(event) { if (event.key === 'Escape') { event.preventDefault(); close(); } }
+      window.addEventListener('mousedown', outside);
+      window.addEventListener('keydown', key);
+      async function request(args) {
+        if (busy) return;
+        busy = true;
+        if (!(await remember())) { busy = false; return; }
+        list.disabled = text.disabled = true;
+        return Promise.resolve(api.action(entry.id, Object.assign({ contextEditor: true }, args)))
+          .then(function (result) {
+            if (!result || result.error || !result.editor) throw new Error(result && result.error || 'Could not load editor.');
+            state = result.editor;
+            title.textContent = state.title;
+            presetName.value = state.selected === '__custom__' ? '' : state.selected;
+            while (list.firstChild) list.removeChild(list.firstChild);
+            state.items.forEach(function (item) {
+              var option = el('option', null, item.label);
+              option.value = item.name;
+              option.selected = item.name === state.selected;
+              list.appendChild(option);
+            });
+            list.value = state.selected;
+            text.value = state.text;
+            dirty = false;
+            status.textContent = args && args.save ? 'Saved · Re-enable Auto Attack to apply' : 'Ctrl+S to save · Esc to close';
+          }).catch(function (error) {
+            status.textContent = error.message || String(error);
+            if (state) list.value = state.selected;
+          }).then(function () { busy = false; list.disabled = text.disabled = !state; });
+      }
+      list.addEventListener('change', function () {
+        request({ className: state.className, name: list.value });
+      });
+      text.addEventListener('input', function () {
+        dirty = true;
+        status.textContent = 'Temporary draft · Ctrl+S to save preset';
+        window.clearTimeout(pending);
+        pending = window.setTimeout(remember, 150);
+      });
+      panel.addEventListener('keydown', function (event) {
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+          event.preventDefault();
+          if (busy || !state) return;
+          var name = presetName.value.trim();
+          if (!name) { presetName.focus(); status.textContent = 'Enter a preset name, then Ctrl+S'; return; }
+          if (name) request({ className: state.className, save: true, name: name, text: text.value });
+        }
+      });
+      request({}).then(function () { if (state) text.focus(); });
+    }
+
     /** One control, drawn from its kind. Every one reports what it is; none is a dead button. */
     function control(entry, view) {
       var value = view.values ? view.values[entry.id] : undefined;
@@ -227,6 +354,13 @@
       }
       var button = el('button', null, entry.label);
       button.id = 'chrome-' + entry.id;
+      if (entry.contextEditor) {
+        button.setAttribute('aria-haspopup', 'dialog');
+        button.addEventListener('contextmenu', function (event) {
+          event.preventDefault();
+          openContextEditor(entry, button);
+        });
+      }
       if (entry.valueFrom) {
         button.setAttribute('data-value-from', entry.valueFrom);
         var source = document.getElementById('chrome-' + entry.valueFrom);

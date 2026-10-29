@@ -180,7 +180,7 @@ function createChrome(deps) {
         return [
             { id: 'startBot', kind: 'check', label: words.startBot || 'Start Bot' },
             { id: 'autoAttack', kind: 'check', label: words.autoAttack || 'Auto Attack' },
-            { id: 'autoSkillSet', kind: 'button', label: words.autoSkillSet || 'Skill Set' },
+            { id: 'autoSkillSet', kind: 'button', label: words.autoSkillSet || 'Skill Set', contextEditor: true },
             { id: 'pad', kind: 'select', label: words.pad || '' },
             { id: 'cell', kind: 'select', label: words.cell || '' },
             { id: 'refreshCell', kind: 'button', label: words.refreshCell || 'x' },
@@ -587,7 +587,39 @@ function createChrome(deps) {
             if (id === 'startBot') answer = await startBot(picked.checked);
             else if (id === 'autoAttack') answer = await autoAttackToggle(picked.checked);
             else if (id === 'autoSkillSet') {
-                answer = typeof deps.openAutoSkillSet === 'function'
+                if (picked.contextEditor) {
+                    if (!deps.presets) throw new Error('Skill presets are unavailable.');
+                    const detected = await read('className');
+                    const name = String(detected.value || '').trim();
+                    if (!name) throw new Error('Sign in to edit skill presets.');
+                    if (picked.className && picked.className !== name) throw new Error('Class changed. Reopen Skill Set.');
+                    deps.presets.reload();
+                    if (picked.save) {
+                        deps.presets.savePreset(name, picked.name, picked.text);
+                        deps.presets.setDraft(name, picked.text, picked.name);
+                    } else if (picked.draft) {
+                        deps.presets.setDraft(name, picked.text, picked.name);
+                    } else if (picked.name !== undefined) {
+                        if (picked.name === '__custom__') {
+                            const current = deps.presets.draftFor(name);
+                            deps.presets.setDraft(name, current ? current.text : '1;2;3;4', null);
+                        } else if (picked.name) {
+                            const loaded = deps.presets.loadPreset(name, picked.name);
+                            if (!loaded) throw new Error('That preset no longer exists.');
+                            useSkillText(loaded.text);
+                        } else {
+                            deps.presets.clearDraft(name);
+                            useSkillText('');
+                        }
+                    }
+                    const draft = deps.presets.draftFor(name);
+                    answer = { ok: true, editor: {
+                        title: name, className: name, selected: draft ? draft.name || '__custom__' : '',
+                        text: draft ? draft.text : '1;2;3;4',
+                        items: [{ name: '', label: 'Default' }, { name: '__custom__', label: 'Custom (unsaved)' }].concat(deps.presets.presetList(name)
+                            .map(function (one) { return { name: one.name, label: one.name }; }))
+                    } };
+                } else answer = typeof deps.openAutoSkillSet === 'function'
                     ? deps.openAutoSkillSet()
                     : { ok: false, error: 'the Auto Attack skill set window is not available' };
             }
