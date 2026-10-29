@@ -197,7 +197,7 @@ function applyWindowMenu(win, originalPath) {
     }
 }
 
-// Now, every window created with actions like CTRL + click, can have the right click menu too.
+// Apply shared lifecycle hooks to windows, including those opened with CTRL + click.
 function _windowAddContext(newWin){
     // First, a security check. No more than 70 windows opened at once...
     if (BrowserWindow.getAllWindows().length > 70){
@@ -206,17 +206,6 @@ function _windowAddContext(newWin){
     }
     
     if (constant.isDebugBuild) newWin.setTitle(newWin.getTitle() + " < Debug >");
-    
-    // Context Menu part
-    var contextMenu = Menu.buildFromTemplate( 
-        windowsMenu.getMenu(keybinds.keybinds,takeSS,true));
-    newWin.webContents.on("context-menu",(e,param)=>{
-        contextMenu.popup({
-            window: newWin,
-            x: param.x,
-            y: param.y
-        });
-    })
     
     // "Child Windows follow the same rule" part
     const openChildWindow = (url) => {
