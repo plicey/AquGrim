@@ -183,7 +183,6 @@ test('the plugin registers a 27 px strip holding the reference controls, in its 
     ['Start Bot', 'Auto Attack', 'Skill Set', '', '', 'x', 'Bank', 'Saved equipment set', 'Equip']);
   assert.deepStrictEqual(controls.map(function (one) { return one.kind; }),
     ['check', 'check', 'button', 'select', 'select', 'button', 'button', 'select', 'button']);
-  assert.ok(declared.menuLabel(), 'the game menu entry needs a label');
   assert.strictEqual(typeof declared.state, 'function');
   assert.strictEqual(typeof declared.action, 'function');
 });

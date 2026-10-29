@@ -370,7 +370,6 @@ Three things this module deliberately does not do:
   could not fill, rather than answered with a zero or an empty list that would look like real game
   state.
 
-The Game-menu entry that hides and restores the strip is the same toggle as the reference's own
-"Change Launcher Skin" action (`Root.cs:1750`-`1768`, `Hotkeys.cs:405`-`408`), which hides the
-menu bar and the whole toolbar and drops the window's height by the same amount. It is checkable,
-and its checked state is the layout itself rather than what was last clicked.
+The reference's own "Change Launcher Skin" action (`Root.cs:1750`-`1768`, `Hotkeys.cs:405`-`408`)
+still hides and restores the strip together with the menu bar, dropping the window's height by the
+same amount. The Game menu itself carries no toggle for the strip.

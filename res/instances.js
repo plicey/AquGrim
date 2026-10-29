@@ -186,7 +186,7 @@ function applyWindowMenu(win, originalPath) {
     var showGameMenu = (!keybinds.keybinds || keybinds.keybinds.showGameMenu !== false) &&
         !!entry && !entry.standalone && (entry === primary || _looksLikeSwfUrl(originalPath));
     var menuTemplate = showGameMenu
-        ? windowsMenu.getGameMenu(keybinds.keybinds || {}, win)
+        ? windowsMenu.getGameMenu(keybinds.keybinds || {})
         : windowsMenu.getMenu(keybinds.keybinds || {}, takeSS, false);
     if (menuTemplate && menuTemplate.length) {
         win.setMenu(Menu.buildFromTemplate(menuTemplate));

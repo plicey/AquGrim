@@ -1228,7 +1228,7 @@ What needs a real client: everything below.
       letterboxing, no clipped bottom edge and no stretched aspect
 - [ ] The window opens at 960x557 with the strip up (960x530 of game plus the strip)
 - [ ] Landing and refreshing a map does not move the strip or resize the surface
-- [ ] With the strip hidden (see the menu toggle below) the window is exactly 960x530 and the
+- [ ] With the strip hidden (see the launcher skin checks below) the window is exactly 960x530 and the
       game fills it exactly as it did before this ticket
 
 ### Start Bot
@@ -1274,14 +1274,14 @@ What needs a real client: everything below.
 - [ ] The game-window **Bank** button opens the game's in-game Bank UI via `Player.Bank.Show()`
 - [ ] **Tools → Bank** opens the Grimlite transfer window for banking by category and AC status
 
-### The menu toggle
+### Launcher skin
 
-- [ ] The Game menu carries the strip's entry and it is a checkbox whose tick matches the layout
-- [ ] Unticking it hides the strip and returns the window to exactly 960x530, with the game
-      surface filling the window
-- [ ] Ticking it again restores the strip and the size the window had while it was up
+- [ ] The Game menu carries no "Client toolbar" entry
+- [ ] Change Launcher Skin hides the menu bar and the strip and returns the window to exactly
+      960x530, with the game surface filling the window
+- [ ] Change Launcher Skin again restores the menu bar and the strip and the size the window had
+      while it was up
 - [ ] Toggling twice never leaves a stale size (off then on then off lands on 960x530 both times)
-- [ ] A window opened while the strip is hidden is plain-sized and its tick is off
 
 ### What could not be checked here, and why
 
@@ -1297,6 +1297,7 @@ What needs a real client: everything below.
   `res/features/capture/preload_capture.js` captures a `desktopCapturer` source by window title,
   so it follows the window's own size and does not go through `captureRect`. With the strip up the
   recording includes it; in the plain layout it does not. A recording that must show only the game
-  is what the toggle is for, and the plain size stays exactly what the existing checklist expects.
+  is what Change Launcher Skin is for, and the plain size stays exactly what the existing
+  checklist expects.
 - **The surface's own aspect** depends on the game's `scale` parameter, which this ticket does not
   touch: the wrapper still passes the plugin's own wrap config through.

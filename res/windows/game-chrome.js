@@ -190,36 +190,6 @@ function createGameChrome(deps) {
     }
 
     /**
-     * The game menu's entry for this window: a checkbox whose tick is the layout itself, so a
-     * toggle from the menu and a toggle from anywhere else read back the same way.
-     * @returns {object|null} an Electron menu item, or null when there is no strip to toggle
-     */
-    function menuItem(opts) {
-        opts = opts || {};
-        if (!available()) return null;
-        // A window whose page has no strip element in it gets no entry either: a checkbox that
-        // toggles nothing is worse than no checkbox, and the label would be about a layout this
-        // window cannot have.
-        if (!opts.win || opts.win.aquaStarChromeHost !== true) return null;
-        const declaration = declared();
-        const label = typeof declaration.menuLabel === 'function'
-            ? declaration.menuLabel()
-            : null;
-        if (!label) return null;
-        return {
-            label: label,
-            type: 'checkbox',
-            checked: isEnabled(opts.win),
-            click: function (item, focusedWin) {
-                // The window the entry was built for, not whichever one has focus: a menu click
-                // carries the focused window, and with two game windows open that is not
-                // necessarily the one whose menu this is.
-                setEnabled(opts.win || focusedWin, item ? item.checked !== false : false);
-            }
-        };
-    }
-
-    /**
      * Run one of the plugin's controls for the window that asked. Never throws: a control whose
      * action refused reports the reason, and the page redraws from the view beside it.
      */
@@ -257,7 +227,6 @@ function createGameChrome(deps) {
         contentSize: contentSize,
         pageView: pageView,
         setEnabled: setEnabled,
-        menuItem: menuItem,
         dispatch: dispatch
     };
 }

@@ -404,9 +404,7 @@ exports.maidMessages = {
 
 // The in-game chrome strip (ticket #45). The control words are the reference's own, verbatim from
 // Root.cs's designer (Root.cs:635, 647, 660, 672); the two list boxes carry no text upstream, so
-// their own labels stay empty and their options are their words. `menu` labels the Game-menu
-// entry that hides and restores the strip: upstream the same toggle is its hotkey action "Change
-// Launcher Skin" (Hotkeys.cs:405-408), which hides the whole menu bar and toolbar at once.
+// their own labels stay empty and their options are their words.
 exports.chromeMessages = {
     startBot: 'Start Bot',
     autoAttack: 'Auto Attack',
@@ -414,6 +412,5 @@ exports.chromeMessages = {
     pad: '',
     cell: '',
     refreshCell: 'x',
-    bank: 'Bank',
-    menu: 'Client toolbar'
+    bank: 'Bank'
 };

@@ -376,6 +376,5 @@ exports.chromeMessages = {
     pad: "",
     cell: "",
     refreshCell: "",
-    bank: "",
-    menu: ""
+    bank: ""
 };

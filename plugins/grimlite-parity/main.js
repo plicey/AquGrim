@@ -745,8 +745,7 @@ async function activate(host) {
         height: chromeFeature.HEIGHT,
         controls: function () { return chrome.controls(); },
         state: function () { return chrome.state(); },
-        action: function (id, args) { return chrome.action(id, args); },
-        menuLabel: function () { return (host.getLocaleStrings('chromeMessages') || {}).menu || 'Game chrome'; }
+        action: function (id, args) { return chrome.action(id, args); }
     });
 
     // The three windows: each owns its own main-process module (a page plus a sandbox-safe
