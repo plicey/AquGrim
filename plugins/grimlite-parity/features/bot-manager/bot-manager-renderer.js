@@ -1459,10 +1459,10 @@
         if (info) drawInfoText(info, richText(testInfo.value));
       });
     }
-    var special = document.getElementById('chkSpecial');
-    if (special && !special.dataset.wired) {
-      special.dataset.wired = '1';
-      special.addEventListener('change', function () { toggleSpecial(special); });
+    var specialToggle = document.getElementById('chkSpecial');
+    if (specialToggle && !specialToggle.dataset.wired) {
+      specialToggle.dataset.wired = '1';
+      specialToggle.addEventListener('change', function () { toggleSpecial(specialToggle); });
     }
     var colourful = document.getElementById('colorfulCommands');
     if (colourful && !colourful.dataset.wired) {

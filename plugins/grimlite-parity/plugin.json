@@ -39,6 +39,7 @@
     "CancelTargetSelf",
     "SetTargetPvP",
     "RejectDrop",
+    "GetItemTree",
     "SetWalkSpeedEnabled",
     "SetSkipCutscenesEnabled",
     "GetSkipCutscenesStatus"

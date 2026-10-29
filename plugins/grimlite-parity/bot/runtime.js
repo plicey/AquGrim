@@ -115,10 +115,11 @@ function createRuntimeManager(deps) {
         const id = keyOf(key);
         const entry = entries.get(id);
         if (!entry) return { ok: true, stopped: false };
-        entry.engine.stop();
-        if (entry.loop) {
-            await entry.loop;
-            entry.loop = null;
+        const loop = entry.loop;
+        await entry.engine.stop();
+        if (loop) {
+            await loop;
+            if (entry.loop === loop) entry.loop = null;
         }
         return { ok: true, stopped: true };
     }

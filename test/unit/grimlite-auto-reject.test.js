@@ -146,3 +146,75 @@ test('session checks rejection authorization again before retrying', async () =>
   assert.strictEqual(h.calls.length, 1);
   await h.session.close();
 });
+
+test('ID-only drops wait for the game item tree and retain packet quantities', async () => {
+  let observe;
+  let reads = 0;
+  const session = require(root + '/bot/session.js').createSession({
+    packets: { on: (event, fn) => { observe = fn; return () => {}; } },
+    bridge: {
+      attach: async () => ({ ok: true }),
+      loaderCall: async name => {
+        assert.strictEqual(name, 'GetItemTree');
+        return ++reads === 1 ? {} : { 7: { ItemID: 7, sName: 'Unidentified 1', bCoins: 1, iQty: 99 } };
+      }
+    }
+  });
+  const seen = new Promise(resolve => session.onDrop(resolve));
+  observe({ data: JSON.stringify({ b: { o: { cmd: 'dropItem', items: {
+    7: { ItemID: 7, sName: '', iQty: 2 }
+  } } } }) });
+  const drop = await seen;
+  assert.strictEqual(reads, 2);
+  assert.deepStrictEqual(drop, { ItemID: 7, sName: 'Unidentified 1', bCoins: 1, iQty: 2 });
+  assert.deepStrictEqual(await session.dropStack(), [drop]);
+  await session.close();
+});
+
+test('closing or replacing the drop subscription discards pending item-tree notifications', async () => {
+  for (const close of [true, false]) {
+    let observe;
+    let finish;
+    const tree = new Promise(resolve => { finish = resolve; });
+    const session = require(root + '/bot/session.js').createSession({
+      packets: { on: (event, fn) => { observe = fn; return () => {}; } },
+      bridge: { attach: async () => ({ ok: true }), loaderCall: () => tree }
+    });
+    let notified = false;
+    const off = session.onDrop(() => { notified = true; });
+    observe({ data: JSON.stringify({ b: { o: { cmd: 'dropItem', items: { 7: { ItemID: 7 } } } } }) });
+    await new Promise(resolve => setImmediate(resolve));
+    if (close) await session.close();
+    else {
+      off();
+      session.onDrop(() => { notified = true; });
+    }
+    finish([{ ItemID: 7, sName: 'Sword' }]);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(notified, false);
+    await session.close();
+  }
+});
+
+function dropReadCallback(name, game) {
+  const source = fs.readFileSync(root + '/bridge/AquaBridge.as', 'utf8');
+  const start = source.indexOf('private function ' + name + '(');
+  const end = source.indexOf('\n        }', start) + '\n        }'.length;
+  const fn = source.slice(start, end).replace('private function', 'function')
+    .replace(/:(String|Object|Array|int|Error)\b/g, '')
+    .replace('for each (var item in world().invTree)', 'for (var item of Object.values(world().invTree))')
+    .replace('for each (var item in game.cDropsUI.invTree)', 'for (var item of game.cDropsUI.invTree)');
+  return vm.runInNewContext('(' + fn + ')', {
+    game, world: () => game.world, String, JSON, Object,
+    getQualifiedClassName: clip => clip.kind,
+    jsonError: error => JSON.stringify({ error: error.message })
+  });
+}
+
+test('native item-tree read serializes Dictionary values rather than the Dictionary object', () => {
+  const item = { ItemID: 7, sName: 'Unidentified 1' };
+  const invTree = { 7: item };
+  Object.defineProperty(invTree, 'toJSON', { value: () => { throw new Error('Dictionary'); } });
+  const read = dropReadCallback('aqGetItemTree', { world: { invTree } });
+  assert.deepStrictEqual(JSON.parse(read()), [item]);
+});

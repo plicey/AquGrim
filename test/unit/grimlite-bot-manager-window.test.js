@@ -614,3 +614,187 @@ test('loading documents preserves selected Options and an explicit pause remains
     assert.strictEqual(applying, false, 'document loads also preserve explicit pause');
   } finally { fs.rmSync(w.dir, { recursive: true, force: true }); }
 });
+
+test('every Item option checkbox saves its value before the bot starts', async () => {
+  const source = fs.readFileSync(path.join(__dirname,
+    '../../plugins/grimlite-parity/features/bot-manager/bot-manager-renderer.js'), 'utf8');
+  const wires = source.slice(source.indexOf('  function wires()'),
+    source.indexOf('  /** Remember what a control holds'));
+  const w = window();
+  try {
+    const sheet = w.feature.handle('botManagerSheet', null, []);
+    const keys = {
+      chkInventOnStart: 'InventOnStart', chkPickup: 'EnablePickup',
+      chkPickupAll: 'EnablePickupAll', chkPickupAcTag: 'EnablePickupAcTagged',
+      chkReject: 'EnableRejection', chkBankOnStop: 'BankOnStop'
+    };
+    const nodes = {};
+    Object.keys(keys).forEach(id => {
+      nodes[id] = { type: 'checkbox', checked: false, dataset: {}, listeners: {},
+        addEventListener(event, fn) { this.listeners[event] = fn; } };
+    });
+    const calls = [];
+    require('vm').runInNewContext(wires + '\nwires();', {
+      document: { getElementById: id => nodes[id] || null }, sheet,
+      api: { setting: (key, value) => {
+        calls.push([key, value]);
+        return Promise.resolve(w.feature.handle('botManagerSetting', null, [key, value]));
+      } },
+      applyState() {}, wireRemembered() {}, wireStatements() {}, wireBoosts() {},
+      wireSaved() {}, drawLabelList() {}
+    });
+    for (const enabled of [true, false]) {
+      for (const id of Object.keys(keys)) {
+        nodes[id].checked = enabled;
+        nodes[id].listeners.change();
+        assert.deepStrictEqual(calls[calls.length - 1], [keys[id], enabled]);
+        if (id === 'chkInventOnStart') {
+          assert.strictEqual(w.feature.editorOptions().inventOnStart, enabled);
+        } else assert.strictEqual(bots.configuration(w.feature.bot())[keys[id]], enabled);
+      }
+    }
+  } finally { fs.rmSync(w.dir, { recursive: true, force: true }); }
+});
+
+test('grabber lists follow a newly loaded bot document', async () => {
+  const w = window();
+  const initial = w.feature.bot();
+  const lists = require('../../plugins/grimlite-parity/features/loaders/loaders.js')
+    .createBotLists({ bot: w.feature.bot });
+  const file = path.join(w.dir, 'loaded.gbot');
+  fs.writeFileSync(file, JSON.stringify({ Commands: [], Drops: [], Items: [], Quests: [] }));
+  try {
+    await w.feature.handle('botManagerLoad', null, [file]);
+    lists.addDrops(['Sword']);
+    lists.addItems(['Sword']);
+    lists.addQuests([{ Id: 7 }]);
+    lists.addCommands([catalog.makeCommand('CmdStop', {})]);
+    assert.deepStrictEqual(w.feature.bot().Drops, ['Sword']);
+    assert.deepStrictEqual(w.feature.bot().Items, ['Sword']);
+    assert.strictEqual(w.feature.bot().Quests[0].Id, 7);
+    assert.strictEqual(w.feature.bot().Commands.length, 1);
+    assert.strictEqual(initial.Drops, undefined);
+    assert.strictEqual(lists.document(), w.feature.bot());
+  } finally { fs.rmSync(w.dir, { recursive: true, force: true }); }
+});
+
+test('Bank on Stop applies to manual Stop as well as the Stop command', async () => {
+  for (const manual of [true, false]) {
+    for (const enabled of [true, false]) {
+      const banked = [];
+      const runtime = require('../../plugins/grimlite-parity/bot/runtime.js').createRuntimeManager({
+        createSession: () => ({ signedIn: async () => true, username: async () => 'Tester',
+          alive: async () => true, ready: async () => true }),
+        createGame: () => ({
+          inventoryItems: async () => [
+            { sName: 'Sword', bCoins: 1 }, { sName: 'Equipped', bCoins: 1, bEquip: 1 },
+            { sName: 'Class', bCoins: 1, sType: 'Class' }, { sName: 'Gold item', bCoins: 0 },
+            { sName: 'Other', bCoins: 1 }
+          ],
+          transferToBank: async name => { banked.push(name); }
+        })
+      });
+      const engine = runtime.forWindow('default').engine;
+      engine.run = async () => {};
+      const w = window({ runtime });
+      try {
+        Object.assign(w.feature.bot(), { Commands: [catalog.makeCommand('CmdStop', {})],
+          Items: ['Sword', 'Equipped', 'Class', 'Gold item'] });
+        w.feature.handle('botManagerSetting', null, ['BankOnStop', enabled]);
+        await w.feature.handle('botManagerEnable', null, [true]);
+        if (manual) await w.feature.handle('botManagerEnable', null, [false]);
+        else await engine.tick();
+        assert.strictEqual(engine.running(), false);
+        assert.deepStrictEqual(banked, enabled ? ['Sword'] : [], 'manual=' + manual);
+      } finally {
+        await runtime.stop('default');
+        fs.rmSync(w.dir, { recursive: true, force: true });
+      }
+    }
+  }
+});
+
+test('preset pickup and rejection options handle session drop frames only while enabled', async () => {
+  const cases = [
+    ['EnablePickup', [7], []], ['EnablePickupAll', [7, 8], []],
+    ['EnablePickupAcTagged', [8], []], ['EnableRejection', [], [8]]
+  ];
+  for (const [setting, pickups, rejections] of cases) {
+    for (const enabled of [true, false]) {
+      let frame;
+      const sent = [];
+      const rejected = [];
+      const packets = {
+        on: (event, fn) => { frame = fn; return () => {}; },
+        send: packet => { sent.push(Number(packet.text.split('%')[5])); return true; }
+      };
+      const session = require('../../plugins/grimlite-parity/bot/session.js').createSession({
+        packets,
+        bridge: {
+          attach: async () => ({ ok: true }),
+          loaderCall: async name => {
+            assert.strictEqual(name, 'GetItemTree');
+            return [{ ItemID: 7, sName: 'Sword', bCoins: 0 },
+              { ItemID: 8, sName: 'Junk', bCoins: 1 }];
+          }
+        }
+      });
+      Object.assign(session, { signedIn: async () => true, username: async () => 'Tester',
+        roomId: async () => 42, rejectDrop: async (name, id) => { rejected.push(id); } });
+      const runtime = require('../../plugins/grimlite-parity/bot/runtime.js')
+        .createRuntimeManager({ createSession: () => session, packets });
+      runtime.forWindow('default').engine.run = async () => {};
+      const w = window({ runtime });
+      const emit = async () => {
+        const data = JSON.stringify({ b: { o: {
+          cmd: 'dropItem', items: {
+            7: { ItemID: 7, iQty: 1 },
+            8: { ItemID: 8, iQty: 1 }
+          }
+        } } });
+        frame({ direction: 'toClient', data: 'Z' + require('zlib').deflateSync(data).toString('base64') });
+        await new Promise(resolve => setImmediate(resolve));
+      };
+      try {
+        Object.assign(w.feature.bot(), { Commands: [catalog.makeCommand('CmdRestart', {})], Drops: ['Sword'] });
+        w.feature.handle('botManagerSetting', null, [setting, enabled]);
+        await emit();
+        assert.deepStrictEqual(sent, []);
+        assert.deepStrictEqual(rejected, []);
+        await w.feature.handle('botManagerEnable', null, [true]);
+        await emit();
+        assert.deepStrictEqual(sent, enabled ? pickups : [], setting);
+        assert.deepStrictEqual(rejected, enabled ? rejections : [], setting);
+        await w.feature.handle('botManagerEnable', null, [false]);
+        await emit();
+        assert.deepStrictEqual(sent, enabled ? pickups : [], 'stopped ' + setting);
+        assert.deepStrictEqual(rejected, enabled ? rejections : [], 'stopped ' + setting);
+      } finally {
+        await runtime.windowClosed('default');
+        fs.rmSync(w.dir, { recursive: true, force: true });
+      }
+    }
+  }
+});
+
+test('Items to Inventory on Start follows its preset checkbox', async () => {
+  for (const enabled of [true, false]) {
+    const unbanked = [];
+    const runtime = require('../../plugins/grimlite-parity/bot/runtime.js').createRuntimeManager({
+      createSession: () => ({ signedIn: async () => true, username: async () => 'Tester' }),
+      createGame: () => ({ transferToInventory: async name => { unbanked.push(name); } }),
+      sleep: async () => {}
+    });
+    runtime.forWindow('default').engine.run = async () => {};
+    const w = window({ runtime });
+    try {
+      Object.assign(w.feature.bot(), { Commands: [catalog.makeCommand('CmdStop', {})], Items: ['Sword'] });
+      await w.feature.handle('botManagerSetting', null, ['InventOnStart', enabled]);
+      await w.feature.handle('botManagerEnable', null, [true]);
+      assert.deepStrictEqual(unbanked, enabled ? ['Sword'] : []);
+    } finally {
+      await runtime.stop('default');
+      fs.rmSync(w.dir, { recursive: true, force: true });
+    }
+  }
+});

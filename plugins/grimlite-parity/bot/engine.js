@@ -911,11 +911,11 @@ function createEngine(deps) {
         return list.ok && Array.isArray(list.value) ? list.value : [];
     }
 
-    /** BotManager.BankingItems, which CmdStop runs when BankOnStop is ticked. */
-    async function bankItemsOnStop() {
+    /** BotManager.BankingItems, after either manual or scripted Stop. */
+    async function bankItemsOnStop(stoppedConfig) {
         const list = await inventoryRows();
-        const wanted = config && Array.isArray(config.Items) ? config.Items : [];
-        for (let i = 0; i < list.length && running; i++) {
+        const wanted = Array.isArray(stoppedConfig.Items) ? stoppedConfig.Items : [];
+        for (let i = 0; i < list.length && !running && config === stoppedConfig; i++) {
             const item = list[i] || {};
             const name = dropName(item);
             const category = String(item.sType === undefined ? item.category || '' : item.sType);
@@ -1597,9 +1597,8 @@ function createEngine(deps) {
         },
         CmdRestart: function () { index = -1; },
         CmdStop: async function (ctx, command) {
-            if (config && config.BankOnStop) await bankItemsOnStop();
             keepLagKiller = command && command.KeepLagkiller === true;
-            stop();
+            await stopAndBank();
         },
 
         CmdDelay: function (ctx, command) { return sleep(Number(command.Delay) || 0); },
@@ -2615,6 +2614,12 @@ function createEngine(deps) {
         }
     }
 
+    async function stopAndBank() {
+        const stoppedConfig = running && config;
+        stop();
+        if (stoppedConfig && stoppedConfig.BankOnStop) await bankItemsOnStop(stoppedConfig);
+    }
+
     function stop() {
         externallyPaused = false;
         if (!running) return;
@@ -2875,7 +2880,7 @@ function createEngine(deps) {
 
     return {
         start: start,
-        stop: stop,
+        stop: stopAndBank,
         run: run,
         /** One pass of the loop, the seam the tests drive. */
         tick: tick,

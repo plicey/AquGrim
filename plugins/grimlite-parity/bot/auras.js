@@ -39,9 +39,14 @@ const KEEP = ['fate', 'sage', 'body', 'might', 'elixir'];
 
 /** A frame's bytes as text, whether the tap handed over a Buffer or a string. */
 function text(value) {
-    if (typeof value === 'string') return value;
-    if (value && typeof Buffer !== 'undefined' && Buffer.isBuffer(value)) return value.toString('utf8');
-    return value === null || value === undefined ? '' : String(value);
+    const body = value === null || value === undefined ? '' : String(value);
+    if (body.charAt(0) !== 'Z') return body;
+    // SmartFoxClient decodes Z-prefixed frames as base64 followed by zlib uncompress.
+    try {
+        return require('zlib').inflateSync(Buffer.from(body.slice(1), 'base64')).toString('utf8');
+    } catch (error) {
+        return '';
+    }
 }
 
 /**

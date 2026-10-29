@@ -574,7 +574,7 @@ async function activate(host) {
     // "Add to both / whitelist / unbank / quest list" entries append to the Bot Manager's own
     // lists, so they are handed that window's live document rather than a copy of it.
     loaders.createFromHost(host, {
-        botLists: loaders.createBotLists({ bot: botManager.bot() })
+        botLists: loaders.createBotLists({ bot: botManager.bot })
     }).attachTo(host);
 
     // The Cosmetics window (#30): a page beside the game that reads the room's players and their
