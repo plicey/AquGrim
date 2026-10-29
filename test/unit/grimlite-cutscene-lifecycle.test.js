@@ -693,3 +693,23 @@ for (const url of [
     assert.equal(run.bridge.skipCutscenes, true);
   });
 }
+
+test('sustained native cutscene and walkspeed rearming keeps two listeners and releases on stop', () => {
+  const s = scenario();
+  for (let block = 0; block < 3; block++) {
+    for (let i = 0; i < 10000; i++) {
+      s.bridge.aqSetSkipCutscenesEnabled(true);
+      s.bridge.aqSetWalkSpeedEnabled(true, 20);
+      s.tick();
+    }
+    assert.equal(s.count(), 2);
+    assert.equal(s.g.world.WALKSPEED, 20);
+    assert.equal(s.bridge.skipTransfers, 0);
+  }
+  s.bridge.aqSetSkipCutscenesEnabled(false);
+  s.bridge.aqSetWalkSpeedEnabled(false, 20);
+  assert.equal(s.count(), 0);
+  assert.equal(s.bridge.skipObserved, null);
+  assert.equal(s.bridge.skipScene, null);
+  assert.equal(s.bridge.skipMovie, null);
+});

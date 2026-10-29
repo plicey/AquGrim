@@ -159,3 +159,21 @@ test('in-place native range refresh replaces the saved original without per-fram
   b.aqSetInfiniteRangeEnabled(false, true);
   assert.deepStrictEqual(g.world.actions.active.map(action => action.range), [6, 5, 4, 3, 2, 1]);
 });
+
+test('sustained native range maintenance bounds records and listeners across class changes', () => {
+  const { b, g, tick, listeners } = native();
+  for (let block = 0; block < 3; block++) {
+    for (let i = 0; i < 10000; i++) {
+      const retired = g.world.actions.active;
+      g.world.actions.active = [1, 2, 3, 4, 5, 6].map(range => ({ range }));
+      b.aqSetInfiniteRangeEnabled(true, true);
+      tick();
+      assert.ok(retired.every(action => action.range !== 20000));
+    }
+    assert.equal(b.rangeOriginals.length, 6);
+    assert.equal(listeners.size, 1);
+  }
+  b.aqSetInfiniteRangeEnabled(false, true);
+  assert.equal(listeners.size, 0);
+  assert.ok(b.rangeOriginals.every(record => record.action === null));
+});

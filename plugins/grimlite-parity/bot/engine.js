@@ -195,7 +195,7 @@ function createEngine(deps) {
     const ints = {};          // Configuration.Tempvalues, per engine
     let username = '';
     let lastCommand = null;
-    let dispatched = [];       // what the loop actually ran, for the window and for tests
+    let dispatched = [];       // recent dispatch diagnostics, bounded for long-running bots
     // Bot.Configurations / Bot.OldIndex / Bot.CurrentConfiguration: the stack a load-bot
     // pushes onto and CmdReturn pops from, keyed by the configuration the loop is in.
     const configurations = {};
@@ -2785,6 +2785,7 @@ function createEngine(deps) {
         } else if (originalName === 'CmdStopBotWithMessage' && command.Message) {
             log(String(command.Message));
         }
+        if (dispatched.length >= 200) dispatched.shift();
         dispatched.push({ index: at, className: originalName });
         // The engine's own flow vocabulary first, then whatever a feature ticket registered.
         const handler = handlers[className] || extraHandlers[className];
@@ -2889,7 +2890,7 @@ function createEngine(deps) {
         },
         index: function () { return index; },
         setIndex: setIndex,
-        /** The commands the loop has run, in order: the reference keeps only the last. */
+        /** The last 200 commands the loop ran, in order; the reference keeps only the last. */
         dispatched: function () { return dispatched; },
         lastCommand: function () { return lastCommand; },
         /** The reference keeps its index private; a test that has to place the bot needs it. */

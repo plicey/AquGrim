@@ -639,3 +639,21 @@ test('auto reject respects padded mixed-case whitelist names and its original ru
   assert.strictEqual(rejected[0].guard(), false, 'restart cannot revive an older rejection');
   made.stop();
 });
+
+test('long-running bot dispatch diagnostics stay bounded without skipping commands', async () => {
+  let calls = 0;
+  const made = engine({ handlers: { CmdPerfProbe: function () { calls++; } } });
+  await made.start(bot([legacy('CmdPerfProbe')]));
+  for (let block = 0; block < 3; block++) {
+    for (let i = 0; i < 1000; i++) await made.tick();
+    assert.ok(made.dispatched().length <= 200,
+      'diagnostic history retained ' + made.dispatched().length + ' rows');
+  }
+  assert.equal(calls, 3000);
+  assert.equal(made.dispatched().length, 200);
+  assert.ok(made.dispatched().every(row => row.className === 'CmdPerfProbe'));
+  made.stop();
+  await made.start(bot([legacy('CmdPerfProbe')]));
+  assert.equal(made.dispatched().length, 0);
+  made.stop();
+});

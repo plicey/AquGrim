@@ -247,7 +247,8 @@ function createAuraStore(deps) {
     }
 
     let lastAnims = '';
-    const auraMessages = [];
+    // Delayed Anims tests existence only; duplicate combat messages carry no extra state.
+    const auraMessages = new Set();
     // CmdKill's AntiCounter flag: the reference's own handler pauses the rotation on
     // "prepares a counter attack" and resumes on the "Counter Attack" aura removal.
     let counterActive = false;
@@ -322,7 +323,7 @@ function createAuraStore(deps) {
             const manager = managerFor(key);
             one.auras.forEach(function (aura) {
                 if (!aura) return;
-                if (typeof aura.msgOn === 'string' && aura.msgOn.length) auraMessages.push(aura.msgOn);
+                if (typeof aura.msgOn === 'string' && aura.msgOn.length) auraMessages.add(aura.msgOn);
                 add(manager, aura);
             });
         });
@@ -338,8 +339,8 @@ function createAuraStore(deps) {
 
         lastAnimationMessage: function () { return lastAnims; },
         consumeAnimation: function () { lastAnims = ''; },
-        lastAuraMessages: function () { return auraMessages.slice(); },
-        clearAuraMessages: function () { auraMessages.length = 0; },
+        lastAuraMessages: function () { return Array.from(auraMessages); },
+        clearAuraMessages: function () { auraMessages.clear(); },
         counterActive: function () { return counterActive; }
     };
 }
