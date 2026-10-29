@@ -1,15 +1,19 @@
-// The About window's version line and credit sections, taken from Grimlite-Li:
-// Grimoire/UI/AboutForm.cs (label text and Process.Start targets), its .Designer.cs (the three
-// team headings, their order and the logo) and its .resx (the credits prose).
+// The About window describes AquGrim, with the client tools' upstream credits kept:
+// Grimlite-Li's AboutForm.cs (Process.Start targets), its .Designer.cs (the three team headings)
+// and its .resx (the credits prose). The upstream version is attributed, not presented as ours.
 
-// Program.cs: Version "Li 1.9.3b", ReleaseDate "10-10-2026"; AboutForm.cs writes them as
-// `Version {Program.Version} ({Program.ReleaseDate})`.
+// Program.cs of the upstream client: Version "Li 1.9.3b", ReleaseDate "10-10-2026".
 const REFERENCE_VERSION = 'Li 1.9.3b';
 const REFERENCE_RELEASE_DATE = '10-10-2026';
 
-/** The reference's own version label. The app's own version is shown beside it. */
-function versionLine() {
-    return 'Version ' + REFERENCE_VERSION + ' (' + REFERENCE_RELEASE_DATE + ')';
+const ABOUT_SUMMARY = 'AquGrim is a free desktop companion for AdventureQuest Worlds. ' +
+    'It runs the classic Flash client in its own window and adds the Grimlite tools for it: ' +
+    'the bot manager, auto attack, Maid, item pickup, equipment sets, packet tools and ' +
+    'quality-of-life options.';
+
+/** The upstream client whose tools this port reproduces, shown in the credits card. */
+function upstreamLine() {
+    return 'Client tools ported from Grimlite ' + REFERENCE_VERSION + ' (' + REFERENCE_RELEASE_DATE + ')';
 }
 
 /** The running port's own version, in the shape the reference uses for its version line. */
@@ -18,10 +22,17 @@ function portLine(appVersion) {
     return version ? 'AquGrim ' + version : 'AquGrim';
 }
 
-// The three headings AboutForm.Designer.cs stacks down the left (darkLabel3 y=100, darkLabel1
-// y=243, darkLabel5 y=349) with the controls under each. `url: null` is a name whose handler is
-// commented out upstream (pictureBox1_Click covers the jib-akbr link), so it is shown unlinked.
+// The project's own credit first, then the three upstream headings AboutForm.Designer.cs stacks
+// down the left (darkLabel3 y=100, darkLabel1 y=243, darkLabel5 y=349). `url: null` is a name
+// whose handler is commented out upstream (pictureBox1_Click covers the jib-akbr link), so it is
+// shown unlinked.
 const TEAMS = [
+    {
+        heading: 'The AquGrim Project',
+        links: [
+            { label: 'plicey/AquGrim', url: 'https://github.com/plicey/AquGrim' }
+        ]
+    },
     {
         heading: 'The Grimlite Li Team',
         links: [
@@ -82,8 +93,9 @@ function creditLinks() {
 module.exports = {
     REFERENCE_VERSION: REFERENCE_VERSION,
     REFERENCE_RELEASE_DATE: REFERENCE_RELEASE_DATE,
+    ABOUT_SUMMARY: ABOUT_SUMMARY,
     CREDITS_PROSE: CREDITS_PROSE,
-    versionLine: versionLine,
+    upstreamLine: upstreamLine,
     portLine: portLine,
     teams: teams,
     creditLinks: creditLinks

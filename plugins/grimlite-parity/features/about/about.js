@@ -43,8 +43,9 @@ function createAbout(deps) {
 
         host.ipc.handle('aboutInfo', function () {
             return {
-                version: credits.versionLine(),
-                port: credits.portLine(deps.appVersion),
+                version: credits.portLine(deps.appVersion),
+                summary: credits.ABOUT_SUMMARY,
+                upstream: credits.upstreamLine(),
                 teams: credits.teams(),
                 prose: credits.CREDITS_PROSE,
                 swfPath: managedSwf,
