@@ -645,8 +645,8 @@ Ship it: commit under `plugins/`, bump AquaStar if needed, tag a release. Portab
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `pluginSystem` | `true` | `false` or env `AQUASTAR_DISABLE_PLUGINS=1` → **safe mode**: only the bundled AQW plugin is activated (no local plugins, `activePluginId` ignored) |
-| `activePluginId` | `adventure-quest-worlds` | Which plugin’s `activate` runs |
+| `pluginSystem` | `true` | `false` or env `AQUASTAR_DISABLE_PLUGINS=1` → **safe mode**: only the bundled default plugin is activated (no local plugins, `activePluginId` ignored) |
+| `activePluginId` | `grimlite-parity` | Which plugin’s `activate` runs |
 | `enableLocalPlugins` | `false` | Scan AppData plugins |
 | `allowLocalPluginOverride` | `false` | Local may replace bundled id |
 | `trustedLocalPlugins` | `{}` | `{ "my-flash-game": true }` |

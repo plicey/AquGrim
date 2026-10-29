@@ -53,7 +53,7 @@ The platform (`main.js`, `res/`, shared tooling in `scripts/`) names no game. An
 
 ## Runtime behavior
 
-- **Active plugin:** default `adventure-quest-worlds`. Change via Settings → Plugins (restart required) or `"activePluginId"` in `aquastar.json`.
+- **Active plugin:** default `grimlite-parity` (the full AquGrim client; its manifest says `bundledDefault`). Change via Settings → Plugins (restart required) or `"activePluginId"` in `aquastar.json`.
 - **Default AQW game URL:** `https://game.aq.com/game/gamefiles/Loader4.swf?ver=b` (built-in default in `plugins/adventure-quest-worlds/urls.js`). At startup the AQW plugin reads the loader Artix Game Launcher currently uses from `https://www.artix.com/gamelauncher` (`launcher-config.js`), validates it, caches it, and falls back to the built-in default. Turn off with `"liveLoaderUrl": false`. The launcher page, not its `app.asar`, is the source of truth.
 - **Override:** Settings → Custom SWF File (stored as `custom-game.swf` in AppData), or drop a file there by hand. The AQW plugin also keeps accepting `aqlite_old.swf` (its manifest `customSwfAliases`). Platform primary-game override; takes priority over `customUrl`. Restart required.
 - **Custom URL override:** `"customUrl"` in `aquastar.json` / Settings. Ignored when a custom SWF is present.

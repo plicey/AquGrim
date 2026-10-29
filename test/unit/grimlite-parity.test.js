@@ -139,10 +139,10 @@ test('selecting the parity plugin makes it the active plugin, and the default st
 
   const chosen = platform.selectPlugin(discovered.plugins, { activePluginId: 'grimlite-parity' });
   assert.strictEqual(chosen.selected.manifest.id, 'grimlite-parity');
-  assert.strictEqual(chosen.bundledDefault.manifest.id, 'adventure-quest-worlds');
+  assert.strictEqual(chosen.bundledDefault.manifest.id, 'grimlite-parity');
 
-  // Nothing selected: the bundled default, so today's users are unaffected.
-  assert.strictEqual(platform.selectPlugin(discovered.plugins, {}).selected.manifest.id, 'adventure-quest-worlds');
+  // Nothing selected: the bundled default.
+  assert.strictEqual(platform.selectPlugin(discovered.plugins, {}).selected.manifest.id, 'grimlite-parity');
 });
 
 test('the booted plugin hands its bot engine the shell seams the misc commands need', async () => {
