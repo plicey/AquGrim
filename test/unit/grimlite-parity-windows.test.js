@@ -333,30 +333,36 @@ test('the eye dropper page drops its extra labels and carries the preview canvas
   assert.ok(/<ul id="history"/.test(page), 'the history is a list');
 });
 
-// AboutForm.cs sets lblVersion to `Version {Program.Version} ({Program.ReleaseDate})`; Program.cs
-// carries "Li 1.9.3b" and "10-10-2026". The port shows that reference line and its own version
-// beside it.
-test('the about window carries the reference version line', () => {
-  assert.strictEqual(about.versionLine(), 'Version Li 1.9.3b (10-10-2026)');
+// The window presents AquGrim's own version and summary; the upstream client is credited rather
+// than presented as the running app.
+test('the about window presents AquGrim and attributes the upstream client', () => {
   assert.strictEqual(about.portLine('2.0.0'), 'AquGrim 2.0.0');
   assert.strictEqual(about.portLine(null), 'AquGrim');
+  assert.strictEqual(about.upstreamLine(), 'Client tools ported from Grimlite Li 1.9.3b (10-10-2026)');
+  assert.ok(about.ABOUT_SUMMARY.indexOf('AdventureQuest Worlds') !== -1);
+  assert.ok(about.ABOUT_SUMMARY.indexOf('bot manager') !== -1);
 });
 
-// AboutForm.Designer.cs's three team headings, in its own order, and rtbCredits.Text.
-test('the about window carries the three team headings and the credits prose', () => {
+// The project credit, then AboutForm.Designer.cs's three team headings in its own order, and
+// rtbCredits.Text.
+test('the about window carries the project and upstream team headings with the credits prose', () => {
   assert.deepStrictEqual(about.teams().map(function (team) { return team.heading; }), [
-    'The Grimlite Li Team', 'The Grimlite Team', 'The Previous Grimoire Team'
+    'The AquGrim Project', 'The Grimlite Li Team', 'The Grimlite Team', 'The Previous Grimoire Team'
   ]);
-  assert.deepStrictEqual(about.teams()[0].links.map(function (link) { return link.label; }), [
+  assert.deepStrictEqual(about.teams()[1].links.map(function (link) { return link.label; }), [
     'Froztt13', 'Kuzyph', 'Zee', 'Dropbox link'
   ]);
   assert.ok(about.CREDITS_PROSE.indexOf('133spider https://github.com/133spider/') !== -1);
   assert.ok(about.CREDITS_PROSE.indexOf('\u2937 AQLite https://github.com/133spider/AQLite') !== -1);
   assert.ok(about.CREDITS_PROSE.indexOf('\u2937 for wanting to be credited') !== -1);
-  // The logo beside the heading is the reference's own big icon, shipped in this feature folder.
+  // The page is AquGrim's own: its name, summary, and icon, not the upstream client's.
   const page = fs.readFileSync(path.join(pluginRoot, 'features/about/about.html'), 'utf8');
+  assert.ok(/<h1>AquGrim<\/h1>/.test(page));
+  assert.ok(/id="summary"/.test(page));
+  assert.ok(/id="upstream"/.test(page));
   assert.ok(/id="logo"/.test(page));
-  assert.ok(fs.existsSync(path.join(pluginRoot, 'features/about/grimoire-icon.png')));
+  assert.ok(/src="aquagrim-icon.png"/.test(page));
+  assert.ok(fs.existsSync(path.join(pluginRoot, 'features/about/aquagrim-icon.png')));
 });
 
 // The clickable credits of AboutForm.cs, in the order the form stacks them (the control
@@ -365,6 +371,7 @@ test('the about window carries the three team headings and the credits prose', (
 test('the about window lists the reference credit links, and only the reachable ones', () => {
   const links = about.creditLinks();
   assert.deepStrictEqual(links, [
+    { label: 'plicey/AquGrim', url: 'https://github.com/plicey/AquGrim' },
     { label: 'Froztt13', url: 'https://github.com/Froztt13/Grimlite-Li' },
     { label: 'Kuzyph', url: null },
     { label: 'Zee', url: 'https://ko-fi.com/zeesnuts' },
@@ -380,7 +387,7 @@ test('the about window lists the reference credit links, and only the reachable 
 // AboutForm.cs as handlers, but no control on the form is wired to them.
 test('the about window invents no credit the reference does not reach', () => {
   const urls = about.creditLinks().map(function (link) { return link.url; }).filter(Boolean);
-  assert.strictEqual(urls.length, 7);
+  assert.strictEqual(urls.length, 8);
   urls.forEach(function (url) { assert.ok(/^https:\/\//.test(url), 'not a link: ' + url); });
   assert.ok(urls.indexOf('https://github.com/Vicinity4519/Grimlite-Li') === -1);
   assert.ok(urls.indexOf('https://github.com/jib-akbr/Grimlite-Li') === -1);
