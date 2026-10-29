@@ -47,7 +47,7 @@ test('web build reuses desktop pages through preload-compatible bridges', () => 
     'landing must use the tools blue accent'
   );
   assert.ok(
-    landingScript.indexOf('AppData/AquaStar') !== -1,
+    landingScript.indexOf('AppData/AquGrim') !== -1,
     'landing must distinguish desktop AppData storage from web storage'
   );
   ['Flash nativo e Ruffle', 'Inventário sincronizado', 'Atalhos personalizados', 'Prévia da wiki'].forEach((feature) =>

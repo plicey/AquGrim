@@ -11,7 +11,7 @@ const locale   = require('../../../../res/locale.js');
 const jsonStore = require('../../../../res/repositories/json-store.js');
 const listState = require('../../core/list-state.js');
 
-const todoJsonFileName = constant.appName.toLocaleLowerCase() + '_todo.json'; // "aquastar_todo.json"
+const todoJsonFileName = constant.appName.toLocaleLowerCase() + '_todo.json'; // "aquagrim_todo.json"
 const todoJsonPath = path.join(constant.appDataDirectory, todoJsonFileName);
 
 function _genId(prefix) {

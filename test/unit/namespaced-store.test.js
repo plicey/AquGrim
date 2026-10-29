@@ -8,25 +8,25 @@ test('a plugin keeps permanent legacy filenames by declaring storeAliases in its
   // The platform no longer knows any plugin: aliases come from the manifest the loader reads.
   const manifest = require('../../plugins/adventure-quest-worlds/plugin.json');
   const aliases = manifest.storeAliases;
-  assert.strictEqual(resolveStoreFileName(manifest.id, 'reminders', aliases), 'aquastar_reminders.json');
-  assert.strictEqual(resolveStoreFileName(manifest.id, 'todo', aliases), 'aquastar_todo.json');
-  assert.strictEqual(resolveStoreFileName(manifest.id, 'strategy', aliases), 'aquastar_strategy.json');
-  assert.strictEqual(resolveStoreFileName(manifest.id, 'inventory', aliases), 'aquastar_inventory.json');
+  assert.strictEqual(resolveStoreFileName(manifest.id, 'reminders', aliases), 'aquagrim_reminders.json');
+  assert.strictEqual(resolveStoreFileName(manifest.id, 'todo', aliases), 'aquagrim_todo.json');
+  assert.strictEqual(resolveStoreFileName(manifest.id, 'strategy', aliases), 'aquagrim_strategy.json');
+  assert.strictEqual(resolveStoreFileName(manifest.id, 'inventory', aliases), 'aquagrim_inventory.json');
   // Names it did not alias still get the namespaced file.
   assert.strictEqual(
     resolveStoreFileName(manifest.id, 'launcher-config', aliases),
-    'aquastar.' + manifest.id + '.launcher-config.json'
+    'aquagrim.' + manifest.id + '.launcher-config.json'
   );
 });
 
-test('without aliases every plugin uses aquastar.<pluginId>.<ns>.json (no plugin is special)', () => {
+test('without aliases every plugin uses aquagrim.<pluginId>.<ns>.json (no plugin is special)', () => {
   assert.strictEqual(
     resolveStoreFileName('dragon-fable-lite', 'reminders'),
-    'aquastar.dragon-fable-lite.reminders.json'
+    'aquagrim.dragon-fable-lite.reminders.json'
   );
   assert.strictEqual(
     resolveStoreFileName('adventure-quest-worlds', 'reminders'),
-    'aquastar.adventure-quest-worlds.reminders.json'
+    'aquagrim.adventure-quest-worlds.reminders.json'
   );
 });
 
@@ -48,7 +48,7 @@ test('namespaced store read/write/readOrCreate bind to resolved path', () => {
       pluginId: 'adventure-quest-worlds',
       aliases: require('../../plugins/adventure-quest-worlds/plugin.json').storeAliases
     });
-    assert.strictEqual(aqw.resolveStorePath('reminders'), path.join(directory, 'aquastar_reminders.json'));
+    assert.strictEqual(aqw.resolveStorePath('reminders'), path.join(directory, 'aquagrim_reminders.json'));
 
     const reminders = aqw.getStore('reminders');
     assert.deepStrictEqual(
@@ -58,7 +58,7 @@ test('namespaced store read/write/readOrCreate bind to resolved path', () => {
     assert.deepStrictEqual(reminders.read(), { version: 1, quests: [] });
     reminders.write({ version: 2, quests: ['daily'] });
     assert.deepStrictEqual(reminders.read(), { version: 2, quests: ['daily'] });
-    assert.ok(fs.existsSync(path.join(directory, 'aquastar_reminders.json')));
+    assert.ok(fs.existsSync(path.join(directory, 'aquagrim_reminders.json')));
 
     const other = createNamespacedStore({
       appDataDirectory: directory,
@@ -66,7 +66,7 @@ test('namespaced store read/write/readOrCreate bind to resolved path', () => {
     });
     const meta = other.getStore('meta');
     meta.write({ ok: true });
-    assert.ok(fs.existsSync(path.join(directory, 'aquastar.sample-plugin.meta.json')));
+    assert.ok(fs.existsSync(path.join(directory, 'aquagrim.sample-plugin.meta.json')));
     assert.deepStrictEqual(meta.read(), { ok: true });
   } finally {
     fs.readdirSync(directory).forEach((name) => {

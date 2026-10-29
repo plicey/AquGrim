@@ -13,7 +13,7 @@ test('the main instance uses the one shared app-data configuration', () => {
     setPath: function (name, value) { paths[name] = value; }
   };
   const state = instanceSession.configure(app, ['electron', '.']);
-  assert.strictEqual(state.appData, path.join(root, 'AquaStar'));
+  assert.strictEqual(state.appData, path.join(root, 'AquGrim'));
   assert.strictEqual(state.userData, state.appData);
   assert.strictEqual(state.persistentAppData, state.appData);
   assert.strictEqual(paths.userData, state.userData);
@@ -25,9 +25,9 @@ test('the main instance uses the one shared app-data configuration', () => {
 
 test('an extra instance starts from a temporary copy of the main instance', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aquagrim-instance-test-'));
-  const seeded = path.join(root, 'AquaStar');
+  const seeded = path.join(root, 'AquGrim');
   fs.mkdirSync(path.join(seeded, 'Cache'), { recursive: true });
-  fs.writeFileSync(path.join(seeded, 'aquastar.json'), '{"activePluginId":"grimlite-parity"}');
+  fs.writeFileSync(path.join(seeded, 'aquagrim.json'), '{"activePluginId":"grimlite-parity"}');
   fs.writeFileSync(path.join(seeded, 'Cookies'), 'session');
   const app = {
     getPath: function () { return root; },
@@ -41,7 +41,7 @@ test('an extra instance starts from a temporary copy of the main instance', () =
   assert.strictEqual(app.aquaStarPersistentDataDirectory, seeded);
   assert.ok(state.userData.indexOf('aquagrim-instance-') !== -1);
   assert.ok(fs.existsSync(state.userData));
-  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(state.appData, 'aquastar.json'), 'utf8')),
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(state.appData, 'aquagrim.json'), 'utf8')),
     { activePluginId: 'grimlite-parity' }, 'settings are cloned from main');
   assert.strictEqual(fs.readFileSync(path.join(state.appData, 'Cookies'), 'utf8'), 'session',
     'the login database is cloned from main');
@@ -52,6 +52,35 @@ test('an extra instance starts from a temporary copy of the main instance', () =
   const second = instanceSession.configure(app, ['electron', '.', instanceSession.INSTANCE_FLAG]);
   assert.notStrictEqual(second.userData, state.userData);
   instanceSession.cleanup();
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('an existing AquaStar folder and its named files migrate to AquGrim once', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aquagrim-instance-test-'));
+  const legacy = path.join(root, 'AquaStar');
+  fs.mkdirSync(legacy, { recursive: true });
+  fs.writeFileSync(path.join(legacy, 'aquastar.json'), '{"activePluginId":"grimlite-parity"}');
+  fs.writeFileSync(path.join(legacy, 'aquastar_todo.json'), '{"items":[]}');
+  fs.writeFileSync(path.join(legacy, 'aquastar.grimlite-parity.options.json'), '{}');
+  fs.writeFileSync(path.join(legacy, 'Cookies'), 'session');
+  const app = {
+    getPath: function () { return root; },
+    setPath: function () {}
+  };
+  const state = instanceSession.configure(app, ['electron', '.']);
+  assert.strictEqual(state.appData, path.join(root, 'AquGrim'));
+  assert.ok(!fs.existsSync(legacy), 'the old folder is moved, not duplicated');
+  assert.strictEqual(fs.readFileSync(path.join(state.appData, 'aquagrim.json'), 'utf8'),
+    '{"activePluginId":"grimlite-parity"}');
+  assert.ok(fs.existsSync(path.join(state.appData, 'aquagrim_todo.json')));
+  assert.ok(fs.existsSync(path.join(state.appData, 'aquagrim.grimlite-parity.options.json')));
+  assert.strictEqual(fs.readFileSync(path.join(state.appData, 'Cookies'), 'utf8'), 'session');
+  // A second launch keeps the migrated files and never renames unrelated ones.
+  fs.writeFileSync(path.join(state.appData, 'aquastar.keep.json'), '{}');
+  const again = instanceSession.configure(app, ['electron', '.']);
+  assert.strictEqual(again.appData, state.appData);
+  assert.ok(fs.existsSync(path.join(state.appData, 'aquagrim.keep.json')));
+  assert.ok(!fs.existsSync(path.join(state.appData, 'aquastar.keep.json')));
   fs.rmSync(root, { recursive: true, force: true });
 });
 

@@ -43,7 +43,7 @@ const content = {
       ['Abra uma ferramenta', 'Escolha Lembretes, To‑Do ou Ultra Bosses na web.'],
       [
         'Mantenha seus dados',
-        'No desktop, os dados ficam na pasta AppData/AquaStar. Na web, ficam no localStorage do navegador.'
+        'No desktop, os dados ficam na pasta AppData/AquGrim. Na web, ficam no localStorage do navegador.'
       ]
     ],
     faq: [
@@ -54,7 +54,7 @@ const content = {
       ],
       [
         'Onde ficam os dados?',
-        'No AquGrim Desktop, os dados ficam na pasta AppData/AquaStar. Nas ferramentas web, ficam no localStorage do navegador.'
+        'No AquGrim Desktop, os dados ficam na pasta AppData/AquGrim. Nas ferramentas web, ficam no localStorage do navegador.'
       ]
     ]
   },
@@ -102,7 +102,7 @@ const content = {
       ['Open a tool', 'Choose Reminders, To-Do or Ultra Bosses on the web.'],
       [
         'Keep your data',
-        'In AquGrim Desktop, data is stored in AppData/AquaStar. In web tools, it is stored in browser localStorage.'
+        'In AquGrim Desktop, data is stored in AppData/AquGrim. In web tools, it is stored in browser localStorage.'
       ]
     ],
     faq: [
@@ -110,7 +110,7 @@ const content = {
       ['Do web tools replace the game?', 'No. They are planning utilities; the game remains in AquGrim Desktop.'],
       [
         'Where is data stored?',
-        'In AquGrim Desktop, data is stored in the AppData/AquaStar folder. In web tools, it is stored in browser localStorage.'
+        'In AquGrim Desktop, data is stored in the AppData/AquGrim folder. In web tools, it is stored in browser localStorage.'
       ]
     ]
   }

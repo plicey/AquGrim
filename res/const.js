@@ -19,10 +19,10 @@ const appRoot = __dirname.substring(0,__dirname.lastIndexOf(path.sep));
 /// Where app is ran from.
 const appCurrentDirectory = process.cwd();
 const appVersion  = require('electron').app.getVersion();
-const appName     = "AquaStar";
+const appName     = "AquGrim";
 const appDisplayName = "AquGrim";
-// Keep mutable data outside the installation. This also works for portable/readonly
-// installs and avoids replacing files that an older AquaStar still expects.
+// Keep mutable data outside the installation. This also works for portable/readonly installs.
+// res/instance-session.js moves an existing AquaStar folder into this one on first start.
 const persistentAppDataDirectory = path.join(app.getPath("appData"), appName);
 // An extra instance runs from a temporary copy of the main data directory.
 const appDataDirectory = app.aquaStarDataDirectory || persistentAppDataDirectory;
