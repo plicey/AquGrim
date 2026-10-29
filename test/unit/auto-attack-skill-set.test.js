@@ -358,6 +358,9 @@ test('Insert uses the editor input flow and Default failures leave its text inta
   nodes.skills.setSelectionRange(0, 0);
   nodes.insertReady.handlers.click();
   assert.ok(nodes.skills.value.startsWith('ready 2;wait 500ms;'));
+  nodes.skills.setSelectionRange(0, 0);
+  nodes.insertAwait.handlers.click();
+  assert.ok(nodes.skills.value.startsWith('await 2;ready 2;'));
   assert.doesNotThrow(function () { presets.parsePreset(nodes.skills.value); });
   assert.ok(/class="block-builder"/.test(page));
   assert.ok(/class="wait-builder"/.test(page));
@@ -428,6 +431,7 @@ test('Auto Attack parses blocks, cooldown skills and bounded waits without chang
   ['if SH<50 { 1', 'if SH<50 1', 'if SH<50 {}', '1}', '{1}',
     'if SM>101 { 1 }', 'if SH<50 { if SM>20 { 1 } }', 'if SH<50 { 1 } else { 2 }',
     'cooldown { ready 1 }', 'cooldown { 5 }', 'wait 0ms', 'wait 60001ms',
+    'await 0', 'await 5', 'await', 'await 1:SH<50', 'cooldown { await 1 }',
     'wait -5ms', 'wait 1.5ms', 'ready 5', 'cooldown { 1 };garbage'].forEach(function (text) {
     assert.throws(function () { presets.parsePreset(text); }, Error, text);
   });
@@ -467,4 +471,16 @@ test('block and wait builders validate before insertion and preserve surrounding
   ['0', '60001', '1.5', '-1', ''].forEach(function (ms) {
     assert.throws(function () { step.wait(ms); }, /1 to 60000/);
   });
+});
+
+test('await waits and casts only its own skill, including inside If blocks', () => {
+  assert.deepStrictEqual(presets.parsePreset('1; await 2;3'), [
+    { index: '1', safe: false, wait: false },
+    { index: '2', safe: false, wait: true },
+    { index: '3', safe: false, wait: false }
+  ]);
+  assert.deepStrictEqual(presets.parsePreset('if SH<50 { AWAIT 4 }'), [
+    { type: 'if', isMp: false, op: '<', value: 50, skip: 2 },
+    { index: '4', safe: false, wait: true }
+  ]);
 });

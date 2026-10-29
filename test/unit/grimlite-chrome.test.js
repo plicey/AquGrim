@@ -864,3 +864,16 @@ test('invalid replacement text leaves the live rotation and cursor intact', asyn
   assert.deepStrictEqual(casts(h).map(function (call) { return call[1]; }), ['1','2']);
   h.chrome.stop();
 });
+
+test('await holds the rotation until ready and casts before advancing', async () => {
+  const h = await rotationHarness('await 2;3', { skillAvailable: 400 });
+  await h.chrome.tick();
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h), []);
+  h.session.skillAvailable = async function () { return 0; };
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h), [['useSkill', '2']]);
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h), [['useSkill', '2'], ['useSkill', '3']]);
+  h.chrome.stop();
+});

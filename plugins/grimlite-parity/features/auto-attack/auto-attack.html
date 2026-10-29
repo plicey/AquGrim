@@ -109,18 +109,19 @@
   <div class="block-builder" role="group" aria-label="Insert blocks and waits">
     <button id="insertBlock">Wrap selection in If</button>
     <button id="insertCooldown">Wrap selection in Cooldown</button>
+    <button id="insertAwait">Wait and cast selected skill</button>
     <button id="insertReady">Wait for selected skill</button>
   </div>
   <div class="wait-builder" role="group" aria-label="Insert a timed wait">
     <label>Wait (ms)<input id="waitDuration" type="number" min="1" max="60000" value="500"></label>
     <button id="insertWait">Insert wait</button>
   </div>
-  <p>Insert at the cursor or replace selected steps. If uses the HP/MP controls above; Cooldown uses selected skills. Wait for selected skill checks readiness without casting.</p>
+  <p>Insert at the cursor or replace selected steps. If uses the HP/MP controls above; Cooldown uses selected skills. Wait and cast waits until the selected skill is ready, then casts it. Wait for selected skill checks readiness without casting.</p>
   <details><summary>Syntax and behavior</summary>
-    <p><code>1; if SH&lt;=50 { 2;3 }; wait 500ms; ready 2; 4; cooldown { 3 }</code></p>
+    <p><code>1; if SH&lt;=50 { 2;3 }; wait 500ms; await 2; 4; cooldown { 3 }</code></p>
     <p>SH = my HP %, SM = my MP %. Block &lt; and &gt; are strict; &lt;= and &gt;= include equality. Legacy inline conditions keep inclusive comparisons.
     If is tested once on entry; its steps continue in order. Blocks cannot nest; no else. Without a selection, If inserts 1;2 and Cooldown inserts the selected skill.</p>
-    <p>Wait is 1–60000ms; ready waits for skill 1–4 without casting it. The old global wait marker still waits before normal casts.
+    <p>Wait is 1–60000ms; await 1 waits for skill 1–4 and casts it; ready 1 only waits without casting. The old global wait marker still waits before normal casts.
     Cooldown skills are checked in rotating order between combo steps and during waits, cast only when available, never forced. At most one casts per gap; the main combo keeps its position and gets the next turn. A waiting main skill gets priority when it becomes ready.</p>
   </details>
   </details>
@@ -186,6 +187,9 @@
   });
   document.getElementById('insertWait').addEventListener('click', function () {
     insertBuilt(function () { return window.autoAttackStep.wait(document.getElementById('waitDuration').value); });
+  });
+  document.getElementById('insertAwait').addEventListener('click', function () {
+    insertBuilt(function () { return 'await ' + document.getElementById('stepSkill').value; });
   });
   document.getElementById('insertReady').addEventListener('click', function () {
     insertBuilt(function () { return 'ready ' + document.getElementById('stepSkill').value; });
