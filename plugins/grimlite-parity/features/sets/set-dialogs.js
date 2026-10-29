@@ -99,6 +99,27 @@ function createSetDialogs(deps) {
         return { entries: parsed.entries, error: parsed.error };
     }
 
+    async function addToLibrary(key, file, entries) {
+        if (!account) return;
+        await unchanged(key);
+        const directory = path.resolve(library(key));
+        if (path.resolve(file).startsWith(directory + path.sep)) return;
+        const text = sets.serializeSet(entries);
+        const existing = listSets(directory);
+        const base = path.basename(file, path.extname(file));
+        let name = base + EXTENSION;
+        // Keep distinct imports with the same filename; never overwrite a saved loadout.
+        for (let suffix = 2; ; suffix++) {
+            const match = existing.find(function (entry) { return entry.path.toLowerCase() === name.toLowerCase(); });
+            if (!match) break;
+            const saved = readEntries(path.join(directory, match.path));
+            if (!saved.error && sets.serializeSet(saved.entries) === text) return;
+            name = base + ' (' + suffix + ')' + EXTENSION;
+        }
+        await unchanged(key);
+        writeText(path.join(directory, name), text);
+    }
+
     async function open() {
         const key = account ? await account() : null;
         return Promise.resolve(showOpenDialog(null, {
@@ -115,6 +136,10 @@ function createSetDialogs(deps) {
             const file = result.filePaths[0];
             remember(path.dirname(file));
             const read = readEntries(file);
+            if (!read.error && key) {
+                try { await addToLibrary(key, file, read.entries); }
+                catch (error) { read.error = (error && error.message) || String(error); }
+            }
             return { canceled: false, path: file, entries: read.entries, error: read.error };
         });
     }
@@ -164,6 +189,7 @@ function createSetDialogs(deps) {
             remember(path.dirname(file));
             try {
                 writeText(file, sets.serializeSet(entries));
+                await addToLibrary(key, file, entries);
             } catch (error) {
                 return { canceled: false, path: file, error: (error && error.message) || String(error) };
             }
@@ -196,9 +222,11 @@ function createFromHost(host, deps) {
             host.persistentAppDataDirectory || host.appDataDirectory, 'Sets'),
         messages: messagesFrom(host),
         showOpenDialog: function (owner, options) {
+            require('fs').mkdirSync(options.defaultPath, { recursive: true });
             return electron().dialog.showOpenDialog(owner, options);
         },
         showSaveDialog: function (owner, options) {
+            require('fs').mkdirSync(path.dirname(options.defaultPath), { recursive: true });
             return electron().dialog.showSaveDialog(owner, options);
         }
     });
