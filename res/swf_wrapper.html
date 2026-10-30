@@ -124,7 +124,8 @@
       surface.style.height = Math.max(1, stage.clientHeight * factor) + 'px';
       surface.style.transform = 'scale(' + (1 / factor) + ')';
     }
-    window.addEventListener('resize', function () { applyRenderScale(renderScale); });
+    // Native menus and toolbar layout can resize the stage without a window resize event.
+    new ResizeObserver(function () { applyRenderScale(renderScale); }).observe(stage);
 
     // The chrome strip (ticket #45). The page knows nothing about a game: the platform answers
     // what to draw, from whatever the active plugin declared, and reports back what was pressed.
