@@ -297,6 +297,35 @@ test('chrome passes generic choice metadata and values to the wrapper', async ()
   assert.deepStrictEqual(view.options.saved, [{ label: 'file', value: 'folder/file' }]);
 });
 
+test('reduced render scale follows stage size changes without a window resize', () => {
+  const source = fs.readFileSync(path.join(REPO, 'res/swf_wrapper.html'), 'utf8');
+  const stage = { clientWidth: 960, clientHeight: 600 };
+  const surface = { style: {} };
+  let resized;
+  const scope = {
+    stage, surface, renderScale: 50,
+    ResizeObserver: class {
+      constructor(callback) { resized = callback; }
+      observe(target) { assert.strictEqual(target, stage); }
+    },
+    window: { addEventListener() {} }
+  };
+  require('vm').runInNewContext(source.slice(source.indexOf('    function applyRenderScale'),
+    source.indexOf('    // The chrome strip (ticket #45).')), scope);
+  scope.applyRenderScale(50);
+  assert.strictEqual(surface.style.height, '300px');
+  stage.clientHeight = 575;
+  assert.strictEqual(typeof resized, 'function');
+  resized();
+  assert.strictEqual(surface.style.height, '287.5px');
+  assert.strictEqual(surface.style.width, '480px');
+  assert.strictEqual(surface.style.transform, 'scale(2)');
+  scope.applyRenderScale(100);
+  resized();
+  assert.strictEqual(surface.style.height, '100%');
+  assert.strictEqual(surface.style.transform, 'none');
+});
+
 test('wrapper refreshes saved choices without equipping, and applies only on button click', async () => {
   const vm = require('vm');
   const nodes = [];
@@ -329,6 +358,7 @@ test('wrapper refreshes saved choices without equipping, and applies only on but
   const events = {};
   const page = fs.readFileSync(path.join(REPO, 'res/swf_wrapper.html'), 'utf8');
   vm.runInNewContext(page.match(/<script>([\s\S]*?)<\/script>/)[1], {
+    ResizeObserver: class { observe() {} },
     URLSearchParams: URLSearchParams, URL: URL,
     document: { createElement: node, getElementById: id => nodes.find(n => n.id === id && (id.indexOf('chrome-') !== 0 || nodes.find(n => n.id === 'chrome').children.includes(n))) },
     window: { location: { search: '?swf=https://example.com/game.swf' },
