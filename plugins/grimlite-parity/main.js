@@ -412,7 +412,11 @@ async function activate(host) {
         },
         // Nothing here needs the wmode=direct wrapper for relative loads: the bridge resolves
         // every game path from its own base URL, and the game is served from its own origin.
-        wrap: { preferDirectWmode: true, ruffleEligible: false },
+        wrap: {
+            preferDirectWmode: true,
+            ruffleEligible: true,
+            ruffle: require('./ruffle.js')(baseUrl)
+        },
         flashTrust: true
     });
 

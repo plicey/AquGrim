@@ -8,11 +8,12 @@ const net = require('net');
 // (wrap.ruffle.socket.allowedHosts): it listens on localhost, so without this any local web
 // page could use it to reach arbitrary TCP endpoints.
 const PROXY_HOST = '127.0.0.1';
-const PROXY_PORT = 8191;
+let startPromise = null;
 
 let wss = null;
 // Hostname patterns the relay may connect to: exact hosts or "*.suffix". Empty = deny all.
 let allowedHosts = [];
+const localPorts = new Set();
 
 function allowHosts(patterns) {
     (Array.isArray(patterns) ? patterns : []).forEach(function (pattern) {
@@ -41,13 +42,36 @@ function isAllowedHost(host) {
 // path; add a per-session token if that matters once this relay carries game traffic.
 const ALLOWED_ORIGINS = ['file://'];
 
+function allowOrigin(origin) {
+    const parsed = new URL(origin);
+    if (parsed.protocol !== 'http:' || parsed.hostname !== PROXY_HOST || parsed.origin !== origin) {
+        throw new Error('relay origin must be an exact loopback HTTP origin');
+    }
+    if (ALLOWED_ORIGINS.indexOf(origin) === -1) ALLOWED_ORIGINS.push(origin);
+}
+
+function removeOrigin(origin) {
+    const index = ALLOWED_ORIGINS.indexOf(origin);
+    if (index > 0) ALLOWED_ORIGINS.splice(index, 1);
+}
+
+function allowLocalPort(port) {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('invalid relay port');
+    localPorts.add(port);
+}
+
 function isAllowedOrigin(origin) {
     return ALLOWED_ORIGINS.indexOf(String(origin || '').toLowerCase()) !== -1;
 }
 
 function start() {
-    if (wss) return;
-    wss = new WebSocket.Server({ port: PROXY_PORT, host: PROXY_HOST, perMessageDeflate: false });
+    if (wss) return startPromise;
+    // Each process owns its relay and origin allowlist.
+    wss = new WebSocket.Server({ port: 0, host: PROXY_HOST, perMessageDeflate: false });
+    startPromise = new Promise(function (resolve, reject) {
+        wss.once('listening', resolve);
+        wss.once('error', reject);
+    });
 
     wss.on('connection', (ws, req) => {
         const u = new URL(req.url, 'http://localhost');
@@ -58,11 +82,11 @@ function start() {
             ws.close(1008, 'origin not allowed');
             return;
         }
-        if (!host || !port) {
+        if (!host || !Number.isInteger(port) || port < 1 || port > 65535) {
             ws.close(1008, 'missing host or port');
             return;
         }
-        if (!isAllowedHost(host)) {
+        if (!isAllowedHost(host) && !(host === PROXY_HOST && localPorts.has(port))) {
             ws.close(1008, 'host not allowed');
             return;
         }
@@ -81,17 +105,27 @@ function start() {
     wss.on('error', (err) => {
         console.error('[AquGrim] Ruffle socket proxy error:', err);
     });
+    return startPromise;
 }
 
 function stop() {
     if (!wss) return;
     wss.close();
     wss = null;
+    startPromise = null;
 }
 
 exports.allowHosts = allowHosts;
 exports.isAllowedHost = isAllowedHost;
 exports.isAllowedOrigin = isAllowedOrigin;
+exports.allowOrigin = allowOrigin;
+exports.removeOrigin = removeOrigin;
+exports.allowLocalPort = allowLocalPort;
+exports.removeLocalPort = function (port) { localPorts.delete(port); };
 exports.start = start;
 exports.stop = stop;
-exports.proxyUrl = 'ws://' + PROXY_HOST + ':' + PROXY_PORT;
+Object.defineProperty(exports, 'proxyUrl', { get: function () {
+    const address = wss && wss.address();
+    if (!address) throw new Error('Socket relay is not listening');
+    return 'ws://' + PROXY_HOST + ':' + address.port;
+} });

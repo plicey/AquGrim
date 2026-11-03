@@ -35,7 +35,7 @@ function buildPageSource(options) {
     '    for (var i = 0; i < objects.length; i++) {',
     '      if (objects[i].type === "application/x-shockwave-flash") return objects[i];',
     '    }',
-    '    return null;',
+    '    return document.querySelector("ruffle-player");',
     '  },',
     '  ready: function () {',
     '    var el = this.element();',
@@ -58,7 +58,10 @@ function buildPageSource(options) {
     '      return { ok: false, error: String(error && error.message ? error.message : error) };',
     '    }',
     '  }',
-    '};'
+    '};',
+    // executeJavaScript clones its result back to the main process; the assignment above is not
+    // cloneable, so return a primitive and keep the bridge injection out of the error log.
+    'true;'
   ].join('\n');
 }
 

@@ -7,11 +7,13 @@ const os = require('os');
 const path = require('path');
 
 const INSTANCE_FLAG = '--aquastar-instance';
+const STORAGE_FLAG = '--aquastar-storage=';
 const APP_NAME = 'AquGrim';
 const LEGACY_APP_NAME = 'AquaStar';
 const LEGACY_PREFIX = 'aquastar';
 const APP_PREFIX = 'aquagrim';
 const SKIP = {
+    'game-origin-port': true,
     'Cache': true,
     'Code Cache': true,
     'GPUCache': true,
@@ -99,8 +101,21 @@ function configure(app, argv) {
         appData: appData,
         userData: appData,
         persistentAppData: persistent,
-        additional: additional
+        additional: additional,
+        inheritedStorage: null
     };
+    const storageArg = (argv || []).find(function (arg) { return arg.startsWith(STORAGE_FLAG); });
+    if (additional && storageArg) {
+        const snapshot = storageArg.slice(STORAGE_FLAG.length);
+        const directory = path.dirname(snapshot);
+        if (path.dirname(directory) !== os.tmpdir() || !path.basename(directory).startsWith('aquagrim-storage-') ||
+            path.basename(snapshot) !== 'storage.json') throw new Error('Invalid browser storage snapshot path');
+        current.inheritedStorage = JSON.parse(fs.readFileSync(snapshot, 'utf8'));
+        if (!Array.isArray(current.inheritedStorage) || !current.inheritedStorage.every(function (entry) {
+            return Array.isArray(entry) && entry.length === 2 && entry.every(function (value) { return typeof value === 'string'; });
+        })) throw new Error('Invalid inherited browser storage');
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
     return current;
 }
 
@@ -115,7 +130,25 @@ function launch(options) {
     (opts.argv || []).forEach(function (arg) {
         if (arg === '--no-sandbox' && args.indexOf(arg) === -1) args.push(arg);
     });
-    const child = spawn(executable, args, { detached: true, stdio: 'ignore' });
+    let snapshotDirectory;
+    if (opts.storageEntries) {
+        snapshotDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'aquagrim-storage-'));
+        const snapshot = path.join(snapshotDirectory, 'storage.json');
+        fs.writeFileSync(snapshot, JSON.stringify(opts.storageEntries), { mode: 0o600 });
+        args.push(STORAGE_FLAG + snapshot);
+    }
+    let child;
+    try {
+        child = spawn(executable, args, { detached: true, stdio: 'ignore' });
+    } catch (error) {
+        if (snapshotDirectory) fs.rmSync(snapshotDirectory, { recursive: true, force: true });
+        throw error;
+    }
+    if (snapshotDirectory && child && typeof child.on === 'function') {
+        const removeSnapshot = function () { fs.rmSync(snapshotDirectory, { recursive: true, force: true }); };
+        child.on('exit', removeSnapshot);
+        child.on('error', removeSnapshot);
+    }
     if (child && typeof child.on === 'function') {
         child.on('error', opts.onError || function (error) {
             console.error('[AquGrim] Could not start another instance: ' + error.message);
@@ -123,6 +156,20 @@ function launch(options) {
     }
     if (child && typeof child.unref === 'function') child.unref();
     return { executable: executable, args: args };
+}
+
+function takeInheritedStorage(url) {
+    if (!current || !current.inheritedStorage) return null;
+    const parsed = new URL(url);
+    const portFile = path.join(current.appData, 'game-origin-port');
+    const local = parsed.protocol === 'http:' && parsed.hostname === '127.0.0.1' &&
+        fs.existsSync(portFile) && parsed.port === fs.readFileSync(portFile, 'utf8').trim() &&
+        parsed.pathname === '/ruffle-wrapper.html';
+    const file = parsed.protocol === 'file:' && require('url').fileURLToPath(parsed) === path.join(__dirname, 'ruffle_wrapper.html');
+    if (!local && !file) return null;
+    const entries = current.inheritedStorage;
+    current.inheritedStorage = null;
+    return entries;
 }
 
 function cleanup() {
@@ -143,5 +190,6 @@ module.exports = {
     cleanup: cleanup,
     configure: configure,
     current: function () { return current; },
+    takeInheritedStorage: takeInheritedStorage,
     launch: launch
 };

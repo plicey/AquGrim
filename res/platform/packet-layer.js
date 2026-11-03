@@ -1,4 +1,5 @@
 const socketRelay = require('../socketRelay.js');
+const socketProxy = require('../socketProxy.js');
 const { createBodyService } = require('./body-service.js');
 const sessionRules = require('./session-rules.js');
 
@@ -31,6 +32,7 @@ function createPacketLayer(options) {
     let relay = null;
     let bodyService = null;
     let closed = false;
+    const localPorts = new Set();
 
     function enabled(declaration) {
         if (typeof declaration.enabledWhen === 'function') return !!declaration.enabledWhen(settings);
@@ -68,6 +70,8 @@ function createPacketLayer(options) {
         const ports = [];
         for (let i = 0; i < rows.length; i++) {
             ports.push(await relay.targetPort({ host: rows[i].host, port: rows[i].port }));
+            socketProxy.allowLocalPort(ports[i]);
+            localPorts.add(ports[i]);
         }
         rows.forEach(function (row, index) {
             row.owner[declaration.hostField] = socketRelay.RELAY_HOST;
@@ -204,6 +208,7 @@ function createPacketLayer(options) {
         if (closed) return;
         closed = true;
         if (relay) await relay.close();
+        localPorts.forEach(function (port) { socketProxy.removeLocalPort(port); });
         if (bodyService) await bodyService.close();
     }
 }

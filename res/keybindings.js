@@ -10,6 +10,11 @@ const { globalShortcut, BrowserWindow, ipcMain, app, dialog } = require('electro
 const electronLocalshortcut = require('electron-localshortcut');
 const ruffleUpdate    = require('./ruffleUpdate.js');
 
+// Wayland's global-shortcut portal asks the user to approve every shortcut. App-window
+// shortcuts already reach the focused game; register those locally instead.
+const useLocalGlobalShortcuts =
+    process.platform === 'linux' && process.env.XDG_SESSION_TYPE === 'wayland';
+
 var finalKeybinds = {};
 var recordingWinId = 0;
 // null = show every originalKeybinds row (legacy / filter unknown).
@@ -87,26 +92,30 @@ function customKeybinds() {
         topLevel: topLevel,
         plugins: pluginsBlock
     });
-    _migrateRuffleAutoUpdateDefault(topLevel);
+    _migrateRuffleDefaults(topLevel);
     return finalKeybinds;
 }
 
-// One-time migration: Ruffle auto-update used to default to off and the Settings
-// screen saves every option, so most existing files carry an explicit `false` that
-// the user never chose. Flip it on once and record a marker; afterwards an explicit
-// `false` is respected.
-function _migrateRuffleAutoUpdateDefault(topLevel) {
-    if (topLevel.ruffleAutoUpdateMigrated === true) return;
-    finalKeybinds.ruffleAutoUpdate = true;
-    finalKeybinds.ruffleAutoUpdateMigrated = true;
+// Settings saves defaults explicitly; migrate once, then preserve subsequent quality choices.
+function _migrateRuffleDefaults(topLevel) {
+    const patch = {};
+    if (topLevel.ruffleAutoUpdateMigrated !== true) {
+        patch.ruffleAutoUpdate = true;
+        patch.ruffleAutoUpdateMigrated = true;
+    }
+    if (topLevel.ruffleDefaultMigrated !== true) {
+        patch.gameQuality = 'low';
+        patch.ruffleDefaultMigrated = true;
+    }
+    if (topLevel.renderMode !== 'ruffle') patch.renderMode = 'ruffle';
+    if (!Object.keys(patch).length) return;
+    Object.assign(finalKeybinds, patch);
     const target = _keybindSaveTarget();
-    if (!fs.existsSync(target)) return;
     try {
-        const json = JSON.parse(fs.readFileSync(target));
-        json.ruffleAutoUpdate = true;
-        json.ruffleAutoUpdateMigrated = true;
+        const json = fs.existsSync(target) ? JSON.parse(fs.readFileSync(target)) : {};
+        Object.assign(json, patch);
         fs.writeFileSync(target, JSON.stringify(json, null, 4));
-    } catch (e) { console.log('[AquGrim] Could not migrate ruffleAutoUpdate: ' + e.message); }
+    } catch (e) { console.log('[AquGrim] Could not migrate Ruffle defaults: ' + e.message); }
 }
 
 function toggleRecording(focusedWin) {
@@ -260,6 +269,10 @@ const addGlobalKeybind = function(keybind, func, onlyHTML = false, considerDF = 
     const handler = () => inst.executeOnFocused(func, onlyHTML, considerDF);
     if (Array.isArray(keybind)) {
         keybind.forEach((value) => addGlobalKeybind(value, func, onlyHTML, considerDF));
+        return;
+    }
+    if (useLocalGlobalShortcuts) {
+        addKeybind(keybind, func, onlyHTML, considerDF);
         return;
     }
     if (!globalShortcut.register(keybind, handler)) {

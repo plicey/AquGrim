@@ -51,6 +51,20 @@ function harness(declaration) {
   return { chrome: chrome, win: win, resized: resized, notified: notified };
 }
 
+function wrapperSource() {
+  return fs.readFileSync(path.join(REPO, 'res/swf_wrapper.html'), 'utf8')
+    .replace('<script src="game_chrome.js"></script>', '<script>' +
+      fs.readFileSync(path.join(REPO, 'res/game_chrome.js'), 'utf8') + '</script>');
+}
+
+test('the game page reclaims Ruffle focus for movement keys', () => {
+  const source = fs.readFileSync(path.join(REPO, 'res/game_chrome.js'), 'utf8');
+  assert.ok(source.includes("shadowRoot.getElementById('container')"));
+  assert.ok(source.includes("movementKeys = { w: true, a: true, s: true, d: true }"));
+  const wrapper = fs.readFileSync(path.join(REPO, 'res/ruffle_wrapper.html'), 'utf8');
+  assert.ok(wrapper.includes('player.tabIndex = 0'));
+});
+
 test('a plugin that declares no chrome leaves the game window at the size the screenshot path assumes', () => {
   const plain = harness(null);
   assert.strictEqual(plain.chrome.available(), false);
@@ -260,7 +274,7 @@ test('a picker the reference draws without text is a control with no label, and 
 });
 
 test('the wrapper page carries the strip above the surface and asks the platform for it', () => {
-  const page = fs.readFileSync(path.join(REPO, 'res', 'swf_wrapper.html'), 'utf8');
+  const page = wrapperSource();
   assert.ok(page.indexOf('id="chrome"') !== -1, 'the strip is a box of its own');
   assert.ok(page.indexOf('id="stage"') !== -1, 'and the surface is its sibling, not its parent page');
   assert.ok(page.indexOf("getElementById('stage')") !== -1 || page.indexOf('getElementById("stage")') !== -1,
@@ -298,17 +312,17 @@ test('chrome passes generic choice metadata and values to the wrapper', async ()
 });
 
 test('reduced render scale follows stage size changes without a window resize', () => {
-  const source = fs.readFileSync(path.join(REPO, 'res/swf_wrapper.html'), 'utf8');
+  const source = wrapperSource();
   const stage = { clientWidth: 960, clientHeight: 600 };
   const surface = { style: {} };
   let resized;
   const scope = {
-    stage, surface, renderScale: 50,
+    stage, surface, renderScale: 50, URLSearchParams,
     ResizeObserver: class {
       constructor(callback) { resized = callback; }
       observe(target) { assert.strictEqual(target, stage); }
     },
-    window: { addEventListener() {} }
+    window: { addEventListener() {}, location: { search: "" } }
   };
   require('vm').runInNewContext(source.slice(source.indexOf('    function applyRenderScale'),
     source.indexOf('    // The chrome strip (ticket #45).')), scope);
@@ -356,11 +370,12 @@ test('wrapper refreshes saved choices without equipping, and applies only on but
   const view = () => ({ enabled: true, height: 27, controls: controls, options: { saved: choices } });
   const calls = [];
   const events = {};
-  const page = fs.readFileSync(path.join(REPO, 'res/swf_wrapper.html'), 'utf8');
-  vm.runInNewContext(page.match(/<script>([\s\S]*?)<\/script>/)[1], {
+  const page = wrapperSource();
+  vm.runInNewContext(Array.from(page.matchAll(/<script>([\s\S]*?)<\/script>/g), m => m[1]).join('\n'), {
     ResizeObserver: class { observe() {} },
     URLSearchParams: URLSearchParams, URL: URL,
-    document: { createElement: node, getElementById: id => nodes.find(n => n.id === id && (id.indexOf('chrome-') !== 0 || nodes.find(n => n.id === 'chrome').children.includes(n))) },
+    document: { createElement: node, activeElement: null, addEventListener: function () {},
+      getElementById: id => nodes.find(n => n.id === id && (id.indexOf('chrome-') !== 0 || nodes.find(n => n.id === 'chrome').children.includes(n))) },
     window: { location: { search: '?swf=https://example.com/game.swf' },
       addEventListener: (name, fn) => { events[name] = fn; },
       aquastarChrome: { getView: async () => view(), action: async (id, args) => {
@@ -402,7 +417,7 @@ test('toolbar carries in-app progress labels and completion feedback through dis
 });
 
 test('toolbar button shows progress and reports success or failure in an expiring toast', async () => {
-  const source = fs.readFileSync(path.join(REPO, 'res/swf_wrapper.html'), 'utf8');
+  const source = wrapperSource();
   const start = source.indexOf('    var toastTimer =');
   const end = source.indexOf("    /** The platform's render percentage", start);
   let finish;
@@ -458,7 +473,7 @@ test('chrome passes context editor declarations and responses through dispatch',
 });
 
 test('popover closes after remembering temporary edits without native dialogs', async () => {
-  const source = fs.readFileSync(path.join(REPO, 'res/swf_wrapper.html'), 'utf8');
+  const source = wrapperSource();
   const calls = [];
   const nodes = [];
   function el(tag, className, text) {
@@ -498,4 +513,45 @@ test('popover closes after remembering temporary edits without native dialogs', 
   assert.strictEqual(calls[1].draft, true);
   assert.strictEqual(calls[1].text, '4;3');
   assert.strictEqual(nodes.find(node => node.id === 'contextEditor').removed, true);
+});
+
+test('movement keys preserve focus inside Ruffle instead of interrupting its text input', () => {
+  const vm = require('vm');
+  const handlers = {};
+  const windowHandlers = {};
+  let focused = 0;
+  const container = { setAttribute() {}, focus() { focused++; } };
+  const player = { shadowRoot: { getElementById: () => container } };
+  const document = {
+    activeElement: player,
+    getElementById: id => id === 'surface' ? { firstChild: player } : null,
+    addEventListener: (name, handler) => { handlers[name] = handler; }
+  };
+  const source = fs.readFileSync(path.join(REPO, 'res/game_chrome.js'), 'utf8')
+    .split('/** Render fewer pixels')[0] + '})();';
+  vm.runInNewContext(source, { document, window: { addEventListener: (name, handler) => { windowHandlers[name] = handler; } } });
+  windowHandlers.focus();
+  assert.strictEqual(focused, 0, 'returning to the window preserves inner game focus');
+  handlers.keydown({ key: 'w' });
+  assert.strictEqual(focused, 0, 'keys already routed to Ruffle must not steal its inner focus');
+  document.activeElement = { tagName: 'BUTTON' };
+  handlers.keydown({ key: 'w', ctrlKey: true });
+  assert.strictEqual(focused, 0, 'shortcuts must not move focus');
+  handlers.keydown({ key: 'w' });
+  assert.strictEqual(focused, 1, 'a movement key outside the game reclaims focus');
+});
+
+test('leaving the app releases Ruffle focus so held movement keys can reset', () => {
+  const vm = require('vm');
+  const events = {};
+  let blurred = 0;
+  const player = { shadowRoot: { activeElement: { blur() { blurred++; } } } };
+  const source = fs.readFileSync(path.join(REPO, 'res/game_chrome.js'), 'utf8')
+    .split('/** Render fewer pixels')[0] + '})();';
+  vm.runInNewContext(source, {
+    document: {activeElement:player, getElementById: id => id === 'surface' ? {firstChild:player} : null, addEventListener() {}},
+    window: {addEventListener: (name, fn) => {events[name] = fn;}}
+  });
+  events.blur();
+  assert.strictEqual(blurred, 1);
 });

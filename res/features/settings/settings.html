@@ -190,8 +190,8 @@
     customUrl:         'text',
     localOrigin:       'boolean',
     recordingFormat:   'select',
-    renderMode:        'select',
     gameQuality:       'select',
+    adaptiveResolution: 'boolean',
     ruffleUpdateChannel: 'select',
     ruffleAutoUpdate:  'boolean',
     showGameMenu:      'boolean',
@@ -213,7 +213,7 @@
   const WARN_ON_ENABLE_KEYS = new Set(['enableDevTools']);
 
   // Select options that need an explicit confirm when switched to a specific value.
-  const SELECT_WARN_ON_VALUE = { renderMode: 'ruffle' };
+  const SELECT_WARN_ON_VALUE = {};
 
   // Accelerators are stored/sent as Electron's "CmdOrCtrl" internally (that's what
   // electron-localshortcut expects); only the on-screen text is swapped per OS.
@@ -634,6 +634,11 @@
     updateRow.appendChild(label);
     updateRow.appendChild(update);
     api.getRuffleStatus().then((ruffle) => {
+      if (ruffle.pinned) {
+        statusValue.textContent = ruffle.loaded.version + ' — bundled with AquGrim';
+        [updateChannelRow, updateRow, autoUpdateRow, restoreRow].forEach((row) => row.remove());
+        return;
+      }
       const configuredChannel = ruffle.configuredChannel === 'nightly'
         ? (messages.ruffleNightlyLabel || 'Nightly') : (messages.ruffleLatestLabel || 'Latest (Stable)');
       const selected = ruffle.loaded.source === 'downloaded'
@@ -671,7 +676,8 @@
     // The selected channel controls this button. Keeping it beside the action
     // makes the stable release the normal path and nightly an explicit opt-in.
     const updateChannelRow = buildSelectOptionRow('ruffleUpdateChannel', updateChannelChoices);
-    return [heading, statusRow, updateChannelRow, updateRow, buildBooleanOptionRow('ruffleAutoUpdate'), restoreRow];
+    const autoUpdateRow = buildBooleanOptionRow('ruffleAutoUpdate');
+    return [heading, statusRow, updateChannelRow, updateRow, autoUpdateRow, restoreRow];
   }
 
   async function refreshCustomSwfStatus() {

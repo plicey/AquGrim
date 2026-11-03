@@ -12,7 +12,8 @@ function appendPerformanceSwitches(app) {
     app.commandLine.appendSwitch('ignore-gpu-blocklist');
     app.commandLine.appendSwitch('enable-gpu-rasterization');
     app.commandLine.appendSwitch('enable-zero-copy');
-    app.commandLine.appendSwitch('disable-software-rasterizer');
+    // Prefer a discrete GPU on hybrid-graphics systems; no effect on single-GPU machines.
+    app.commandLine.appendSwitch('force_high_performance_gpu');
 
     // Reduce background Chromium overhead
     app.commandLine.appendSwitch('disable-component-update');
@@ -132,5 +133,6 @@ function _setTrustManagerForTests(manager) {
 }
 
 exports.flashManager = flashTrustManager;
+exports.appendPerformanceSwitches = appendPerformanceSwitches;
 exports.refreshTrust = refreshTrust;
 exports._setTrustManagerForTests = _setTrustManagerForTests;

@@ -96,7 +96,7 @@ function activate(host) {
     isGameUrl: function (url) {
       return typeof url === 'string' && url.indexOf(GAME) === 0;
     },
-    wrap: { preferDirectWmode: true, ruffleEligible: false },
+    wrap: { preferDirectWmode: true, ruffleEligible: true },
     flashTrust: true
   });
 
@@ -148,7 +148,7 @@ host.registerLaunches([
     keybindId: 'newTest',
     getUrl: function () { return 'https://example.com/game/Loader_Test.swf?ver=1'; },
     title: function () { return 'AquaStar - Testing'; },
-    wrap: { preferDirectWmode: true, ruffleEligible: false },
+    wrap: { preferDirectWmode: true, ruffleEligible: true },
     flashTrust: true
   }
 ]);
@@ -167,7 +167,7 @@ Include every trusted SWF URL in `host.trustFlashUrls([...])` (permission `flash
 |-------|-------|---------|
 | `wrap.preferDirectWmode` | primary / launch | Default `true`. `false` = never use the `wmode=direct` HTML embed. |
 | `wrap.wmode`, `wrap.scale` | primary / launch | Explicit embed options (e.g. `opaque` + `showall`). Used even when the user turned direct wmode off. |
-| `wrap.ruffleEligible` | primary / launch | Default `true`. `false` = never route through Ruffle. |
+| `wrap.ruffleEligible` | primary / launch | Default `true`. `false` = unsupported SWF launch; there is no Flash fallback. |
 | `standalone: true` | launch | A separate game with its own title: not numbered "(Window N)", no game command bar, no default direct-wmode embed. |
 | `title(ctx)` | primary / launch | Window title. `ctx` = `{ displayName, settings, usingCustomSwf }`. |
 

@@ -14,7 +14,7 @@ function activate(host) {
             return typeof url === 'string' &&
                 url.indexOf('https://example.com/path/to/game.swf') === 0;
         },
-        wrap: { preferDirectWmode: true, ruffleEligible: false },
+        wrap: { preferDirectWmode: true, ruffleEligible: true },
         flashTrust: true
     });
 

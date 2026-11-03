@@ -27,9 +27,10 @@ function fakePage(options) {
     },
     embeds: []
   };
+  document.querySelector = function () { return options.ruffle ? element : null; };
   const sandbox = { document: document, JSON: JSON };
   sandbox.window = { location: { href: 'http://127.0.0.1:9/wrapper.html?swf=game.swf' } };
-  vm.runInNewContext(bridgeChannel.buildPageSource({ worldKey: 'aquaBridge', probeNames: ['getGameObject'] }), sandbox);
+  assert.strictEqual(vm.runInNewContext(bridgeChannel.buildPageSource({ worldKey: 'aquaBridge', probeNames: ['getGameObject'] }), sandbox), true);
   return { page: sandbox.window.aquaBridge, calls: calls, sandbox: sandbox };
 }
 
@@ -63,6 +64,16 @@ test('a page-side call passes the name and arguments to the SWF and returns its 
     name: 'callGameFunction',
     args: ['world.getQuestValue', '3']
   });
+});
+
+test('the bridge discovers Ruffle and waits for its registered callbacks', () => {
+  const waiting = fakePage({ noObject: true, ruffle: true, callbacks: [] });
+  assert.strictEqual(waiting.page.ready(), false);
+  const live = fakePage({ noObject: true, ruffle: true });
+  assert.strictEqual(live.page.ready(), true);
+  assert.strictEqual(live.page.call('getGameObject', ['world.strFrame']).ok, true);
+  assert.strictEqual(live.calls[0].args[0], 'world.strFrame');
+  assert.strictEqual(live.page.call('missing', []).ok, false);
 });
 
 test('a call the SWF does not answer is an error result, never a thrown exception', () => {

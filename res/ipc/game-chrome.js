@@ -23,3 +23,8 @@ ipcMain.handle('setGameRenderScale', function (event, value) {
     if (!win) return { ok: false, error: 'this page has no game window' };
     return { ok: true, value: gameChrome().setRenderScale(win, value) };
 });
+
+ipcMain.on('inheritGameStorage', function (event) {
+    event.returnValue = event.senderFrame === event.sender.mainFrame
+        ? require('../instance-session.js').takeInheritedStorage(event.senderFrame.url) : null;
+});

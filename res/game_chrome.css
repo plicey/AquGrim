@@ -1,0 +1,44 @@
+
+  html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#000; }
+  body { display:flex; flex-direction:column; }
+  /* The chrome strip is a sibling of the surface, not a layer over it: the surface fills what is
+     left, which is the layout change and not a new compositing capability (ticket #45). */
+  #chrome {
+    flex:0 0 auto; display:none; width:100%; box-sizing:border-box; overflow:hidden;
+    align-items:center; gap:8px; padding:0 4px;
+    /* The reference's own dark toolstrip colours (Root.cs's DarkUI theme). */
+    background:#1e1e24; color:#c8c8c8; font:12px system-ui, sans-serif; white-space:nowrap;
+  }
+  /* A control must fit the strip's own height: the reference's are 17 to 23 px on a 27 px bar. */
+  #chrome select, #chrome button, #chrome input { font:inherit; height:21px; box-sizing:border-box; }
+  #chrome label { display:inline-flex; align-items:center; gap:4px; cursor:pointer; }
+  #chrome select, #chrome button {
+    background:#272727; color:#c8c8c8; border:1px solid #3a3a44; border-radius:2px;
+  }
+  #chrome .render-scale { display:inline-flex; align-items:center; gap:4px; }
+  #chrome .render-scale input[type=range] { width:96px; height:21px; padding:0; margin:0; }
+  #chrome .render-scale output { min-width:32px; text-align:right; color:#c8c8c8; }
+  #chrome span.status { margin-left:auto; overflow:hidden; text-overflow:ellipsis; }
+  #actionToast {
+    position:fixed; top:42px; right:16px; z-index:10000; box-sizing:border-box;
+    max-width:calc(100% - 32px); width:360px; padding:12px 16px;
+    background:#25292f; color:#f4f4f4; border-left:4px solid #71c294;
+    border-radius:6px; box-shadow:0 4px 18px #0008;
+    font:13px/1.5 system-ui,sans-serif; white-space:pre-wrap; pointer-events:none;
+  }
+  #actionToast[data-error="true"] { border-left-color:#ef8585; }
+  #contextEditor { position:fixed; z-index:10001; width:440px; max-width:calc(100vw - 16px);
+    height:240px; max-height:calc(100vh - 42px); padding:8px; box-sizing:border-box;
+    background:#1e1e24; color:#c8c8c8; border:1px solid #484852; border-radius:4px;
+    box-shadow:0 6px 24px #0009; font:12px system-ui,sans-serif; }
+  #contextEditor .editor-title { margin-bottom:6px; }
+  #contextEditor .editor-body { display:flex; gap:8px; height:calc(100% - 40px); }
+  #contextEditor select { width:130px; min-width:0; overflow:auto; }
+  #contextEditor textarea { flex:1; min-width:0; resize:none; overflow:auto; padding:6px;
+    font:12px/1.5 monospace; tab-size:2; }
+  #contextEditor select, #contextEditor textarea { background:#272727; color:inherit; border:1px solid #3a3a44; }
+  #contextEditor .editor-status { margin-top:4px; font-size:11px; }
+  #stage { flex:1 1 auto; position:relative; min-height:0; }
+  #surface { position:absolute; left:0; top:0; width:100%; height:100%; transform-origin:0 0; }
+  object, ruffle-player { display:block; width:100%; height:100%; border:none; outline:none; }
+

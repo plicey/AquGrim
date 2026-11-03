@@ -65,6 +65,9 @@ test('the parity plugin is discovered as a bundled plugin and activates', async 
   // bridge must share an origin for the bridge to reach the game's classes at all.
   const primaryUrl = state.primaryGame.getUrl();
   assert.strictEqual(primaryUrl, 'http://127.0.0.1:41234/game/aqua-bridge.swf');
+  assert.strictEqual(state.primaryGame.wrap.ruffleEligible, true);
+  assert.strictEqual(state.primaryGame.wrap.ruffle.socket.serversApi,
+    'http://127.0.0.1:41234/game/api/data/servers');
   assert.strictEqual(state.primaryGame.isGameUrl(primaryUrl), true);
   assert.strictEqual(state.primaryGame.isGameUrl('https://example.com/other'), false);
   assert.strictEqual(state.primaryGame.isGameUrl('http://127.0.0.1:41234/game/other.swf'), false);

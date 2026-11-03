@@ -1,4 +1,5 @@
-const {app, session, Menu, BrowserWindow, dialog}  = require('electron')
+require('./res/stdio.js');
+const {app, session, Menu, BrowserWindow, dialog, powerSaveBlocker}  = require('electron')
 
 const instanceSession = require('./res/instance-session.js');
 try {
@@ -152,9 +153,7 @@ function activatePlugins() {
     });
 }
 
-// Flash stuff is isolated in flash.js
-// No game URL is trusted yet: the plugin's trust list is applied right after activation.
-flash.flashManager(app, __dirname, null, constant.appName);
+flash.appendPerformanceSwitches(app);
 
 async function createWindow () {
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
@@ -170,7 +169,7 @@ async function createWindow () {
     const finalkeyb = keyb.addKeybinding();
 
     // Best-effort background check: it deliberately never delays startup.
-    if (finalkeyb.ruffleAutoUpdate === true) {
+    if (!constant.rufflePinned && finalkeyb.ruffleAutoUpdate === true) {
         ruffleUpdate.downloadLatest(
             constant.appDataDirectory,
             finalkeyb.ruffleUpdateChannel,
@@ -213,6 +212,7 @@ async function createWindow () {
     // webRequest rules go in before the first window loads anything. Steering may bind a loopback
     // listener, so it finishes before the window opens.
     await applySessionRules();
+    await socketProxy.start();
 
     let win = inst.newBrowserWindow(bootGameUrl, true);
     // Re-apply after setApplicationMenu so the first window keeps plugin menu entries.
@@ -308,12 +308,16 @@ app.on('second-instance', () => {
     win.focus();
   }
 })
+let suspensionBlocker = null;
 app.on('ready', () => {
+  // Allow the display to sleep, but keep game ticks and bots running while the app is away.
+  suspensionBlocker = powerSaveBlocker.start('prevent-app-suspension');
   activatePlugins().then(() => {
     createWindow();
   });
 })
 app.on('will-quit', () => {
+  if (suspensionBlocker !== null) powerSaveBlocker.stop(suspensionBlocker);
   keyb.unregisterGlobalShortcuts();
   // No-op if a Ruffle-mode window never started it.
   socketProxy.stop();

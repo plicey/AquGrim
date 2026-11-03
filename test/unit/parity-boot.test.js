@@ -75,7 +75,7 @@ test('the parity plugin boots the game from its own origin, with the bridge serv
     baseUrl = 'http://127.0.0.1:' + proxy.port;
     assert.strictEqual(baseUrl.indexOf('http://127.0.0.1:'), 0, baseUrl);
     const steering = host._getState().packetSteering[0];
-    assert.deepStrictEqual(steering.urls, ['*://game.aq.com/game/api/login/now*']);
+    assert.deepStrictEqual(steering.urls, ['*://game.aq.com/game/api/login/now*', '*://game.aq.com/game/api/data/servers*']);
     assert.strictEqual(steering.policyDomain, '127.0.0.1');
 
     // The bridge SWF is served from the same origin as Loader4 and the game's own paths: that is
@@ -213,6 +213,10 @@ test('the built bridge asset carries the call surface the manifest declares', fu
   const zlib = require('zlib');
   const raw = fs.readFileSync(asset);
   const body = raw.slice(0, 3).toString('latin1') === 'CWS' ? zlib.inflateSync(raw.slice(8)) : raw.slice(8);
+  const bits = Array.from(body.slice(0, 12), byte => byte.toString(2).padStart(8, '0')).join('');
+  const width = parseInt(bits.slice(0, 5), 2);
+  const bounds = [0, 1, 2, 3].map(i => parseInt(bits.slice(5 + i * width, 5 + (i + 1) * width), 2) / 20);
+  assert.deepStrictEqual(bounds, [0, 960, 0, 550], 'the shipped stage must include the bottom HUD, not only the build script');
   const text = body.toString('latin1');
 
   const manifest = JSON.parse(fs.readFileSync(path.join(PARITY, 'plugin.json'), 'utf8'));

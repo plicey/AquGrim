@@ -402,7 +402,9 @@ test('activating the parity plugin hands the platform exactly one steering decla
   assert.strictEqual(recorded.length, 1, 'exactly one declaration, from a plugin holding packet-tap');
   assert.strictEqual(recorded[0].settingKey, 'packetSteering');
   assert.ok(recorded[0].urls.length >= 1);
-  assert.deepStrictEqual(recorded[0].urls, ['*://game.aq.com/game/api/login/now*']);
+  assert.deepStrictEqual(recorded[0].urls, [
+    '*://game.aq.com/game/api/login/now*', '*://game.aq.com/game/api/data/servers*'
+  ]);
   assert.strictEqual(recorded[0].policyDomain, '127.0.0.1');
 
   // And the opt-in is off until the player turns it on: default settings engage nothing.

@@ -13,7 +13,7 @@ function steeringDeclarations(baseUrl) {
         // Off by default: this carries the session through a local process, so it is the player's
         // call (Settings → Grimlite → Steer game traffic), not something done to them silently.
         settingKey: 'packetSteering',
-        urls: ['*://game.aq.com/game/api/login/now*'],
+        urls: ['*://game.aq.com/game/api/login/now*', '*://game.aq.com/game/api/data/servers*'],
         // The policy Flash is answered with, and the only hosts traffic may reach onward.
         policyDomain: baseUrl ? new URL(baseUrl).hostname : 'game.aq.com',
         allowedHosts: ['*.aq.com', '*.artix.com'],

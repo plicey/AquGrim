@@ -53,8 +53,7 @@ function _normalizeWindowOpenKey(url) {
 function newBrowserWindow(new_path, isMainWin=false){
     var config;
     var originalPath = new_path;
-    // Whether this window's page is the wrapper the chrome strip is drawn in (res/swf_wrapper.html);
-    // set below by whichever embed branch loaded. Nothing else can carry a strip.
+    // The Ruffle wrapper can carry the plugin's toolbar.
     var wrappedForChrome = false;
     var gateKey = _normalizeWindowOpenKey(originalPath);
     var now = Date.now();
@@ -71,45 +70,24 @@ function newBrowserWindow(new_path, isMainWin=false){
     else if (isGameWindow) config = windowConfig.gameConfig;
     else config = windowConfig.winConfig;
     
-    // How a game is opened is the owning plugin's call (its primary/launch "wrap" config):
-    // Ruffle when Settings → renderMode is "ruffle" and the SWF is eligible, an explicit
-    // wmode/scale HTML embed, or the default wmode=direct embed. HTML/feature pages are
-    // never wrapped — plugins may use file:// HTML as primary UI.
+    // HTML feature pages stay untouched; every supported game SWF uses Ruffle.
     var gameEntry = _findGameEntry(originalPath);
     var wrap = (gameEntry && gameEntry.wrap) || null;
-    var renderMode = (keybinds.keybinds && keybinds.keybinds.renderMode) || constant.defaultRenderMode;
-    if (renderMode === 'ruffle' && constant.isRuffleEligible(new_path)) {
+    if (_looksLikeSwfUrl(originalPath)) {
+        if (!constant.isRuffleEligible(new_path)) {
+            throw new Error('This game has not enabled Ruffle support.');
+        }
         const ruffleOpts = (wrap && wrap.ruffle) || null;
         if (ruffleOpts && ruffleOpts.socket) {
             socketProxy.allowHosts(ruffleOpts.socket.allowedHosts);
-            socketProxy.start();
         }
-        new_path = constant.wrapRuffleUrl(new_path, ruffleOpts);
-    }
-    // Explicit wrap options (e.g. wmode=opaque + scale=showall for a game whose relative
-    // loads break under wmode=direct from file://). Applies even with useDirectWmode off.
-    else if (_looksLikeSwfUrl(originalPath) && wrap && (wrap.wmode || wrap.scale)) {
-        new_path = constant.wrapSwfUrl(new_path, {
-            wmode: wrap.wmode,
-            scale: wrap.scale,
-            quality: keybinds.keybinds && keybinds.keybinds.gameQuality
-        });
-        wrappedForChrome = true;
-    }
-    // Default: wrap Flash SWFs of non-standalone games in an HTML page with wmode=direct.
-    else if (constant.useDirectWmode && _looksLikeSwfUrl(originalPath) &&
-        gameEntry && !gameEntry.standalone &&
-        !(wrap && wrap.preferDirectWmode === false)) {
-        new_path = constant.wrapSwfUrl(new_path, {
-            quality: keybinds.keybinds && keybinds.keybinds.gameQuality
-        });
-        wrappedForChrome = true;
+        new_path = constant.wrapRuffleUrl(new_path, ruffleOpts,
+            keybinds.keybinds && keybinds.keybinds.gameQuality,
+            !!keybinds.keybinds && keybinds.keybinds.adaptiveResolution === true);
+        wrappedForChrome = !gameEntry.standalone;
     }
 
-    // The chrome strip lives inside that wrapper page, which is the one page a strip can be drawn
-    // in (res/swf_wrapper.html). A window that loads it opens tall enough for the strip the active
-    // plugin declared and offers the toggle; a Ruffle page or a bare SWF cannot draw one, so it
-    // keeps the game's own size exactly and offers none (res/windows/game-chrome.js).
+    // The shared toolbar sits above the Ruffle surface; keep the game area at its own size.
     if (wrappedForChrome && isGameWindow) {
         const strip = gameChrome().height();
         if (strip > 0) {
