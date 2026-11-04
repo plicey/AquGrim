@@ -1,5 +1,11 @@
 const { ipcRenderer, contextBridge } = require("electron");
 
+// A new local origin cannot read the parent origin's Ruffle saves.
+if (/\/ruffle[-_]wrapper\.html$/.test(window.location.pathname)) {
+  const entries = ipcRenderer.sendSync('inheritGameStorage');
+  if (entries) entries.forEach(function (entry) { localStorage.setItem(entry[0], entry[1]); });
+}
+
 // The chrome strip the game window may carry above the Flash surface (ticket #45). The page is
 // the platform's own wrapper (res/swf_wrapper.html) and draws whatever the active plugin
 // declared: this exposes the two calls, and pushes a new view whenever the layout changes.

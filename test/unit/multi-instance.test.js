@@ -135,3 +135,43 @@ test('plugin configuration follows the temp copy while file-save folders stay pe
   assert.ok(host.indexOf('persistentAppDataDirectory:') !== -1);
   assert.ok(main.indexOf("host.persistentAppDataDirectory || host.appDataDirectory, 'Bots'") !== -1);
 });
+
+test('child sessions inherit live Ruffle saves across different origins once', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aquagrim-instance-test-'));
+  const persistent = path.join(root, 'AquGrim');
+  fs.mkdirSync(persistent);
+  fs.writeFileSync(path.join(persistent, 'game-origin-port'), '12345');
+  const entries = [['account', 'saved-account'], ['config', 'saved-config']];
+  const result = instanceSession.launch({
+    execPath: '/electron', storageEntries: entries,
+    spawn: () => ({ on() {}, unref() {} })
+  });
+  const snapshot = result.args.find(arg => arg.startsWith('--aquastar-storage=')).split('=')[1];
+  const app = { getPath: () => root, setPath() {} };
+  const state = instanceSession.configure(app, ['electron', ...result.args]);
+  assert.ok(!fs.existsSync(snapshot), 'credential snapshot is removed immediately after reading');
+  fs.writeFileSync(path.join(state.appData, 'game-origin-port'), '23456');
+  assert.strictEqual(instanceSession.takeInheritedStorage('https://example.com/ruffle-wrapper.html'), null);
+  assert.strictEqual(instanceSession.takeInheritedStorage('http://127.0.0.1:12345/ruffle-wrapper.html'), null);
+  assert.deepStrictEqual(instanceSession.takeInheritedStorage('http://127.0.0.1:23456/ruffle-wrapper.html'), entries);
+  assert.strictEqual(instanceSession.takeInheritedStorage('http://127.0.0.1:23456/ruffle-wrapper.html'), null,
+    'reload must preserve the child settings instead of overwriting them');
+  instanceSession.cleanup();
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('the game preload restores inherited saves before the player starts', () => {
+  const vm = require('vm');
+  const source = fs.readFileSync(path.join(__dirname, '../../res/features/capture/preload_capture.js'), 'utf8')
+    .split('let mediaRecorder;')[0];
+  const restored = new Map();
+  vm.runInNewContext(source, {
+    require: () => ({
+      ipcRenderer: { sendSync: () => [['account', 'saved'], ['config', 'settings']] },
+      contextBridge: { exposeInMainWorld() {} }
+    }),
+    window: { location: { pathname: '/ruffle-wrapper.html' } },
+    localStorage: { setItem: (key, value) => restored.set(key, value) }
+  });
+  assert.deepStrictEqual([...restored], [['account', 'saved'], ['config', 'settings']]);
+});

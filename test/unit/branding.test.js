@@ -40,7 +40,7 @@ test('provided game windows use AquGrim titles', () => {
 function settingsPaths(root) {
   const source = fs.readFileSync(path.join(ROOT, 'res/const.js'), 'utf8');
   const start = source.indexOf('var keybingJsonFileName');
-  const end = source.indexOf('// The bundled web/WASM player', start);
+  const end = source.indexOf('const bundledRufflePlayerPath', start);
   const context = {
     fs, path, exports: {}, console, appName: 'AquGrim',
     app: { getPath: () => root }, appDataDirectory: path.join(root, 'AquGrim'),

@@ -130,10 +130,10 @@ exports.wrapSwfUrl = function(swfUrl, opts) {
     return (swfWrapperBase || swfWrapperUrl) + q;
 }
 
-// Ruffle (open-source Flash emulator) as an alternative to the PPAPI Flash plugin -
-// see res/ruffle_wrapper.html. Covers the active plugin's Flash games when Settings →
-// renderMode is "ruffle".
+// Ruffle runs supported SWFs through the active plugin’s bridge and socket configuration.
 const ruffleWrapperUrl = _getFileUrl(path.join(appRoot, 'res', 'ruffle_wrapper.html'));
+let ruffleWrapperBase = '';
+exports.setRuffleWrapperBase = function (base) { ruffleWrapperBase = base || ''; };
 exports.isRuffleEligible = function(swfUrl) {
     if (!swfUrl) return false;
     // HTML/stage pages are never Ruffle SWF targets.
@@ -146,13 +146,16 @@ exports.isRuffleEligible = function(swfUrl) {
     } catch (e) { return false; }
 }
 // ruffleOpts: the owning plugin's wrap.ruffle ({ socket: { serversApi, fallbackHosts, policyPort } }).
-exports.wrapRuffleUrl = function(swfUrl, ruffleOpts) {
+exports.wrapRuffleUrl = function(swfUrl, ruffleOpts, quality, adaptiveResolution) {
     if (!swfUrl) return swfUrl;
     const cfg = ruffleOpts && ruffleOpts.socket ? { socket: ruffleOpts.socket } : {};
-    return ruffleWrapperUrl + '?swf=' + encodeURIComponent(swfUrl) +
+    const localWrapper = ruffleWrapperBase && /^https?:/.test(swfUrl);
+    return (localWrapper ? ruffleWrapperBase : ruffleWrapperUrl) + '?swf=' + encodeURIComponent(swfUrl) +
         '&cfg=' + encodeURIComponent(JSON.stringify(cfg)) +
+        '&quality=' + encodeURIComponent(quality || exports.defaultGameQuality) +
+        '&adaptive=' + (adaptiveResolution === true ? '1' : '0') +
         '&proxy=' + encodeURIComponent(socketProxy.proxyUrl) +
-        '&ruffle=' + encodeURIComponent(exports.rufflePlayerUrl);
+        '&ruffle=' + encodeURIComponent(localWrapper ? '/ruffle/ruffle.js' : exports.rufflePlayerUrl);
 }
 
 /// -------------------------------
@@ -207,15 +210,11 @@ exports.resolveRecordingFormat = function(id, hasAudio) {
     };
 }
 
-// Which Flash runtime to use for the SWFs AquaStar loads directly, shown as a <select>
-// in Settings. "flash" (default) keeps the exact current PPAPI plugin behavior. "ruffle"
-// is new and marked experimental - see isRuffleEligible()/wrapRuffleUrl() above.
 const renderModes = {
-    'flash':  { label: 'Flash Player' },
-    'ruffle': { label: 'Ruffle (Experimental)' }
+    'ruffle': { label: 'Ruffle' }
 }
 exports.renderModes = renderModes;
-exports.defaultRenderMode = 'flash';
+exports.defaultRenderMode = 'ruffle';
 exports.renderModeChoices = Object.keys(renderModes).map((id) => (
     { id: id, label: renderModes[id].label }
 ));
@@ -228,15 +227,14 @@ exports.ruffleUpdateChannelChoices = Object.keys(ruffleUpdateChannels).map((id) 
     { id: id, label: ruffleUpdateChannels[id].label }
 ));
 
-// Flash quality affects the PPAPI renderer, not bot timing. "medium" is the performance-first
-// default; users can trade more appearance for speed in Settings.
+// Low quality favors rendering speed without changing bot timing.
 const gameQualities = {
-    'low': { label: 'Low (Fastest)' },
-    'medium': { label: 'Medium (Default)' },
+    'low': { label: 'Low (Fastest, Default)' },
+    'medium': { label: 'Medium' },
     'high': { label: 'High' },
     'best': { label: 'Best (Highest Quality)' }
 };
-exports.defaultGameQuality = 'medium';
+exports.defaultGameQuality = 'low';
 exports.gameQualityChoices = Object.keys(gameQualities).map((id) => (
     { id: id, label: gameQualities[id].label }
 ));
@@ -263,6 +261,7 @@ const originalOptions = {
     recordingFormat:   exports.defaultRecordingFormat,
     renderMode:        exports.defaultRenderMode,
     gameQuality:       exports.defaultGameQuality,
+    adaptiveResolution: false,
     ruffleUpdateChannel: 'latest',
     ruffleAutoUpdate:  true,
     // Native menu bar on game windows (mirrors shortcuts). Default on.
@@ -299,12 +298,20 @@ exports.appdataJsonPath = appdataJsonPath;
 exports.inPathJsonPath  = inPathJsonPath;
 exports.legacyAppdataJsonPath = legacyAppdataJsonPath;
 
-// The bundled web/WASM player is always the safe fallback. A downloaded stable
-// or nightly build is selected only after validation and promotion at startup.
+// A pinned engine ships with the app; downloaded stock builds must not override it.
+// Unpinned builds retain the stable/nightly updater.
 const bundledRufflePlayerPath = path.join(appRoot, 'res', 'ruffle', 'ruffle.js');
 const downloadedRufflePlayerPath = path.join(currentRuffleDirectory, 'ruffle.js');
-exports.rufflePlayerUrl = _getFileUrl(fs.existsSync(downloadedRufflePlayerPath)
-    ? downloadedRufflePlayerPath : bundledRufflePlayerPath);
+exports.rufflePinned = fs.existsSync(path.join(appRoot, 'res', 'ruffle', 'engine.json'));
+const rufflePlayerPath = !exports.rufflePinned && fs.existsSync(downloadedRufflePlayerPath)
+    ? downloadedRufflePlayerPath : bundledRufflePlayerPath;
+exports.rufflePlayerUrl = _getFileUrl(rufflePlayerPath);
+exports.ruffleFiles = { '/ruffle-wrapper.html': path.join(appRoot, 'res', 'ruffle_wrapper.html') };
+exports.ruffleFiles['/game_chrome.js'] = path.join(appRoot, 'res', 'game_chrome.js');
+exports.ruffleFiles['/game_chrome.css'] = path.join(appRoot, 'res', 'game_chrome.css');
+fs.readdirSync(path.dirname(rufflePlayerPath)).filter(name => /\.(js|wasm)$/.test(name)).forEach(name => {
+    exports.ruffleFiles['/ruffle/' + name] = path.join(path.dirname(rufflePlayerPath), name);
+});
 exports.ruffleDirectory = appDataDirectory;
 
 // Local SWF override (Settings → Custom SWF File). The lookup lives in customSwf.js; the

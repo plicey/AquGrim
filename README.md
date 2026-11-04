@@ -57,7 +57,7 @@ As after version 1.2 AQLite is a part of vanilla game, what we offer is support 
  - TODO list (Tasks) (Alt + Y). Write down what you need the most, and do when you feel like it.
  - Sync inventory (Alt + I). Browse your inventory and check what you have or not.
     - They also show on wiki. Which also tells you if you have the item or not!
- - Ruffle support (experimentally). We allow you to test ruffle in the game and also update own version as you need it.
+ - Ruffle runs the game and AquGrim bridge. Low quality is the default for speed; there is no Flash fallback. Ruffle updates are available in Settings.
  - And maybe something I forgot
 
 # How to build it yourself
@@ -72,12 +72,7 @@ Download this project's folder into your PC, or clone it directly from this repo
 ```
   git clone https://github.com/plicey/AquGrim.git
 ```
-If your Operating System's flash library file (like .dll or .so) is not in the FlashPlayer folder,
-get it from your own system (win64 and linux are already supported, and mac's one is in the folder too)
-
-Install the dependencies using NPM (nw-flash-trust, electron@11.5.0 and electron-builder) like:
-
-(Electron is intentionally pinned to 11.5.0 in package.json - it's the last release built on a Chromium that still supports PPAPI Flash. Don't bump it without a Flash alternative in place.)
+Install dependencies with NPM. Electron 45 hosts the client UI and the bundled Ruffle web player.
 
 ```bash
   cd path/to/project/folder
@@ -88,8 +83,6 @@ npm install will install automatically all dependencies, so no need to specify t
 Now you are ready to run it! before making a package, you can test it running `npm start`.
 
 If aquastar opens correctly, build the package so you can run in any folder you like.
-Go to FlashPlayer folder and remove the flash libraries you don't need.
-(ex: delete .so in windows, and .dll in linux, as it's irrelevant)
 
 Type: `npm run dist`, and in the new "dist" folder, is your files. In linux case, it's a AppImage file! In windows, it's an Exe! And Mac should be a DMG file!
 

@@ -22,6 +22,7 @@ const CONTENT_TYPES = {
     '.js': 'text/javascript; charset=utf-8',
     '.css': 'text/css; charset=utf-8',
     '.json': 'application/json; charset=utf-8',
+    '.wasm': 'application/wasm',
     '.swf': 'application/x-shockwave-flash',
     '.png': 'image/png',
     '.jpg': 'image/jpeg',

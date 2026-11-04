@@ -107,8 +107,16 @@ function removeIfPresent(target) {
     if (fs.existsSync(target)) fs.rmdirSync(target, { recursive: true });
 }
 
+function pinnedBuild(playerPath) {
+    const marker = path.join(path.dirname(playerPath), 'engine.json');
+    if (!fs.existsSync(marker)) return null;
+    return JSON.parse(fs.readFileSync(marker, 'utf8'));
+}
+
 function bundledVersion(playerPath) {
     try {
+        const pinned = pinnedBuild(playerPath);
+        if (pinned) return pinned.name + ' ' + pinned.version;
         const source = fs.readFileSync(playerPath, 'utf8');
         const match = source.match(/versionNumber:"([^"]+)"[^}]*buildDate:"([^"]+)"/);
         return match ? match[1] + ' (' + match[2].slice(0, 10) + ')' : 'Bundled version';
@@ -127,7 +135,8 @@ exports.getStatus = function (dataDirectory, bundledPlayerPath) {
     }
     catch (e) { /* A pre-marker downloaded bundle is still usable. */ }
     return {
-        loaded: fs.existsSync(currentPlayerPath)
+        pinned: !!pinnedBuild(bundledPlayerPath),
+        loaded: !pinnedBuild(bundledPlayerPath) && fs.existsSync(currentPlayerPath)
             ? { source: 'downloaded', version: downloadedTag || 'Downloaded version', channel: downloadedChannel }
             : { source: 'bundled', version: bundledVersion(bundledPlayerPath) },
         fallback: { source: 'bundled', version: bundledVersion(bundledPlayerPath) }
@@ -142,6 +151,9 @@ exports.restoreBundled = function (dataDirectory) {
 };
 
 exports.downloadLatest = async function (dataDirectory, channel, bundledPlayerPath) {
+    if (pinnedBuild(bundledPlayerPath)) {
+        throw new Error('This engine is bundled with AquGrim. Update AquGrim to update the engine.');
+    }
     channel = channel === 'nightly' ? 'nightly' : 'latest';
     const release = await getRelease(channel);
     if (channel === 'latest' && ('v' + bundledVersion(bundledPlayerPath).split(' ')[0]) === release.tag) {

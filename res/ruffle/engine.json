@@ -1,0 +1,13 @@
+{
+  "name": "Mugetsu Web",
+  "version": "1.6.0-aqugrim.2",
+  "source": "https://github.com/mugetsu-aqw/mugetsu",
+  "commit": "49eeabc9bd8743b90827ae988b0c9e0ad9f3ba06",
+  "ruffleCommit": "fda41800ba47059dabec662585a388cf4dca8413",
+  "threading": "sequential-wasm",
+  "files": {
+    "core.ruffle.2b25b601b172993df149.js": "7dfdd8d6b84ae6842b9e796303b1a76086ee7bcd7bc346a8c63b4af21e078f5c",
+    "dac68fc5a2f751c63b7c.wasm": "7b4e23d16f1df09b292a07bf8d0e2ecf7b3f506631f6a3a5d8e2ae9e9880a51d",
+    "ruffle.js": "f9a64efd110ae18a817a8f1988ec617e41856d1997a664718c450cff66e57040"
+  }
+}

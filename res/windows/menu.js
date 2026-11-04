@@ -130,11 +130,22 @@ function pluginContributorMenus(keybinds) {
 }
 
 function platformAquaStarMenu(menuMessages, keybinds) {
-    function openAnotherInstance() {
+    async function openAnotherInstance() {
         const electron = require('electron');
         const instanceSession = require('../instance-session.js');
         try {
+            const game = BrowserWindow.getAllWindows().find(function (win) {
+                return /\/ruffle[-_]wrapper\.html(?:\?|$)/.test(win.webContents.getURL());
+            });
+            const storageEntries = game ? await game.webContents.executeJavaScript(
+                'Object.keys(localStorage).map(key => [key, localStorage.getItem(key)])'
+            ) : null;
+            if (game) {
+                game.webContents.session.flushStorageData();
+                await game.webContents.session.cookies.flushStore();
+            }
             instanceSession.launch({
+                storageEntries: storageEntries,
                 appImage: process.env.APPIMAGE,
                 appPath: electron.app.getAppPath(),
                 argv: process.argv,

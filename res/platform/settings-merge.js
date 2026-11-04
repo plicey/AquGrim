@@ -11,6 +11,7 @@ const PLATFORM_OPTION_KEYS = {
     ruffleUpdateChannel: true,
     ruffleAutoUpdate: true,
     ruffleAutoUpdateMigrated: true,
+    ruffleDefaultMigrated: true,
     showGameMenu: true,
     enableDevTools: true,
     useDirectWmode: true,

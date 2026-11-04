@@ -13,7 +13,7 @@ function fakeHost(state, pluginRoot) {
   };
 }
 
-test('Ruffle render mode keeps the live game URL: the origin is a PPAPI mechanism', async function () {
+test('Ruffle render mode preserves the same-origin game URL', async function () {
   runtime.clear();
   let renderMode = 'flash';
   runtime.setDependencies({
@@ -58,10 +58,8 @@ test('Ruffle render mode keeps the live game URL: the origin is a PPAPI mechanis
     runtime.getPrimaryUrl(),
     'http://127.0.0.1:41000/game/gamefiles/Loader4.swf?ver=b'
   );
-  // Ruffle loads the SWF into a file:// page, where a loopback URL is a cross-origin fetch
-  // that page cannot make: it gets the live URL instead of a black window.
   renderMode = 'ruffle';
-  assert.strictEqual(runtime.getPrimaryUrl(), 'https://game.example/game/gamefiles/Loader4.swf?ver=b');
+  assert.strictEqual(runtime.getPrimaryUrl(), 'http://127.0.0.1:41000/game/gamefiles/Loader4.swf?ver=b');
   await runtime.stopGameOrigin();
 });
 
@@ -538,4 +536,34 @@ test('local SWF override beats the plugin primary and is still recognised as the
   assert.strictEqual(runtime.getPrimaryUrl(), 'file:///C:/data/aqlite_old.swf');
   assert.strictEqual(runtime.findGameEntry('file:///C:/data/aqlite_old.swf'), primary);
   assert.strictEqual(runtime.isGameUrl('file:///C:/data/aqlite_old.swf'), true);
+});
+
+test('game origin keeps its port across restarts so Ruffle saves keep the same origin', async () => {
+  const fs = require('fs');
+  const os = require('os');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'origin-save-test-'));
+  const ports = [];
+  runtime.clear();
+  runtime.setDependencies({
+    constant: { appDataDirectory: directory },
+    createOriginProxy: () => ({
+      listen: async port => { ports.push(port); return 'http://127.0.0.1:' + (port || 42001); },
+      close: async () => {}
+    })
+  });
+  const declaration = { routes: [{ prefix: '/', origin: 'https://game.example' }] };
+  try {
+    await runtime.startGameOrigin(declaration);
+    await runtime.stopGameOrigin();
+    await runtime.startGameOrigin(declaration);
+    assert.deepStrictEqual(ports, [0, 42001]);
+    await runtime.stopGameOrigin();
+    fs.writeFileSync(path.join(directory, 'game-origin-port'), '0');
+    await assert.rejects(async () => runtime.startGameOrigin(declaration), /Invalid saved game origin port/);
+    assert.deepStrictEqual(ports, [0, 42001]);
+  } finally {
+    await runtime.stopGameOrigin();
+    runtime.clear();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });

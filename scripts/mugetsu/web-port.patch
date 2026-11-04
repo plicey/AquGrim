@@ -1,0 +1,691 @@
+diff --git a/Cargo.lock b/Cargo.lock
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -5115,6 +5115,7 @@
+  "thiserror 2.0.18",
+  "tracing",
+  "wasm-bindgen",
++ "web-time",
+  "wgpu",
+ ]
+ 
+@@ -5167,7 +5168,9 @@
+  "smallvec",
+  "swf 0.3.0",
+  "tracing",
++ "wasm-bindgen-futures",
+  "web-sys",
++ "web-time",
+  "wgpu",
+  "wgpu-core",
+  "wgpu-profiler",
+diff --git a/core/src/display_object/graphic.rs b/core/src/display_object/graphic.rs
+--- a/core/src/display_object/graphic.rs
++++ b/core/src/display_object/graphic.rs
+@@ -598,8 +598,8 @@
+     use std::collections::{HashMap, HashSet};
+     use std::rc::Rc;
+     use std::sync::Arc;
+-    use std::time::{Duration, Instant};
+     use swf::BlendMode;
++    use web_time::{Duration, Instant};
+ 
+     /// Stands in for a tessellation that isn't done yet. Never reaches a renderer.
+     #[derive(Debug)]
+diff --git a/render/Cargo.toml b/render/Cargo.toml
+--- a/render/Cargo.toml
++++ b/render/Cargo.toml
+@@ -15,6 +15,7 @@
+ swf = { path = "../swf"}
+ pixel_bender = { path = "pixel_bender"}
+ tracing = { workspace = true }
++web-time = "1.1.0"
+ hashbrown = { workspace = true }
+ gif = "0.14.2"
+ png = { workspace = true }
+diff --git a/render/src/backend.rs b/render/src/backend.rs
+--- a/render/src/backend.rs
++++ b/render/src/backend.rs
+@@ -116,7 +116,7 @@
+     /// until every ticket in `needed` is done. Others still running aren't waited for.
+     fn collect_shapes(
+         &mut self,
+-        _deadline: Option<std::time::Instant>,
++        _deadline: Option<web_time::Instant>,
+         _wait_for: &[u64],
+         _needed: &[u64],
+     ) -> Vec<(u64, TessellatedShape)> {
+diff --git a/render/wgpu/Cargo.toml b/render/wgpu/Cargo.toml
+--- a/render/wgpu/Cargo.toml
++++ b/render/wgpu/Cargo.toml
+@@ -13,6 +13,7 @@
+ [dependencies]
+ wgpu = { workspace = true, features = ["naga-ir", "counters"] }
+ tracing = { workspace = true }
++web-time = "1.1.0"
+ ruffle_render = { path = "..", features = ["tessellator", "wgpu"] }
+ bytemuck = { workspace = true, features = ["derive"] }
+ clap = { workspace = true, optional = true }
+@@ -28,9 +29,11 @@
+ indexmap = { workspace = true }
+ smallvec = { workspace = true }
+ wgpu-profiler = { workspace = true }
+-rayon = { workspace = true }
+ 
+ # desktop
++[target.'cfg(not(target_family = "wasm"))'.dependencies.rayon]
++workspace = true
++
+ [target.'cfg(not(target_family = "wasm"))'.dependencies.wgpu-core]
+ # AQW build: `aqw_flush_encoder_drops` (see `release_gpu_memory`).
+ version = "30.0.1"
+@@ -39,6 +42,9 @@
+ workspace = true
+ 
+ # wasm
++[target.'cfg(target_family = "wasm")'.dependencies.wasm-bindgen-futures]
++version = "0.4.77"
++
+ [target.'cfg(target_family = "wasm")'.dependencies.web-sys]
+ workspace = true
+ features = ["HtmlCanvasElement"]
+diff --git a/render/wgpu/src/backend.rs b/render/wgpu/src/backend.rs
+--- a/render/wgpu/src/backend.rs
++++ b/render/wgpu/src/backend.rs
+@@ -113,10 +113,12 @@
+     /// backend, not in the shared `Descriptors`: freed ranges are reused after this backend's
+     /// own frames have finished on the GPU.
+     mesh_arena: crate::arena::BufferArena,
++    index_arena: Option<crate::arena::BufferArena>,
+     uniform_arena: crate::arena::BufferArena,
+     /// AQW build: gradient textures shared between shapes (see `GradientCache`).
+     gradient_cache: GradientCache,
+     /// AQW build: shapes being tessellated in the background (see `start_shapes`).
++    #[cfg(not(target_family = "wasm"))]
+     background_shapes: BackgroundShapes,
+     target: T,
+     surface: Surface,
+@@ -203,7 +205,13 @@
+             })
+             .unwrap_or_else(|| "n/a".to_string());
+         let (pool_sizes, pool_textures, pool_bytes) = self.texture_pool.stats();
+-        let (mesh_chunks, mesh_reserved, mesh_used) = self.mesh_arena.stats();
++        let (mut mesh_chunks, mut mesh_reserved, mut mesh_used) = self.mesh_arena.stats();
++        if let Some(indices) = &self.index_arena {
++            let (chunks, reserved, used) = indices.stats();
++            mesh_chunks += chunks;
++            mesh_reserved += reserved;
++            mesh_used += used;
++        }
+         let (uniform_chunks, uniform_reserved, uniform_used) =
+             self.uniform_arena.stats();
+         let (cab_sizes, cab_textures, cab_bytes) = self.offscreen_texture_pool.stats();
+@@ -380,6 +388,7 @@
+         }
+ 
+         // AQW build: on DirectX 12, build the render pipelines in the background now.
++        #[cfg(not(target_family = "wasm"))]
+         descriptors.warm_up(target.format());
+ 
+         let surface = Surface::new(
+@@ -420,6 +429,9 @@
+         let profiler = GpuProfiler::new(&descriptors.device, profiler_settings)?;
+ 
+         let uniform_alignment = descriptors.limits.min_uniform_buffer_offset_alignment as u64;
++        // WebGL cannot copy into a buffer used for both vertices and indices.
++        let separate_indices = !descriptors.adapter.get_downlevel_capabilities().flags
++            .contains(wgpu::DownlevelFlags::UNRESTRICTED_INDEX_BUFFER);
+         Ok(Self {
+             descriptors,
+             target,
+@@ -431,7 +443,8 @@
+             offscreen_texture_pool: TexturePool::new_counted(crate::perf_counters::CACHE_POOL_TAKE, crate::perf_counters::CACHE_POOL_NEW),
+             mesh_arena: crate::arena::BufferArena::new(
+                 "Shape geometry",
+-                wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::INDEX,
++                if separate_indices { wgpu::BufferUsages::VERTEX }
++                else { wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::INDEX },
+                 4,
+                 // `RUFFLE_NO_SHARED_SHAPES`: one buffer per shape again, for A/B comparisons.
+                 if std::env::var_os("RUFFLE_NO_SHARED_SHAPES").is_some() {
+@@ -440,6 +453,9 @@
+                     8 << 20
+                 },
+             ),
++            index_arena: separate_indices.then(|| crate::arena::BufferArena::new(
++                "Shape indices", wgpu::BufferUsages::INDEX, 4, 8 << 20,
++            )),
+             uniform_arena: crate::arena::BufferArena::new(
+                 "Shape uniforms",
+                 wgpu::BufferUsages::UNIFORM,
+@@ -447,6 +463,7 @@
+                 1 << 20,
+             ),
+             gradient_cache: GradientCache::default(),
++            #[cfg(not(target_family = "wasm"))]
+             background_shapes: BackgroundShapes::new(),
+             offscreen_buffer_pool: Arc::new(offscreen_buffer_pool),
+             dynamic_transforms: transforms,
+@@ -534,7 +551,7 @@
+                         vertices,
+                         crate::surface::commands::VERTEX_BASE_MULTIPLE,
+                     )?,
+-                    self.mesh_arena.alloc(
++                    self.index_arena.as_ref().unwrap_or(&self.mesh_arena).alloc(
+                         device,
+                         &mut frame.staging_belt,
+                         &mut frame.command_encoder,
+@@ -1030,7 +1047,7 @@
+         shape: DistilledShape,
+         bitmap_source: &dyn BitmapSource,
+     ) -> ShapeHandle {
+-        let start = std::time::Instant::now();
++        let start = web_time::Instant::now();
+         let mesh = self.register_shape_internal(shape, bitmap_source, 1.0, NO_STRETCH);
+         crate::perf_counters::inc(crate::perf_counters::SHAPES_SINGLE);
+         let micros = start.elapsed().as_micros() as u64;
+@@ -1056,7 +1073,7 @@
+         scale: f32,
+         stretch: Stretch,
+     ) -> ShapeHandle {
+-        let start = std::time::Instant::now();
++        let start = web_time::Instant::now();
+         let mesh = self.register_shape_internal(shape, bitmap_source, scale, stretch);
+         crate::perf_counters::inc(crate::perf_counters::SHAPES_RESCALED);
+         let micros = start.elapsed().as_micros() as u64;
+@@ -1069,6 +1086,8 @@
+     /// thread. Tessellation is deterministic and only asks the bitmap source for bitmap sizes,
+     /// which are looked up here first, so the meshes are identical to `register_shape`'s.
+     /// `RUFFLE_SERIAL_TESSELLATION` tessellates one at a time instead.
++    /// Web builds use the trait's sequential default.
++    #[cfg(not(target_family = "wasm"))]
+     fn register_shapes(
+         &mut self,
+         shapes: &[&swf::Shape],
+@@ -1085,7 +1104,7 @@
+                 .collect();
+         }
+ 
+-        let start = std::time::Instant::now();
++        let start = web_time::Instant::now();
+         let sizes = BitmapSizes::new(shapes, bitmap_source);
+         let meshes: Vec<_> = shapes
+             .par_iter()
+@@ -1111,6 +1130,7 @@
+ 
+     /// AQW build: tessellates the shapes on all cores, then uploads them in order on this
+     /// thread, like `register_shapes` (same meshes as `register_shape_with_scale` for each).
++    #[cfg(not(target_family = "wasm"))]
+     fn register_shapes_with_scales(
+         &mut self,
+         jobs: &[(&swf::Shape, f32, Stretch, &dyn BitmapSource)],
+@@ -1125,7 +1145,7 @@
+                 .collect();
+         }
+ 
+-        let start = std::time::Instant::now();
++        let start = web_time::Instant::now();
+         let sizes: Vec<BitmapSizes> = jobs
+             .iter()
+             .map(|(shape, _, _, source)| BitmapSizes::new(&[*shape], *source))
+@@ -1170,6 +1190,7 @@
+     /// AQW build: each shape tessellated on its own on the thread pool (see
+     /// `BackgroundShapes`), with its bitmap sizes looked up here first, as in
+     /// `register_shapes_with_scales` (same meshes).
++    #[cfg(not(target_family = "wasm"))]
+     fn start_shapes(
+         &mut self,
+         jobs: Vec<(u64, Arc<swf::Shape>, f32, Stretch, &dyn BitmapSource)>,
+@@ -1182,7 +1203,7 @@
+                 let distilled: DistilledShape = (&*shape).into();
+                 let id = distilled.id;
+                 let bounds = distilled.shape_bounds.clone();
+-                let start = std::time::Instant::now();
++                let start = web_time::Instant::now();
+                 let mesh = ShapeTessellator::new()
+                     .tessellate_shape_stretched(distilled, &sizes, scale, stretch);
+                 let micros = start.elapsed().as_micros() as u64;
+@@ -1193,13 +1214,14 @@
+         Vec::new()
+     }
+ 
++    #[cfg(not(target_family = "wasm"))]
+     fn collect_shapes(
+         &mut self,
+-        deadline: Option<std::time::Instant>,
++        deadline: Option<web_time::Instant>,
+         wait_for: &[u64],
+         needed: &[u64],
+     ) -> Vec<(u64, ruffle_render::backend::TessellatedShape)> {
+-        let start = std::time::Instant::now();
++        let start = web_time::Instant::now();
+         let shapes = &mut self.background_shapes;
+         let mut done = Vec::new();
+         let take = |running: &mut std::collections::HashSet<u64>,
+@@ -1221,7 +1243,7 @@
+             }
+             let received = match deadline {
+                 Some(deadline) if !waiting_for_needed => {
+-                    let now = std::time::Instant::now();
++                    let now = web_time::Instant::now();
+                     if now >= deadline {
+                         break;
+                     }
+@@ -1243,13 +1265,54 @@
+         done
+     }
+ 
++    #[cfg(target_family = "wasm")]
++    fn start_shapes(
++        &mut self,
++        jobs: Vec<(u64, Arc<swf::Shape>, f32, Stretch, &dyn BitmapSource)>,
++    ) -> Vec<(u64, ruffle_render::backend::TessellatedShape)> {
++        let _shapes =
++            crate::perf_counters::timers::Scoped::new(crate::perf_counters::timers::SHAPES);
++        let _timer = crate::perf_counters::timers::Scoped::new(
++            crate::perf_counters::timers::SHAPE_TESSELLATE,
++        );
++        jobs.into_iter()
++            .map(|(ticket, shape, scale, stretch, source)| {
++                let distilled: DistilledShape = (&*shape).into();
++                let id = distilled.id;
++                let bounds = distilled.shape_bounds.clone();
++                let start = web_time::Instant::now();
++                let mesh = self
++                    .shape_tessellator
++                    .tessellate_shape_stretched(distilled, source, scale, stretch);
++                let micros = start.elapsed().as_micros() as u64;
++                let shape = Tessellated {
++                    id,
++                    bounds,
++                    mesh,
++                    micros,
++                };
++                let (vertices, indices) = shape.size();
++                let data = Box::new(shape);
++                (
++                    ticket,
++                    ruffle_render::backend::TessellatedShape {
++                        data,
++                        micros,
++                        vertices,
++                        indices,
++                    },
++                )
++            })
++            .collect()
++    }
++
+     fn upload_tessellated(
+         &mut self,
+         shape: ruffle_render::backend::TessellatedShape,
+         bitmap_source: &dyn BitmapSource,
+     ) -> Option<ShapeHandle> {
+         let shape = shape.data.downcast::<Tessellated>().ok()?;
+-        let start = std::time::Instant::now();
++        let start = web_time::Instant::now();
+         let Tessellated { id, bounds, mesh, .. } = *shape;
+         let handle = ShapeHandle(Arc::new(self.upload_shape(id, bounds, mesh, bitmap_source)));
+         crate::perf_counters::add(crate::perf_counters::SHAPES_RESCALED, 1);
+@@ -1448,6 +1511,7 @@
+         // AQW build: free layer/filter textures of sizes unused for ~10 s at 24 fps.
+         self.texture_pool.end_frame(240);
+         self.mesh_arena.end_frame();
++        if let Some(indices) = &self.index_arena { indices.end_frame(); }
+         self.uniform_arena.end_frame();
+         self.profiler
+             .end_frame()
+@@ -2075,6 +2139,7 @@
+     pub command_encoder: wgpu::CommandEncoder,
+     draws_since_flush: u32,
+     /// AQW build: frames submitted to the GPU and possibly not finished yet.
++    #[cfg(not(target_family = "wasm"))]
+     in_flight: std::collections::VecDeque<SubmissionIndex>,
+ }
+ 
+@@ -2088,6 +2153,7 @@
+                 .create_command_encoder(&Default::default()),
+             staging_belt: wgpu::util::StagingBelt::new(descriptors.device.clone(), 65536),
+             draws_since_flush: 0,
++            #[cfg(not(target_family = "wasm"))]
+             in_flight: Default::default(),
+         }
+     }
+@@ -2120,21 +2186,24 @@
+         // so did everything they hold (process memory grew ~90 MB/s). Keep at most
+         // MAX_FRAMES_IN_FLIGHT frames queued, like games do; this never delays a frame the
+         // GPU keeps up with, and shortens the queue (latency) when it doesn't.
+-        const MAX_FRAMES_IN_FLIGHT: usize = 2;
+-        self.in_flight.push_back(index.clone());
+-        while self.in_flight.len() > MAX_FRAMES_IN_FLIGHT {
+-            let oldest = self.in_flight.pop_front().expect("queue is not empty");
+-            let start = std::time::Instant::now();
+-            timers::time(timers::GPU_WAIT, || {
+-                let _ = descriptors.device.poll(wgpu::PollType::Wait {
+-                    submission_index: Some(oldest),
+-                    timeout: Some(std::time::Duration::from_secs(2)),
++        #[cfg(not(target_family = "wasm"))]
++        {
++            const MAX_FRAMES_IN_FLIGHT: usize = 2;
++            self.in_flight.push_back(index.clone());
++            while self.in_flight.len() > MAX_FRAMES_IN_FLIGHT {
++                let oldest = self.in_flight.pop_front().expect("queue is not empty");
++                let start = web_time::Instant::now();
++                timers::time(timers::GPU_WAIT, || {
++                    let _ = descriptors.device.poll(wgpu::PollType::Wait {
++                        submission_index: Some(oldest),
++                        timeout: Some(std::time::Duration::from_secs(2)),
++                    });
+                 });
+-            });
+-            crate::perf_counters::add(
+-                crate::perf_counters::GPU_WAIT_MS,
+-                start.elapsed().as_millis() as u32,
+-            );
++                crate::perf_counters::add(
++                    crate::perf_counters::GPU_WAIT_MS,
++                    start.elapsed().as_millis() as u32,
++                );
++            }
+         }
+         index
+     }
+@@ -2170,6 +2239,7 @@
+ 
+ /// AQW build: the sizes of every bitmap a batch of shapes fills with, looked up up front so
+ /// tessellation (which only needs `bitmap_size`) can run on worker threads.
++#[cfg(not(target_family = "wasm"))]
+ struct BitmapSizes(std::collections::HashMap<u16, Option<ruffle_render::bitmap::BitmapSize>>);
+ 
+ /// AQW build: a shape tessellated on the thread pool (see `RenderBackend::start_shapes`):
+@@ -2193,12 +2263,14 @@
+ 
+ /// AQW build: shapes being tessellated on the thread pool: each sends its result here when
+ /// done; `running` are the tickets not received yet.
++#[cfg(not(target_family = "wasm"))]
+ struct BackgroundShapes {
+     sender: std::sync::mpsc::Sender<(u64, Tessellated)>,
+     receiver: std::sync::mpsc::Receiver<(u64, Tessellated)>,
+     running: std::collections::HashSet<u64>,
+ }
+ 
++#[cfg(not(target_family = "wasm"))]
+ impl BackgroundShapes {
+     fn new() -> Self {
+         let (sender, receiver) = std::sync::mpsc::channel();
+@@ -2210,6 +2282,7 @@
+     }
+ }
+ 
++#[cfg(not(target_family = "wasm"))]
+ impl BitmapSizes {
+     fn new(shapes: &[&swf::Shape], bitmap_source: &dyn BitmapSource) -> Self {
+         let mut sizes = std::collections::HashMap::new();
+@@ -2238,6 +2311,7 @@
+     }
+ }
+ 
++#[cfg(not(target_family = "wasm"))]
+ impl BitmapSource for BitmapSizes {
+     fn bitmap_size(&self, id: u16) -> Option<ruffle_render::bitmap::BitmapSize> {
+         // Every id a shape uses was looked up in `new`.
+diff --git a/render/wgpu/src/descriptors.rs b/render/wgpu/src/descriptors.rs
+--- a/render/wgpu/src/descriptors.rs
++++ b/render/wgpu/src/descriptors.rs
+@@ -7,6 +7,7 @@
+ };
+ use fnv::FnvHashMap;
+ use std::fmt::Debug;
++#[cfg(not(target_family = "wasm"))]
+ use std::sync::atomic::{AtomicBool, Ordering};
+ use std::sync::{Arc, Mutex, OnceLock};
+ use wgpu::Backend;
+@@ -27,6 +28,7 @@
+     /// being built (e.g. by `warm_up`) doesn't block the others.
+     pipelines: Mutex<FnvHashMap<(u32, wgpu::TextureFormat), Arc<OnceLock<Arc<Pipelines>>>>>,
+     pub filters: Filters,
++    #[cfg(not(target_family = "wasm"))]
+     warm_up_started: AtomicBool,
+ }
+ 
+@@ -65,6 +67,7 @@
+             shaders,
+             pipelines: Default::default(),
+             filters,
++            #[cfg(not(target_family = "wasm"))]
+             warm_up_started: AtomicBool::new(false),
+         }
+     }
+@@ -75,6 +78,7 @@
+     /// entering a room or seeing an effect for the first time (2.8 s entering Yulgar on a
+     /// Ryzen 9). Builds them all on background threads at startup, while AQW is loading.
+     /// Vulkan doesn't need this (no freezes there), so it does nothing on other backends.
++    #[cfg(not(target_family = "wasm"))]
+     pub fn warm_up(self: &Arc<Self>, target_format: wgpu::TextureFormat) {
+         if self.backend != Backend::Dx12 || self.warm_up_started.swap(true, Ordering::SeqCst) {
+             return;
+diff --git a/render/wgpu/src/lib.rs b/render/wgpu/src/lib.rs
+--- a/render/wgpu/src/lib.rs
++++ b/render/wgpu/src/lib.rs
+@@ -382,7 +382,7 @@
+ 
+         #[inline]
+         pub fn time<R>(timer: usize, f: impl FnOnce() -> R) -> R {
+-            let start = std::time::Instant::now();
++            let start = web_time::Instant::now();
+             let result = f();
+             MICROS[timer].fetch_add(start.elapsed().as_micros() as u64, Ordering::Relaxed);
+             result
+@@ -397,11 +397,11 @@
+         }
+ 
+         /// Adds the time until it's dropped.
+-        pub struct Scoped(usize, std::time::Instant);
++        pub struct Scoped(usize, web_time::Instant);
+ 
+         impl Scoped {
+             pub fn new(timer: usize) -> Self {
+-                Self(timer, std::time::Instant::now())
++                Self(timer, web_time::Instant::now())
+             }
+         }
+ 
+@@ -640,6 +640,7 @@
+ /// On native wgpu the popped scope's future is ready immediately, so it's polled once right
+ /// here (not with an executor's `block_on`, which panics when called from inside another
+ /// executor, e.g. while a loader task runs).
++#[cfg(not(target_family = "wasm"))]
+ pub(crate) fn aqw_out_of_memory(scope: wgpu::ErrorScopeGuard) -> bool {
+     let out_of_memory = pop_scope(scope).is_some();
+     if out_of_memory {
+@@ -648,6 +649,7 @@
+     out_of_memory
+ }
+ 
++#[cfg(not(target_family = "wasm"))]
+ fn pop_scope(scope: wgpu::ErrorScopeGuard) -> Option<wgpu::Error> {
+     let future = std::pin::pin!(scope.pop());
+     let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+@@ -661,6 +663,7 @@
+ /// memory. Also catches the validation errors `f` itself then causes by using what failed (e.g.
+ /// creating a view of a texture that couldn't be allocated); a validation error without an
+ /// out-of-memory error is a bug and stays fatal.
++#[cfg(not(target_family = "wasm"))]
+ pub(crate) fn catch_out_of_memory<R>(device: &wgpu::Device, f: impl FnOnce() -> R) -> (R, bool) {
+     let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
+     let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+@@ -674,15 +677,71 @@
+     (result, out_of_memory)
+ }
+ 
++#[cfg(target_family = "wasm")]
++pub(crate) fn aqw_out_of_memory(scope: wgpu::ErrorScopeGuard) -> bool {
++    let future = scope.pop();
++    poll_web_error_scope(async move {
++        let out_of_memory = future.await.is_some();
++        if out_of_memory {
++            gpu_oom::note();
++        }
++        out_of_memory
++    })
++}
++
++#[cfg(target_family = "wasm")]
++pub(crate) fn catch_out_of_memory<R>(device: &wgpu::Device, f: impl FnOnce() -> R) -> (R, bool) {
++    let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
++    let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
++    let result = f();
++    // Pop both scopes now so later rendering isn't captured while the futures are pending.
++    let memory = memory.pop();
++    let validation = validation.pop();
++    let out_of_memory = poll_web_error_scope(async move {
++        let out_of_memory = memory.await.is_some();
++        if out_of_memory {
++            gpu_oom::note();
++        }
++        if let Some(error) = validation.await
++            && !out_of_memory
++        {
++            panic!("wgpu error: {error}");
++        }
++        out_of_memory
++    });
++    (result, out_of_memory)
++}
++
++#[cfg(target_family = "wasm")]
++fn poll_web_error_scope(future: impl std::future::Future<Output = bool> + 'static) -> bool {
++    let mut future = Box::pin(future);
++    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
++    match std::future::Future::poll(future.as_mut(), &mut context) {
++        std::task::Poll::Ready(out_of_memory) => out_of_memory,
++        std::task::Poll::Pending => {
++            // shortcut: pending web OOMs recover next frame; immediate retries need an async renderer.
++            wasm_bindgen_futures::spawn_local(async move {
++                future.await;
++            });
++            false
++        }
++    }
++}
++
+ /// AQW build: after dropping textures to make room, waits until the GPU is done with them so
+ /// their memory is really released (including resources only kept alive by finished command
+ /// buffers waiting on wgpu's background drop thread).
++#[cfg(not(target_family = "wasm"))]
+ pub(crate) fn release_gpu_memory(descriptors: &descriptors::Descriptors) {
+     let _ = descriptors
+         .device
+         .poll(wgpu::PollType::wait_indefinitely());
+-    #[cfg(not(target_family = "wasm"))]
+     wgpu_core::aqw_flush_encoder_drops();
++}
++
++#[cfg(target_family = "wasm")]
++pub(crate) fn release_gpu_memory(descriptors: &descriptors::Descriptors) {
++    let _ = descriptors.device.poll(wgpu::PollType::Poll);
+ }
+ 
+ /// AQW build: running out of GPU memory is not fatal.
+@@ -698,7 +757,7 @@
+ pub(crate) mod gpu_oom {
+     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+     use std::sync::{Arc, Mutex};
+-    use std::time::{Duration, Instant};
++    use web_time::{Duration, Instant};
+ 
+     static PENDING: AtomicBool = AtomicBool::new(false);
+     static LAST: Mutex<Option<Instant>> = Mutex::new(None);
+diff --git a/render/wgpu/src/segments.rs b/render/wgpu/src/segments.rs
+--- a/render/wgpu/src/segments.rs
++++ b/render/wgpu/src/segments.rs
+@@ -10,6 +10,7 @@
+ //! order, within the same frame.
+ 
+ use crate::descriptors::Descriptors;
++#[cfg(not(target_family = "wasm"))]
+ use rayon::prelude::*;
+ use std::cell::{Cell, RefCell};
+ use std::sync::OnceLock;
+@@ -105,5 +106,9 @@
+     if encoders.len() == 1 {
+         return encoders.into_iter().map(|e| e.finish()).collect();
+     }
+-    encoders.into_par_iter().map(|e| e.finish()).collect()
++    #[cfg(not(target_family = "wasm"))]
++    let buffers = encoders.into_par_iter().map(|e| e.finish()).collect();
++    #[cfg(target_family = "wasm")]
++    let buffers = encoders.into_iter().map(|e| e.finish()).collect();
++    buffers
+ }
+diff --git a/patches/wgpu-core/src/device/life.rs b/patches/wgpu-core/src/device/life.rs
+--- a/patches/wgpu-core/src/device/life.rs
++++ b/patches/wgpu-core/src/device/life.rs
+@@ -439,7 +439,7 @@
+ /// inside `Queue::submit` on the caller's (main) thread. Everything they hold is only kept
+ /// alive for GPU work that has already completed, and resource destruction is thread-safe.
+ /// `WGPU_INLINE_ENCODER_DROP` restores dropping inline.
+-#[cfg(feature = "std")]
++#[cfg(all(feature = "std", not(target_family = "wasm")))]
+ fn drop_finished_encoders(encoders: Vec<EncoderInFlight>) {
+     use std::sync::{mpsc, Mutex, OnceLock};
+     if encoders.is_empty() {
+@@ -483,7 +483,7 @@
+ 
+ /// AQW build: waits until the background thread has dropped every command buffer handed to
+ /// it so far (at most 2 s). Needed before reconfiguring a surface.
+-#[cfg(feature = "std")]
++#[cfg(all(feature = "std", not(target_family = "wasm")))]
+ pub(crate) fn flush_encoder_drops() {
+     use core::sync::atomic::Ordering;
+     let queued = crate::aqw_stats::ENCODERS_QUEUED.load(Ordering::Acquire);
+@@ -495,10 +495,10 @@
+     }
+ }
+ 
+-#[cfg(not(feature = "std"))]
++#[cfg(any(not(feature = "std"), target_family = "wasm"))]
+ pub(crate) fn flush_encoder_drops() {}
+ 
+-#[cfg(not(feature = "std"))]
++#[cfg(any(not(feature = "std"), target_family = "wasm"))]
+ fn drop_finished_encoders(encoders: Vec<EncoderInFlight>) {
+     profiling::scope!("drop command buffer trackers");
+     drop(encoders);
+diff --git a/render/wgpu/src/surface/commands.rs b/render/wgpu/src/surface/commands.rs
+--- a/render/wgpu/src/surface/commands.rs
++++ b/render/wgpu/src/surface/commands.rs
+@@ -413,7 +413,8 @@
+             let index_size = draw.index_format.byte_size() as wgpu::BufferAddress;
+             let base_vertex = draw.vertices.start / stride;
+             let first_index = draw.indices.start / index_size;
+-            if draw.vertices.start % stride == 0
++            // Browser GL has no base-vertex draw entry point; bind the shape slice instead.
++            if !cfg!(target_family = "wasm") && draw.vertices.start % stride == 0
+                 && draw.indices.start % index_size == 0
+                 && base_vertex <= i32::MAX as u64
+                 && first_index + u64::from(num_indices) <= u32::MAX as u64
+diff --git a/core/src/player.rs b/core/src/player.rs
+--- a/core/src/player.rs
++++ b/core/src/player.rs
+@@ -1228,7 +1228,7 @@
+     }
+ 
+     fn handle_focus_event(&mut self, event: PlayerEvent) -> bool {
+-        #[cfg(any(target_os = "linux", target_os = "macos"))]
++        #[cfg(any(target_os = "linux", target_os = "macos", target_arch = "wasm32"))]
+         {
+             self.input.clear_keys();
+             self.mutate_with_update_context(|context| {
+diff --git a/core/src/input.rs b/core/src/input.rs
+--- a/core/src/input.rs
++++ b/core/src/input.rs
+@@ -115,7 +115,7 @@
+         }
+     }
+ 
+-    #[cfg(any(target_os = "linux", target_os = "macos"))]
++    #[cfg(any(target_os = "linux", target_os = "macos", target_arch = "wasm32"))]
+     pub fn clear_keys(&mut self) {
+         self.keys_down.clear();
+         self.keys_down_phys_loc.clear();

@@ -32,6 +32,7 @@ package {
     import flash.system.LoaderContext;
     import flash.system.Security;
     import flash.utils.getQualifiedClassName;
+    import flash.utils.getTimer;
     import flash.utils.Timer;
 
     public class AquaBridge extends Sprite {
@@ -54,6 +55,9 @@ package {
         private var game:Object = null;          // the game's own root object
         private var domain:ApplicationDomain;    // where the game's classes live (ours)
         private var events:Array = [];
+        private var measuredFps:Number = 0;
+        private var measuredFrames:int = 0;
+        private var measuredSince:Number = 0;
         private var gameLoader:Loader;
         private var gameRootWait:Timer;
         private var base:String = '';
@@ -70,6 +74,7 @@ package {
             stage.scaleMode = StageScaleMode.SHOW_ALL;
 
             registerCallSurface();
+            addEventListener(Event.ENTER_FRAME, measureFps);
 
             // The base is this movie's own directory, resolved from where it was served. Loader4
             // and the game it loads therefore both use the loopback origin shared with this bridge.
@@ -119,6 +124,7 @@ package {
             addCallback('SetWalkSpeedEnabled', aqSetWalkSpeedEnabled);
             addCallback('SetSkipCutscenesEnabled', aqSetSkipCutscenesEnabled);
             addCallback('GetSkipCutscenesStatus', aqGetSkipCutscenesStatus);
+            addCallback('getBridgeFps', aqGetBridgeFps);
         }
 
         private function addCallback(name:String, fn:Function):void {
@@ -127,6 +133,21 @@ package {
             } catch (e:Error) {
                 emit('error', 'could not register ' + name + ': ' + e.message);
             }
+        }
+
+        private function measureFps(event:Event):void {
+            var now:Number = getTimer();
+            if (measuredSince == 0) measuredSince = now;
+            measuredFrames++;
+            var elapsed:Number = now - measuredSince;
+            if (elapsed < 1000) return;
+            measuredFps = measuredFrames * 1000 / elapsed;
+            measuredFrames = 0;
+            measuredSince = now;
+        }
+
+        private function aqGetBridgeFps():String {
+            return String(Math.round(measuredFps * 10) / 10);
         }
 
         private function restoreInfiniteRange():void {

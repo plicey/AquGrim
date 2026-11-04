@@ -2,6 +2,7 @@
 // window helpers so plugins need not require res/instances.js directly.
 
 const path = require('path');
+const fs = require('fs');
 
 let host = null;
 let hostState = null;
@@ -70,7 +71,7 @@ function startGameOrigin(declaration) {
     // add files of its own - its own page and a bridge SWF have to be same-origin with the game
     // as well - and a plugin that serves a path itself wins over the platform's default.
     const files = constant.swfWrapperPath ? { '/wrapper.html': constant.swfWrapperPath } : {};
-    Object.assign(files, declared.files || {});
+    Object.assign(files, constant.ruffleFiles || {}, declared.files || {});
     const proxy = create({
         routes: declared.routes,
         files: files,
@@ -87,11 +88,28 @@ function startGameOrigin(declaration) {
         },
         log: function (line) { console.log('[AquGrim:origin] ' + line); }
     });
-    return Promise.resolve(proxy.listen(0)).then(function (baseUrl) {
+    // Browser save storage belongs to the full origin, including its port.
+    const portFile = constant.appDataDirectory && path.join(constant.appDataDirectory, 'game-origin-port');
+    let port = 0;
+    if (portFile && fs.existsSync(portFile)) {
+        port = Number(fs.readFileSync(portFile, 'utf8').trim());
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+            throw new Error('Invalid saved game origin port: ' + portFile);
+        }
+    }
+    return Promise.resolve(proxy.listen(port)).then(async function (baseUrl) {
+        if (portFile && !port) {
+            try { fs.writeFileSync(portFile, new URL(baseUrl).port); }
+            catch (error) { await proxy.close(); throw error; }
+        }
         gameOriginProxy = proxy;
         gameOriginBaseUrl = baseUrl;
         if (typeof constant.setSwfWrapperBase === 'function') {
             constant.setSwfWrapperBase(baseUrl + '/wrapper.html');
+        }
+        if (typeof constant.setRuffleWrapperBase === 'function') {
+            constant.setRuffleWrapperBase(baseUrl + '/ruffle-wrapper.html');
+            require('../socketProxy.js').allowOrigin(baseUrl);
         }
         console.log('[AquGrim:origin] game origin on ' + baseUrl);
         return baseUrl;
@@ -100,11 +118,13 @@ function startGameOrigin(declaration) {
 
 function stopGameOrigin() {
     const proxy = gameOriginProxy;
+    if (gameOriginBaseUrl) require('../socketProxy.js').removeOrigin(gameOriginBaseUrl);
     gameOriginProxy = null;
     gameOriginBaseUrl = '';
     try {
         const constant = constantApi || require('../const.js');
         if (typeof constant.setSwfWrapperBase === 'function') constant.setSwfWrapperBase('');
+        if (typeof constant.setRuffleWrapperBase === 'function') constant.setRuffleWrapperBase('');
     } catch (e) { /* no runtime to reset */ }
     return proxy ? Promise.resolve(proxy.close()).catch(function () {}) : Promise.resolve();
 }
@@ -190,9 +210,6 @@ function getPrimaryUrl() {
     const primary = getPrimaryGame();
     if (primary && typeof primary.getUrl === 'function') {
         const url = primary.getUrl();
-        // Ruffle loads the game into a file:// page, where a loopback URL is a cross-origin
-        // fetch that page cannot make - the origin is a PPAPI mechanism only.
-        if (currentSettings().renderMode === 'ruffle') return url;
         // The plugin may know its hosts are not a plain mirror; ask it before assuming.
         if (typeof primary.toServeFromOrigin === 'function') {
             return primary.toServeFromOrigin(url, gameOriginBaseUrl);

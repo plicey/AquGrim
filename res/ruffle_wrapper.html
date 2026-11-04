@@ -2,13 +2,12 @@
 <html style="margin:0;padding:0;width:100%;height:100%;overflow:hidden;">
 <head>
 <meta charset="UTF-8">
-<style>
-  html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#000; }
-  #container, #container * { width:100% !important; height:100% !important; }
-</style>
+<link rel="stylesheet" href="game_chrome.css">
 </head>
 <body>
-<div id="container"></div>
+<div id="chrome" role="toolbar"></div>
+<div id="stage"><div id="surface"></div></div>
+<div id="actionToast" role="status" aria-live="polite" hidden></div>
 
 <script>
 (function () {
@@ -16,6 +15,8 @@
   var swfUrl = params.get('swf');
   var proxyUrl = params.get('proxy');
   var ruffleUrl = params.get('ruffle') || 'ruffle/ruffle.js';
+  var quality = params.get('quality') || 'low';
+  if (['low', 'medium', 'high', 'best'].indexOf(quality) === -1) quality = 'low';
   if (!swfUrl) return;
 
   // Some Flash games talk to their servers over raw TCP, which Ruffle (sandboxed, no raw
@@ -29,7 +30,8 @@
   var socketCfg = cfg.socket || null;
 
   function addHostPort(map, host, port) {
-    if (!host || !port) return;
+    port = Number(port);
+    if (typeof host !== 'string' || !host || !Number.isInteger(port) || port < 1 || port > 65535) return;
     if (!map.has(host)) map.set(host, new Set());
     map.get(host).add(port);
     if (socketCfg && socketCfg.policyPort) map.get(host).add(socketCfg.policyPort); // Flash cross-domain policy socket
@@ -74,27 +76,34 @@
     var swfBase = '';
     try {
       var u = new URL(swfUrl);
-      swfBase = u.origin + u.pathname.replace(/[^/]*$/, '');
+      swfBase = new URL('.', u).href;
     } catch (e) {}
 
     var ruffle = window.RufflePlayer.newest();
     var player = ruffle.createPlayer();
-    document.getElementById('container').appendChild(player);
+    player.tabIndex = 0;
+    document.getElementById('surface').appendChild(player);
 
     var loadOpts = {
       url: swfUrl,
+      quality: quality,
+      preferredRenderer: 'wgpu-webgl',
       allowScriptAccess: true,
       allowNetworking: 'all',
       allowFullscreen: true,
       splashScreen: false,
-      preloader: false,
-      // Match Flash scale=showall: letterbox (black bars) instead of stretching.
+      autoplay: 'on',
+      backgroundExecutionMode: 'mainThread',
+      unmuteOverlay: 'hidden',
+      // Letterbox the stage instead of stretching it.
       letterbox: 'on',
       socketProxy: socketProxy
     };
     if (swfBase) loadOpts.base = swfBase;
 
-    player.load(loadOpts).catch(function (e) {
+    player.ruffle(1).load(loadOpts).then(function () {
+      try { player.focus({ preventScroll: true }); } catch (e) { /* the page can still be clicked */ }
+    }).catch(function (e) {
       console.error('[AquGrim] Ruffle load failed:', e);
     });
   }
@@ -108,5 +117,6 @@
   document.head.appendChild(script);
 })();
 </script>
+<script src="game_chrome.js"></script>
 </body>
 </html>

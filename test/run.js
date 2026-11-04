@@ -6,11 +6,14 @@ global.test = function (name, fn) {
 };
 
 [
+  './unit/stdio.test.js',
   './unit/list-state.test.js',
   './unit/reset-time.test.js',
   './unit/feature-window-controller.test.js',
   './unit/focus-style.test.js',
   './unit/ruffle-update-ui.test.js',
+  './unit/mugetsu-build.test.js',
+  './unit/adaptive-resolution.test.js',
   './unit/wikiview-injection.test.js',
   './unit/charpage-lab.test.js',
   './unit/game-menu.test.js',

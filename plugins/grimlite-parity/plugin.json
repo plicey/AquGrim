@@ -32,6 +32,7 @@
     "isNull",
     "sendClientPacket",
     "pollEvents",
+    "getBridgeFps",
     "AttackMonster",
     "AttackMonsterByMonMapId",
     "UseSkill",
