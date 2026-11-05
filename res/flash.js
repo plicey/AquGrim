@@ -7,6 +7,8 @@ function appendPerformanceSwitches(app) {
     // Critical for games: alt-tabbing or opening another window must not drop FPS.
     app.commandLine.appendSwitch('disable-renderer-backgrounding');
     app.commandLine.appendSwitch('disable-background-timer-throttling');
+    // Covered windows have a separate rendering throttle from timers/process priority.
+    app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 
     // GPU / rendering optimizations
     app.commandLine.appendSwitch('ignore-gpu-blocklist');

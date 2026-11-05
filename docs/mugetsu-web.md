@@ -64,10 +64,18 @@ env -u ELECTRON_RUN_AS_NODE -u WAYLAND_DISPLAY xvfb-run -a node_modules/electron
 
 This uses a separate profile and display. It holds movement keys, moves focus away without
 key-up, then presses the opposite directions. It verifies the movie receives deactivation,
-movement recovers, skill keys still work, and game frames advance while the window is hidden.
+movement recovers, skill keys still work, and game frames and page timers advance while the
+window is covered, unfocused, or hidden. It tests both production background-throttling settings
+and Ruffle's hidden-page fallback. Minimization is also checked when a window manager is
+available; plain Xvfb reports that case as unavailable.
 The fixture source and compiled movie are in `test/fixtures/keyboard/`; rebuild it with Apache
 Flex targeting Flash 32, static runtime linking, and a frame rate of 24.
 
 Mugetsu Web revision 2 sends activation/deactivation to WASM movies and clears held engine keys.
 The wrapper enables `backgroundExecutionMode: "mainThread"`: a worker schedules game ticks when
 hidden instead of Ruffle's default pause. These checks do not require a game account.
+
+On Wayland, the compositor can stop animation callbacks even while Electron reports the
+page as visible. `res/game-timing.js` races native callbacks with a timer so that game
+ticks continue in that state too. Run the smoke command with `PROBE_STALL_RAF=1` to
+simulate a compositor that never delivers animation callbacks.
