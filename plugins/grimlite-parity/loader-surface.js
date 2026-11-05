@@ -418,7 +418,7 @@ const SURFACE = {
     // - and the bridge's callback of the same name does the object plumbing in-domain, which is
     // exactly what the reference's own loader does from inside that same domain.
     AttackMonster: {
-        compute: function (ctx, p) { return ctx.raw('AttackMonster', [String(p[0])]); }
+        compute: function (ctx, p) { return ctx.raw('AttackMonster', p[1] === false ? [String(p[0]), false] : [String(p[0])]); }
     },
     AttackMonsterByMonMapId: {
         compute: function (ctx, p) { return ctx.raw('AttackMonsterByMonMapId', [String(p[0])]); }
@@ -754,10 +754,13 @@ const SURFACE = {
             'state and its remaining time come from the packet tap instead (bot/auras.js, #42)'
     },
     UseSkill: {
-        compute: function (ctx, p) { return ctx.raw('UseSkill', [index(p[0])]); }
+        compute: function (ctx, p) {
+            return ctx.raw('UseSkill', p[2] === true ? [index(p[0]), p[1] !== false, true] :
+                (p[1] === false ? [index(p[0]), false] : [index(p[0])]));
+        }
     },
     ForceUseSkill: {
-        compute: function (ctx, p) { return ctx.raw('ForceUseSkill', [index(p[0])]); }
+        compute: function (ctx, p) { return ctx.raw('ForceUseSkill', p[1] === true ? [index(p[0]), true] : [index(p[0])]); }
     },
     SetTargetPvP: {
         // The reference's C# passes null when its auto-target box is cleared

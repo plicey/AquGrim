@@ -1,6 +1,6 @@
 (function () {
   function format(skill, condition, comparator, threshold) {
-    if (!/^[1-4]$/.test(skill)) throw new Error('Choose a skill from 1 to 4.');
+    if (!/^[0-4]$/.test(skill)) throw new Error('Choose a skill from 0 to 4.');
     if (condition === '') return skill;
     if (condition !== 'SH' && condition !== 'SM') throw new Error('Choose HP or MP.');
     if (['>=', '<=', '='].indexOf(comparator) === -1) throw new Error('Choose a comparison.');
@@ -33,8 +33,8 @@
 
   function cooldown(text, skill) {
     var skills = text.trim() || skill;
-    if (!/^[1-4](?:[;,\s]+[1-4])*[;,\s]*$/.test(skills)) {
-      throw new Error('Select only skills 1 to 4 for Cooldown.');
+    if (!/^[0-4](?:[;,\s]+[0-4])*[;,\s]*$/.test(skills)) {
+      throw new Error('Select only skills 0 to 4 for Cooldown.');
     }
     return 'cooldown { ' + skills.split(/[;,\s]+/).filter(Boolean).join(';') + ' }';
   }
@@ -46,7 +46,18 @@
     return 'wait ' + Number(duration) + 'ms';
   }
 
-  var api = { format: format, insert: insert, block: block, cooldown: cooldown, wait: wait };
+  function spam(skill, duration) {
+    return 'spam ' + format(skill, '', '', '') + ' ' + wait(duration).slice(5);
+  }
+
+  function spamUntil(skill, condition, comparator, threshold, duration) {
+    if (!condition) throw new Error('Choose HP or MP for the stop condition.');
+    var predicate = format(skill, condition, comparator, threshold).slice(2);
+    return 'spam ' + skill + ' until ' + predicate + ' max ' + wait(duration).slice(5);
+  }
+
+  var api = { format: format, insert: insert, block: block, cooldown: cooldown, wait: wait,
+    spam: spam, spamUntil: spamUntil };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.autoAttackStep = api;
 })();

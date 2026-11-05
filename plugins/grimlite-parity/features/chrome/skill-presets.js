@@ -9,7 +9,9 @@
 // Skills are separated by ';' (the reference's form) or ',' (common in hand-written configs).
 // One safe condition may follow a skill: `3:SH>60` or `2:SM<30`. `wait` makes every normal skill
 // wait out its own cooldown. Blocks: `if SH<50 { 2;3 }`, optional casts: `cooldown { 4 }`.
-// `await 2` waits for readiness and casts only that skill.
+// `await 2` waits for readiness and casts only that skill; `spam 0 2000ms` repeats for a duration.
+// `spam 0 until SM<=15 max 5000ms` stops at the percentage or timeout (default max: 60000ms).
+// `await spam ...` requires a usable cast before its stop condition can finish the step.
 // Explicit waits: `wait 500ms` (1-60000ms) and `ready 2` (readiness only, no cast).
 // With no draft, the caller falls back to skills 1-4.
 
@@ -64,7 +66,7 @@ function parseLegacyPreset(value) {
 /** Blocks are deliberately non-nested; legacy rotations keep their original parser. */
 function parsePreset(value) {
     const text = String(value === null || value === undefined ? '' : value);
-    if (!/[{}]|\b(if|else|cooldown|ready|await)\b|\bwait\s+[^;,\s]/i.test(text)) return parseLegacyPreset(text);
+    if (!/[{}]|\b(if|else|cooldown|ready|await|spam)\b|\bwait\s+[^;,\s]/i.test(text)) return parseLegacyPreset(text);
     const rows = [];
     const parts = text.split(/([{};,\r\n])/).map(function (part) { return part.trim(); })
         .filter(function (part) { return part && !/^[;,]$/.test(part); });
@@ -90,17 +92,31 @@ function parsePreset(value) {
         }
         if (token === '{' || /\b(if|else|cooldown)\b/i.test(token)) throw new Error('Invalid block syntax.');
         const delay = /^wait\s+(\d+)ms$/i.exec(token);
-        const ready = /^ready\s+([1-4])$/i.exec(token);
-        const awaited = /^await\s+([1-4])$/i.exec(token);
+        const ready = /^ready\s+([0-4])$/i.exec(token);
+        const awaited = /^await\s+([0-4])$/i.exec(token);
+        const spamText = token.replace(/^await\s+(?=spam\b)/i, '');
+        const awaitSpam = spamText !== token;
+        const spam = /^spam\s+([0-4])\s+(\d+)ms$/i.exec(spamText);
+        const until = /^spam\s+([0-4])\s+until\s+(SH|SM)\s*([<>]=?|=)\s*(\d+)(?:\s+max\s+(\d+)ms)?$/i.exec(spamText);
         if (block && !block.row) {
-            if (!/^[1-4]$/.test(token)) throw new Error('Cooldown blocks contain only skills 1 to 4.');
+            if (!/^[0-4]$/.test(token)) throw new Error('Cooldown blocks contain only skills 0 to 4.');
             if (!rows.some(function (row) { return row.type === 'cooldown' && row.index === token; })) {
                 rows.push({ type: 'cooldown', index: token });
             }
-        } else if (delay) {
-            const ms = Number(delay[1]);
-            if (ms < 1 || ms > 60000) throw new Error('Wait must be from 1 to 60000ms.');
-            rows.push({ type: 'delay', ms: ms });
+        } else if (until) {
+            const ms = until[5] === undefined ? 60000 : Number(until[5]);
+            if (ms < 1 || ms > 60000) throw new Error('Duration must be from 1 to 60000ms.');
+            if (Number(until[4]) > 100) throw new Error('Percent must be from 0 to 100.');
+            const row = { type: 'spam', index: until[1], ms: ms, until: true,
+                isMp: until[2].toUpperCase() === 'SM', op: until[3], value: Number(until[4]) };
+            if (awaitSpam) row.wait = true;
+            rows.push(row);
+        } else if (delay || spam) {
+            const ms = Number(spam ? spam[2] : delay[1]);
+            if (ms < 1 || ms > 60000) throw new Error('Duration must be from 1 to 60000ms.');
+            const row = spam ? { type: 'spam', index: spam[1], ms: ms } : { type: 'delay', ms: ms };
+            if (awaitSpam) row.wait = true;
+            rows.push(row);
         } else if (awaited) {
             rows.push({ index: awaited[1], safe: false, wait: true });
         } else if (ready) {
@@ -108,7 +124,7 @@ function parsePreset(value) {
         } else if (/^wait$/i.test(token)) {
             globalWait = true;
         } else {
-            if (!/^[1-4](?:wait|:\s*(?:SH|SM)\s*[<>]=?\s*\d+|:\s*(?:SH|SM)\s*=\s*\d+)?$/i.test(token)) {
+            if (!/^[0-4](?:wait|:\s*(?:SH|SM)\s*[<>]=?\s*\d+|:\s*(?:SH|SM)\s*=\s*\d+)?$/i.test(token)) {
                 throw new Error('Invalid step: ' + token);
             }
             const skill = parseLegacyPreset(token)[0];

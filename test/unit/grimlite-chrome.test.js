@@ -68,9 +68,10 @@ function harness(options) {
     jump: member('jump', null),
     hasTarget: member('hasTarget', true),
     attackMonster: member('attackMonster', null),
+    cancelAutoAttack: member('cancelAutoAttack', null),
     skillAvailable: member('skillAvailable', 0),
-    useSkill: member('useSkill', null),
-    forceUseSkill: member('forceUseSkill', null),
+    useSkill: member('useSkill', true),
+    forceUseSkill: member('forceUseSkill', true),
     className: member('className', 'No Class'),
     health: member('health', 100),
     healthMax: member('healthMax', 100),
@@ -109,6 +110,7 @@ function harness(options) {
     windowKey: function () { return 'game-window-1'; },
     bot: function () { return bot.document; },
     presets: options.presets,
+    store: options.store,
     now: options.now,
     openAutoSkillSet: options.openAutoSkillSet,
     messages: options.messages || {},
@@ -199,7 +201,7 @@ test('the toolbar Skill Set button opens the Auto Attack-only editor', async () 
 
 test('the host wiring keeps the toolbar Skill Set callback', async () => {
   let opened = 0;
-  const chrome = createFromHost({ log: function () {} }, {
+  const chrome = createFromHost({ log: function () {}, getStore: function () { return { read: function () { return {}; } }; } }, {
     runtime: null,
     session: null,
     openAutoSkillSet: function () { opened += 1; return { ok: true, error: null }; }
@@ -715,7 +717,7 @@ test('Auto Attack enable restores remembered named presets for the detected clas
 test('toolbar saved equipment choices refresh on interaction and equip via the shared Sets instance', async () => {
   let listing = [{ name: 'farm.gset', path: 'nested/farm.gset' }];
   const calls = [];
-  const chrome = createFromHost({ log: function () {} }, {
+  const chrome = createFromHost({ log: function () {}, getStore: function () { return { read: function () { return {}; } }; } }, {
     session: { signedIn: async () => false },
     equipmentSets: { handle: async function (channel, event, args) {
       calls.push([channel, args]);
@@ -809,8 +811,10 @@ test('async ticks serialize and stale cooldown, readiness, condition and cast re
   for (const scenario of [
     { text: '1;cooldown { 4 }', read: 'skillAvailable' },
     { text: 'ready 2;1', read: 'skillAvailable' },
+    { text: 'spam 0 2000ms;1', read: 'skillAvailable' },
+    { text: 'spam 0 until SM<=15 max 2000ms;1', read: 'mana' },
     { text: 'if SH>20 { 1;2 };3', read: 'health' },
-    { text: '1;2', read: 'className', castOnly: true }
+    { text: '1;2', read: 'className' }
   ]) {
     for (const disable of [false, true]) {
       const h = await rotationHarness(scenario.text);
@@ -818,9 +822,7 @@ test('async ticks serialize and stale cooldown, readiness, condition and cast re
       let entered;
       const waiting = new Promise(function (resolve) { entered = resolve; });
       const original = h.session[scenario.read];
-      let classReads = 0;
       h.session[scenario.read] = function () {
-        if (scenario.castOnly && ++classReads < 2) return original();
         entered();
         return new Promise(function (resolve) { release = resolve; });
       };
@@ -911,4 +913,243 @@ test('right-click skill editor lists, selects and validates saves for the detect
   });
   assert.strictEqual(changed.ok, false);
   assert.strictEqual(data.autoAttackPresets.SHAMAN.Farm, '4;3');
+});
+
+test('disabling automatic basic attack preserves explicit slot zero casts', async () => {
+  const settings = { automaticBasicAttack: false };
+  const h = harness({ store: { read: function () { return settings; } } });
+  await h.chrome.action('autoAttack', { checked: true });
+  h.chrome.useSkillText('0;1');
+  await h.chrome.tick();
+  assert.ok(h.calls.some(function (one) { return one.call === 'cancelAutoAttack'; }));
+  assert.ok(h.calls.some(function (one) {
+    return one.call === 'useSkill' && one.args[0] === '0' && one.args[1] === false;
+  }));
+  settings.automaticBasicAttack = true;
+  await h.chrome.tick();
+  const cast = h.calls.filter(function (one) { return one.call === 'useSkill'; }).pop();
+  assert.deepStrictEqual(cast.args, ['1']);
+});
+
+test('Chrono Shadowhunter custom rotations never insert the built-in nuke and reload', async () => {
+  const text = 'await 3;await 3;await 3;await 3;await 3;await 4;await 1';
+  for (const live of [false, true]) {
+    const h = live ? harness({ answers: {
+      className: 'Chrono Shadowhunter', mana: 10, selfAura: function () { return 1; }
+    } }) : await rotationHarness(text, {
+      className: 'Chrono Shadowhunter', mana: 10, selfAura: function () { return 1; }
+    });
+    if (live) {
+      await h.chrome.action('autoAttack', { checked: true });
+      h.chrome.useSkillText(text);
+    }
+    try {
+      for (let step = 0; step < 7; step++) await h.chrome.tick();
+      assert.deepStrictEqual(casts(h).map(function (cast) { return cast[1]; }),
+        ['3', '3', '3', '3', '3', '4', '1']);
+      h.chrome.useSkillText('');
+      await h.chrome.tick();
+      assert.strictEqual(casts(h).pop()[1], '4', 'Default restores the built-in combo');
+    } finally { h.chrome.stop(); }
+  }
+});
+
+test('Chrono Shadowhunter spams basic attack for a bounded burst before its nuke', async () => {
+  let clock = 0;
+  let readiness = 0;
+  const h = harness({ now: () => clock, answers: {
+    className: 'Chrono Shadowhunter', mana: 10, selfAura: () => 1,
+    skillAvailable: () => readiness
+  } });
+  await h.chrome.action('autoAttack', { checked: true });
+  h.chrome.useSkillText('await 1;spam 0 2000ms;await 4');
+  try {
+    await h.chrome.tick();
+    clock = 150;
+    await h.chrome.tick();
+    assert.deepStrictEqual(casts(h), [['forceUseSkill', '1'], ['forceUseSkill', '0']]);
+    for (const unavailable of [400, null, undefined, NaN, 'invalid']) {
+      clock += 150;
+      readiness = unavailable;
+      await h.chrome.tick();
+      assert.strictEqual(casts(h).length, 2, 'unavailable shots never cast or advance');
+    }
+    readiness = 0;
+    clock = 1000;
+    await h.chrome.tick();
+    clock = 2149;
+    await h.chrome.tick();
+    assert.deepStrictEqual(casts(h).map(cast => cast[1]), ['1', '0', '0', '0']);
+    clock = 2150;
+    await h.chrome.tick();
+    assert.strictEqual(casts(h).length, 4, 'no shot at or after the deadline');
+    await h.chrome.tick();
+    assert.strictEqual(casts(h).pop()[1], '4', 'nuke follows the burst');
+  } finally { h.chrome.stop(); }
+});
+
+test('spam holds off optional casts and replacement or restart resets its deadline', async () => {
+  let clock = 0;
+  const h = harness({ now: () => clock });
+  await h.chrome.action('autoAttack', { checked: true });
+  h.chrome.useSkillText('spam 0 2000ms;1;cooldown { 4 }');
+  try {
+    await h.chrome.tick();
+    clock = 1500;
+    await h.chrome.tick();
+    assert.deepStrictEqual(casts(h).map(cast => cast[1]), ['0', '0']);
+    h.chrome.useSkillText('spam 0 2000ms;2');
+    await h.chrome.tick();
+    clock = 2500;
+    await h.chrome.tick();
+    assert.ok(casts(h).every(cast => cast[1] === '0'), 'replacement gets a fresh duration');
+    await h.chrome.action('autoAttack', { checked: false });
+    await h.chrome.tick();
+    const count = casts(h).length;
+    await h.chrome.action('autoAttack', { checked: true });
+    h.chrome.useSkillText('spam 0 2000ms;3');
+    clock = 10000;
+    await h.chrome.tick();
+    assert.strictEqual(casts(h).length, count + 1);
+    assert.strictEqual(casts(h).pop()[1], '0', 'restart begins a fresh burst');
+  } finally { h.chrome.stop(); }
+});
+
+test('conditional spam stops at percentage thresholds, including strict and exact comparisons', async () => {
+  for (const metric of ['SH', 'SM']) {
+    for (const one of [
+      { op: '<', initial: 30, reached: 20 },
+      { op: '<=', initial: 40, reached: 30 },
+      { op: '=', initial: 40, reached: 30 },
+      { op: '>=', initial: 20, reached: 30 },
+      { op: '>', initial: 30, reached: 40 }
+    ]) {
+      let current = one.initial;
+      const h = await rotationHarness('spam 0 until ' + metric + one.op + '15 max 5000ms;await 1');
+      h.session[metric === 'SM' ? 'mana' : 'health'] = async () => current;
+      h.session[metric === 'SM' ? 'manaMax' : 'healthMax'] = async () => 200;
+      try {
+        await h.chrome.tick();
+        assert.deepStrictEqual(casts(h).map(cast => cast[1]), ['0']);
+        current = one.reached;
+        h.session.skillAvailable = async () => 400;
+        await h.chrome.tick();
+        assert.strictEqual(casts(h).length, 1, 'condition ends spam even while its skill is on cooldown');
+        h.session.skillAvailable = async () => 0;
+        await h.chrome.tick();
+        assert.strictEqual(casts(h).pop()[1], '1', metric + one.op + ' must advance');
+      } finally { h.chrome.stop(); }
+    }
+  }
+});
+
+test('conditional spam awaits its first usable cast even when the condition is initially satisfied', async () => {
+  let clock = 0;
+  let health = 80;
+  const h = harness({ now: () => clock });
+  h.session.health = async () => health;
+  await h.chrome.action('autoAttack', { checked: true });
+  try {
+    h.chrome.useSkillText('await spam 0 until SH>=80;1');
+    await h.chrome.tick();
+    assert.deepStrictEqual(casts(h).map(cast => cast[1]), ['0'], 'spam must cast before testing completion');
+    await h.chrome.tick();
+    assert.strictEqual(casts(h).length, 1, 'condition ends spam on the following tick');
+    await h.chrome.tick();
+    assert.strictEqual(casts(h).pop()[1], '1');
+    health = 20;
+    h.chrome.useSkillText('await spam 0 until SH>=80 max 300ms;2');
+    await h.chrome.tick();
+    clock = 299;
+    await h.chrome.tick();
+    const count = casts(h).length;
+    clock = 300;
+    await h.chrome.tick();
+    assert.strictEqual(casts(h).length, count, 'deadline does not cast');
+    await h.chrome.tick();
+    assert.strictEqual(casts(h).pop()[1], '2', 'unmet condition cannot hold the rotation forever');
+  } finally { h.chrome.stop(); }
+});
+
+test('conditional spam pauses on unreadable resources, recovers, and remains bounded', async () => {
+  for (const value of [null, undefined, NaN, 'invalid', new Error('read failed')]) {
+    let clock = 0;
+    let current = value;
+    const h = harness({ now: () => clock });
+    h.session.mana = async () => { if (current instanceof Error) throw current; return current; };
+    await h.chrome.action('autoAttack', { checked: true });
+    h.chrome.useSkillText('spam 0 until SM<=15 max 300ms;1');
+    try {
+      await h.chrome.tick();
+      assert.deepStrictEqual(casts(h), [], 'unreadable mana neither casts nor satisfies the condition');
+      assert.match((await h.chrome.state()).values.autoAttackError, /skill 0/);
+      current = 50;
+      clock = 150;
+      await h.chrome.tick();
+      assert.strictEqual(casts(h).pop()[1], '0', 'casting resumes after recovery');
+      current = value;
+      clock = 300;
+      await h.chrome.tick();
+      await h.chrome.tick();
+      assert.strictEqual(casts(h).pop()[1], '1', 'timeout still advances with unreadable mana');
+    } finally { h.chrome.stop(); }
+  }
+});
+
+test('conditional spam awaits a usable shot across a delayed Reload refill without extra reload steps', async () => {
+  let clock = 0;
+  let mana = 10;
+  let refillAt = Infinity;
+  const successful = [];
+  const h = harness({ now: () => clock, answers: {
+    className: 'Chrono Shadowhunter',
+    mana: () => {
+      if (clock >= refillAt) { mana = 100; refillAt = Infinity; }
+      return mana;
+    },
+    forceUseSkill: index => {
+      if (index === '1') { refillAt = clock + 600; successful.push(index); return true; }
+      if (index === '0' && mana < 15) return false;
+      if (index === '0') mana -= 15;
+      successful.push(index);
+      return true;
+    }
+  } });
+  await h.chrome.action('autoAttack', { checked: true });
+  h.chrome.useSkillText('await 1;await spam 0 until SM<15;await 3');
+  try {
+    for (let step = 0; step < 12; step++) { await h.chrome.tick(); clock += 150; }
+    assert.deepStrictEqual(successful, ['1', '0', '0', '0', '0', '0', '0', '3']);
+    const attempts = h.calls.filter(call => call.call === 'forceUseSkill' && call.args[0] === '0');
+    assert.ok(attempts.every(call => call.args[1] === true), 'spam asks the bridge whether it really attempted a usable cast');
+  } finally { h.chrome.stop(); }
+});
+
+test('awaited spam stays on refused casts until its maximum duration expires', async () => {
+  let clock = 0;
+  const h = harness({ now: () => clock, answers: { mana: 10, useSkill: index => index !== '0' } });
+  await h.chrome.action('autoAttack', { checked: true });
+  h.chrome.useSkillText('await spam 0 until SM<15 max 300ms;1');
+  try {
+    await h.chrome.tick();
+    clock = 150;
+    await h.chrome.tick();
+    assert.ok(casts(h).every(cast => cast[1] === '0'), 'refused attempts do not satisfy the spam step');
+    const first = h.calls.find(call => call.call === 'useSkill');
+    assert.deepStrictEqual(first.args, ['0', true, true]);
+    clock = 300;
+    await h.chrome.tick();
+    await h.chrome.tick();
+    assert.strictEqual(casts(h).pop()[1], '1', 'timeout still releases the step');
+  } finally { h.chrome.stop(); }
+});
+
+test('plain conditional spam still skips when its condition is already satisfied', async () => {
+  const h = await rotationHarness('spam 0 until SM<15;1', { mana: 10 });
+  try {
+    await h.chrome.tick();
+    assert.deepStrictEqual(casts(h), []);
+    await h.chrome.tick();
+    assert.deepStrictEqual(casts(h).map(cast => cast[1]), ['1']);
+  } finally { h.chrome.stop(); }
 });

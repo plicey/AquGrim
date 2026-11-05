@@ -6,6 +6,7 @@ function payload(value) {
 
 function createAutoAttackWindow(deps) {
     deps = deps || {};
+    const store = deps.store;
     const source = deps.presets || presets.createPresetSource({ store: deps.store, files: [] });
     const className = typeof deps.className === 'function' ? deps.className : function () { return ''; };
     const onUse = typeof deps.onUse === 'function' ? deps.onUse : function () {};
@@ -24,6 +25,7 @@ function createAutoAttackWindow(deps) {
                 return { name: one.name, stored: one.stored };
             });
             return {
+                automaticBasicAttack: !store || store.read().automaticBasicAttack !== false,
                 className: current,
                 presets: list,
                 selected: draft ? draft.name : null,
@@ -33,6 +35,12 @@ function createAutoAttackWindow(deps) {
     }
 
     function register(host) {
+        host.ipc.handle('autoAttackBasicAttackSet', function (event, data) {
+            if (typeof data !== 'boolean') return { ok: false, error: 'Expected a boolean.' };
+            if (store) store.write(Object.assign({}, store.read(), { automaticBasicAttack: data }));
+            return { ok: true };
+        });
+
         host.ipc.handle('autoAttackSkillSetGet', function () {
             source.reload();
             return snapshot();
