@@ -809,10 +809,15 @@ function createSession(deps) {
          * Point the avatar at a monster. The name is what the loader's own signature takes; the
          * movie resolves the live Avatar it names and hands it to world.setTarget (ticket #49).
          */
-        attackMonster: function (name) { return loaderCall('AttackMonster', [String(name)]); },
+        attackMonster: function (name, basicAttack) { return loaderCall('AttackMonster', basicAttack === false ? [String(name), false] : [String(name)]); },
         attackMonsterByMonMapId: function (id) { return loaderCall('AttackMonsterByMonMapId', [String(id)]); },
-        useSkill: function (index) { return loaderCall('UseSkill', [String(index)]); },
-        forceUseSkill: function (index) { return loaderCall('ForceUseSkill', [String(index)]); },
+        useSkill: function (index, basicAttack, confirm) {
+            return loaderCall('UseSkill', confirm === true ? [String(index), basicAttack !== false, true] :
+                (basicAttack === false ? [String(index), false] : [String(index)]));
+        },
+        forceUseSkill: function (index, confirm) {
+            return loaderCall('ForceUseSkill', confirm === true ? [String(index), true] : [String(index)]);
+        },
 
         /** Where the avatar stands, as the loader's own Position (a two-number array). */
         position: function () { return loaderCall('Position'); },

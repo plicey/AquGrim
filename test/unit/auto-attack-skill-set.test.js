@@ -204,7 +204,7 @@ test('selection persistence failures return IPC errors without changing the live
 
 test('step controls generate only parser-supported HP/MP percentages and preserve insertion boundaries', () => {
   const step = require('../../plugins/grimlite-parity/features/auto-attack/skill-step.js');
-  ['1', '2', '3', '4'].forEach(function (skill) {
+  ['0', '1', '2', '3', '4'].forEach(function (skill) {
     assert.strictEqual(step.format(skill, '', '', ''), skill);
     ['SH', 'SM'].forEach(function (condition) {
       ['>=', '<=', '='].forEach(function (op) {
@@ -361,6 +361,30 @@ test('Insert uses the editor input flow and Default failures leave its text inta
   nodes.skills.setSelectionRange(0, 0);
   nodes.insertAwait.handlers.click();
   assert.ok(nodes.skills.value.startsWith('await 2;ready 2;'));
+  nodes.stepSkill.value = '0';
+  nodes.waitDuration.value = '2000';
+  nodes.skills.setSelectionRange(0, 0);
+  nodes.insertSpam.handlers.click();
+  assert.ok(nodes.skills.value.startsWith('spam 0 2000ms;await 2;'));
+  nodes.stepCondition.value = 'SM';
+  nodes.stepComparator.value = '<=';
+  nodes.stepThreshold.value = '15';
+  nodes.skills.setSelectionRange(0, 0);
+  nodes.insertSpamUntil.handlers.click();
+  assert.ok(nodes.skills.value.startsWith('spam 0 until SM<=15 max 2000ms;'));
+  nodes.skills.setSelectionRange(0, 0);
+  nodes.insertAwaitSpamUntil.handlers.click();
+  assert.ok(nodes.skills.value.startsWith('await spam 0 until SM<=15 max 2000ms;'));
+  nodes.skills.setSelectionRange(0, 0);
+  nodes.insertAwaitSpam.handlers.click();
+  assert.ok(nodes.skills.value.startsWith('await spam 0 2000ms;'));
+  const validSpam = nodes.skills.value;
+  nodes.stepCondition.value = '';
+  nodes.insertSpamUntil.handlers.click();
+  assert.strictEqual(nodes.skills.value, validSpam, 'a missing stop condition never mutates text');
+  nodes.waitDuration.value = '0';
+  nodes.insertSpam.handlers.click();
+  assert.strictEqual(nodes.skills.value, validSpam, 'invalid spam never mutates text');
   assert.doesNotThrow(function () { presets.parsePreset(nodes.skills.value); });
   assert.ok(/class="block-builder"/.test(page));
   assert.ok(/class="wait-builder"/.test(page));
@@ -431,7 +455,7 @@ test('Auto Attack parses blocks, cooldown skills and bounded waits without chang
   ['if SH<50 { 1', 'if SH<50 1', 'if SH<50 {}', '1}', '{1}',
     'if SM>101 { 1 }', 'if SH<50 { if SM>20 { 1 } }', 'if SH<50 { 1 } else { 2 }',
     'cooldown { ready 1 }', 'cooldown { 5 }', 'wait 0ms', 'wait 60001ms',
-    'await 0', 'await 5', 'await', 'await 1:SH<50', 'cooldown { await 1 }',
+    'await 5', 'await', 'await 1:SH<50', 'cooldown { await 1 }',
     'wait -5ms', 'wait 1.5ms', 'ready 5', 'cooldown { 1 };garbage'].forEach(function (text) {
     assert.throws(function () { presets.parsePreset(text); }, Error, text);
   });
@@ -440,7 +464,7 @@ test('Auto Attack parses blocks, cooldown skills and bounded waits without chang
 test('enhanced preset text survives recreation; malformed edits and saves never overwrite accepted state', () => {
   const store = memoryStore();
   const source = presets.createPresetSource({ store: store, files: [] });
-  const text = '1;if SM>=30 { 2;wait 500ms;3 };ready 4;cooldown { 4 }';
+  const text = 'await 0;await spam 0 until SM<=15 max 5000ms;1;if SM>=30 { 2;wait 500ms;3 };ready 4;cooldown { 4 }';
   source.savePreset('Shaman', 'Boss', text);
   source.loadPreset('Shaman', 'Boss');
   const before = store.read();
@@ -483,4 +507,80 @@ test('await waits and casts only its own skill, including inside If blocks', () 
     { type: 'if', isMp: false, op: '<', value: 50, skip: 2 },
     { index: '4', safe: false, wait: true }
   ]);
+});
+
+test('automatic basic attack defaults on and persists only boolean toggles', async () => {
+  const store = memoryStore({ unrelated: 1 });
+  const handlers = {};
+  autoAttack.createAutoAttackWindow({ store: store }).register({
+    ipc: { handle: function (name, fn) { handlers[name] = fn; } }
+  });
+  assert.strictEqual((await handlers.autoAttackSkillSetGet()).automaticBasicAttack, true);
+  assert.strictEqual(handlers.autoAttackBasicAttackSet(null, false).ok, true);
+  assert.strictEqual((await handlers.autoAttackSkillSetGet()).automaticBasicAttack, false);
+  assert.strictEqual(store.read().unrelated, 1);
+  assert.strictEqual(handlers.autoAttackBasicAttackSet(null, 'false').ok, false);
+});
+
+test('timed spam and basic attack work with advanced rotation syntax and validate bounds', () => {
+  const step = require('../../plugins/grimlite-parity/features/auto-attack/skill-step.js');
+  assert.strictEqual(step.spam('0', '2000'), 'spam 0 2000ms');
+  assert.deepStrictEqual(presets.parsePreset('await 0;spam 0 2000ms;ready 0;cooldown { 0 };0'), [
+    { index: '0', safe: false, wait: true },
+    { type: 'spam', index: '0', ms: 2000 },
+    { type: 'ready', index: '0' },
+    { type: 'cooldown', index: '0' },
+    { index: '0', safe: false, wait: false }
+  ]);
+  assert.deepStrictEqual(presets.parsePreset('if SM>10 { SPAM 0 1ms };spam 4 60000ms'), [
+    { type: 'if', isMp: true, op: '>', value: 10, skip: 2 },
+    { type: 'spam', index: '0', ms: 1 },
+    { type: 'spam', index: '4', ms: 60000 }
+  ]);
+  for (const text of ['spam', 'spam 0', 'spam 5 2000ms', 'spam 0 0ms',
+    'spam 0 60001ms', 'spam 0 -1ms', 'spam 0 1.5ms', 'spam 0 2s',
+    'cooldown { spam 0 2000ms }']) {
+    assert.throws(() => presets.parsePreset(text), Error, text);
+  }
+  assert.throws(() => step.spam('0', '0'), /1 to 60000/);
+  assert.throws(() => step.spam('5', '2000'), /skill/);
+});
+
+test('conditional spam parses bounded self HP and MP comparisons and validates builder input', () => {
+  const step = require('../../plugins/grimlite-parity/features/auto-attack/skill-step.js');
+  for (const metric of ['SH', 'SM']) {
+    for (const op of ['<', '<=', '=', '>=', '>']) {
+      assert.deepStrictEqual(presets.parsePreset('spam 0 until ' + metric + op + '15'), [
+        { type: 'spam', index: '0', ms: 60000, until: true, isMp: metric === 'SM', op: op, value: 15 }
+      ]);
+    }
+  }
+  const text = step.spamUntil('0', 'SM', '<=', '15', '5000');
+  assert.strictEqual(text, 'spam 0 until SM<=15 max 5000ms');
+  assert.deepStrictEqual(presets.parsePreset('if SH>10 { ' + text + ' }'), [
+    { type: 'if', isMp: false, op: '>', value: 10, skip: 2 },
+    { type: 'spam', index: '0', ms: 5000, until: true, isMp: true, op: '<=', value: 15 }
+  ]);
+  assert.throws(() => step.spamUntil('0', '', '<=', '15', '5000'), /HP or MP/);
+  assert.throws(() => step.spamUntil('0', 'SM', '<=', '101', '5000'), /percentage/);
+  for (const text of ['spam 0 until SM<101', 'spam 0 until SH<-1', 'spam 0 until SH<1.5',
+    'spam 0 until TH<15', 'spam 0 until SM==15', 'spam 5 until SM=15',
+    'spam 0 until SM<15 max 0ms', 'spam 0 until SM<15 max 60001ms',
+    'spam 0 until SM<15 max -1ms', 'spam 0 until SM<15 max 1.5ms',
+    'cooldown { spam 0 until SM<15 }']) {
+    assert.throws(() => presets.parsePreset(text), Error, text);
+  }
+});
+
+test('explicit await spam parses timed and conditional forms without changing plain spam', () => {
+  const plain = presets.parsePreset('spam 0 until SM<15 max 5000ms')[0];
+  assert.strictEqual(plain.wait, undefined);
+  assert.deepStrictEqual(presets.parsePreset('await spam 0 until SM<15 max 5000ms'),
+    [Object.assign({}, plain, { wait: true })]);
+  assert.deepStrictEqual(presets.parsePreset('AWAIT SPAM 0 2000ms'),
+    [{ type: 'spam', index: '0', ms: 2000, wait: true }]);
+  for (const text of ['await spam', 'await spam 0', 'await spam 5 2000ms',
+    'await spam 0 until SM<101', 'cooldown { await spam 0 2000ms }']) {
+    assert.throws(() => presets.parsePreset(text), Error, text);
+  }
 });

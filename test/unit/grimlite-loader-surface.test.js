@@ -591,3 +591,14 @@ test('item-tree read uses a native projection rather than serializing the live D
         { callback: 'GetItemTree', args: [] }
     ]);
 });
+
+test('usable-cast requests reach the native callbacks and preserve refused results', async () => {
+    const calls = [];
+    const game = surface.createLoaderSurface(async function (name, args) {
+        calls.push([name, args]);
+        return false;
+    });
+    assert.strictEqual(await game.call('UseSkill', ['0', false, true]), false);
+    assert.strictEqual(await game.call('ForceUseSkill', ['0', true]), false);
+    assert.deepStrictEqual(calls, [['UseSkill', ['0', false, true]], ['ForceUseSkill', ['0', true]]]);
+});

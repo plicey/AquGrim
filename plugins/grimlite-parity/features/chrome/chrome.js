@@ -111,10 +111,15 @@ function createChrome(deps) {
         clearInterval: function (id) { clearInterval(id); }
     };
 
+    function basicAttackEnabled() {
+        return !deps.store || deps.store.read().automaticBasicAttack !== false;
+    }
+
     let autoAttack = false;
     let autoAttackError = null;
     let autoStep = 0;
     let rotation = skillPresets.defaultSkills();
+    let customRotation = false;
     let timer = null;
     let ticking = false;
     let generation = 0;
@@ -303,7 +308,7 @@ function createChrome(deps) {
     }
 
     /** Report refused casts; optional cooldown skills always use the plain cast. */
-    async function cast(index, version, plain) {
+    async function cast(index, version, plain, confirm) {
         // Skill.useSkill: a Chrono Shadow casts forced, everyone else plain (Skill.cs:106-115).
         // The engine's CmdUseSkill makes the same choice for the same reason (#38), so a rotation
         // and a bot command cast through one name rather than two.
@@ -311,8 +316,9 @@ function createChrome(deps) {
         ensureCurrent(version);
         const forced = !plain && String(name.value || '').toLowerCase().indexOf('chrono shadow') !== -1;
         const used = forced
-            ? await read('forceUseSkill', [index])
-            : await read('useSkill', [index]);
+            ? await read('forceUseSkill', confirm ? [index, true] : [index])
+            : await read('useSkill', confirm ? [index, basicAttackEnabled(), true] :
+                (basicAttackEnabled() ? [index] : [index, false]));
         ensureCurrent(version);
         if (used.error) {
             autoAttackError = 'skill ' + index + ': ' + used.error;
@@ -320,9 +326,10 @@ function createChrome(deps) {
         } else {
             autoAttackError = null;
         }
+        return !used.error && (!confirm || used.value === true);
     }
 
-    /** Skill.ExecuteSkill's Safe branch: the condition decides whether this slot casts at all. */
+    /** Null means unreadable: conditional spam must pause rather than cast on an unknown value. */
     async function safeAllows(skill, version) {
         const currentName = skill.isMp ? 'mana' : 'health';
         const maxName = skill.isMp ? 'manaMax' : 'healthMax';
@@ -330,15 +337,17 @@ function createChrome(deps) {
         ensureCurrent(version);
         const now = Number(answers[0].value);
         const max = Number(answers[1].value);
-        if (answers[0].error || answers[1].error || !isFinite(now) || !isFinite(max) || max <= 0) {
+        if (answers[0].error || answers[1].error ||
+            answers.some(function (answer) { return answer.value === null || answer.value === undefined; }) ||
+            !isFinite(now) || !isFinite(max) || max <= 0) {
             autoAttackError = (skill.type === 'if' ? 'condition' : 'skill ' + skill.index) + ': ' +
                 (answers[0].error || answers[1].error || 'the game reports no health or mana percentage');
             log(autoAttackError);
-            return false;
+            return null;
         }
         const percent = now / max * 100;
-        if (skill.type === 'if' && skill.op === '>') return percent > skill.value;
-        if (skill.type === 'if' && skill.op === '<') return percent < skill.value;
+        if (skill.type && skill.op === '>') return percent > skill.value;
+        if (skill.type && skill.op === '<') return percent < skill.value;
         if (skill.op === '>' || skill.op === '>=') return percent >= skill.value;
         if (skill.op === '<' || skill.op === '<=') return percent <= skill.value;
         return percent === skill.value;
@@ -385,13 +394,20 @@ function createChrome(deps) {
         }
         const target = await checked(read('hasTarget'));
         if (target.value !== true) {
-            const attack = await checked(read('attackMonster', ['*']));
+            const attack = await checked(read('attackMonster', basicAttackEnabled() ? ['*'] : ['*', false]));
             if (attack.error) {
                 autoAttackError = attack.error;
                 log(autoAttackError);
             }
             const again = await checked(read('hasTarget'));
             if (again.value !== true) return;
+        }
+        if (!basicAttackEnabled()) {
+            const stopped = await checked(read('cancelAutoAttack'));
+            if (stopped.error) {
+                autoAttackError = stopped.error;
+                return;
+            }
         }
         const cooldowns = rotation.filter(function (row) { return row.type === 'cooldown'; });
         // One optional cast per gap, rotating priority; the main cursor never moves here.
@@ -404,7 +420,7 @@ function createChrome(deps) {
                     isFinite(Number(ready.value)) && Number(ready.value) <= 0) cooldownTurn = false;
             }
         }
-        if (cooldownTurn) {
+        if (cooldownTurn && (!rotation[autoStep] || rotation[autoStep].type !== 'spam')) {
             for (let i = 0; i < cooldowns.length; i++) {
                 const slot = (cooldownStep + i) % cooldowns.length;
                 const skill = cooldowns[slot];
@@ -419,7 +435,8 @@ function createChrome(deps) {
             }
         }
         cooldownTurn = true;
-        if (specialCombo === null) specialCombo = ((await checked(classCombo())) || []).slice();
+        // Explicit rotations own every cast; class fallbacks apply only to Default.
+        if (specialCombo === null) specialCombo = customRotation ? [] : ((await checked(classCombo())) || []).slice();
         if (specialCombo.length) {
             const index = specialCombo[0];
             const ready = await checked(read('skillAvailable', [index]));
@@ -449,7 +466,21 @@ function createChrome(deps) {
                 autoStep = (autoStep + 1) % rotation.length;
                 continue;
             }
-            if (skill.type === 'delay') {
+            if (skill.type === 'spam') {
+                if (!pendingWait) pendingWait = { until: now() + skill.ms };
+                if (now() < pendingWait.until) {
+                    const finished = skill.until ? await checked(safeAllows(skill, version)) : false;
+                    if (finished === null) return;
+                    if ((skill.wait === true && !pendingWait.casted) || !finished) {
+                        const ready = await checked(read('skillAvailable', [skill.index]));
+                        if (!ready.error && ready.value !== null && ready.value !== undefined &&
+                            isFinite(Number(ready.value)) && Number(ready.value) <= 0) {
+                            if (await checked(cast(skill.index, version, false, skill.wait === true))) pendingWait.casted = true;
+                        }
+                        return;
+                    }
+                }
+            } else if (skill.type === 'delay') {
                 if (!pendingWait) pendingWait = { until: now() + skill.ms };
                 if (now() < pendingWait.until) return;
             } else if (skill.type === 'ready' || skill.wait === true) {
@@ -500,6 +531,7 @@ function createChrome(deps) {
         if (requested !== generation) return { ok: false, error: 'Auto Attack selection changed.' };
         const preset = await rotationForClass();
         if (requested !== generation) return { ok: false, error: 'Auto Attack selection changed.' };
+        customRotation = preset.length > 0;
         rotation = preset.length ? preset : skillPresets.defaultSkills();
         autoAttack = true;
         autoAttackError = null;
@@ -517,6 +549,7 @@ function createChrome(deps) {
     /** A preset was selected in the editor: use it now, before Auto Attack is re-enabled. */
     function useSkillText(text) {
         const skills = skillPresets.parsePreset(text);
+        customRotation = skills.length > 0;
         rotation = skills.length ? skills : skillPresets.defaultSkills();
         generation++;
         autoStep = 0;
@@ -681,6 +714,7 @@ function createFromHost(host, deps) {
     const windowKey = deps.windowKey || function () { return 'game'; };
     return createChrome({
         runtime: runtime,
+        store: host.getStore(skillPresets.STORE_NAMESPACE),
         equipmentSets: deps.equipmentSets,
         windowKey: windowKey,
         bot: deps.bot || function () { return {}; },

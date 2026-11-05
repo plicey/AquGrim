@@ -631,20 +631,22 @@ package {
          * Player.ForceUseSkill: cast this skill only when it is ready, unlocked and known. The
          * readiness half is the loader's own; the locked half is the game's own action flags.
          */
-        private function forceUseSkillAt(index:String):void {
+        private function forceUseSkillAt(index:String):Boolean {
             var action:Object = actionAt(index);
             if (skillReady(action) == 0) {
                 if (Boolean(action.isOK) && !action.skillLock) {
                     world().testAction(action);
+                    return true;
                 }
             }
+            return false;
         }
 
         /**
          * Player.AttackMonster: setTarget then approachTarget, both and in that order, as the
          * loader writes them. A name no monster answers to is a no-op there and is a no-op here.
          */
-        private function aqAttackMonster(name:String):String {
+        private function aqAttackMonster(name:String, basicAttack:Boolean = true):String {
             var out:String;
             try {
                 var monster:Object = monsterByName(String(name));
@@ -652,6 +654,7 @@ package {
                     var w:Object = world();
                     w.setTarget(monster);
                     w.approachTarget();
+                    if (!basicAttack) w.cancelAutoAttack();
                 }
                 out = 'ok';
             } catch (e:Error) {
@@ -681,12 +684,13 @@ package {
          * Player.ForceUseSkill, the callback half. A cast the loader decides not to make - a
          * skill on cooldown, locked, or one the game has not unlocked - answers ok, because
          * refusing to act is what that body does.
+         * Conditional spam opts into a Boolean result so a refusal cannot complete its first cast.
          */
-        private function aqForceUseSkill(index:String):String {
+        private function aqForceUseSkill(index:String, confirm:Boolean = false):String {
             var out:String;
             try {
-                forceUseSkillAt(String(index));
-                out = 'ok';
+                var used:Boolean = forceUseSkillAt(String(index));
+                out = confirm ? (used ? 'true' : 'false') : 'ok';
             } catch (e:Error) {
                 out = jsonError(e);
             }
@@ -699,20 +703,22 @@ package {
          * what the loader does here, not cancelTarget); otherwise the avatar walks into range and
          * the cast is forced.
          */
-        private function aqUseSkill(index:String):String {
+        private function aqUseSkill(index:String, basicAttack:Boolean = true, confirm:Boolean = false):String {
             var out:String;
             try {
                 var w:Object = world();
                 var action:Object = actionAt(String(index));
+                var used:Boolean = false;
                 if (action.tgt == 's' || action.tgt == 'f') {
-                    forceUseSkillAt(String(index));
+                    used = forceUseSkillAt(String(index));
                 } else if (w.myAvatar.target == w.myAvatar) {
                     w.myAvatar.target = null;
                 } else if (w.myAvatar.target != null && Number(w.myAvatar.target.dataLeaf.intHP) > 0) {
                     w.approachTarget();
-                    forceUseSkillAt(String(index));
+                    if (!basicAttack) w.cancelAutoAttack();
+                    used = forceUseSkillAt(String(index));
                 }
-                out = 'ok';
+                out = confirm ? (used ? 'true' : 'false') : 'ok';
             } catch (e:Error) {
                 out = jsonError(e);
             }

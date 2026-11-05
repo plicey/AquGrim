@@ -249,3 +249,15 @@ test('a window that is gone is a refusal that says so, not a transient pause', a
     return error.windowGone === true;
   });
 });
+
+test('spam can request a usable-cast result without changing legacy skill calls', async () => {
+  const bridge = fakeBridge({ UseSkill: false, ForceUseSkill: true });
+  const session = sessionModel.createSession({ bridge: bridge });
+  assert.strictEqual(await session.useSkill('0', false, true), false);
+  assert.strictEqual(await session.forceUseSkill('0', true), true);
+  await session.useSkill('2');
+  await session.forceUseSkill('2');
+  assert.deepStrictEqual(bridge.calls.filter(call => call.name === 'loaderCall').map(call => call.args), [
+    ['UseSkill', '0', false, true], ['ForceUseSkill', '0', true], ['UseSkill', '2'], ['ForceUseSkill', '2']
+  ]);
+});
