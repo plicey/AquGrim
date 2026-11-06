@@ -472,13 +472,14 @@ test('chrome passes context editor declarations and responses through dispatch',
   assert.deepStrictEqual((await h.chrome.dispatch(h.win, 'edit', { contextEditor: true })).editor, editor);
 });
 
-test('popover closes after remembering temporary edits without native dialogs', async () => {
+for (const dismiss of ['Escape', 'game click']) {
+test('popover remembers temporary edits on ' + dismiss, async () => {
   const source = wrapperSource();
   const calls = [];
   const nodes = [];
   function el(tag, className, text) {
     const node = { tag, className, textContent: text, value: '', style: {}, children: [], events: {},
-      setAttribute() {}, focus() {}, contains() { return false; },
+      setAttribute() {}, focus() {}, contains(target) { return target === this || this.children.some(child => child.contains(target)); },
       appendChild(child) { this.children.push(child); },
       removeChild(child) { this.children.splice(this.children.indexOf(child), 1); },
       addEventListener(name, fn) { this.events[name] = fn; },
@@ -492,7 +493,10 @@ test('popover closes after remembering temporary edits without native dialogs', 
   const scope = {
     el, focusGame() {}, document: { body: el('body'), getElementById: () => null },
     window: { innerWidth: 800, clearTimeout() {}, setTimeout() { return 1; },
-      addEventListener(name, fn) { events[name] = fn; }, removeEventListener() {} },
+      addEventListener(name, fn, capture = false) { events[name] = { fn, capture }; },
+      removeEventListener(name, fn, capture = false) {
+        if (events[name] && events[name].fn === fn && events[name].capture === capture) delete events[name];
+      } },
     api: { action: async (id, args) => {
       calls.push(args);
       return { editor: { title: 'Class', className: 'Class', selected: 'Farm',
@@ -508,12 +512,22 @@ test('popover closes after remembering temporary edits without native dialogs', 
   const text = nodes.find(node => node.tag === 'textarea');
   text.value = '4;3';
   text.events.input();
-  events.keydown({ key: 'Escape', preventDefault() {} });
+  const panel = nodes.find(node => node.id === 'contextEditor');
+  events.mousedown.fn({ target: text });
   await new Promise(setImmediate);
+  assert.ok(!panel.removed, 'clicks inside the editor keep it open');
+  if (dismiss === 'Escape') events.keydown.fn({ key: 'Escape', preventDefault() {} });
+  else {
+    // The game stops bubbling mouse events; only capture listeners see its clicks.
+    if (events.mousedown.capture) events.mousedown.fn({ target: { tagName: 'RUFFLE-PLAYER' } });
+  }
+  await new Promise(setImmediate);
+  assert.strictEqual(panel.removed, true, 'outside clicks and Escape dismiss the editor');
   assert.strictEqual(calls[1].draft, true);
   assert.strictEqual(calls[1].text, '4;3');
-  assert.strictEqual(nodes.find(node => node.id === 'contextEditor').removed, true);
+  assert.strictEqual(events.mousedown, undefined, 'dismiss listener is cleaned up');
 });
+}
 
 test('movement keys preserve focus inside Ruffle instead of interrupting its text input', () => {
   const vm = require('vm');

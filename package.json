@@ -31,8 +31,8 @@
   "author": "aquastar",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^45.2.1",
-    "electron-builder": "22.14.13",
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0",
     "eslint": "^8.57.1",
     "eslint-config-prettier": "^10.1.1",
     "prettier": "^3.5.3"
