@@ -13,7 +13,6 @@ const platform = require('../../res/platform');
 const { createNamespacedStore } = require('../../res/platform/storage/namespaced-store.js');
 const spammer = require('../../plugins/grimlite-parity/features/packets/spammer.js');
 const framesApi = require('../../plugins/grimlite-parity/features/packets/frames.js');
-const steeringNotice = require('../../plugins/grimlite-parity/features/packets/steering-notice.js');
 
 const repoRoot = path.join(__dirname, '../..');
 const pluginRoot = path.join(repoRoot, 'plugins/grimlite-parity');
@@ -21,7 +20,6 @@ const featureDir = path.join(pluginRoot, 'features/packets');
 const appVersion = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')).version;
 const SPAMMER_ID = 'grimlite-parity-packet-spammer';
 const TAMPERER_ID = 'grimlite-parity-packet-tamperer';
-const SETTING_NAME = 'Steer game traffic through a local relay';
 
 async function activateParity(deps) {
   const discovered = platform.discoverPlugins({
@@ -981,34 +979,17 @@ test('the tamperer page disables only the button that is sending, and Clear is a
   assert.strictEqual(page.byId.clear.disabled, false);
 });
 
-// Steering is the player's opt-in (`packetSteering`, off by default): with it off the relay is not
-// there, so each of the three windows says so - naming the setting and the restart - instead of
-// looking broken. None of them turns it on.
-test('each packet window says when packet steering is off, and none of them turns it on', async () => {
-  const settingsHost = function (settings) {
-    return { getPlatformSettings: function () { return settings; } };
-  };
-  assert.strictEqual(steeringNotice.steeringEnabled(settingsHost({})), false,
-    'a settings map without the key is the setting\'s own default');
-  assert.strictEqual(steeringNotice.steeringEnabled(settingsHost({ packetSteering: true })), true);
-  assert.strictEqual(steeringNotice.notice(settingsHost({ packetSteering: true })), '',
-    'there is nothing to say while the relay is up');
-  const notice = steeringNotice.notice(settingsHost({ packetSteering: false }));
-  assert.notStrictEqual(notice.indexOf(SETTING_NAME), -1,
-    'the banner names the setting exactly: ' + notice);
-  assert.ok(/\brestart\b/i.test(notice), 'and says a restart applies it: ' + notice);
-
-  // Each window's own channel carries the notice, from the plugin's own registration.
+test('packet windows do not ask the player to enable automatic steering', async () => {
   const state = (await activateParity()).host._getState();
   const channels = ['packetsSteering', 'spammerSteering', 'tampererSteering'];
-  for (let i = 0; i < channels.length; i++) {
-    const answer = await handlerFor(state, channels[i])({});
-    assert.ok(answer.notice && answer.notice.indexOf(SETTING_NAME) !== -1,
-      channels[i] + ' must carry the notice: ' + JSON.stringify(answer));
+  for (const channel of channels) {
+    const answer = await handlerFor(state, channel)({});
+    assert.strictEqual(answer.notice, '', channel + ' must not advertise a removed setting');
+    if (channel === 'packetsSteering') assert.strictEqual(answer.steering, true);
   }
+  const notice = 'Relay unavailable';
 
-  // Each page has somewhere to put it and asks for it, and the three window halves read the
-  // setting only through steering-notice.js: nothing here writes it.
+  // Keep the existing notice channel available for relay diagnostics.
   [
     { page: 'logger.html', script: 'logger_renderer.js' },
     { page: 'spammer.html' },
@@ -1023,7 +1004,7 @@ test('each packet window says when packet steering is off, and none of them turn
   ['logger.js', 'spammer-window.js', 'tamperer-window.js'].forEach(function (file) {
     const source = fs.readFileSync(path.join(featureDir, file), 'utf8');
     assert.strictEqual(/packetSteering/.test(source), false,
-      file + ' reads the setting only through steering-notice.js');
+      file + ' must not depend on the removed setting');
   });
 
   // One page end to end: the notice reaches the banner it drew for it.

@@ -76,6 +76,8 @@ The wrapper enables `backgroundExecutionMode: "mainThread"`: a worker schedules 
 hidden instead of Ruffle's default pause. These checks do not require a game account.
 
 On Wayland, the compositor can stop animation callbacks even while Electron reports the
-page as visible. `res/game-timing.js` races native callbacks with a timer so that game
-ticks continue in that state too. Run the smoke command with `PROBE_STALL_RAF=1` to
+page as visible. `res/game-timing.js` waits 100 ms for a stalled compositor before
+falling back to 60 Hz timer ticks. It keeps one native callback pending and returns to
+compositor pacing when callbacks resume, so timers do not race healthy frames.
+Run the smoke command with `PROBE_STALL_RAF=1` to
 simulate a compositor that never delivers animation callbacks.

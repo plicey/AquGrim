@@ -192,14 +192,14 @@
       async function close() {
         if (busy || !(await remember())) return;
         panel.remove();
-        window.removeEventListener('mousedown', outside, true);
+        window.removeEventListener('pointerdown', outside, true);
         window.removeEventListener('keydown', key);
         focusGame();
       }
       function outside(event) { if (!panel.contains(event.target)) close(); }
       function key(event) { if (event.key === 'Escape') { event.preventDefault(); close(); } }
-      // Capture before the game can stop mouse events from bubbling.
-      window.addEventListener('mousedown', outside, true);
+      // Ruffle can suppress compatibility mouse events after pointerdown.
+      window.addEventListener('pointerdown', outside, true);
       window.addEventListener('keydown', key);
       async function request(args) {
         if (busy) return;
