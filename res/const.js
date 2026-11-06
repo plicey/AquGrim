@@ -308,6 +308,7 @@ const rufflePlayerPath = !exports.rufflePinned && fs.existsSync(downloadedRuffle
 exports.rufflePlayerUrl = _getFileUrl(rufflePlayerPath);
 exports.ruffleFiles = { '/ruffle-wrapper.html': path.join(appRoot, 'res', 'ruffle_wrapper.html') };
 exports.ruffleFiles['/game_chrome.js'] = path.join(appRoot, 'res', 'game_chrome.js');
+exports.ruffleFiles['/game-timing.js'] = path.join(appRoot, 'res', 'game-timing.js');
 exports.ruffleFiles['/game_chrome.css'] = path.join(appRoot, 'res', 'game_chrome.css');
 fs.readdirSync(path.dirname(rufflePlayerPath)).filter(name => /\.(js|wasm)$/.test(name)).forEach(name => {
     exports.ruffleFiles['/ruffle/' + name] = path.join(path.dirname(rufflePlayerPath), name);
