@@ -8,7 +8,6 @@
 // the last one goes off. The switches themselves sit in tamperer.js, which is what makes each of
 // them gate only its own direction.
 const tamperer = require('./tamperer.js');
-const steeringNotice = require('./steering-notice.js');
 
 function createTampererWindow(deps) {
     deps = deps || {};
@@ -138,8 +137,6 @@ function createFromHost(host, deps) {
         // the sniffer's callbacks and sends from the same box).
         packets: host.packets,
         channel: 'plugin:' + host.pluginId + ':tampererCapture',
-        // Off means the relay is not there, both to read through and to write through.
-        steering: function () { return steeringNotice.notice(host); },
         messages: (typeof host.getLocaleStrings === 'function' &&
             host.getLocaleStrings('tampererMessages')) || {}
     });

@@ -9,7 +9,6 @@
 
 const frames = require('./frames.js');
 const spammer = require('./spammer.js');
-const steeringNotice = require('./steering-notice.js');
 
 function createLoggerFeature(host) {
     let feed = null;
@@ -112,12 +111,10 @@ function createLoggerFeature(host) {
                 spam.stop();
                 return { running: false };
             });
-            // The tap and packets.send only carry anything while the game is steered through the
-            // relay; the page says so instead of looking broken (and never turns it on itself).
             host.ipc.handle('packetsSteering', function () {
                 return {
-                    steering: steeringNotice.steeringEnabled(host),
-                    notice: steeringNotice.notice(host)
+                    steering: true,
+                    notice: ''
                 };
             });
             // Clipboard is main-process-only under sandbox:true / nodeIntegration:false.

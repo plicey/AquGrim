@@ -272,7 +272,7 @@ test('local login POST stays on its origin and uses the packet rule on the upstr
     started = await packetLayer.createPacketLayer({
       declarations: [declaration], ctx: { settings: { packetSteering: false } }
     }).start();
-    const untouched = await new Promise(function (resolve, reject) {
+    const legacy = await new Promise(function (resolve, reject) {
       http.get(baseUrl + '/api/login/now', function (res) {
         const chunks = [];
         res.on('data', function (chunk) { chunks.push(chunk); });
@@ -281,9 +281,10 @@ test('local login POST stays on its origin and uses the packet rule on the upstr
         });
       }).on('error', reject);
     });
-    assert.strictEqual(untouched.status, 201);
-    assert.strictEqual(untouched.body, LOGIN_BODY.replace(/\.up\.example/g, '.aq.com'));
-    assert.strictEqual(started.relay.running, false);
+    assert.strictEqual(legacy.status, 201);
+    assert.ok(JSON.parse(legacy.body).servers.every(row => row.sIP === '127.0.0.1'),
+      'legacy saved false must still route the game through the relay');
+    assert.strictEqual(started.relay.running, true);
   } finally {
     if (started) await started.close();
     await runtime.stopGameOrigin();
@@ -293,11 +294,11 @@ test('local login POST stays on its origin and uses the packet rule on the upstr
   }
 });
 
-test('the parity plugin declares its steering behind an opt-in flag and names no platform fact', () => {
+test('the parity plugin automatically steers traffic and names no platform fact', () => {
   const declarations = require('../../plugins/grimlite-parity/packets.js').steeringDeclarations();
   assert.ok(Array.isArray(declarations) && declarations.length >= 1);
   const declaration = declarations[0];
-  assert.strictEqual(declaration.settingKey, 'packetSteering');
+  assert.strictEqual(declaration.settingKey, undefined);
   assert.ok(declaration.hostField && declaration.portField);
   assert.ok(declaration.urls.some(function (u) { return /login/.test(u); }),
     'the login response is the steering point: ' + JSON.stringify(declaration.urls));
@@ -400,34 +401,33 @@ test('activating the parity plugin hands the platform exactly one steering decla
   });
   const recorded = activated.host._getState().packetSteering;
   assert.strictEqual(recorded.length, 1, 'exactly one declaration, from a plugin holding packet-tap');
-  assert.strictEqual(recorded[0].settingKey, 'packetSteering');
+  assert.strictEqual(recorded[0].settingKey, undefined);
   assert.ok(recorded[0].urls.length >= 1);
   assert.deepStrictEqual(recorded[0].urls, [
     '*://game.aq.com/game/api/login/now*', '*://game.aq.com/game/api/data/servers*'
   ]);
   assert.strictEqual(recorded[0].policyDomain, '127.0.0.1');
 
-  // And the opt-in is off until the player turns it on: default settings engage nothing.
   const defaults = activated.host._getState().optionDefaults || {};
-  assert.strictEqual(defaults.packetSteering, false, 'steering is the player opt-in');
-
+  assert.strictEqual(defaults.packetSteering, undefined);
   const offered = (activated.host._getState().settingsSections || []).filter(function (section) {
     return (section.fields || []).some(function (field) { return field.key === 'packetSteering'; });
   });
-  assert.strictEqual(offered.length, 1, 'the switch is reachable in Settings');
+  assert.strictEqual(offered.length, 0, 'packet tools must not require a separate settings switch');
 
-  // With the opt-in still off, the layer engages nothing and no relay appears.
-  const layer = packetLayer.createPacketLayer({
-    declarations: recorded,
-    ctx: { settings: defaults, logLine: function () {} }
-  });
-  const started = await layer.start();
-  try {
-    assert.deepStrictEqual(started.steering.engaged, []);
-    assert.strictEqual(started.relay.running, false);
-    assert.strictEqual(started.rules.length, 0);
-  } finally {
-    await layer.close();
+  for (const settings of [{}, { packetSteering: false }]) {
+    const layer = packetLayer.createPacketLayer({
+      declarations: recorded,
+      ctx: { settings: settings, logLine: function () {} }
+    });
+    const started = await layer.start();
+    try {
+      assert.deepStrictEqual(started.steering.engaged, ['artix-steer-login']);
+      assert.strictEqual(started.relay.running, true, 'legacy saved false must not disable packet tools');
+      assert.strictEqual(started.rules.length, 1);
+    } finally {
+      await layer.close();
+    }
   }
 });
 

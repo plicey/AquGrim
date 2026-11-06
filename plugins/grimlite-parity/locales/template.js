@@ -145,13 +145,13 @@ exports.settingsMessages = {
 
     },
     optionLabels: {
-        packetSteering: ""
+
     },
     optionHints: {
-        packetSteering: ""
+
     },
     settingsSections: {
-        packets: ""
+
     }
 };
 

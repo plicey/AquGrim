@@ -7,7 +7,6 @@
 const path = require('path');
 
 const spammer = require('./spammer.js');
-const steeringNotice = require('./steering-notice.js');
 
 const STORE_NAMESPACE = 'spammer';
 const STORE_KEY = 'lastDirectory';
@@ -24,8 +23,6 @@ function createSpammerWindow(deps) {
     const labels = Object.assign({}, spammer.LABELS, messages);
     const showOpenDialog = deps.showOpenDialog;
     const showSaveDialog = deps.showSaveDialog;
-    // The Banner the window shows while steering is off. A caller that says nothing has nothing
-    // to say: the plugin's own window passes the merged settings through here.
     const steering = typeof deps.steering === 'function' ? deps.steering : function () { return ''; };
     const readText = deps.readText || function (file) { return require('fs').readFileSync(file, 'utf8'); };
     const writeText = deps.writeText || function (file, text) {
@@ -212,8 +209,6 @@ function createFromHost(host, deps) {
         defaultDirectory: path.join(
             host.persistentAppDataDirectory || host.appDataDirectory, 'Spammer'),
         indexChannel: 'plugin:' + host.pluginId + ':spammerIndex',
-        // Off means the relay is not there to write through (steering-notice.js says why).
-        steering: function () { return steeringNotice.notice(host); },
         messages: (typeof host.getLocaleStrings === 'function' &&
             host.getLocaleStrings('spammerMessages')) || {},
         showOpenDialog: function (owner, options) {

@@ -801,17 +801,7 @@ async function activate(host) {
         }
     }).register(host);
 
-    // Steering carries the session through a local process, so it is the player's opt-in rather
-    // than something the client does to itself. The declaration is this game's facts: the platform
-    // owns the mechanism and knows none of them (res/platform/packet-layer.js).
-    host.registerOptionDefaults({ packetSteering: false });
-    host.registerSettingsSection({
-        id: 'grimlite-packets',
-        titleKey: 'packets',
-        title: 'Packets',
-        order: 30,
-        fields: [{ key: 'packetSteering', type: 'boolean' }]
-    });
+    // Packet tools share the game connection through the relay from startup.
     host.registerPacketSteering(require('./packets.js').steeringDeclarations(baseUrl)[0]);
 
     installTray(host);

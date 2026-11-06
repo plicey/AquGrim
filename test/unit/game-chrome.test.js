@@ -513,19 +513,20 @@ test('popover remembers temporary edits on ' + dismiss, async () => {
   text.value = '4;3';
   text.events.input();
   const panel = nodes.find(node => node.id === 'contextEditor');
-  events.mousedown.fn({ target: text });
+  assert.ok(events.pointerdown, 'Ruffle game clicks deliver pointerdown without compatibility mousedown');
+  events.pointerdown.fn({ target: text });
   await new Promise(setImmediate);
   assert.ok(!panel.removed, 'clicks inside the editor keep it open');
   if (dismiss === 'Escape') events.keydown.fn({ key: 'Escape', preventDefault() {} });
   else {
-    // The game stops bubbling mouse events; only capture listeners see its clicks.
-    if (events.mousedown.capture) events.mousedown.fn({ target: { tagName: 'RUFFLE-PLAYER' } });
+    // Ruffle suppresses compatibility mouse events; listen to pointer input in capture.
+    if (events.pointerdown.capture) events.pointerdown.fn({ target: { tagName: 'RUFFLE-PLAYER' } });
   }
   await new Promise(setImmediate);
   assert.strictEqual(panel.removed, true, 'outside clicks and Escape dismiss the editor');
   assert.strictEqual(calls[1].draft, true);
   assert.strictEqual(calls[1].text, '4;3');
-  assert.strictEqual(events.mousedown, undefined, 'dismiss listener is cleaned up');
+  assert.strictEqual(events.pointerdown, undefined, 'dismiss listener is cleaned up');
 });
 }
 

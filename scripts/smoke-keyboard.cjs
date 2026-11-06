@@ -17,7 +17,20 @@ app.whenReady().then(async () => {
     const server = http.createServer((req, res) => {
         if (req.url === '/') {
             res.setHeader('Content-Type', 'text/html');
-            res.end(`<body><div id="stage"><div id="surface"></div></div>
+            res.end(`<style>${fs.readFileSync(path.join(root, 'res/game_chrome.css'), 'utf8')}</style>
+                <body><div id="chrome"></div><div id="stage"><div id="surface"></div></div>
+                <script>
+                window.drafts = [];
+                window.aquastarChrome = {
+                    getView: async () => ({enabled:true,height:27,controls:[
+                        {id:'autoSkillSet',kind:'button',label:'Skills',contextEditor:true}]}),
+                    action: async (id, args) => {
+                        if (args.draft) drafts.push(args.text);
+                        return {editor:{title:'Class',className:'Class',selected:'Farm',
+                            text:args.text || '1;2',items:[{name:'Farm',label:'Farm'}]}};
+                    }
+                };
+                </script>
                 ${process.env.PROBE_STALL_RAF === '1' ? '<script>let frameId=0;window.requestAnimationFrame=()=>++frameId;window.cancelAnimationFrame=()=>{};</script>' : ''}
                 <script src="/game-timing.js"></script><script src="/ruffle/ruffle.js"></script><script>
                 window.p = RufflePlayer.newest().createPlayer();document.getElementById('surface').appendChild(p);
@@ -57,6 +70,21 @@ app.whenReady().then(async () => {
         assert.strictEqual(state.x, -1, 'stale right key must not cancel left movement after losing focus');
         assert.strictEqual(state.y, 1, 'stale up key must not cancel down movement after losing focus');
         assert.ok(state.deactivations > 0, 'the movie must receive deactivation');
+        await js(`document.getElementById('chrome-autoSkillSet').dispatchEvent(
+            new MouseEvent('contextmenu', {bubbles:true,cancelable:true}));true`);
+        await delay(100);
+        assert.ok(await js("!!document.getElementById('contextEditor')"), 'skill editor must open');
+        const point = await js(`const text=document.querySelector('#contextEditor textarea');
+            text.value='4;3';text.dispatchEvent(new Event('input', {bubbles:true}));
+            const rect=p.getBoundingClientRect();
+            ({x:Math.round(rect.left+rect.width*.85),y:Math.round(rect.top+rect.height*.75)})`);
+        win.webContents.sendInputEvent({type:'mouseDown',...point,button:'left',clickCount:1});
+        win.webContents.sendInputEvent({type:'mouseUp',...point,button:'left',clickCount:1});
+        await delay(200);
+        assert.strictEqual(await js("!!document.getElementById('contextEditor')"), false,
+            'a real Ruffle click must dismiss the skill editor even when mousedown is suppressed');
+        assert.strictEqual(await js('window.drafts.at(-1)'), '4;3', 'dismissal must preserve the draft');
+        console.log('Ruffle click dismissed editor and preserved draft');
         await js('window.timerTicks = 0; setInterval(() => window.timerTicks++, 50); true');
         async function checkProgress(label) {
             const before = await js('[p.probeState().frames, window.timerTicks]');
