@@ -35,7 +35,7 @@
   #questCount, #forceAccept, #ghost { grid-column: 2; }
   #ghost { justify-self: start; }
   #treeWrap {
-    position: absolute; left: 12px; right: 12px; top: 94px; bottom: 93px;
+    position: absolute; left: 12px; right: 12px; top: 94px; bottom: 111px;
     background: #2e2e38; border: 1px solid #3a3a45;
     overflow: auto; padding: 2px;
   }
@@ -59,13 +59,16 @@
   }
   #save { flex: 1 1 auto; }
   #grab { flex: 0 0 125px; }
+  /* The status line has its own band between the tree and the search row, so it never covers the
+     first row of the tree (and the tree keeps its height whether a message is up or not). */
   #status {
-    position: absolute; left: 12px; right: 12px; top: 96px; z-index: 4; display: none;
-    padding: 3px 5px; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis;
-    white-space: nowrap; background: rgba(30, 30, 36, .94); border: 1px solid #3a3a45;
-    color: #9a9a9a; pointer-events: none;
+    position: absolute; left: 12px; right: 12px; bottom: 92px; height: 17px; z-index: 4;
+    padding: 2px 5px; box-sizing: border-box; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; color: #9a9a9a; pointer-events: none;
   }
-  #status.visible { display: block; }
+  #status.visible {
+    background: #242430; border: 1px solid #3a3a45; border-radius: 3px;
+  }
   #status.err { color: #ff8a80; }
   #menu {
     position: absolute; z-index: 10; display: none; background: #242430; color: #dcdcdc;
