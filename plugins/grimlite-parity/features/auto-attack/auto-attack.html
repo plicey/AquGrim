@@ -159,17 +159,7 @@
   var status = document.getElementById('status');
   var remove = document.getElementById('delete');
   var basicAttack = document.getElementById('automaticBasicAttack');
-  basicAttack.addEventListener('change', function () {
-    Promise.resolve(api.setBasicAttack(basicAttack.checked)).then(function (result) {
-      if (!result || result.ok !== true) {
-        basicAttack.checked = !basicAttack.checked;
-        say((result && result.error) || 'Could not change basic attack.', true);
-      }
-    }).catch(function (error) {
-      basicAttack.checked = !basicAttack.checked;
-      say(error.message, true);
-    });
-  });
+  basicAttack.addEventListener('change', function () { box.dispatchEvent(new Event('input')); });
   var pending = null;
   var condition = document.getElementById('stepCondition');
   var comparator = document.getElementById('stepComparator');
@@ -298,7 +288,7 @@
     }
 
     if (selected === '__custom__') {
-      Promise.resolve(api.useDraft({ className: className, text: box.value })).then(function (result) {
+      Promise.resolve(api.useDraft({ className: className, automaticBasicAttack: basicAttack.checked, text: box.value })).then(function (result) {
         if (!result || result.ok !== true) return say((result && result.error) || 'Could not remember draft.', true);
         apply(result, true);
         say('Rotation applied now. Save a preset to keep a named copy.');
@@ -321,7 +311,7 @@
     if (!name) return say('Enter a preset name before saving.', true);
     if (!box.value.trim()) return say('Enter a skill rotation before saving.', true);
 
-    Promise.resolve(api.savePreset({ className: className, name: name, text: box.value }))
+    Promise.resolve(api.savePreset({ className: className, name: name, automaticBasicAttack: basicAttack.checked, text: box.value }))
       .then(function (result) {
         if (!result || result.ok !== true) return say((result && result.error) || 'Could not save.', true);
         apply(result, true);
@@ -351,7 +341,7 @@
     pending = setTimeout(function () {
       pending = null;
       var name = select.value && select.value !== '__custom__' ? select.value : null;
-      Promise.resolve(api.draft({ className: currentClass(), text: box.value, name: name }))
+      Promise.resolve(api.draft({ className: currentClass(), automaticBasicAttack: basicAttack.checked, text: box.value, name: name }))
         .then(function (result) {
           if (!result || result.ok === false) return say((result && result.error) || 'Could not remember draft.', true);
           if (result && result.selected) select.value = result.selected;

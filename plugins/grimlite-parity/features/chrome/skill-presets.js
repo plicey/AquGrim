@@ -188,6 +188,7 @@ function copyDraft(draft) {
         className: draft.className,
         name: draft.name,
         text: draft.text,
+        automaticBasicAttack: draft.automaticBasicAttack !== false,
         skills: parsePreset(draft.text)
     };
 }
@@ -220,7 +221,10 @@ function createPresetSource(deps) {
         if (!node || typeof node !== 'object' || Array.isArray(node)) return {};
         const out = {};
         Object.keys(node).forEach(function (name) {
-            if (cleanName(name) && typeof node[name] === 'string') out[name] = node[name];
+            if (!cleanName(name)) return;
+            const value = node[name];
+            if (typeof value === 'string') out[name] = { text: value, automaticBasicAttack: stored().automaticBasicAttack !== false };
+            else if (value && typeof value.text === 'string') out[name] = value;
         });
         return out;
     }
@@ -229,11 +233,11 @@ function createPresetSource(deps) {
         const key = classKey(className);
         const out = {};
         if (key && fileValues[key]) {
-            out[FILE_PRESET_NAME] = { text: fileValues[key], stored: false };
+            out[FILE_PRESET_NAME] = { text: fileValues[key], stored: false, automaticBasicAttack: stored().automaticBasicAttack !== false };
         }
         const saved = storedPresets(key);
         Object.keys(saved).forEach(function (name) {
-            out[name] = { text: saved[name], stored: true };
+            out[name] = Object.assign({}, saved[name], { stored: true });
         });
         return out;
     }
@@ -305,7 +309,7 @@ function createPresetSource(deps) {
             const previousDrafts = data[DRAFT_KEY];
             const drafts = previousDrafts && typeof previousDrafts === 'object' && !Array.isArray(previousDrafts)
                 ? Object.assign({}, previousDrafts) : {};
-            if (editor) drafts[key] = { name: editor.name, text: editor.text };
+            if (editor) drafts[key] = { name: editor.name, text: editor.text, automaticBasicAttack: editor.automaticBasicAttack !== false };
             else delete drafts[key];
             if (Object.keys(drafts).length) data[DRAFT_KEY] = drafts;
             else delete data[DRAFT_KEY];
@@ -322,7 +326,10 @@ function createPresetSource(deps) {
         }) || null;
     }
 
-    function savePreset(className, name, text) {
+    function savePreset(className, name, text, automaticBasicAttack) {
+        if (automaticBasicAttack !== undefined && typeof automaticBasicAttack !== 'boolean') {
+            throw new Error('Expected a boolean for automatic basic attack.');
+        }
         const key = classKey(className);
         const preset = cleanName(name);
         const value = String(text === null || text === undefined ? '' : text);
@@ -332,7 +339,9 @@ function createPresetSource(deps) {
         parsePreset(value);
         // Saving "boss" over "Boss" updates that preset rather than creating a look-alike.
         const storedName = findName(key, preset) || preset;
-        writeStored({ className: key, preset: storedName }, value);
+        writeStored({ className: key, preset: storedName }, { text: value,
+            automaticBasicAttack: automaticBasicAttack === undefined
+                ? (draftFor(key) || stored()).automaticBasicAttack !== false : automaticBasicAttack !== false });
         return presetList(key);
     }
 
@@ -346,10 +355,15 @@ function createPresetSource(deps) {
         return presetList(key);
     }
 
-    function setDraft(className, text, name) {
+    function setDraft(className, text, name, automaticBasicAttack) {
+        if (automaticBasicAttack !== undefined && typeof automaticBasicAttack !== 'boolean') {
+            throw new Error('Expected a boolean for automatic basic attack.');
+        }
         const next = {
             className: classKey(className),
             name: cleanName(name) || null,
+            automaticBasicAttack: automaticBasicAttack === undefined
+                ? (draftFor(className) || stored()).automaticBasicAttack !== false : automaticBasicAttack !== false,
             text: String(text === null || text === undefined ? '' : text)
         };
         parsePreset(next.text);
@@ -364,11 +378,12 @@ function createPresetSource(deps) {
             const drafts = stored()[DRAFT_KEY];
             const editor = drafts && typeof drafts === 'object' && !Array.isArray(drafts) ? drafts[key] : null;
             draft = editor && typeof editor === 'object' && typeof editor.text === 'string'
-                ? { className: key, name: cleanName(editor.name) || null, text: editor.text } : null;
+                ? { className: key, name: cleanName(editor.name) || null, text: editor.text, automaticBasicAttack: editor.automaticBasicAttack === undefined
+                    ? stored().automaticBasicAttack !== false : editor.automaticBasicAttack !== false } : null;
         }
         if (draft && draft.className === key) {
             if (!draft.name || findName(key, draft.name)) return copyDraft(draft);
-            return setDraft(key, draft.text, null);
+            return setDraft(key, draft.text, null, draft.automaticBasicAttack);
         }
         const remembered = rememberedName(key);
         const preset = findName(key, remembered);
@@ -376,7 +391,8 @@ function createPresetSource(deps) {
             if (remembered) remember(key, null);
             return null;
         }
-        return setDraft(key, rawForClass(key)[preset].text, preset);
+        const raw = rawForClass(key)[preset];
+        return setDraft(key, raw.text, preset, raw.automaticBasicAttack !== false);
     }
 
     function clearDraft(className) {
@@ -390,7 +406,7 @@ function createPresetSource(deps) {
         const preset = findName(key, name);
         if (!preset) return null;
         const raw = rawForClass(key)[preset];
-        return setDraft(key, raw.text, preset);
+        return setDraft(key, raw.text, preset, raw.automaticBasicAttack !== false);
     }
 
     reload();

@@ -538,10 +538,10 @@ test('the preset source keeps named class presets and reads ClientConfig as a na
   source.savePreset('Void Highlord', 'Farm', '2;3');
   assert.deepStrictEqual(data.autoAttackPresets['VOID HIGHLORD'], {
     Boss: '4:SH>60;1',
-    Farm: '2;3'
+    Farm: { text: '2;3', automaticBasicAttack: true }
   }, 'presets are stored by class and name');
   source.savePreset('Void Highlord', 'boss', '3;4');
-  assert.strictEqual(data.autoAttackPresets['VOID HIGHLORD'].Boss, '3;4',
+  assert.strictEqual(data.autoAttackPresets['VOID HIGHLORD'].Boss.text, '3;4',
     'a name differing only by case updates the existing preset');
 
   const loaded = source.loadPreset('Void Highlord', 'Farm');
@@ -892,9 +892,10 @@ test('right-click skill editor lists, selects and validates saves for the detect
   const selected = await h.chrome.action('autoSkillSet', { contextEditor: true, name: 'Farm' });
   assert.strictEqual(selected.editor.text, '2;4');
   const temporary = await h.chrome.action('autoSkillSet', {
-    contextEditor: true, draft: true, className: 'Shaman', name: 'Farm', text: '3;2'
+    contextEditor: true, draft: true, className: 'Shaman', name: 'Farm', text: '3;2', booleanOption: false
   });
   assert.strictEqual(temporary.editor.text, '3;2');
+  assert.strictEqual(temporary.editor.booleanOption.checked, false);
   assert.strictEqual(data.autoAttackPresets.SHAMAN.Farm, '2;4', 'temporary edits leave the saved preset alone');
   const reopened = await h.chrome.action('autoSkillSet', { contextEditor: true });
   assert.strictEqual(reopened.editor.text, '3;2', 'reopening keeps the temporary draft');
@@ -907,12 +908,13 @@ test('right-click skill editor lists, selects and validates saves for the detect
     contextEditor: true, className: 'Shaman', save: true, name: 'Farm', text: '4;3'
   });
   assert.strictEqual(saved.editor.text, '4;3');
-  assert.strictEqual(data.autoAttackPresets.SHAMAN.Farm, '4;3');
+  assert.strictEqual(data.autoAttackPresets.SHAMAN.Farm.automaticBasicAttack, false);
+  assert.strictEqual(data.autoAttackPresets.SHAMAN.Farm.text, '4;3');
   const changed = await h.chrome.action('autoSkillSet', {
     contextEditor: true, className: 'Other', save: true, name: 'Farm', text: '1'
   });
   assert.strictEqual(changed.ok, false);
-  assert.strictEqual(data.autoAttackPresets.SHAMAN.Farm, '4;3');
+  assert.strictEqual(data.autoAttackPresets.SHAMAN.Farm.text, '4;3');
 });
 
 test('disabling automatic basic attack preserves explicit slot zero casts', async () => {
@@ -925,7 +927,7 @@ test('disabling automatic basic attack preserves explicit slot zero casts', asyn
   assert.ok(h.calls.some(function (one) {
     return one.call === 'useSkill' && one.args[0] === '0' && one.args[1] === false;
   }));
-  settings.automaticBasicAttack = true;
+  h.chrome.useSkillText('1', true);
   await h.chrome.tick();
   const cast = h.calls.filter(function (one) { return one.call === 'useSkill'; }).pop();
   assert.deepStrictEqual(cast.args, ['1']);

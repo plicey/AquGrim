@@ -6,7 +6,6 @@ function payload(value) {
 
 function createAutoAttackWindow(deps) {
     deps = deps || {};
-    const store = deps.store;
     const source = deps.presets || presets.createPresetSource({ store: deps.store, files: [] });
     const className = typeof deps.className === 'function' ? deps.className : function () { return ''; };
     const onUse = typeof deps.onUse === 'function' ? deps.onUse : function () {};
@@ -25,7 +24,7 @@ function createAutoAttackWindow(deps) {
                 return { name: one.name, stored: one.stored };
             });
             return {
-                automaticBasicAttack: !store || store.read().automaticBasicAttack !== false,
+                automaticBasicAttack: draft ? draft.automaticBasicAttack : deps.store ? deps.store.read().automaticBasicAttack !== false : true,
                 className: current,
                 presets: list,
                 selected: draft ? draft.name : null,
@@ -35,12 +34,6 @@ function createAutoAttackWindow(deps) {
     }
 
     function register(host) {
-        host.ipc.handle('autoAttackBasicAttackSet', function (event, data) {
-            if (typeof data !== 'boolean') return { ok: false, error: 'Expected a boolean.' };
-            if (store) store.write(Object.assign({}, store.read(), { automaticBasicAttack: data }));
-            return { ok: true };
-        });
-
         host.ipc.handle('autoAttackSkillSetGet', function () {
             source.reload();
             return snapshot();
@@ -49,7 +42,7 @@ function createAutoAttackWindow(deps) {
         host.ipc.handle('autoAttackSkillSetDraft', function (event, data) {
             const args = payload(data);
             try {
-                source.setDraft(args.className, args.text, args.name);
+                source.setDraft(args.className, args.text, args.name, args.automaticBasicAttack);
                 return snapshot(args.className);
             } catch (error) {
                 return { ok: false, error: (error && error.message) || String(error) };
@@ -65,7 +58,7 @@ function createAutoAttackWindow(deps) {
                 return { ok: false, error: (error && error.message) || String(error) };
             }
             if (!loaded) return { ok: false, error: 'that preset no longer exists' };
-            onUse(loaded.text);
+            onUse(loaded.text, loaded.automaticBasicAttack);
             return snapshot(args.className).then(function (state) {
                 return Object.assign({ ok: true, error: null }, state);
             });
@@ -74,7 +67,7 @@ function createAutoAttackWindow(deps) {
         host.ipc.handle('autoAttackPresetSave', function (event, data) {
             const args = payload(data);
             try {
-                source.savePreset(args.className, args.name, args.text);
+                source.savePreset(args.className, args.name, args.text, args.automaticBasicAttack);
                 return snapshot(args.className).then(function (state) {
                     return Object.assign({ ok: true, error: null }, state);
                 });
@@ -102,7 +95,7 @@ function createAutoAttackWindow(deps) {
             } catch (error) {
                 return { ok: false, error: (error && error.message) || String(error) };
             }
-            onUse('');
+            onUse('', !deps.store || deps.store.read().automaticBasicAttack !== false);
             return snapshot(args.className).then(function (state) {
                 return Object.assign({ ok: true, error: null }, state);
             });
@@ -112,11 +105,11 @@ function createAutoAttackWindow(deps) {
             const args = payload(data);
             let draft;
             try {
-                draft = source.setDraft(args.className, args.text, null);
+                draft = source.setDraft(args.className, args.text, null, args.automaticBasicAttack);
             } catch (error) {
                 return { ok: false, error: (error && error.message) || String(error) };
             }
-            onUse(draft ? draft.text : '');
+            onUse(draft ? draft.text : '', draft ? draft.automaticBasicAttack : true);
             return snapshot(args.className).then(function (state) {
                 return Object.assign({ ok: true, error: null }, state);
             });

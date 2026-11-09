@@ -783,8 +783,8 @@ async function activate(host) {
                 return '';
             }
         },
-        onUse: function (text) {
-            if (chrome) chrome.useSkillText(text);
+        onUse: function (text, automaticBasicAttack) {
+            if (chrome) chrome.useSkillText(text, automaticBasicAttack);
         }
     }).register(host);
     createAbout({
