@@ -6,7 +6,6 @@ const CH = function (name) {
 };
 
 contextBridge.exposeInMainWorld('aquastarAutoAttack', {
-    setBasicAttack: function (enabled) { return ipcRenderer.invoke(CH('autoAttackBasicAttackSet'), enabled); },
     get: function () { return ipcRenderer.invoke(CH('autoAttackSkillSetGet')); },
     draft: function (data) { return ipcRenderer.invoke(CH('autoAttackSkillSetDraft'), data); },
     loadPreset: function (data) { return ipcRenderer.invoke(CH('autoAttackPresetLoad'), data); },

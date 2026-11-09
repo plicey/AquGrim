@@ -500,7 +500,7 @@ test('popover remembers temporary edits on ' + dismiss, async () => {
     api: { action: async (id, args) => {
       calls.push(args);
       return { editor: { title: 'Class', className: 'Class', selected: 'Farm',
-        text: args.text || '1;2', items: [{ name: 'Farm', label: 'Farm' }] } };
+        text: args.text || '1;2', booleanOption: { label: 'Use basic attack automatically', checked: false }, items: [{ name: 'Farm', label: 'Farm' }] } };
     } }
   };
   require('vm').runInNewContext(source.slice(source.indexOf('    function openContextEditor'),
@@ -510,6 +510,9 @@ test('popover remembers temporary edits on ' + dismiss, async () => {
   });
   await new Promise(setImmediate);
   const text = nodes.find(node => node.tag === 'textarea');
+  const checkbox = nodes.find(node => node.type === 'checkbox');
+  assert.strictEqual(checkbox.checked, false);
+  checkbox.checked = true;
   text.value = '4;3';
   text.events.input();
   const panel = nodes.find(node => node.id === 'contextEditor');
@@ -526,6 +529,7 @@ test('popover remembers temporary edits on ' + dismiss, async () => {
   assert.strictEqual(panel.removed, true, 'outside clicks and Escape dismiss the editor');
   assert.strictEqual(calls[1].draft, true);
   assert.strictEqual(calls[1].text, '4;3');
+  assert.strictEqual(calls[1].booleanOption, true);
   assert.strictEqual(events.pointerdown, undefined, 'dismiss listener is cleaned up');
 });
 }

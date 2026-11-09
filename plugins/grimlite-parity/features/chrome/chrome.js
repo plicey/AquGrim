@@ -111,8 +111,9 @@ function createChrome(deps) {
         clearInterval: function (id) { clearInterval(id); }
     };
 
+    let activeBasicAttack;
     function basicAttackEnabled() {
-        return !deps.store || deps.store.read().automaticBasicAttack !== false;
+        return activeBasicAttack === undefined ? !deps.store || deps.store.read().automaticBasicAttack !== false : activeBasicAttack;
     }
 
     let autoAttack = false;
@@ -359,6 +360,7 @@ function createChrome(deps) {
         const answer = await read('className');
         if (answer.error) return [];
         const draft = deps.presets.draftFor(answer.value);
+        activeBasicAttack = draft ? draft.automaticBasicAttack !== false : !deps.store || deps.store.read().automaticBasicAttack !== false;
         return draft && Array.isArray(draft.skills) ? draft.skills : [];
     }
 
@@ -547,7 +549,8 @@ function createChrome(deps) {
     }
 
     /** A preset was selected in the editor: use it now, before Auto Attack is re-enabled. */
-    function useSkillText(text) {
+    function useSkillText(text, automaticBasicAttack) {
+        if (automaticBasicAttack !== undefined) activeBasicAttack = automaticBasicAttack !== false;
         const skills = skillPresets.parsePreset(text);
         customRotation = skills.length > 0;
         rotation = skills.length ? skills : skillPresets.defaultSkills();
@@ -628,10 +631,10 @@ function createChrome(deps) {
                     if (picked.className && picked.className !== name) throw new Error('Class changed. Reopen Skill Set.');
                     deps.presets.reload();
                     if (picked.save) {
-                        deps.presets.savePreset(name, picked.name, picked.text);
-                        deps.presets.setDraft(name, picked.text, picked.name);
+                        deps.presets.savePreset(name, picked.name, picked.text, picked.booleanOption);
+                        deps.presets.setDraft(name, picked.text, picked.name, picked.booleanOption);
                     } else if (picked.draft) {
-                        deps.presets.setDraft(name, picked.text, picked.name);
+                        deps.presets.setDraft(name, picked.text, picked.name, picked.booleanOption);
                     } else if (picked.name !== undefined) {
                         if (picked.name === '__custom__') {
                             const current = deps.presets.draftFor(name);
@@ -639,16 +642,17 @@ function createChrome(deps) {
                         } else if (picked.name) {
                             const loaded = deps.presets.loadPreset(name, picked.name);
                             if (!loaded) throw new Error('That preset no longer exists.');
-                            useSkillText(loaded.text);
+                            useSkillText(loaded.text, loaded.automaticBasicAttack);
                         } else {
                             deps.presets.clearDraft(name);
-                            useSkillText('');
+                            useSkillText('', !deps.store || deps.store.read().automaticBasicAttack !== false);
                         }
                     }
                     const draft = deps.presets.draftFor(name);
                     answer = { ok: true, editor: {
                         title: name, className: name, selected: draft ? draft.name || '__custom__' : '',
                         text: draft ? draft.text : '1;2;3;4',
+                        booleanOption: { label: 'Use basic attack automatically', checked: draft ? draft.automaticBasicAttack !== false : !deps.store || deps.store.read().automaticBasicAttack !== false },
                         items: [{ name: '', label: 'Default' }, { name: '__custom__', label: 'Custom (unsaved)' }].concat(deps.presets.presetList(name)
                             .map(function (one) { return { name: one.name, label: one.name }; }))
                     } };

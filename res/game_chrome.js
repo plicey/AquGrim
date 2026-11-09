@@ -158,6 +158,14 @@
       panel.appendChild(title);
       body.appendChild(list);
       body.appendChild(text);
+      var optionLabel = el('label');
+      var booleanOption = el('input');
+      booleanOption.type = 'checkbox';
+      var optionText = el('span');
+      optionLabel.appendChild(booleanOption);
+      optionLabel.appendChild(optionText);
+      optionLabel.hidden = true;
+      panel.appendChild(optionLabel);
       panel.appendChild(body);
       panel.appendChild(status);
       var rect = button.getBoundingClientRect();
@@ -177,7 +185,7 @@
           var value = text.value;
           var name = state.selected === '__custom__' ? null : state.selected || null;
           return Promise.resolve(api.action(entry.id, {
-            contextEditor: true, draft: true, className: state.className, name: name, text: value
+            contextEditor: true, draft: true, className: state.className, name: name, booleanOption: booleanOption.checked, text: value
           })).then(function (result) {
             if (!result || result.error || !result.editor) throw new Error(result && result.error || 'Could not remember draft.');
             state = result.editor;
@@ -205,7 +213,7 @@
         if (busy) return;
         busy = true;
         if (!(await remember())) { busy = false; return; }
-        list.disabled = text.disabled = true;
+        booleanOption.disabled = list.disabled = text.disabled = true;
         return Promise.resolve(api.action(entry.id, Object.assign({ contextEditor: true }, args)))
           .then(function (result) {
             if (!result || result.error || !result.editor) throw new Error(result && result.error || 'Could not load editor.');
@@ -221,16 +229,20 @@
             });
             list.value = state.selected;
             text.value = state.text;
+            optionLabel.hidden = !state.booleanOption;
+            booleanOption.checked = !!(state.booleanOption && state.booleanOption.checked);
+            optionText.textContent = state.booleanOption ? state.booleanOption.label : '';
             dirty = false;
             status.textContent = args && args.save ? 'Saved · Re-enable Auto Attack to apply' : 'Ctrl+S to save · Esc to close';
           }).catch(function (error) {
             status.textContent = error.message || String(error);
             if (state) list.value = state.selected;
-          }).then(function () { busy = false; list.disabled = text.disabled = !state; });
+          }).then(function () { busy = false; booleanOption.disabled = list.disabled = text.disabled = !state; });
       }
       list.addEventListener('change', function () {
         request({ className: state.className, name: list.value });
       });
+      booleanOption.addEventListener('change', function () { text.dispatchEvent(new Event('input')); });
       text.addEventListener('input', function () {
         dirty = true;
         status.textContent = 'Temporary draft · Ctrl+S to save preset';

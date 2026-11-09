@@ -54,15 +54,15 @@ test('the Auto Attack editor loads named class presets, applies drafts, and save
   assert.strictEqual(saved.ok, true);
   assert.deepStrictEqual(store.read(), {
     autoAttackSkillSet: '1,2,4',
-    autoAttackPresets: { 'VOID HIGHLORD': { Boss: '2:SH>60;3,4' } },
+    autoAttackPresets: { 'VOID HIGHLORD': { Boss: { text: '2:SH>60;3,4', automaticBasicAttack: true } } },
     autoAttackSelectedPresets: { 'VOID HIGHLORD': 'Boss' },
-    autoAttackDrafts: { 'VOID HIGHLORD': { name: 'Boss', text: '2:SH>60;3,4' } }
+    autoAttackDrafts: { 'VOID HIGHLORD': { name: 'Boss', text: '2:SH>60;3,4', automaticBasicAttack: true } }
   }, 'save stores the named class preset and leaves the old universal key untouched');
   assert.deepStrictEqual(used, ['1;2'], 'saving does not apply anything');
 
   await handlers.autoAttackPresetDelete(null, { className: 'Void Highlord', name: 'Boss' });
   assert.deepStrictEqual(store.read(), { autoAttackSkillSet: '1,2,4',
-    autoAttackDrafts: { 'VOID HIGHLORD': { name: null, text: '2:SH>60;3,4' } } });
+    autoAttackDrafts: { 'VOID HIGHLORD': { name: null, text: '2:SH>60;3,4', automaticBasicAttack: true } } });
 
   await handlers.autoAttackSkillSetDefault(null, { className: 'Void Highlord' });
   assert.deepStrictEqual(used, ['1;2', ''], 'choosing Default applies the fallback');
@@ -411,7 +411,7 @@ test('disk-backed editor state survives store recreation per class without chang
     assert.strictEqual(second.source.draftFor('SHAMAN').name, 'Farm');
     assert.strictEqual(second.source.draftFor('Shaman').text, '3:SM<=50;4');
     assert.strictEqual(second.source.draftFor('mage').text, '4;3');
-    assert.strictEqual(second.store.read().autoAttackPresets.SHAMAN.Farm, '1;2');
+    assert.strictEqual(second.store.read().autoAttackPresets.SHAMAN.Farm.text, '1;2');
     second.source.savePreset('Shaman', 'Farm', '2;2');
     assert.strictEqual(fresh().source.draftFor('Shaman').text, '3:SM<=50;4', 'Save only updates the named preset');
     second.source.setDraft('Mage', '', null);
@@ -509,17 +509,29 @@ test('await waits and casts only its own skill, including inside If blocks', () 
   ]);
 });
 
-test('automatic basic attack defaults on and persists only boolean toggles', async () => {
-  const store = memoryStore({ unrelated: 1 });
+test('automatic basic attack is saved per preset and restored across classes and restarts', async () => {
+  const store = memoryStore({ automaticBasicAttack: false, unrelated: 1 });
+  const source = presets.createPresetSource({ store: store, files: [] });
+  assert.throws(() => source.savePreset('Shaman', 'Bad', '1', 'false'), /boolean/);
+  assert.throws(() => source.setDraft('Shaman', '1', null, 'false'), /boolean/);
+  source.savePreset('Shaman', 'Boss', '1;2', false);
+  source.savePreset('Shaman', 'Farm', '3;4', true);
+  source.savePreset('Mage', 'Farm', '2', true);
+  assert.strictEqual(source.loadPreset('Shaman', 'Boss').automaticBasicAttack, false);
+  assert.strictEqual(source.loadPreset('Shaman', 'Farm').automaticBasicAttack, true);
+  source.setDraft('Shaman', '4', 'Farm', false);
+  const restored = presets.createPresetSource({ store: store, files: [] });
+  assert.strictEqual(restored.draftFor('Shaman').automaticBasicAttack, false);
+  assert.strictEqual(restored.loadPreset('Mage', 'Farm').automaticBasicAttack, true);
+  assert.strictEqual(restored.loadPreset('Shaman', 'Farm').automaticBasicAttack, true);
   const handlers = {};
-  autoAttack.createAutoAttackWindow({ store: store }).register({
-    ipc: { handle: function (name, fn) { handlers[name] = fn; } }
+  autoAttack.createAutoAttackWindow({ store: store, presets: restored, className: () => 'Shaman' }).register({
+    ipc: { handle: (name, fn) => { handlers[name] = fn; } }
   });
   assert.strictEqual((await handlers.autoAttackSkillSetGet()).automaticBasicAttack, true);
-  assert.strictEqual(handlers.autoAttackBasicAttackSet(null, false).ok, true);
+  await handlers.autoAttackSkillSetDraft(null, { className: 'Shaman', name: 'Farm', text: '3', automaticBasicAttack: false });
   assert.strictEqual((await handlers.autoAttackSkillSetGet()).automaticBasicAttack, false);
   assert.strictEqual(store.read().unrelated, 1);
-  assert.strictEqual(handlers.autoAttackBasicAttackSet(null, 'false').ok, false);
 });
 
 test('timed spam and basic attack work with advanced rotation syntax and validate bounds', () => {
