@@ -157,6 +157,87 @@ test('an unfollowed maid does not chase, and the same-map follow falls back to G
   assert.strictEqual(stay.maid.state().status, maidModel.STATUS.unfollowed);
 });
 
+test('a Maid with no master fights where it stands instead of following forever', async () => {
+  // The box starts blank when a config leaves Target out. There is nobody to follow, so the
+  // reference's combat branch is the only useful pass; before, the follow gate consumed every
+  // tick and the Maid only fought after Unfollow was ticked.
+  const game = fakeGame(standing({ HasTarget: false, AttackMonster: true }));
+  const fake = fakeMaid(game, { config: config.stateFrom({ RelogDelay: 0, SkillDelay: 0 }) });
+  fake.maid.setEnabled(true);
+  const answer = await settledTicks(fake);
+  assert.strictEqual(answer.status, maidModel.STATUS.fighting);
+  assert.ok(game.count('AttackMonster') > 0, 'a blank master does not starve combat');
+  assert.deepStrictEqual(fake.sent, [], 'and writes no goto frame for a master that is not there');
+});
+
+test('the shipped username target resolves to the signed-in character after login', async () => {
+  const game = fakeGame(standing({
+    'world.myAvatar.objData.strUsername': 'Kirin',
+    HasTarget: false, AttackMonster: true
+  }));
+  const fake = fakeMaid(game, { config: config.stateFrom({ RelogDelay: 0, SkillDelay: 0 }) });
+  fake.maid.setTarget('username');
+  fake.maid.setEnabled(true);
+  const answer = await settledTicks(fake);
+  assert.strictEqual(fake.maid.getTarget(), 'kirin', 'the placeholder becomes the character itself');
+  assert.strictEqual(answer.status, maidModel.STATUS.fighting);
+  assert.ok(game.count('AttackMonster') > 0);
+  assert.deepStrictEqual(fake.sent, [], 'following yourself never writes a goto frame');
+});
+
+test('following yourself is always in-cell, even when the player lookup misses the character', async () => {
+  // The live bridge can miss the character's own leaf (or the target is the default self): self is
+  // in its own cell by definition, so this must not become an endless chase.
+  const game = fakeGame(standing({
+    'world.myAvatar.objData.strUsername': 'Kirin',
+    PlayersInMap: [], GetCellPlayers: false,
+    HasTarget: false, AttackMonster: true
+  }));
+  const fake = fakeMaid(game, { config: config.stateFrom({ RelogDelay: 0, SkillDelay: 0 }) });
+  fake.maid.setTarget('kirin');
+  fake.maid.setEnabled(true);
+  const answer = await settledTicks(fake);
+  assert.strictEqual(answer.status, maidModel.STATUS.fighting);
+  assert.ok(game.count('AttackMonster') > 0, 'the self target attacks');
+  assert.deepStrictEqual(fake.sent, [], 'and never gotos itself');
+});
+
+test('a real master in the same cell is read from the player leaf, not the whole tree', async () => {
+  // The live bridge has one primitive read for the master's cell even when serializing the whole
+  // player tree (`GetCellPlayers`) does not answer. That was the case that kept a real master
+  // followed forever instead of fought beside.
+  const game = fakeGame(standing({
+    GetCellPlayers: false,
+    'world.uoTree.master.strFrame': 'Enter',
+    HasTarget: false, AttackMonster: true
+  }));
+  const fake = fakeMaid(game, { config: config.stateFrom({ RelogDelay: 0, SkillDelay: 0 }) });
+  fake.maid.setTarget('master');
+  fake.maid.setEnabled(true);
+  const answer = await settledTicks(fake);
+  assert.strictEqual(answer.status, maidModel.STATUS.fighting);
+  assert.ok(game.count('AttackMonster') > 0, 'a same-cell master does not block combat');
+  assert.strictEqual(game.count('Jump'), 0, 'and no chase is started');
+  assert.strictEqual(game.count('GoTo'), 0);
+  assert.deepStrictEqual(fake.sent, []);
+});
+
+test('the chase reads the master\'s cell and pad from the player leaf first', async () => {
+  const game = fakeGame(standing({
+    GetCellPlayers: false, PlayerByName: null,
+    'world.uoTree.master.strFrame': 'Battleon',
+    'world.uoTree.master.strPad': 'Left'
+  }));
+  const fake = fakeMaid(game, { config: config.stateFrom({ RelogDelay: 0, SkillDelay: 0 }) });
+  fake.maid.setTarget('master');
+  fake.maid.setEnabled(true);
+  await settledTicks(fake);
+  assert.deepStrictEqual(game.payload('Jump'), ['Battleon', 'Left'],
+    'a direct leaf read is enough to chase');
+  assert.strictEqual(game.count('PlayerByName'), 0, 'the fallback lookup is not needed');
+  assert.deepStrictEqual(fake.sent, [], 'a chase inside the map writes no frame');
+});
+
 test('the maid stops after five failed gotos when StopFailedGoto is on', async () => {
   const game = fakeGame({
     IsLoggedIn: true, Map: 'yulgar', Cell: 'Enter', PlayersInMap: [],

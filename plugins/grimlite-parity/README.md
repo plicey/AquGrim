@@ -235,6 +235,13 @@ behaviour and the window is only the hand on them:
   `.turnin`, `.target`, `.stop`, `.start`) read off a `chatm` frame, and `PartyInvitationHandler`'s
   answer to a JSON `pi` frame.
 
+A target of `username` (the shipped default) or a blank box means the character itself, as the
+reference's own constructor prefill does (`cmbGotoUsername.Text = Player.Username`). The window is
+created at activation, often before login, so the scheduler resolves that placeholder once the
+character is signed in; following yourself is never a chase (you are always in your own cell), and
+a Maid with no readable master fights where it stands instead of waiting for **Unfollow**. A real
+other player still follows exactly as the reference does.
+
 **It runs beside the bot engine and the engine wins.** The reference is single-scheduler and
 cannot answer this, so spec #19's ruling governs (grilling 11.10): the engine's current command
 takes the tick, the Maid yields it, and the collision is written to the log naming the command.
