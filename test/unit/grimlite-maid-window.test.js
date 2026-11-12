@@ -45,25 +45,16 @@ function platformKeybindValues() {
   return values;
 }
 
-// A stand-in for the two shortcut layers, which is all the Maid's keys need.
-function fakeLayers() {
-  const local = [];
-  const global = [];
+// A stand-in for the app-wide layer, which is all the Maid's Global Hotkey needs.
+function fakeShortcuts() {
+  const registered = [];
   return {
-    local: local,
-    global: global,
-    localShortcuts: {
-      register: function (accel, fn) { local.push({ accel: accel, fn: fn }); return true; },
+    registered: registered,
+    shortcuts: {
+      register: function (accel, fn) { registered.push({ accel: accel, fn: fn }); return true; },
       unregister: function (accel) {
-        const at = local.findIndex(function (one) { return one.accel === accel; });
-        if (at !== -1) local.splice(at, 1);
-      }
-    },
-    globalShortcuts: {
-      register: function (accel, fn) { global.push({ accel: accel, fn: fn }); return true; },
-      unregister: function (accel) {
-        const at = global.findIndex(function (one) { return one.accel === accel; });
-        if (at !== -1) global.splice(at, 1);
+        const at = registered.findIndex(function (one) { return one.accel === accel; });
+        if (at !== -1) registered.splice(at, 1);
       }
     }
   };
@@ -113,15 +104,18 @@ test('the Maid window is reachable from a menu and from a keybind', async () => 
   assert.strictEqual(entry.length, 1, 'the Maid is a menu entry');
 });
 
-test('the Maid\'s own keys are unique, take nothing the app holds, and can move layer', async () => {
+test('the Maid\'s own keys are the reference\'s R/T and take nothing the app holds', async () => {
   const activated = await activateParity();
   const defaults = activated.host._getState().keybindDefaults;
   ['grimliteMaidUnfollow', 'grimliteMaidStopAttack'].forEach(function (id) {
     assert.strictEqual(typeof defaults[id], 'string', id + ' needs a default key');
-    assert.ok(/\+/.test(defaults[id]), id + ' must carry a modifier');
     assert.strictEqual(platformKeybindValues().indexOf(defaults[id]), -1,
       id + ' would take the app\'s own ' + defaults[id]);
   });
+  assert.strictEqual(defaults.grimliteMaidUnfollow, 'R',
+    'the label says Unfollow (R)');
+  assert.strictEqual(defaults.grimliteMaidStopAttack, 'T',
+    'the label says StopAttack (T)');
   // No two of the plugin\'s defaults are the same key: the second registration would win and the
   // first window would lose its shortcut with nothing said about it.
   const seen = {};
@@ -135,58 +129,51 @@ test('the Maid\'s own keys are unique, take nothing the app holds, and can move 
   assert.deepStrictEqual(clashes, []);
 });
 
-// The reference's Global Hotkey box: ticked, the two keys work whichever window has focus;
-// unticked, they are the form's own keys only (MaidRemake.cs:1026-1045).
-test('the Global Hotkey box moves the Maid\'s two keys between the app\'s two layers', () => {
-  const layers = fakeLayers();
+// The reference's Global Hotkey box: unticked, the form's own R/T handler is the only one;
+// ticked, the same keys go on the app-wide layer (MaidRemake.cs:1720-1784).
+test('the Global Hotkey box puts the Maid\'s R/T keys on the app-wide layer', () => {
+  const fake = fakeShortcuts();
   const flipped = [];
-  const fake = {
+  const maid = {
     state: function () { return { unfollow: false, stopAttack: false }; },
     toggleUnfollow: function () { flipped.push('unfollow'); },
-    toggleStopAttack: function () { flipped.push('stopAttack'); }
+    toggleStopAttack: function () { flipped.push('stopAttack'); },
+    setUnfollow: function () { return false; },
+    setStopAttack: function () { return false; }
   };
   const keys = maidWindow.createKeys({
-    maid: fake,
+    maid: maid,
     log: function () {},
-    localShortcuts: layers.localShortcuts,
-    globalShortcuts: layers.globalShortcuts,
+    globalShortcuts: fake.shortcuts,
     accelerators: function () {
-      return { grimliteMaidUnfollow: 'Alt+Shift+U', grimliteMaidStopAttack: 'Alt+Shift+X' };
+      return { grimliteMaidUnfollow: 'R', grimliteMaidStopAttack: 'T' };
     }
   });
+  // Unticked: the page handles R/T while the Maid window has focus; nothing is app-wide.
   keys.apply(false);
-  assert.strictEqual(keys.layer(), 'local');
-  assert.deepStrictEqual(keys.registered().map(function (one) { return one.accel; }),
-    ['Alt+Shift+U', 'Alt+Shift+X']);
-  assert.strictEqual(layers.global.length, 0, 'nothing is app-wide until the box is ticked');
-  // Pressing the local key runs the reference\'s own handler.
-  layers.local[0].fn();
-  assert.deepStrictEqual(flipped, ['unfollow']);
-
+  assert.strictEqual(keys.layer(), 'form');
+  assert.strictEqual(keys.registered().length, 0);
+  assert.strictEqual(fake.registered.length, 0);
   keys.apply(true);
-  assert.strictEqual(keys.layer(), 'global');
-  assert.strictEqual(layers.local.length, 0, 'the local copies are released, not doubled');
-  assert.strictEqual(layers.global.length, 2);
-  layers.global[1].fn();
+  assert.strictEqual(keys.layer(), 'app-wide');
+  assert.deepStrictEqual(keys.registered().map(function (one) { return one.accel; }), ['R', 'T']);
+  assert.strictEqual(fake.registered.length, 2);
+  fake.registered[0].fn();
+  fake.registered[1].fn();
   assert.deepStrictEqual(flipped, ['unfollow', 'stopAttack']);
-
-  // ...and back again, which the reference does on unticking the box.
+  // Unticking releases them and, like the reference, clears the two boxes.
   keys.apply(false);
-  assert.strictEqual(keys.layer(), 'local');
-  assert.strictEqual(layers.global.length, 0);
-  assert.strictEqual(layers.local.length, 2);
+  assert.strictEqual(keys.layer(), 'form');
+  assert.strictEqual(fake.registered.length, 0);
   keys.uninstall();
-  assert.strictEqual(layers.local.length, 0);
 });
 
 test('a key the app does not carry nothing for is left unbound rather than registered blind', () => {
-  const layers = fakeLayers();
   const keys = maidWindow.createKeys({
     maid: { state: function () { return {}; }, toggleUnfollow: function () {}, toggleStopAttack: function () {} },
     log: function () {},
-    localShortcuts: layers.localShortcuts,
     globalShortcuts: { register: function () { return false; }, unregister: function () {} },
-    accelerators: function () { return { grimliteMaidUnfollow: 'Alt+Shift+U' }; }
+    accelerators: function () { return { grimliteMaidUnfollow: 'R' }; }
   });
   const answer = keys.apply(true);
   assert.strictEqual(answer.ok, true);

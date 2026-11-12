@@ -219,10 +219,10 @@ test('the plugin contributes no default accelerators and takes nothing from the 
   const platformKeys = platformKeybindValues();
   assert.ok(platformKeys.indexOf('F2') !== -1, 'the app\'s own keys must be found: ' + platformKeys.join(', '));
   assert.ok(platformKeys.indexOf('Ctrl+J') !== -1, 'the app\'s own keys must be found');
-  // Grimlite ships no global hotkeys; the two Maid form keys are the safe Electron adaptation.
+  // Grimlite ships no global hotkeys; the two Maid form keys are the reference's own R/T.
   assert.deepStrictEqual(defaults, {
-    grimliteMaidUnfollow: 'Alt+Shift+U',
-    grimliteMaidStopAttack: 'Alt+Shift+X'
+    grimliteMaidUnfollow: 'R',
+    grimliteMaidStopAttack: 'T'
   });
   Object.keys(defaults).forEach(function (id) {
     assert.strictEqual(platformKeys.indexOf(defaults[id]), -1, id + ' steals an app key');
@@ -402,7 +402,7 @@ test('the plugin registers only the Maid form keys as defaults', async () => {
   const activated = await activateParity();
   const defaults = activated.host._getState().keybindDefaults;
   assert.deepStrictEqual(defaults, {
-    grimliteMaidUnfollow: 'Alt+Shift+U',
-    grimliteMaidStopAttack: 'Alt+Shift+X'
-  }, 'Grimlite hotkeys ship empty; the two Maid form keys are the safe Electron adaptation');
+    grimliteMaidUnfollow: 'R',
+    grimliteMaidStopAttack: 'T'
+  }, 'Grimlite hotkeys ship empty; the two Maid form keys are the reference\'s own R/T');
 });

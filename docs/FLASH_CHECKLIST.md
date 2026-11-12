@@ -677,7 +677,8 @@ work in a live client is what the boxes below are for.
       Travels, Start/Stop Bot, ...) is **inert**: nothing opens, nothing throws, and the window
       says that window has not shipped
 - [ ] **Minimize to tray** fires while another app has focus; every other binding fires only while
-      AquaGrim does
+      AquaGrim does (on Wayland's compositor the app-wide hook is not delivered, so this one stays
+      focus-scoped there)
 - [ ] The bindings survive an app restart, in the order the list was built
 
 ### Options and hotkeys: what could not be checked here, and why
@@ -952,8 +953,8 @@ call, so that is what this section is for.
 
 ### The keys and the state
 
-- [ ] **Unfollow** toggles with Alt+Shift+U while the app has focus, and **StopAttack** with Alt+Shift+X; both boxes in the window move with them
-- [ ] Untick **Global Hotkey** and neither key fires from another window; tick it and both do, whichever window has focus
+- [ ] **Unfollow** toggles with R while the Maid window has focus, and **StopAttack** with T; both boxes in the window move with them
+- [ ] Untick **Global Hotkey** and R/T do nothing from the game or another AquGrim window; tick it and both work while the game or any other AquGrim window has focus (the keys stay out of other applications by design)
 - [ ] A key that is already taken by the app or another plugin is reported as unbound rather than silently swallowed
 - [ ] The line above the form says `unfollowed` when Unfollow is ticked, `stop attack is on` when StopAttack is, `paused: the map is reloading` while a map loads, `following` and `fighting` while the loop moves, and `off` when Enable is unticked
 - [ ] The line follows a key pressed in **another** window while the Maid's own window is open

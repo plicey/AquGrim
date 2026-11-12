@@ -24,6 +24,7 @@ const spammerWindow = require('./features/packets/spammer-window.js');
 const tampererWindow = require('./features/packets/tamperer-window.js');
 
 const resRoot = path.join(__dirname, '..', '..', 'res');
+const shortcutLayers = require(path.join(resRoot, 'platform', 'shortcut-layers.js'));
 
 const createNotepad = require('./features/notepad/notepad.js').createNotepad;
 const autoAttackWindow = require('./features/auto-attack/auto-attack-window.js');
@@ -44,6 +45,7 @@ const logsFeature = require('./features/hotkeys/logs.js');
 
 const BRIDGE_TITLE = 'AquGrim';
 const LOGIN_PAGE = path.join('features', 'login', 'login.html');
+const MAID_PAGE = path.join(__dirname, 'features', 'maid', 'maid.html');
 
 // Electron keeps no reference of its own to a Tray: letting this go would take the icon away.
 let appTray = null;
@@ -54,34 +56,59 @@ function bridgeUrl(baseUrl) {
 }
 
 /**
- * The app's own shortcut layers, as the two members hotkeys.js takes. electron-localshortcut
- * registers on every app window and fires while one has focus; electron's globalShortcut fires
- * wherever the user is. Both answer whether the registration took, which is what the window reports
+ * The app's own shortcut layers, as the two members hotkeys.js takes. The platform owns the rule
+ * (res/platform/shortcut-layers.js): electron-localshortcut registers on every app window and
+ * fires while one has focus, Electron's globalShortcut fires wherever the user is, and on a
+ * Wayland session - where the app-wide hook is not delivered - the "global" layer is the
+ * focus-scoped one. Both answer whether the registration took, which is what the window reports
  * when a key cannot be bound.
  */
 function localShortcuts() {
+    return shortcutLayers.createLocalLayer();
+}
+
+function globalShortcuts() {
+    return shortcutLayers.createGlobalLayer();
+}
+
+/** Whether this window is the Maid form, whose page handles R/T itself. */
+function isMaidWindow(win) {
+    if (!win || win.isDestroyed()) return false;
+    try {
+        const page = String(win.webContents.getURL() || '').replace(/\\/g, '/');
+        return page.indexOf(MAID_PAGE.replace(/\\/g, '/')) !== -1;
+    } catch (error) {
+        return false;
+    }
+}
+
+/**
+ * The Maid's app-wide keys. They are the reference's own bare R and T (MaidRemake.designer.cs:
+ * "Unfollow (R)" and "StopAttack (T)"), so they must not go on Electron's globalShortcut: that
+ * would take R and T from every other application, and on Wayland the hook is not delivered at
+ * all. The game is one of this app's windows, so the focus-scoped layer is the safe equivalent:
+ * R/T work in the game and the other app windows, and the Maid page keeps its own handler while
+ * its window has focus. The layer skips that window so one press does not toggle twice.
+ */
+function maidAppWideShortcuts() {
+    const local = shortcutLayers.createLocalLayer();
     return {
+        focusScoped: true,
         register: function (accelerator, handler) {
-            const electronLocalshortcut = require('electron-localshortcut');
-            electronLocalshortcut.register(accelerator, handler);
-            return true;
+            return local.register(accelerator, function () {
+                const electron = electronRuntime();
+                const focused = electron && electron.BrowserWindow
+                    ? electron.BrowserWindow.getFocusedWindow() : null;
+                if (isMaidWindow(focused)) return;
+                handler();
+            });
         },
         unregister: function (accelerator) {
-            require('electron-localshortcut').unregister(accelerator);
+            local.unregister(accelerator);
         }
     };
 }
 
-function globalShortcuts() {
-    return {
-        register: function (accelerator, handler) {
-            return require('electron').globalShortcut.register(accelerator, handler);
-        },
-        unregister: function (accelerator) {
-            require('electron').globalShortcut.unregister(accelerator);
-        }
-    };
-}
 
 /**
  * The keys this app and the game plugin already hold, so a hotkey cannot take one
@@ -637,9 +664,10 @@ async function activate(host) {
         store: host.getStore('hotkeys'),
         // A bound key fires only while this app has focus, except "Minimize to tray"
         // (Hotkeys.cs:245-263): electron-localshortcut is the focus-scoped hook, globalShortcut the
-        // app-wide one, so each binding goes on the layer the reference's own rule asks for.
-        localShortcuts: localShortcuts(host),
-        globalShortcuts: globalShortcuts(host),
+        // app-wide one, so each binding goes on the layer the reference's own rule asks for. On
+        // Wayland the app-wide layer is the focus-scoped one (res/platform/shortcut-layers.js).
+        localShortcuts: localShortcuts(),
+        globalShortcuts: globalShortcuts(),
         openWindow: function (id) { return host.windows.openFeatureWindow(id); },
         windowIds: windows.WINDOW_IDS,
         // Keys the app and the game plugin already hold: the reference refuses a key its own hook
@@ -697,8 +725,7 @@ async function activate(host) {
     // asserts that for the plugin as a whole). It follows while its own window is open, and while
     // the Maid is running, because the reference answers party chat with nobody watching its form.
     maid = maidWindow.createFromHost(host, {
-        localShortcuts: localShortcuts(host),
-        globalShortcuts: globalShortcuts(host),
+        shortcuts: maidAppWideShortcuts(),
         engineRunning: function () { return !!(runtime.state(gameWindowKey()) || {}).running; },
         engineActivity: function () {
             const state = runtime.state(gameWindowKey()) || {};

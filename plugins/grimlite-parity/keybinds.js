@@ -1,12 +1,13 @@
 const windows = require('./windows.js');
 
 // Grimlite ships no hotkeys of its own: Hotkeys.cs starts from an empty hotkeys.json and the
-// user's own file is the whole set. The platform still has its own defaults, and the menu and
-// keybind actions below stay registered so a user can assign them without this plugin taking a
-// key by default.
+// user's own file is the whole set. The two Maid keys are the reference's own form keys
+// (MaidRemake.designer.cs: "Unfollow (R)" and "StopAttack (T)"), registered here so the app's
+// own Settings can still show and rebind them. They are bare letters on purpose: they are the
+// keys the Maid window's labels name, and the app-wide layer scopes them to AquGrim's windows.
 const DEFAULTS = {
-    grimliteMaidUnfollow: 'Alt+Shift+U',
-    grimliteMaidStopAttack: 'Alt+Shift+X'
+    grimliteMaidUnfollow: 'R',
+    grimliteMaidStopAttack: 'T'
 };
 
 function register(host) {
