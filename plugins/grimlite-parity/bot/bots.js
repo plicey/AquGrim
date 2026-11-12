@@ -97,6 +97,9 @@ const CONFIGURATION_FIELDS = [
     ['AFK', false],
     ['AntiCounter', false],
     ['SkipAttack', false],
+    // AquGrim's own extension: the Bot Manager's "Disable auto basic attack" tick. A file that
+    // carries it still opens in the reference client, which ignores members it does not know.
+    ['DisableAutoBasicAttack', false],
     ['FollowCheck', false],
     ['FollowName', null],
     ['RelogUponItemBuyFailure', null],

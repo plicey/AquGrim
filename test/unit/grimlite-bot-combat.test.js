@@ -209,9 +209,15 @@ function fakeSession(overrides) {
         walkToPoint: function (x, y) { note('walkToPoint', [x, y]); return Promise.resolve(); },
         cancelTargets: function () { note('cancelTargets', []); return Promise.resolve(); },
         cancelAutoAttack: function () { note('cancelAutoAttack', []); return Promise.resolve(); },
-        attackMonster: function (name) { note('attackMonster', [name]); return Promise.resolve(); },
+        attackMonster: function (name, basicAttack) {
+            note('attackMonster', basicAttack === undefined ? [name] : [name, basicAttack]);
+            return Promise.resolve();
+        },
         attackMonsterByMonMapId: function (id) { note('attackMonsterByMonMapId', [id]); return Promise.resolve(); },
-        useSkill: function (index) { note('useSkill', [index]); return Promise.resolve(); },
+        useSkill: function (index, basicAttack) {
+            note('useSkill', basicAttack === undefined ? [index] : [index, basicAttack]);
+            return Promise.resolve();
+        },
         forceUseSkill: function (index) { note('forceUseSkill', [index]); return Promise.resolve(); },
         actionAvailable: answer('actionAvailable', 'actionAvailable'),
         cells: answer('cells', 'cells'),
@@ -249,6 +255,22 @@ test('CmdAttack sends the reference own AttackMonster for the resolved monster',
     await made.start({ Commands: [command('CmdAttack', { Monster: 'Gravelyn' })] });
     await made.tick();
     assert.deepStrictEqual(session.asked('attackMonster'), [{ name: 'attackMonster', args: ['Gravelyn'] }]);
+});
+
+test('DisableAutoBasicAttack turns the game basic attack off for CmdAttack', async () => {
+    // The Bot Manager's Combat tab writes this key straight into the bot document. With it on,
+    // AttackMonster takes the loader's own second argument, which is what suppresses automatic
+    // basic attacks; the run also stops any swing that was already going when Start pressed.
+    const session = fakeSession({ hasTarget: false });
+    const made = engine({ session: session });
+    await made.start({
+        Commands: [command('CmdAttack', { Monster: 'Gravelyn' })],
+        DisableAutoBasicAttack: true
+    });
+    await made.tick();
+    assert.deepStrictEqual(session.asked('attackMonster')[0].args, ['Gravelyn', false]);
+    assert.strictEqual(session.asked('cancelAutoAttack').length, 1,
+        'starting cancels whatever auto attack was running before the first command');
 });
 
 test('CmdAttack on "*" leaves an existing target alone', async () => {
@@ -438,6 +460,30 @@ test('CmdUseSkill with Force casts even with no target', async () => {
     await made.start({ Commands: [command('CmdUseSkill', { Index: '3', Monster: '*', Force: true })] });
     await made.tick();
     assert.deepStrictEqual(session.asked('useSkill')[0].args, ['3']);
+});
+
+test('DisableAutoBasicAttack passes the flag off on CmdUseSkill and on forced casts', async () => {
+    const session = fakeSession({ hasTarget: true });
+    const made = engine({ session: session });
+    await made.start({
+        Commands: [command('CmdUseSkill', { Index: '2', Monster: '*' })],
+        DisableAutoBasicAttack: true
+    });
+    await made.tick();
+    assert.deepStrictEqual(session.asked('useSkill')[0].args, ['2', false]);
+
+    // Chrono Shadow's forced cast cannot carry the basic-attack flag, so the engine stops the
+    // auto attack after the cast instead.
+    const forced = fakeSession({ hasTarget: true, className: 'Chrono Shadow Weaver' });
+    const chrono = engine({ session: forced });
+    await chrono.start({
+        Commands: [command('CmdUseSkill', { Index: '4', Monster: '*' })],
+        DisableAutoBasicAttack: true
+    });
+    await chrono.tick();
+    assert.deepStrictEqual(forced.asked('forceUseSkill')[0].args, ['4']);
+    assert.strictEqual(forced.asked('cancelAutoAttack').length, 2,
+        'one cancel at Start, one after the forced cast');
 });
 
 test('CmdUseSkill with Wait waits out the skill own cooldown before casting', async () => {

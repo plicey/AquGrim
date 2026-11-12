@@ -167,6 +167,7 @@ test('the reader reconstructs the omitted defaults, both non-zero initialisers i
   assert.strictEqual(bare.RelogDelay, 0);
   assert.strictEqual(bare.RestMp, 0);
   assert.strictEqual(bare.WaitForAllSkills, false);
+  assert.strictEqual(bare.DisableAutoBasicAttack, false);
 });
 
 test('the omitted defaults never overwrite a key the file actually carried', () => {

@@ -340,6 +340,9 @@ Active plugin **Grimlite Parity**, restart, then **Grimlite → Bot Manager** (o
 - [ ] A button whose field is empty contributes nothing (it does not append a half-built command)
 - [ ] The Options and Options 2 tickboxes and number boxes write the `Configuration` keys the
       reference binds them to, immediately, and they survive **Save bot** → reopen
+- [ ] **Disable auto basic attack** in Bot Manager → Combat keeps the character from starting the
+      game's automatic basic attack while the bot attacks and casts skills; unticked leaves the
+      normal automatic basic attack in place
 - [ ] Right-click the list: **Change Fonts** (colour customiser and size), **Multiline Toggle**,
       **Toggle Tabpages** and **Command Customizer** are all offered
 - [ ] The command customiser lists the three extras (Index, Variable, ExtendedVariable) before the

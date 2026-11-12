@@ -122,6 +122,14 @@ test('the reference list selector values are the six lists the editor switches b
   assert.strictEqual(find('txtSavedDesc').readonly, true);
 });
 
+test('the Combat tab carries the Disable auto basic attack tick', () => {
+  const control = find('chkDisableBasicAttack');
+  assert.ok(control, 'the control is in the sheet');
+  assert.strictEqual(control.kind, 'tick');
+  assert.strictEqual(control.text, 'Disable auto basic attack');
+  assert.ok(textsOf(tabs[0]).indexOf('Disable auto basic attack') !== -1, 'it is on Combat');
+});
+
 test('a command is built from the tab fields the reference reads', () => {
   assert.deepStrictEqual(actions.build('btnKill', inputs({ txtMonster: 'Dragon' }), {}),
     { $type: catalog.fullType('CmdKill'), Monster: 'Dragon' });
@@ -281,7 +289,8 @@ test('a settings control writes the Configuration key the reference binds it to'
     chkDisableAnims: 'DisableAnimations', chkAFK: 'AFK', chkAntiCounter: 'AntiCounter',
     chkAllSkillsCD: 'WaitForAllSkills', chkSkillCD: 'WaitForSkill',
     chkExistQuest: 'ExitCombatBeforeQuest', chkExitRest: 'ExitCombatBeforeRest',
-    chkHP: 'RestIfHp', chkMP: 'RestIfMp', chkRespawnProvoke: 'respawnProvoke'
+    chkHP: 'RestIfHp', chkMP: 'RestIfMp', chkRespawnProvoke: 'respawnProvoke',
+    chkDisableBasicAttack: 'DisableAutoBasicAttack'
   };
   Object.keys(expected).forEach(function (id) {
     assert.strictEqual(actions.SETTINGS[id], expected[id], id);
