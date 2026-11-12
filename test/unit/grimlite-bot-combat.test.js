@@ -1147,6 +1147,42 @@ test('CmdKillFor kills until it holds the item, and reads the container its Item
         tempMade.records.join(' | '));
 });
 
+test('CmdKillFor drops a target that is still up once the item is collected', async () => {
+    // CmdKillFor.cs, after either inventory branch: `if (Player.HasTarget) Player.CancelTarget();`
+    // then a 500 ms pause. Without it a monster that respawns in the same cell keeps the
+    // character auto-attacking after the bot has already got the item it came for.
+    const session = fakeSession({ hasTarget: false });
+    let held = [];
+    let respawned = false;
+    session.tempItems = function () {
+        session.calls.push({ name: 'tempItems', args: [] });
+        // The item lands with the kill; by the time the next read happens the game has already
+        // re-acquired the monster that respawned in the cell.
+        if (held.length) respawned = true;
+        return Promise.resolve(held.slice());
+    };
+    session.hasTarget = function () {
+        session.calls.push({ name: 'hasTarget', args: [] });
+        return Promise.resolve(respawned);
+    };
+    session.attackMonster = function (name) {
+        session.calls.push({ name: 'attackMonster', args: [name] });
+        held = [{ sName: 'Tempered Root', iQty: 2 }];
+        return Promise.resolve();
+    };
+    const made = engine({ session: session });
+    await made.start({
+        Commands: [command('CmdKillFor', {
+            Monster: 'Dragon', ItemName: 'Tempered Root', Quantity: '2', ItemType: 1
+        })]
+    });
+    await made.tick();
+    assert.strictEqual(session.asked('attackMonster').length, 1, 'one kill was enough');
+    assert.strictEqual(session.asked('cancelTargets').length, 1,
+        'the respawned target is dropped instead of being fought on');
+    assert.ok(made.waited.indexOf(500) !== -1, 'and the reference pauses after the drop');
+});
+
 test('a kill-for that cannot finish says so rather than looping all night', async () => {
     // The reference's own loop is bounded only by the item appearing. Whether a kill lands is the
     // game's to decide (the attack is made, but nothing here can promise the monster dies), so the
