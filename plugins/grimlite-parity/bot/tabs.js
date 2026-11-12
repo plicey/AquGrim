@@ -211,6 +211,11 @@ const TABS = [
         text:  "Wait for all skills to cool down"
       },
       {
+        id:  "chkDisableBasicAttack",
+        kind:  "tick",
+        text:  "Disable auto basic attack"
+      },
+      {
         id:  "txtMonster",
         kind:  "text",
         text:  "Monster (* = random)"

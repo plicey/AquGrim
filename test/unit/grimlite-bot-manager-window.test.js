@@ -273,6 +273,13 @@ test('a tab tickbox writes the Configuration key the reference binds it to, stra
   assert.strictEqual(o.feature.editor().object().WalkSpeed, 44);
 });
 
+test('the Disable auto basic attack tick is written into the bot document', async () => {
+  const o = await opened('plain.gbot');
+  const state = await o.feature.handle('botManagerSetting', null, ['DisableAutoBasicAttack', true]);
+  assert.strictEqual(o.feature.editor().object().DisableAutoBasicAttack, true);
+  assert.strictEqual(state.configuration.DisableAutoBasicAttack, true);
+});
+
 test('the Bot Manager Options checkbox controls the same loop as Grimlite and reflects hotkey changes', async () => {
   let applying = false;
   let feature;
@@ -626,7 +633,8 @@ test('every Item option checkbox saves its value before the bot starts', async (
     const keys = {
       chkInventOnStart: 'InventOnStart', chkPickup: 'EnablePickup',
       chkPickupAll: 'EnablePickupAll', chkPickupAcTag: 'EnablePickupAcTagged',
-      chkReject: 'EnableRejection', chkBankOnStop: 'BankOnStop'
+      chkReject: 'EnableRejection', chkBankOnStop: 'BankOnStop',
+      chkDisableBasicAttack: 'DisableAutoBasicAttack'
     };
     const nodes = {};
     Object.keys(keys).forEach(id => {

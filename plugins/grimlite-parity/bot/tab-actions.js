@@ -511,6 +511,7 @@ const SETTINGS = {
     chkHP: 'RestIfHp',
     chkMP: 'RestIfMp',
     chkRespawnProvoke: 'respawnProvoke',
+    chkDisableBasicAttack: 'DisableAutoBasicAttack',
     // The boxes the reference reads when it generates a configuration rather than on change
     // (GenerateConfiguration: FollowName, AutoZone, Server). Here they write the document as
     // they change, so a save writes what the window shows.

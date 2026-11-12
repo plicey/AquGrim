@@ -1144,17 +1144,47 @@ function createEngine(deps) {
     }
 
     /**
+     * Whether the bot may leave the game's automatic basic attack running. The Bot Manager's
+     * "Disable auto basic attack" tick writes DisableAutoBasicAttack; when it is on every attack
+     * and skill cast asks the game not to start the auto attack, and a forced cast is followed by
+     * a cancel for the paths that cannot carry the flag.
+     */
+    function basicAttackAllowed() {
+        return !(config && config.DisableAutoBasicAttack === true);
+    }
+
+    async function stopAutoAttack() {
+        if (basicAttackAllowed() || !session || typeof session.cancelAutoAttack !== 'function') return;
+        await read('cancelAutoAttack');
+    }
+
+    /**
      * Player.AttackMonster: an "id..." name is a MonMapID, anything else is the monster's name.
      * The name is all the movie needs: it resolves the live Avatar itself and hands it to
      * world.setTarget (ticket #49). What comes back is reported as a reason for the caller to log
      * - never swallowed, never faked.
      */
-    function attackMonster(name) {
+    async function attackMonster(name) {
         const text = String(name === undefined || name === null ? '' : name);
         const byId = /^id['.:-](.*)$/i.exec(text);
-        return byId
-            ? read1('attackMonsterByMonMapId', byId[1])
-            : read1('attackMonster', text);
+        if (byId) {
+            // AttackMonsterByMonMapId has no basic-attack flag in the bridge, so stop the auto
+            // attack the attack may have started as soon as the call answers.
+            const answer = await read1('attackMonsterByMonMapId', byId[1]);
+            if (answer.ok) await stopAutoAttack();
+            return answer;
+        }
+        return readN('attackMonster', basicAttackAllowed() ? [text] : [text, false]);
+    }
+
+    /** One skill cast, with the Bot Manager's basic-attack policy applied to it. */
+    async function castSkill(index, forced) {
+        if (forced) {
+            const cast = await read1('forceUseSkill', String(index));
+            if (cast.ok) await stopAutoAttack();
+            return cast;
+        }
+        return readN('useSkill', basicAttackAllowed() ? [String(index)] : [String(index), false]);
     }
 
     /** The skill set Bot.cs builds from its own Skills list: the label rows, by upper-cased text. */
@@ -1195,10 +1225,8 @@ function createEngine(deps) {
             if (!passes) return { ok: true, skipped: true };
         }
         const klass = await read('className');
-        const method = klass.ok && String(klass.value).toLowerCase() === 'chrono shadow'
-            ? 'forceUseSkill'
-            : 'useSkill';
-        return read1(method, String(entry && entry.Index));
+        const forced = klass.ok && String(klass.value).toLowerCase() === 'chrono shadow';
+        return castSkill(entry && entry.Index, forced);
     }
 
     /**
@@ -1844,7 +1872,7 @@ function createEngine(deps) {
                 if (session && typeof session.isBuffSkill === 'function') {
                     const buff = await read1('isBuffSkill', index);
                     if (buff.ok && buff.value === true) {
-                        const cast = await read1('forceUseSkill', index);
+                        const cast = await castSkill(index, true);
                         return cast.ok ? undefined : cast.error;
                     }
                 }
@@ -1865,9 +1893,7 @@ function createEngine(deps) {
             }
             const klass = await read('className');
             const forced = klass.ok && String(klass.value).toLowerCase().indexOf('chrono shadow') > -1;
-            const cast = forced
-                ? await read1('forceUseSkill', String(index))
-                : await read1('useSkill', String(index));
+            const cast = await castSkill(index, forced);
             return cast.ok ? undefined : cast.error;
         },
 
@@ -2856,6 +2882,8 @@ function createEngine(deps) {
         delayed.pending = false;
         Object.keys(dropCooldowns).forEach(function (key) { delete dropCooldowns[key]; });
         subscribeDrops();
+
+        if (!basicAttackAllowed()) await stopAutoAttack();
 
         // Bot.Start's preloads, in its own order: the quests the commands name, the bank a bank
         // command needs, the quest list, and then the options manager. LoadAllQuests and

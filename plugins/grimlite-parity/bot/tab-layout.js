@@ -42,6 +42,7 @@ const LAYOUTS = {
       "chkExistQuest": [244, 278, 197, 17],
       "chkExitRest": [244, 254, 148, 17],
       "chkAllSkillsCD": [6, 278, 165, 17],
+      "chkDisableBasicAttack": [6, 228, 154, 17],
       "txtMonster": [10, 5, 143, 20],
       "boxSkillSet": [164, 6, 186, 128],
       "darkLabel7": [117, 105, 20, 13],

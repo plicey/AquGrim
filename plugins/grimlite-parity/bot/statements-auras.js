@@ -72,6 +72,18 @@ async function read(ctx, what, member, args) {
     }
 }
 
+/** The Bot Manager's DisableAutoBasicAttack, read from the run's configuration. */
+function basicAttackAllowed(ctx) {
+    const config = typeof ctx.config === 'function' ? ctx.config() : null;
+    return !(config && config.DisableAutoBasicAttack === true);
+}
+
+/** Stop the auto attack a forced cast or a by-id attack may have started. */
+async function stopAutoAttack(ctx, what) {
+    if (basicAttackAllowed(ctx)) return;
+    await read(ctx, what, 'cancelAutoAttack', []);
+}
+
 /** The same read, as a number the statement can compare. */
 async function number(ctx, what, member, args) {
     const answer = await read(ctx, what, member, args);
@@ -292,11 +304,13 @@ const handlers = {
             }
             const cast = await read(ctx, 'Special Anims', 'forceUseSkill', [skill]);
             if (!cast.ok) return 'CmdSpecialAnims could not cast skill ' + skill + ': ' + cast.why;
+            await stopAutoAttack(ctx, 'Special Anims');
             await ctx.sleep(150);
             const after = await read(ctx, 'Special Anims', 'skillAvailable', [skill]);
             if (after.ok && Number(after.value) <= 0) {
                 const retry = await read(ctx, 'Special Anims', 'forceUseSkill', [skill]);
                 if (!retry.ok) return 'CmdSpecialAnims could not cast skill ' + skill + ': ' + retry.why;
+                await stopAutoAttack(ctx, 'Special Anims');
             }
             return undefined;
         }
@@ -355,8 +369,10 @@ const handlers = {
                 const wait = ready.ok ? Math.min(Math.max(0, Number(ready.value) || 0), 1500) : 0;
                 await ctx.sleep(wait);
                 if (!ctx.running()) return;
-                await read(ctx, 'Delayed Anims', 'attackMonster', [target]);
-                await read(ctx, 'Delayed Anims', 'forceUseSkill', [skill]);
+                await read(ctx, 'Delayed Anims', 'attackMonster',
+                    basicAttackAllowed(ctx) ? [target] : [target, false]);
+                const cast = await read(ctx, 'Delayed Anims', 'forceUseSkill', [skill]);
+                if (cast.ok) await stopAutoAttack(ctx, 'Delayed Anims');
             } finally {
                 ctx.pauseFor(false);
                 ctx.delayed.pending = false;
