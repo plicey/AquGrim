@@ -487,9 +487,15 @@ test('Auto Attack runs the loaded draft and skips a safe skill whose condition i
 
 test('aura If blocks read self and target stacks and skip when their condition is not met', async () => {
   const auras = { self: 2, target: 0 };
+  const cooldown = {};
   const h = await rotationHarness(
     'if aura "Arcane Flux">=2 { 3 };if target aura "Chi">=1 { 4 };1',
-    { selfAura: function () { return auras.self; }, targetAura: function () { return auras.target; } });
+    {
+      selfAura: function () { return auras.self; },
+      targetAura: function () { return auras.target; },
+      skillAvailable: function (index) { return cooldown[index] ? 400 : 0; },
+      useSkill: function (index) { cooldown[index] = true; return true; }
+    });
   await h.chrome.tick();
   assert.deepStrictEqual(casts(h), [['useSkill', '3']], 'two self stacks meet the condition');
   await h.chrome.tick();
@@ -497,9 +503,8 @@ test('aura If blocks read self and target stacks and skip when their condition i
     'no target stacks skips the target block and the rotation keeps going');
   auras.target = 1;
   await h.chrome.tick();
-  await h.chrome.tick();
-  assert.deepStrictEqual(casts(h).slice(-2), [['useSkill', '3'], ['useSkill', '4']],
-    'one target stack meets the condition');
+  assert.deepStrictEqual(casts(h).slice(-1), [['useSkill', '4']],
+    'one target stack meets the condition, ahead of the rotation');
   h.chrome.stop();
 
   const absent = await rotationHarness('if aura "Arcane Flux"=0 { 2 };1', { selfAura: 0 });
@@ -518,6 +523,57 @@ test('an unreadable aura read skips its block and reports it on the strip', asyn
   assert.match(state.values.autoAttackError, /Arcane Flux.*no tap/);
   assert.strictEqual(state.values.autoAttack, true, 'the loop keeps running');
   h.chrome.stop();
+});
+
+test('a single-skill aura If is a priority check, ahead of spam, waits and the rotation', async () => {
+  const spam = await rotationHarness('spam 0 60000ms;if aura "Arcane Flux">=8 {4}',
+    { selfAura: 8, skillAvailable: 0 });
+  await spam.chrome.tick();
+  assert.deepStrictEqual(casts(spam), [['useSkill', '4']], 'the conditional cast wins over the spam');
+  spam.session.skillAvailable = async function (index) { return index === '4' ? 400 : 0; };
+  await spam.chrome.tick();
+  assert.deepStrictEqual(casts(spam), [['useSkill', '4'], ['useSkill', '0']],
+    'an unready conditional leaves the spam to cast');
+  spam.chrome.stop();
+
+  const waiting = await rotationHarness('wait 500ms;if aura "Arcane Flux">=8 {4};2',
+    { selfAura: 8, skillAvailable: 0 });
+  await waiting.chrome.tick();
+  assert.deepStrictEqual(casts(waiting), [['useSkill', '4']],
+    'the conditional fires while the wait holds the rotation');
+  waiting.chrome.stop();
+
+  const ahead = await rotationHarness('1;if aura "Arcane Flux">=8 {4};2',
+    { selfAura: 8, skillAvailable: 0 });
+  await ahead.chrome.tick();
+  assert.deepStrictEqual(casts(ahead), [['useSkill', '4']],
+    'the conditional fires before the normal step');
+  ahead.chrome.stop();
+
+  const used = {};
+  const skip = await rotationHarness('1;if aura "Arcane Flux">=8 {4};2', {
+    selfAura: 8,
+    skillAvailable: function (index) { return used[index] ? 400 : 0; },
+    useSkill: function (index) { used[index] = true; return true; }
+  });
+  for (let i = 0; i < 3; i++) await skip.chrome.tick();
+  assert.deepStrictEqual(casts(skip).map(function (call) { return call[1]; }), ['4', '1', '2'],
+    'the walk skips a priority block, so its skill is not cast a second time');
+  skip.chrome.stop();
+});
+
+test('multi-skill and basic-attack If blocks keep their rotation place', async () => {
+  const block = await rotationHarness('spam 0 60000ms;if aura "Arcane Flux">=8 {4;3}',
+    { selfAura: 8, skillAvailable: 0 });
+  await block.chrome.tick();
+  assert.deepStrictEqual(casts(block), [['useSkill', '0']], 'a two-skill If is not a priority rule');
+  block.chrome.stop();
+
+  const basic = await rotationHarness('1;if aura "Arcane Flux">=8 {0};2',
+    { selfAura: 8, skillAvailable: 0 });
+  await basic.chrome.tick();
+  assert.deepStrictEqual(casts(basic), [['useSkill', '1']], 'a basic-attack If is not a priority rule');
+  basic.chrome.stop();
 });
 
 test('no loaded draft falls back to skills 1-4', async () => {

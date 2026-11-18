@@ -12,7 +12,10 @@
 // `if aura "Arcane Flux">=2 { 3;4 }` and `if target aura "Chi"=0 { 1 }`, optional casts:
 // `cooldown { 4 }`. Aura names are matched case-insensitively by the game's own aura cache;
 // a name cannot contain braces, quotes, semicolons, commas or line breaks (the tokenizer's
-// separators). A block is tested when the rotation reaches it and its steps then run in order.
+// separators). A block is tested when the rotation reaches it and its steps then run in order,
+// except that a block holding one skill is a priority check: it casts as soon as its skill is
+// ready, ahead of the rest of the rotation (and of any spam or wait hold), and the rotation
+// skips over it.
 // `await 2` waits for readiness and casts only that skill; `spam 0 2000ms` repeats for a duration.
 // `spam 0 until SM<=15 max 5000ms` stops at the percentage or timeout (default max: 60000ms).
 // `await spam ...` requires a usable cast before its stop condition can finish the step.

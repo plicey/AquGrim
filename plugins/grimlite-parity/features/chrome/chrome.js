@@ -402,6 +402,35 @@ function createChrome(deps) {
         finally { ticking = false; }
     }
 
+    /**
+     * A one-skill If is a priority check: the gated skill fires on its own as soon as its
+     * condition holds and it is ready, ahead of the rotation and of any spam, wait or delay
+     * hold. The normal walk skips such a block, so it is never cast twice; multi-skill blocks
+     * keep their in-order semantics, and a basic attack (slot 0) is never a priority rule
+     * because it would run every tick.
+     */
+    function isPriorityBlock(index) {
+        const row = rotation[index];
+        if (!row || row.type !== 'if' || row.skip !== index + 2) return false;
+        const body = rotation[index + 1];
+        return !!body && !body.type && body.safe !== true && body.index !== '0';
+    }
+
+    async function priorityConditional(version, checked) {
+        for (let i = 0; i < rotation.length; i++) {
+            if (!isPriorityBlock(i) || i + 1 === autoStep) continue;
+            const row = rotation[i];
+            const body = rotation[i + 1];
+            if ((await checked(safeAllows(row, version))) !== true) continue;
+            const ready = await checked(read('skillAvailable', [body.index]));
+            if (ready.error || ready.value === null || ready.value === undefined ||
+                !isFinite(Number(ready.value)) || Number(ready.value) > 0) continue;
+            await checked(cast(body.index, version));
+            return true;
+        }
+        return false;
+    }
+
     async function attackTick(version) {
         async function checked(promise) {
             const value = await promise;
@@ -433,6 +462,8 @@ function createChrome(deps) {
                 return;
             }
         }
+        // A single-skill conditional wins over the rotation and any hold.
+        if (await priorityConditional(version, checked)) return;
         const cooldowns = rotation.filter(function (row) { return row.type === 'cooldown'; });
         // One optional cast per gap, rotating priority; the main cursor never moves here.
         // A pending main cast gets first refusal when its cooldown finally expires.
@@ -482,6 +513,12 @@ function createChrome(deps) {
             const skill = rotation[autoStep];
             if (!skill) return;
             if (skill.type === 'if') {
+                if (isPriorityBlock(autoStep)) {
+                    // priorityConditional owns this row; the walk must not cast it again.
+                    autoStep = skill.skip;
+                    if (autoStep >= rotation.length) { autoStep = 0; return; }
+                    continue;
+                }
                 autoStep = (await checked(safeAllows(skill, version))) ? autoStep + 1 : skill.skip;
                 if (autoStep >= rotation.length) { autoStep = 0; return; }
                 continue;
