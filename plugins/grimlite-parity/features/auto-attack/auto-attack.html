@@ -110,7 +110,7 @@
     <label><span id="thresholdLabel">Percent</span><input id="stepThreshold" type="number" min="0" max="100" step="1" value="50" disabled></label>
     <button id="insertStep">Add skill</button>
   </div>
-  <p>Add a skill at the cursor, or select text in the rotation to replace it. My aura and Target aura wrap the skill in an If block that runs only while that aura has the chosen stacks; at least 1 means the aura is active.</p>
+  <p>Add a skill at the cursor, or select text in the rotation to replace it. My aura and Target aura wrap the skill in an If block that runs only while that aura has the chosen stacks; at least 1 means the aura is active. The game can report more stacks than an aura's icon shows, so use At least for "x or more".</p>
   </section>
   <details class="advanced"><summary>Advanced: conditions, cooldowns, waits and spam</summary>
   <div class="block-builder" role="group" aria-label="Insert blocks and waits">
@@ -135,7 +135,7 @@
     If is tested once on entry; its steps continue in order. Blocks cannot nest; no else. Without a selection, If inserts 1;2 and Cooldown inserts the selected skill.</p>
     <p><code>if aura "Name"&gt;=2 { 3 }</code> reads my own stacks and <code>if target aura "Name"=0 { 1 }</code> reads the current target's; an absent aura, or no target, is 0.
     Names match case-insensitively. Quote names that contain spaces; an unquoted name needs a space before the comparison. Names cannot contain braces, quotes, semicolons, commas or line breaks.
-    Aura conditions apply to If blocks only, not to spam stop conditions.</p>
+    Stacks are the raw values the game sends, so an icon showing its maximum can still read higher; At least is the safe comparison for a charge-up. Aura conditions apply to If blocks only, not to spam stop conditions.</p>
     <p>Slot 0 is button 1 (basic attack); slots 1–4 are buttons 2–5. <code>spam 0 2000ms</code> repeatedly casts basic attack when ready for 2000ms, then advances. Spam holds the rotation and pauses optional Cooldown casts; attempts run on the 150ms loop, so timing depends on game responsiveness.</p>
     <p><code>await spam 0 until SM&lt;=15 max 5000ms</code> awaits a ready, usable cast first, then checks mana on following ticks and repeats until it is at most 15%. Plain <code>spam 0 until SM&lt;=15</code> may skip immediately if the condition already holds. Both hold the rotation while active. The time limit still advances the rotation if no cast becomes usable. Use SH for health; comparisons support &lt;, &lt;=, =, &gt;= and &gt;. Without max, the limit is 60000ms. Unreadable HP/MP pauses casting until it recovers or the time limit expires. Timed spam also accepts <code>await spam 0 2000ms</code>.</p>
     <p>Wait and Spam durations are 1–60000ms; await 0 waits for skill 0–4 and casts it; ready 0 only waits without casting. The old global wait marker still waits before normal casts.

@@ -1260,7 +1260,8 @@ What needs a real client: everything below.
 - [ ] In the Skill Set editor, **My aura** and **Target aura** wrap the chosen skill in an **If**
       block (`if aura "Name">=2 { 3 }` / `if target aura "Name"=0 { 1 }`): it casts only while the
       stacks meet the comparison (at least 1 means active), an absent aura or no target reads 0,
-      and a refused aura read is shown on the strip while the rest of the rotation keeps casting
+      and a refused aura read is shown on the strip while the rest of the rotation keeps casting.
+      The raw stack count can exceed the icon's displayed cap, so a threshold uses **At least**
 - [ ] A cast the game refuses (a skill not learned yet, a target that died between the read and
       the press) is shown on the strip and the rotation keeps going rather than stopping
 - [ ] On a Chrono Shadow, Arcana Invoker or Archmage the class combo fires on its own condition
