@@ -7,7 +7,8 @@
 // 1. The derivation is the reference's own, and it is not obvious. Flash.cs ProcessPacketFromServer
 //    walks `b.o.a[]`; a removal names its aura in the SINGULAR slot (`action.aura.nam`) while an add
 //    names it in a list (`action.auras[]`); an add is an increment only when `isNew` is false AND
-//    the value is exactly 1; and for the player it counts only frames whose `tInf` is literally
+//    the value is exactly 1, except that a frame carrying the HUD's `stk` count uses that count
+//    outright; and for the player it counts only frames whose `tInf` is literally
 //    `p:<Player.UserID>` - another player's auras belong to that player, not to us.
 // 2. Every aura is keyed by the `tInf` the frame carried - `p:<uid>` or `m:<MonMapID>` - because
 //    that is exactly how the wire names whose aura it is, and it is also how the reference's monster
@@ -211,13 +212,25 @@ function createAuraStore(deps) {
         return left > 0 ? left : 0;
     }
 
-    /** One add, per Flash.cs's own two branches. */
+    /**
+     * One add, per Flash.cs's own two branches, with one modern exception.
+     *
+     * A frame may carry `stk`, the stack count the game shows on the aura icon (`val` is the
+     * effect value; King's Echo sends `val: 24, stk: 8`). When `stk` is a number it is the
+     * authoritative count and replaces the entry outright, so a repeated frame cannot inflate
+     * it. Frames without `stk` keep the reference's `val`/`isNew` rule.
+     */
     function add(manager, aura) {
         const name = aura && aura.nam;
         if (typeof name !== 'string' || !name.length) return;
+        const duration = aura.dur === undefined || aura.dur === null ? 0 : Number(aura.dur);
+        const hud = aura.stk === undefined || aura.stk === null ? null : Number(aura.stk);
+        if (hud !== null && isFinite(hud)) {
+            apply(manager, name, hud, duration);
+            return;
+        }
         // `double value = aura["val"]?.Value<double>() ?? 1;` and `int duration = (int)aura["dur"]`.
         const stack = aura.val === undefined || aura.val === null ? 1 : Number(aura.val);
-        const duration = aura.dur === undefined || aura.dur === null ? 0 : Number(aura.dur);
         if (aura.isNew === true || stack !== 1) apply(manager, name, stack, duration);
         else increment(manager, name, duration);
     }
