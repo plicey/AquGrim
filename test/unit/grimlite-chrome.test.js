@@ -77,7 +77,8 @@ function harness(options) {
     healthMax: member('healthMax', 100),
     mana: member('mana', 100),
     manaMax: member('manaMax', 100),
-    selfAura: member('selfAura', 0)
+    selfAura: member('selfAura', 0),
+    targetAura: member('targetAura', 0)
   };
 
   const chrome = createChrome({
@@ -484,6 +485,41 @@ test('Auto Attack runs the loaded draft and skips a safe skill whose condition i
   h.chrome.stop();
 });
 
+test('aura If blocks read self and target stacks and skip when their condition is not met', async () => {
+  const auras = { self: 2, target: 0 };
+  const h = await rotationHarness(
+    'if aura "Arcane Flux">=2 { 3 };if target aura "Chi">=1 { 4 };1',
+    { selfAura: function () { return auras.self; }, targetAura: function () { return auras.target; } });
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h), [['useSkill', '3']], 'two self stacks meet the condition');
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h), [['useSkill', '3'], ['useSkill', '1']],
+    'no target stacks skips the target block and the rotation keeps going');
+  auras.target = 1;
+  await h.chrome.tick();
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h).slice(-2), [['useSkill', '3'], ['useSkill', '4']],
+    'one target stack meets the condition');
+  h.chrome.stop();
+
+  const absent = await rotationHarness('if aura "Arcane Flux"=0 { 2 };1', { selfAura: 0 });
+  await absent.chrome.tick();
+  assert.deepStrictEqual(casts(absent), [['useSkill', '2']], 'an absent aura is zero stacks');
+  absent.chrome.stop();
+});
+
+test('an unreadable aura read skips its block and reports it on the strip', async () => {
+  const h = await rotationHarness('if aura "Arcane Flux">=1 { 3 }', {
+    selfAura: function () { throw new Error('no tap'); }
+  });
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h), [], 'the gated skill is never cast on an unknown stack');
+  const state = await h.chrome.state();
+  assert.match(state.values.autoAttackError, /Arcane Flux.*no tap/);
+  assert.strictEqual(state.values.autoAttack, true, 'the loop keeps running');
+  h.chrome.stop();
+});
+
 test('no loaded draft falls back to skills 1-4', async () => {
   const h = harness({
     answers: { hasTarget: true, className: 'No Class' },
@@ -660,7 +696,7 @@ test('every game read the strip makes is a loader name the surface answers', () 
   // The session members the strip reads, each of which is a loader name in bot/session.js rather
   // than a dot-path spelled out here.
   ['signedIn', 'cell', 'pad', 'cells', 'ready', 'jump', 'hasTarget', 'attackMonster',
-    'skillAvailable', 'useSkill', 'className', 'mana', 'selfAura'].forEach(function (name) {
+    'skillAvailable', 'useSkill', 'className', 'mana', 'selfAura', 'targetAura'].forEach(function (name) {
       assert.ok(source.indexOf("read('" + name + "'") !== -1 ||
         source.indexOf('read("' + name + '"') !== -1, 'the strip must read ' + name);
     });

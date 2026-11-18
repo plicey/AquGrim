@@ -8,7 +8,11 @@
 //
 // Skills are separated by ';' (the reference's form) or ',' (common in hand-written configs).
 // One safe condition may follow a skill: `3:SH>60` or `2:SM<30`. `wait` makes every normal skill
-// wait out its own cooldown. Blocks: `if SH<50 { 2;3 }`, optional casts: `cooldown { 4 }`.
+// wait out its own cooldown. Blocks: `if SH<50 { 2;3 }`, aura stacks:
+// `if aura "Arcane Flux">=2 { 3;4 }` and `if target aura "Chi"=0 { 1 }`, optional casts:
+// `cooldown { 4 }`. Aura names are matched case-insensitively by the game's own aura cache;
+// a name cannot contain braces, quotes, semicolons, commas or line breaks (the tokenizer's
+// separators). A block is tested when the rotation reaches it and its steps then run in order.
 // `await 2` waits for readiness and casts only that skill; `spam 0 2000ms` repeats for a duration.
 // `spam 0 until SM<=15 max 5000ms` stops at the percentage or timeout (default max: 60000ms).
 // `await spam ...` requires a usable cast before its stop condition can finish the step.
@@ -81,11 +85,20 @@ function parsePreset(value) {
             continue;
         }
         const condition = /^if\s+(SH|SM)\s*([<>]=?|=)\s*(\d+)$/i.exec(token);
-        if (condition || /^cooldown$/i.test(token)) {
+        const auraCondition = /^if\s+(target\s+)?aura\s+(?:"([^"]+)"\s*|(.+?)\s+)([<>]=?|=)\s*(\d+)$/i.exec(token);
+        if (condition || auraCondition || /^cooldown$/i.test(token)) {
             if (block || parts[++i] !== '{') throw new Error('Blocks need braces and cannot be nested.');
             if (condition && Number(condition[3]) > 100) throw new Error('Percent must be from 0 to 100.');
-            const row = condition ? { type: 'if', isMp: condition[1].toUpperCase() === 'SM',
-                op: condition[2], value: Number(condition[3]) } : null;
+            let row = null;
+            if (condition) {
+                row = { type: 'if', isMp: condition[1].toUpperCase() === 'SM',
+                    op: condition[2], value: Number(condition[3]) };
+            } else if (auraCondition) {
+                const name = String(auraCondition[2] !== undefined ? auraCondition[2] : auraCondition[3]).trim();
+                if (!name || /[{};,"]/.test(name)) throw new Error('Invalid aura name.');
+                row = { type: 'if', aura: name, op: auraCondition[4], value: Number(auraCondition[5]) };
+                if (auraCondition[1]) row.target = true;
+            }
             if (row) rows.push(row);
             block = { row: row, start: rows.length };
             continue;

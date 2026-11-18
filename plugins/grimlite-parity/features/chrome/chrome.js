@@ -282,11 +282,16 @@ function createChrome(deps) {
 
     // ------------------------------------------------------------------- Auto Attack
 
+    /** The session read behind Player.GetAuras(true/false, name): this character's stacks or a target's. */
+    function auraRead(name, target) {
+        return target ? read('targetAura', [name]) : read('selfAura', [name]);
+    }
+
     /** Player.GetAuras(true, name) for the class combos; an unreadable aura counts as none. */
     async function aura(name) {
-        const answer = await read('selfAura', [name]);
+        const answer = await auraRead(name, false);
         const value = Number(answer.value);
-        return isFinite(value) ? value : 0;
+        return !answer.error && isFinite(value) ? value : 0;
     }
 
     /** SpecialClassCombo: this class's own skills when its own condition holds, else none. */
@@ -332,6 +337,23 @@ function createChrome(deps) {
 
     /** Null means unreadable: conditional spam must pause rather than cast on an unknown value. */
     async function safeAllows(skill, version) {
+        // An aura block reads the tapped cache (bot/auras.js): absent or no target is 0 stacks.
+        if (skill.aura) {
+            const answer = await auraRead(skill.aura, skill.target === true);
+            ensureCurrent(version);
+            const stacks = Number(answer.value);
+            if (answer.error || answer.value === null || answer.value === undefined || !isFinite(stacks)) {
+                autoAttackError = (skill.target ? 'target aura "' : 'aura "') + skill.aura + '": ' +
+                    (answer.error || 'the game reports no stacks for that aura');
+                log(autoAttackError);
+                return null;
+            }
+            if (skill.op === '>') return stacks > skill.value;
+            if (skill.op === '<') return stacks < skill.value;
+            if (skill.op === '>=') return stacks >= skill.value;
+            if (skill.op === '<=') return stacks <= skill.value;
+            return stacks === skill.value;
+        }
         const currentName = skill.isMp ? 'mana' : 'health';
         const maxName = skill.isMp ? 'manaMax' : 'healthMax';
         const answers = await Promise.all([read(currentName), read(maxName)]);
