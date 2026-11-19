@@ -115,7 +115,7 @@ function harness(options) {
     now: options.now,
     openAutoSkillSet: options.openAutoSkillSet,
     messages: options.messages || {},
-    log: function () {},
+    log: options.log || function () {},
     sleep: function () { return Promise.resolve(); },
     timers: timers
   });
@@ -513,12 +513,12 @@ test('aura If blocks read self and target stacks and skip when their condition i
   absent.chrome.stop();
 });
 
-test('an unreadable aura read skips its block and reports it on the strip', async () => {
-  const h = await rotationHarness('if aura "Arcane Flux">=1 { 3 }', {
+test('an unreadable aura read is reported while the rest of the rotation casts', async () => {
+  const h = await rotationHarness('if aura "Arcane Flux">=1 { 3 };1', {
     selfAura: function () { throw new Error('no tap'); }
   });
   await h.chrome.tick();
-  assert.deepStrictEqual(casts(h), [], 'the gated skill is never cast on an unknown stack');
+  assert.deepStrictEqual(casts(h), [['useSkill', '1']], 'the rest of the rotation still casts');
   const state = await h.chrome.state();
   assert.match(state.values.autoAttackError, /Arcane Flux.*no tap/);
   assert.strictEqual(state.values.autoAttack, true, 'the loop keeps running');
@@ -560,6 +560,44 @@ test('a single-skill aura If is a priority check, ahead of spam, waits and the r
   assert.deepStrictEqual(casts(skip).map(function (call) { return call[1]; }), ['4', '1', '2'],
     'the walk skips a priority block, so its skill is not cast a second time');
   skip.chrome.stop();
+
+  const safe = await rotationHarness('1;if aura "Arcane Flux">=1 {3:SH>50};2',
+    { selfAura: 1, health: 100, healthMax: 100, skillAvailable: 0 });
+  await safe.chrome.tick();
+  assert.deepStrictEqual(casts(safe), [['useSkill', '3']],
+    'a one-skill block with a safe step is a priority check');
+  safe.chrome.stop();
+
+  const held = await rotationHarness('1;if aura "Arcane Flux">=1 {3:SH>50};2',
+    { selfAura: 1, health: 40, healthMax: 100, skillAvailable: 0 });
+  await held.chrome.tick();
+  assert.deepStrictEqual(casts(held), [['useSkill', '1']],
+    'the safe step holds the priority cast');
+  held.chrome.stop();
+});
+
+test('a refused priority cast does not stop the rest of the rotation', async () => {
+  const logs = [];
+  const h = harness({
+    answers: {
+      hasTarget: true,
+      selfAura: 1,
+      skillAvailable: 0,
+      useSkill: function (index) { return index !== '4'; }
+    },
+    presets: {
+      draftFor: function () {
+        return { skills: skillPresets.parsePreset('if aura "Arcane Flux">=1 {4};1') };
+      }
+    },
+    log: function (line) { logs.push(line); }
+  });
+  await h.chrome.action('autoAttack', { checked: true });
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h).map(function (call) { return call[1]; }), ['4', '1'],
+    'the refused priority skill is followed by the normal rotation');
+  assert.ok(logs.some(function (line) { return /skill 4/.test(line); }), JSON.stringify(logs));
+  h.chrome.stop();
 });
 
 test('multi-skill and basic-attack If blocks keep their rotation place', async () => {

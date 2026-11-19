@@ -118,6 +118,7 @@ function createChrome(deps) {
 
     let autoAttack = false;
     let autoAttackError = null;
+    let conditionError = null;
     let autoStep = 0;
     let rotation = skillPresets.defaultSkills();
     let customRotation = false;
@@ -181,6 +182,12 @@ function createChrome(deps) {
         });
     }
 
+    /** The loader's SkillAvailable answer: a finite number at or below zero means ready. */
+    function isReady(answer) {
+        return !answer.error && answer.value !== null && answer.value !== undefined &&
+            isFinite(Number(answer.value)) && Number(answer.value) <= 0;
+    }
+
     function controls() {
         const words = messages();
         return [
@@ -225,7 +232,7 @@ function createChrome(deps) {
         const values = {
             startBot: botState(),
             autoAttack: autoAttack,
-            autoAttackError: autoAttackError,
+            autoAttackError: conditionError || autoAttackError,
             cell: '',
             pad: ''
         };
@@ -343,11 +350,12 @@ function createChrome(deps) {
             ensureCurrent(version);
             const stacks = Number(answer.value);
             if (answer.error || answer.value === null || answer.value === undefined || !isFinite(stacks)) {
-                autoAttackError = (skill.target ? 'target aura "' : 'aura "') + skill.aura + '": ' +
+                conditionError = (skill.target ? 'target aura "' : 'aura "') + skill.aura + '": ' +
                     (answer.error || 'the game reports no stacks for that aura');
-                log(autoAttackError);
+                log(conditionError);
                 return null;
             }
+            conditionError = null;
             if (skill.op === '>') return stacks > skill.value;
             if (skill.op === '<') return stacks < skill.value;
             if (skill.op === '>=') return stacks >= skill.value;
@@ -363,11 +371,12 @@ function createChrome(deps) {
         if (answers[0].error || answers[1].error ||
             answers.some(function (answer) { return answer.value === null || answer.value === undefined; }) ||
             !isFinite(now) || !isFinite(max) || max <= 0) {
-            autoAttackError = (skill.type === 'if' ? 'condition' : 'skill ' + skill.index) + ': ' +
+            conditionError = (skill.type === 'if' ? 'condition' : 'skill ' + skill.index) + ': ' +
                 (answers[0].error || answers[1].error || 'the game reports no health or mana percentage');
-            log(autoAttackError);
+            log(conditionError);
             return null;
         }
+        conditionError = null;
         const percent = now / max * 100;
         if (skill.type && skill.op === '>') return percent > skill.value;
         if (skill.type && skill.op === '<') return percent < skill.value;
@@ -405,15 +414,13 @@ function createChrome(deps) {
     /**
      * A one-skill If is a priority check: the gated skill fires on its own as soon as its
      * condition holds and it is ready, ahead of the rotation and of any spam, wait or delay
-     * hold. The normal walk skips such a block, so it is never cast twice; multi-skill blocks
-     * keep their in-order semantics, and a basic attack (slot 0) is never a priority rule
-     * because it would run every tick.
+     * hold. The parser marks such a block (`priority`), and the normal walk skips it so it is
+     * never cast twice. Multi-skill blocks keep their in-order semantics; slot 0 is never a
+     * priority rule because it would run every tick.
      */
     function isPriorityBlock(index) {
         const row = rotation[index];
-        if (!row || row.type !== 'if' || row.skip !== index + 2) return false;
-        const body = rotation[index + 1];
-        return !!body && !body.type && body.safe !== true && body.index !== '0';
+        return !!row && row.type === 'if' && row.priority === true;
     }
 
     async function priorityConditional(version, checked) {
@@ -421,12 +428,17 @@ function createChrome(deps) {
             if (!isPriorityBlock(i) || i + 1 === autoStep) continue;
             const row = rotation[i];
             const body = rotation[i + 1];
+            if (!body) continue;
             if ((await checked(safeAllows(row, version))) !== true) continue;
+            if (body.safe === true && (await checked(safeAllows(body, version))) !== true) continue;
             const ready = await checked(read('skillAvailable', [body.index]));
-            if (ready.error || ready.value === null || ready.value === undefined ||
-                !isFinite(Number(ready.value)) || Number(ready.value) > 0) continue;
-            await checked(cast(body.index, version));
-            return true;
+            if (!isReady(ready)) continue;
+            // Confirm this cast: a refused gated skill must not stop the rest of the rotation.
+            if (await checked(cast(body.index, version, false, true))) return true;
+            if (!autoAttackError) {
+                autoAttackError = 'skill ' + body.index + ': the game did not use it';
+                log(autoAttackError);
+            }
         }
         return false;
     }
@@ -471,8 +483,7 @@ function createChrome(deps) {
             if (pendingWait.until !== undefined && now() >= pendingWait.until) cooldownTurn = false;
             else if (pendingWait.ready) {
                 const ready = await checked(read('skillAvailable', [pendingWait.ready]));
-                if (!ready.error && ready.value !== null && ready.value !== undefined &&
-                    isFinite(Number(ready.value)) && Number(ready.value) <= 0) cooldownTurn = false;
+                if (isReady(ready)) cooldownTurn = false;
             }
         }
         if (cooldownTurn && (!rotation[autoStep] || rotation[autoStep].type !== 'spam')) {
@@ -480,8 +491,7 @@ function createChrome(deps) {
                 const slot = (cooldownStep + i) % cooldowns.length;
                 const skill = cooldowns[slot];
                 const ready = await checked(read('skillAvailable', [skill.index]));
-                if (!ready.error && ready.value !== null && ready.value !== undefined &&
-                    isFinite(Number(ready.value)) && Number(ready.value) <= 0) {
+                if (isReady(ready)) {
                     await checked(cast(skill.index, version, true));
                     cooldownStep = (slot + 1) % cooldowns.length;
                     cooldownTurn = false;
@@ -495,8 +505,7 @@ function createChrome(deps) {
         if (specialCombo.length) {
             const index = specialCombo[0];
             const ready = await checked(read('skillAvailable', [index]));
-            if (ready.error || ready.value === null || ready.value === undefined ||
-                !isFinite(Number(ready.value)) || Number(ready.value) > 0) {
+            if (!isReady(ready)) {
                 pendingWait = { ready: index };
                 return;
             }
@@ -534,8 +543,7 @@ function createChrome(deps) {
                     if (finished === null) return;
                     if ((skill.wait === true && !pendingWait.casted) || !finished) {
                         const ready = await checked(read('skillAvailable', [skill.index]));
-                        if (!ready.error && ready.value !== null && ready.value !== undefined &&
-                            isFinite(Number(ready.value)) && Number(ready.value) <= 0) {
+                        if (isReady(ready)) {
                             if (await checked(cast(skill.index, version, false, skill.wait === true))) pendingWait.casted = true;
                         }
                         return;
@@ -546,8 +554,7 @@ function createChrome(deps) {
                 if (now() < pendingWait.until) return;
             } else if (skill.type === 'ready' || skill.wait === true) {
                 const ready = await checked(read('skillAvailable', [skill.index]));
-                if (ready.error || ready.value === null || ready.value === undefined ||
-                    !isFinite(Number(ready.value)) || Number(ready.value) > 0) {
+                if (!isReady(ready)) {
                     pendingWait = { ready: skill.index };
                     return;
                 }
@@ -596,6 +603,7 @@ function createChrome(deps) {
         rotation = preset.length ? preset : skillPresets.defaultSkills();
         autoAttack = true;
         autoAttackError = null;
+        conditionError = null;
         generation++;
         autoStep = 0;
         specialCombo = null;

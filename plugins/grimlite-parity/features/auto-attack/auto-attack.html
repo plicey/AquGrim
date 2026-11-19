@@ -110,7 +110,7 @@
     <label><span id="thresholdLabel">Percent</span><input id="stepThreshold" type="number" min="0" max="100" step="1" value="50" disabled></label>
     <button id="insertStep">Add skill</button>
   </div>
-  <p>Add a skill at the cursor, or select text in the rotation to replace it. My aura and Target aura wrap the skill in an If block that runs only while that aura has the chosen stacks; at least 1 means the aura is active. A single-skill aura step is a priority check: it fires as soon as the skill is ready, ahead of the rest of the rotation (including spam and waits), and the rotation skips over it. Wrap two or more skills to keep them in order.</p>
+  <p>Add a skill at the cursor, or select text in the rotation to replace it. My aura and Target aura wrap the skill in an If block that runs only while that aura has the chosen stacks; at least 1 means the aura is active. A single-skill aura step is a priority check: it fires as soon as the skill is ready, ahead of the rest of the rotation (including spam and waits), and the rotation skips over it. Wrap two or more skills to keep them in order; a basic-attack step (slot 0) also keeps its rotation place.</p>
   </section>
   <details class="advanced"><summary>Advanced: conditions, cooldowns, waits and spam</summary>
   <div class="block-builder" role="group" aria-label="Insert blocks and waits">
@@ -132,7 +132,7 @@
   <details><summary>Syntax and behavior</summary>
     <p><code>1; if SH&lt;=50 { 2;3 }; if aura "Arcane Flux"&gt;=2 { 4 }; wait 500ms; await 2; cooldown { 3 }</code></p>
     <p>SH = my HP %, SM = my MP %. Block &lt; and &gt; are strict; &lt;= and &gt;= include equality. Legacy inline conditions keep inclusive comparisons.
-    A block holding one skill is a priority check: it casts as soon as that skill is ready, ahead of the rest of the rotation and any spam or wait hold, and the rotation skips over it. A block holding two or more skills is tested once on entry; its steps continue in order. Blocks cannot nest; no else. Without a selection, If inserts 1;2 and Cooldown inserts the selected skill.</p>
+    A block holding one skill is a priority check: it casts as soon as that skill is ready, ahead of the rest of the rotation and any spam or wait hold, and the rotation skips over it. A basic-attack step (slot 0) keeps its rotation place. A block holding two or more skills is tested once on entry; its steps continue in order. Blocks cannot nest; no else. Without a selection, If inserts 1;2 and Cooldown inserts the selected skill.</p>
     <p><code>if aura "Name"&gt;=2 { 3 }</code> reads my own stacks and <code>if target aura "Name"=0 { 1 }</code> reads the current target's; an absent aura, or no target, is 0.
     Names match case-insensitively. Quote names that contain spaces; an unquoted name needs a space before the comparison. Names cannot contain braces, quotes, semicolons, commas or line breaks.
     Stacks are the count the game shows on the aura icon. Aura conditions apply to If blocks only, not to spam stop conditions.</p>

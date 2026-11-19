@@ -213,12 +213,27 @@ function createAuraStore(deps) {
     }
 
     /**
+     * A HUD count on an existing aura updates its value and re-arms from the aura's own
+     * duration, the same rule AuraIncrement uses: a frame's shorter `dur` must not shorten a
+     * live aura. A count for an aura the cache has not seen is created from the frame.
+     */
+    function applyHud(manager, name, value, duration) {
+        const found = manager.get(String(name).toLowerCase());
+        if (!found) {
+            apply(manager, name, value, duration);
+            return;
+        }
+        found.value = value;
+        found.expiry = now() + Number(found.duration) * 1000;
+    }
+
+    /**
      * One add, per Flash.cs's own two branches, with one modern exception.
      *
      * A frame may carry `stk`, the stack count the game shows on the aura icon (`val` is the
      * effect value; King's Echo sends `val: 24, stk: 8`). When `stk` is a number it is the
-     * authoritative count and replaces the entry outright, so a repeated frame cannot inflate
-     * it. Frames without `stk` keep the reference's `val`/`isNew` rule.
+     * authoritative count; a new aura takes the frame's duration, an existing one keeps its
+     * own. Frames without `stk` keep the reference's `val`/`isNew` rule.
      */
     function add(manager, aura) {
         const name = aura && aura.nam;
@@ -226,7 +241,8 @@ function createAuraStore(deps) {
         const duration = aura.dur === undefined || aura.dur === null ? 0 : Number(aura.dur);
         const hud = aura.stk === undefined || aura.stk === null ? null : Number(aura.stk);
         if (hud !== null && isFinite(hud)) {
-            apply(manager, name, hud, duration);
+            if (aura.isNew === true) apply(manager, name, hud, duration);
+            else applyHud(manager, name, hud, duration);
             return;
         }
         // `double value = aura["val"]?.Value<double>() ?? 1;` and `int duration = (int)aura["dur"]`.

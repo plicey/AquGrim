@@ -15,7 +15,7 @@
 // separators). A block is tested when the rotation reaches it and its steps then run in order,
 // except that a block holding one skill is a priority check: it casts as soon as its skill is
 // ready, ahead of the rest of the rotation (and of any spam or wait hold), and the rotation
-// skips over it.
+// skips over it. Slot 0 keeps its rotation place.
 // `await 2` waits for readiness and casts only that skill; `spam 0 2000ms` repeats for a duration.
 // `spam 0 until SM<=15 max 5000ms` stops at the percentage or timeout (default max: 60000ms).
 // `await spam ...` requires a usable cast before its stop condition can finish the step.
@@ -83,7 +83,15 @@ function parsePreset(value) {
         const token = parts[i];
         if (token === '}') {
             if (!block || rows.length === block.start) throw new Error('Unexpected or empty block.');
-            if (block.row) block.row.skip = rows.length;
+            if (block.row) {
+                block.row.skip = rows.length;
+                // A one-skill If is the priority form. The parser owns that fact so the tick
+                // does not infer it from the row layout; slot 0 stays in the rotation.
+                if (block.row.type === 'if' && rows.length === block.start + 1) {
+                    const body = rows[block.start];
+                    if (body && !body.type && body.index !== '0') block.row.priority = true;
+                }
+            }
             block = null;
             continue;
         }

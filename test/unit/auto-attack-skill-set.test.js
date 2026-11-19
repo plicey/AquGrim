@@ -536,17 +536,23 @@ test('aura blocks parse for self and target and the builder generates them', () 
     { type: 'if', aura: 'Arcane Flux', op: '>=', value: 2, skip: 4 },
     { index: '3', safe: false, wait: false },
     { index: '4', safe: false, wait: false },
-    { type: 'if', aura: 'Chi', target: true, op: '=', value: 0, skip: 6 },
+    { type: 'if', aura: 'Chi', target: true, op: '=', value: 0, priority: true, skip: 6 },
     { index: '2', safe: false, wait: false }
   ]);
   assert.deepStrictEqual(presets.parsePreset('IF AURA Arcane Flux > 1 { 2 }'), [
-    { type: 'if', aura: 'Arcane Flux', op: '>', value: 1, skip: 2 },
+    { type: 'if', aura: 'Arcane Flux', op: '>', value: 1, priority: true, skip: 2 },
     { index: '2', safe: false, wait: false }
   ]);
   assert.deepStrictEqual(presets.parsePreset('if aura "Arcane Flux" >= 2 { 3 }')[0],
-    { type: 'if', aura: 'Arcane Flux', op: '>=', value: 2, skip: 2 });
+    { type: 'if', aura: 'Arcane Flux', op: '>=', value: 2, priority: true, skip: 2 });
   assert.deepStrictEqual(presets.parsePreset('if target aura "Chi"<=0 { 1 }')[0],
-    { type: 'if', aura: 'Chi', target: true, op: '<=', value: 0, skip: 2 });
+    { type: 'if', aura: 'Chi', target: true, op: '<=', value: 0, priority: true, skip: 2 });
+  assert.strictEqual(presets.parsePreset('if aura "X">=1 {3;4}')[0].priority, undefined,
+    'a block with two skills stays in rotation order');
+  assert.strictEqual(presets.parsePreset('if aura "X">=1 {0}')[0].priority, undefined,
+    'slot 0 stays in the rotation');
+  assert.strictEqual(presets.parsePreset('if aura "X">=1 {3:SH>50}')[0].priority, true,
+    'a one-skill block with a safe step is still a priority check');
 
   const self = step.aura('AURA', 'Arcane Flux', '>=', '2', '3;4');
   assert.strictEqual(self, 'if aura "Arcane Flux">=2 {\n3;4\n}');
@@ -590,7 +596,7 @@ test('await waits and casts only its own skill, including inside If blocks', () 
     { index: '3', safe: false, wait: false }
   ]);
   assert.deepStrictEqual(presets.parsePreset('if SH<50 { AWAIT 4 }'), [
-    { type: 'if', isMp: false, op: '<', value: 50, skip: 2 },
+    { type: 'if', isMp: false, op: '<', value: 50, priority: true, skip: 2 },
     { index: '4', safe: false, wait: true }
   ]);
 });

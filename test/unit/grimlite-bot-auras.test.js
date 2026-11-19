@@ -137,6 +137,18 @@ test('a repeated stk frame is idempotent, so duplicate delivery cannot inflate t
   assert.strictEqual(selfValue(cache, 'Residual Energy'), 3, 'a later HUD count replaces it');
 });
 
+test('a stk update on a live aura keeps its own duration, not a shorter frame dur', () => {
+  const clock = { at: 0 };
+  const cache = store(clock);
+  cache.observe(fromServer(auraFrame('p:' + SELF, auraOf('Residual Energy', 24, 10, { stk: 8 }))));
+  clock.at = 3000;
+  cache.observe(fromServer(auraFrame('p:' + SELF,
+    auraOf('Residual Energy', 24, 2, { stk: 5, isNew: false }))));
+  assert.strictEqual(selfValue(cache, 'Residual Energy'), 5);
+  assert.strictEqual(selfRemaining(cache, 'Residual Energy'), 10000,
+    'the aura own 10 s, not the 2 s the frame carried');
+});
+
 test('a stk value that is not a number leaves the reference val rule in place', () => {
   const cache = store();
   cache.observe(fromServer(CHI));

@@ -1263,7 +1263,8 @@ What needs a real client: everything below.
       and a refused aura read is shown on the strip while the rest of the rotation keeps casting
 - [ ] The stack count an aura If compares is the number on the aura icon (`stk` on the wire), not
       the effect value beside it; a single-skill If fires ahead of the rotation (including spam and
-      wait holds) as soon as its skill is ready, while a two-skill If stays in rotation order
+      wait holds) as soon as its skill is ready, while a two-skill If and a basic-attack (slot 0)
+      If stay in rotation order
 - [ ] A cast the game refuses (a skill not learned yet, a target that died between the read and
       the press) is shown on the strip and the rotation keeps going rather than stopping
 - [ ] On a Chrono Shadow, Arcana Invoker or Archmage the class combo fires on its own condition
