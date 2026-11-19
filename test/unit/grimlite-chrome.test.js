@@ -525,6 +525,25 @@ test('an unreadable aura read is reported while the rest of the rotation casts',
   h.chrome.stop();
 });
 
+test('a refused condition keeps its reason across other conditions and rotation changes', async () => {
+  const h = await rotationHarness('if aura "Bad">=1 {3};if aura "Good">=1 {2};4', {
+    selfAura: function (name) {
+      if (name === 'Bad') throw new Error('no tap');
+      return 1;
+    },
+    skillAvailable: function (index) { return index === '2' ? 400 : 0; }
+  });
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h), [['useSkill', '4']], 'the rest of the rotation still casts');
+  let state = await h.chrome.state();
+  assert.match(state.values.autoAttackError, /Bad.*no tap/,
+    'a later condition read does not clear the failed one');
+  h.chrome.useSkillText('1;2', true);
+  state = await h.chrome.state();
+  assert.strictEqual(state.values.autoAttackError, null, 'a rotation change clears the reasons');
+  h.chrome.stop();
+});
+
 test('a single-skill aura If is a priority check, ahead of spam, waits and the rotation', async () => {
   const spam = await rotationHarness('spam 0 60000ms;if aura "Arcane Flux">=8 {4}',
     { selfAura: 8, skillAvailable: 0 });
@@ -596,6 +615,8 @@ test('a refused priority cast does not stop the rest of the rotation', async () 
   await h.chrome.tick();
   assert.deepStrictEqual(casts(h).map(function (call) { return call[1]; }), ['4', '1'],
     'the refused priority skill is followed by the normal rotation');
+  assert.match((await h.chrome.state()).values.autoAttackError, /skill 4/,
+    'the strip keeps the priority refusal after the normal cast');
   assert.ok(logs.some(function (line) { return /skill 4/.test(line); }), JSON.stringify(logs));
   h.chrome.stop();
 });

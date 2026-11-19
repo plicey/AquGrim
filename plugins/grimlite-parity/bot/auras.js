@@ -166,6 +166,11 @@ function createAuraStore(deps) {
         }
     }
 
+    /** PlayerAura.Refresh with the aura's own duration: the existing-entry re-arm rule. */
+    function refresh(found) {
+        found.expiry = now() + Number(found.duration) * 1000;
+    }
+
     /**
      * AuraIncrement: one more stack. Its refresh takes no duration - it re-arms the entry with the
      * duration that aura already carries (`aura.Refresh(aura.Duration)`), not with whatever the
@@ -179,14 +184,11 @@ function createAuraStore(deps) {
             // its own aura+, which is how that bug bites). The frame still says the aura is on the
             // target, so the entry starts at the stack it acknowledged, with the only duration
             // this frame carries.
-            manager.set(key, {
-                name: String(name), value: 1, duration: Number(duration),
-                expiry: now() + Number(duration) * 1000
-            });
+            apply(manager, name, 1, duration);
             return;
         }
         found.value = Number(found.value) + 1;
-        found.expiry = now() + Number(found.duration) * 1000;
+        refresh(found);
     }
 
     /** IsExpired: TickCount >= ExpireTime. */
@@ -224,7 +226,7 @@ function createAuraStore(deps) {
             return;
         }
         found.value = value;
-        found.expiry = now() + Number(found.duration) * 1000;
+        refresh(found);
     }
 
     /**

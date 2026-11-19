@@ -118,7 +118,12 @@ function createChrome(deps) {
 
     let autoAttack = false;
     let autoAttackError = null;
-    let conditionError = null;
+    // Reasons are kept per parsed row, so one condition's success cannot clear another's
+    // refusal. A row's entry is dropped when that row succeeds, or when the rotation changes.
+    const rowErrors = new Map();
+    // A priority cast's own refusal lives beside the condition reasons: a normal cast's success
+    // clears autoAttackError, but this must stay until that gated cast succeeds.
+    const priorityErrors = new Map();
     let autoStep = 0;
     let rotation = skillPresets.defaultSkills();
     let customRotation = false;
@@ -188,6 +193,13 @@ function createChrome(deps) {
             isFinite(Number(answer.value)) && Number(answer.value) <= 0;
     }
 
+    /** The first row still holding a condition or priority-cast reason, for the strip. */
+    function firstRowError() {
+        for (const message of rowErrors.values()) return message;
+        for (const message of priorityErrors.values()) return message;
+        return null;
+    }
+
     function controls() {
         const words = messages();
         return [
@@ -232,7 +244,7 @@ function createChrome(deps) {
         const values = {
             startBot: botState(),
             autoAttack: autoAttack,
-            autoAttackError: conditionError || autoAttackError,
+            autoAttackError: firstRowError() || autoAttackError,
             cell: '',
             pad: ''
         };
@@ -350,12 +362,13 @@ function createChrome(deps) {
             ensureCurrent(version);
             const stacks = Number(answer.value);
             if (answer.error || answer.value === null || answer.value === undefined || !isFinite(stacks)) {
-                conditionError = (skill.target ? 'target aura "' : 'aura "') + skill.aura + '": ' +
+                const message = (skill.target ? 'target aura "' : 'aura "') + skill.aura + '": ' +
                     (answer.error || 'the game reports no stacks for that aura');
-                log(conditionError);
+                rowErrors.set(skill, message);
+                log(message);
                 return null;
             }
-            conditionError = null;
+            rowErrors.delete(skill);
             if (skill.op === '>') return stacks > skill.value;
             if (skill.op === '<') return stacks < skill.value;
             if (skill.op === '>=') return stacks >= skill.value;
@@ -371,12 +384,13 @@ function createChrome(deps) {
         if (answers[0].error || answers[1].error ||
             answers.some(function (answer) { return answer.value === null || answer.value === undefined; }) ||
             !isFinite(now) || !isFinite(max) || max <= 0) {
-            conditionError = (skill.type === 'if' ? 'condition' : 'skill ' + skill.index) + ': ' +
+            const message = (skill.type === 'if' ? 'condition' : 'skill ' + skill.index) + ': ' +
                 (answers[0].error || answers[1].error || 'the game reports no health or mana percentage');
-            log(conditionError);
+            rowErrors.set(skill, message);
+            log(message);
             return null;
         }
-        conditionError = null;
+        rowErrors.delete(skill);
         const percent = now / max * 100;
         if (skill.type && skill.op === '>') return percent > skill.value;
         if (skill.type && skill.op === '<') return percent < skill.value;
@@ -434,10 +448,15 @@ function createChrome(deps) {
             const ready = await checked(read('skillAvailable', [body.index]));
             if (!isReady(ready)) continue;
             // Confirm this cast: a refused gated skill must not stop the rest of the rotation.
-            if (await checked(cast(body.index, version, false, true))) return true;
+            if (await checked(cast(body.index, version, false, true))) {
+                priorityErrors.delete(row);
+                return true;
+            }
+            const message = autoAttackError || ('skill ' + body.index + ': the game did not use it');
+            priorityErrors.set(row, message);
             if (!autoAttackError) {
-                autoAttackError = 'skill ' + body.index + ': the game did not use it';
-                log(autoAttackError);
+                autoAttackError = message;
+                log(message);
             }
         }
         return false;
@@ -588,6 +607,9 @@ function createChrome(deps) {
         const requested = ++generation;
         if (checked !== true) {
             autoAttack = false;
+            autoAttackError = null;
+            rowErrors.clear();
+            priorityErrors.clear();
             stopTimer();
             return { ok: true, error: null };
         }
@@ -603,7 +625,8 @@ function createChrome(deps) {
         rotation = preset.length ? preset : skillPresets.defaultSkills();
         autoAttack = true;
         autoAttackError = null;
-        conditionError = null;
+        rowErrors.clear();
+        priorityErrors.clear();
         generation++;
         autoStep = 0;
         specialCombo = null;
@@ -621,6 +644,9 @@ function createChrome(deps) {
         const skills = skillPresets.parsePreset(text);
         customRotation = skills.length > 0;
         rotation = skills.length ? skills : skillPresets.defaultSkills();
+        autoAttackError = null;
+        rowErrors.clear();
+        priorityErrors.clear();
         generation++;
         autoStep = 0;
         specialCombo = null;
@@ -760,7 +786,7 @@ function createChrome(deps) {
         /** One pass of the Auto Attack loop, the seam the tests drive. */
         tick: tick,
         /** Give the loop back: a plugin that stops must not leave a timer ticking. */
-        stop: function () { generation++; autoAttack = false; stopTimer(); },
+        stop: function () { generation++; autoAttack = false; autoAttackError = null; rowErrors.clear(); priorityErrors.clear(); stopTimer(); },
         autoAttack: function () { return autoAttack; },
         toggleAutoAttack: toggleAutoAttack,
         useSkillText: useSkillText,
