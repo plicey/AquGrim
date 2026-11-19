@@ -522,6 +522,7 @@ test('an unreadable aura read is reported while the rest of the rotation casts',
   const state = await h.chrome.state();
   assert.match(state.values.autoAttackError, /Arcane Flux.*no tap/);
   assert.match(state.error, /Arcane Flux.*no tap/);
+  assert.match(h.chrome.status(), /Arcane Flux.*no tap/, 'the light status read carries it');
   assert.strictEqual(state.values.autoAttack, true, 'the loop keeps running');
   h.chrome.stop();
 });

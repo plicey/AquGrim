@@ -377,11 +377,8 @@ function createChrome(deps) {
                 return null;
             }
             rowErrors.delete(skill);
-            if (skill.op === '>') return stacks > skill.value;
-            if (skill.op === '<') return stacks < skill.value;
-            if (skill.op === '>=') return stacks >= skill.value;
-            if (skill.op === '<=') return stacks <= skill.value;
-            return stacks === skill.value;
+            const result = skillPresets.compare(skill.op, stacks, skill.value, true);
+            return result === null ? null : result;
         }
         const currentName = skill.isMp ? 'mana' : 'health';
         const maxName = skill.isMp ? 'manaMax' : 'healthMax';
@@ -400,11 +397,8 @@ function createChrome(deps) {
         }
         rowErrors.delete(skill);
         const percent = now / max * 100;
-        if (skill.type && skill.op === '>') return percent > skill.value;
-        if (skill.type && skill.op === '<') return percent < skill.value;
-        if (skill.op === '>' || skill.op === '>=') return percent >= skill.value;
-        if (skill.op === '<' || skill.op === '<=') return percent <= skill.value;
-        return percent === skill.value;
+        const result = skillPresets.compare(skill.op, percent, skill.value, skill.type !== undefined);
+        return result === null ? null : result;
     }
 
     /** The unsaved draft loaded for this character's class, read when Auto Attack starts. */
@@ -785,6 +779,8 @@ function createChrome(deps) {
     return {
         controls: controls,
         state: state,
+        /** The light strip status read: the condition/cast reason, without the full state. */
+        status: function () { return firstRowError() || autoAttackError || null; },
         action: action,
         /** One pass of the Auto Attack loop, the seam the tests drive. */
         tick: tick,

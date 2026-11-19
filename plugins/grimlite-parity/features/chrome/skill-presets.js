@@ -31,12 +31,27 @@ const SELECTION_KEY = 'autoAttackSelectedPresets';
 const DRAFT_KEY = 'autoAttackDrafts';
 const CONFIG_FILE = 'ClientConfig.cfg';
 const FILE_PRESET_NAME = 'ClientConfig';
+const OPERATORS = ['>', '>=', '<', '<=', '='];
 const DEFAULT_SKILLS = [
     { index: '1', safe: false, wait: false },
     { index: '2', safe: false, wait: false },
     { index: '3', safe: false, wait: false },
     { index: '4', safe: false, wait: false }
 ];
+
+/**
+ * One condition comparison for every consumer. `strict` is the block/spam rule (`>`/`<` are
+ * strict); legacy inline conditions use the inclusive rule. An unknown operator answers null,
+ * which the caller treats as unreadable rather than silently as equality.
+ */
+function compare(op, actual, expected, strict) {
+    if (op === '>') return strict ? actual > expected : actual >= expected;
+    if (op === '<') return strict ? actual < expected : actual <= expected;
+    if (op === '>=') return actual >= expected;
+    if (op === '<=') return actual <= expected;
+    if (op === '=') return actual === expected;
+    return null;
+}
 
 function defaultSkills() {
     return DEFAULT_SKILLS.map(function (skill) { return Object.assign({}, skill); });
@@ -455,7 +470,9 @@ module.exports = {
     DRAFT_KEY: DRAFT_KEY,
     CONFIG_FILE: CONFIG_FILE,
     FILE_PRESET_NAME: FILE_PRESET_NAME,
+    OPERATORS: OPERATORS,
     DEFAULT_SKILLS: DEFAULT_SKILLS,
+    compare: compare,
     defaultSkills: defaultSkills,
     parsePreset: parsePreset,
     parseConfigValues: parseConfigValues,

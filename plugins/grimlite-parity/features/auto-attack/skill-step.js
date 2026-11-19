@@ -1,9 +1,12 @@
 (function () {
+  // The parser also accepts the strict > and < forms; the builder offers the inclusive ones.
+  var COMPARATORS = ['>=', '<=', '='];
+
   function format(skill, condition, comparator, threshold) {
     if (!/^[0-4]$/.test(skill)) throw new Error('Choose a skill from 0 to 4.');
     if (condition === '') return skill;
     if (condition !== 'SH' && condition !== 'SM') throw new Error('Choose HP or MP.');
-    if (['>=', '<=', '='].indexOf(comparator) === -1) throw new Error('Choose a comparison.');
+    if (COMPARATORS.indexOf(comparator) === -1) throw new Error('Choose a comparison.');
     if (!/^\d+$/.test(threshold) || Number(threshold) > 100) {
       throw new Error('Enter a whole percentage from 0 to 100.');
     }
@@ -38,7 +41,7 @@
     if (/[{};,"\r\n]/.test(clean)) {
       throw new Error('Aura names cannot contain { } ; , " or line breaks.');
     }
-    if (['>=', '<=', '='].indexOf(comparator) === -1) throw new Error('Choose a comparison.');
+    if (COMPARATORS.indexOf(comparator) === -1) throw new Error('Choose a comparison.');
     if (!/^\d+$/.test(String(stacks))) throw new Error('Enter whole stacks of 0 or more.');
     var body = String(text === null || text === undefined ? '' : text).trim() || '1;2';
     if (/[{}]|\b(if|else|cooldown)\b/i.test(body)) throw new Error('Blocks cannot be nested.');

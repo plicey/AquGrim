@@ -218,6 +218,21 @@ function createGameChrome(deps) {
             });
     }
 
+    /**
+     * The plugin's light strip reason, not the full state. A strip polls this while Auto Attack
+     * runs, so it must not do the reads `state()` does; a missing declaration is no reason.
+     */
+    function status(win) {
+        const declaration = declared();
+        if (!available() || !declaration || typeof declaration.status !== 'function') return null;
+        try {
+            const reason = declaration.status({ win: win });
+            return reason === null || reason === undefined ? null : String(reason);
+        } catch (error) {
+            return null;
+        }
+    }
+
     return {
         available: available,
         height: height,
@@ -228,6 +243,7 @@ function createGameChrome(deps) {
         stripHeight: stripHeight,
         contentSize: contentSize,
         pageView: pageView,
+        status: status,
         setEnabled: setEnabled,
         dispatch: dispatch
     };

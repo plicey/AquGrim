@@ -589,6 +589,18 @@ test('aura blocks parse for self and target and the builder generates them', () 
   });
 });
 
+test('condition comparisons share one strict/inclusive rule', () => {
+  assert.deepStrictEqual(presets.OPERATORS, ['>', '>=', '<', '<=', '=']);
+  assert.strictEqual(presets.compare('>', 50, 50, true), false, 'a block > is strict');
+  assert.strictEqual(presets.compare('>', 50, 50, false), true, 'a legacy inline > is inclusive');
+  assert.strictEqual(presets.compare('<', 50, 50, true), false, 'a block < is strict');
+  assert.strictEqual(presets.compare('<', 50, 50, false), true, 'a legacy inline < is inclusive');
+  assert.strictEqual(presets.compare('>=', 50, 50, true), true);
+  assert.strictEqual(presets.compare('<=', 50, 50, true), true);
+  assert.strictEqual(presets.compare('=', 50, 50, true), true);
+  assert.strictEqual(presets.compare('!', 50, 50, true), null, 'an unknown operator is not equality');
+});
+
 test('await waits and casts only its own skill, including inside If blocks', () => {
   assert.deepStrictEqual(presets.parsePreset('1; await 2;3'), [
     { index: '1', safe: false, wait: false },

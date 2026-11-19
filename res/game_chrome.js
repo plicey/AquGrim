@@ -102,7 +102,6 @@
     }
 
     var toastTimer = null;
-    var actionStatusUntil = 0;
     function toast(text, failed) {
       var box = document.getElementById('actionToast');
       if (!box || !text) return;
@@ -131,10 +130,7 @@
     function show(text) {
       // An action with no message leaves the drawn view's own status (a refused condition or
       // cast) in place instead of blanking it.
-      if (!text) return;
-      var box = document.getElementById('chromeStatus');
-      if (box) box.textContent = text;
-      actionStatusUntil = Date.now() + 4000;
+      if (text) showAction(text);
     }
 
     function openContextEditor(entry, button) {
@@ -403,6 +399,7 @@
       });
       if (view) view.values = Object.assign({}, view.values, selected);
       current = view;
+      statusReason = (view && view.error) || '';
       // The strip is hidden and the surface keeps the whole page: that is the no-chrome mode the
       // screenshot and recording paths size their capture from.
       strip.style.display = view && view.enabled ? 'flex' : 'none';
@@ -414,10 +411,11 @@
         strip.appendChild(control(entry, view));
       });
       strip.appendChild(renderScaleControl());
-      strip.appendChild(el('span', 'status', view.error || ''));
+      strip.appendChild(el('span', 'status', ''));
       strip.lastChild.id = 'chromeStatus';
       strip.lastChild.setAttribute('role', 'status');
       strip.lastChild.setAttribute('aria-live', 'polite');
+      renderStatus();
       if (document.activeElement === document.body) focusGame();
     }
 
@@ -437,16 +435,38 @@
       show(String(error && error.message ? error.message : error));
     });
 
-    // Auto Attack records a refused condition or cast in the main process while it keeps ticking;
-    // keep the status line current instead of waiting for the next click or window focus.
+    // The status line has one writer: an action message wins for four seconds, then the
+    // condition/cast reason the main process holds. Auto Attack keeps ticking, so the reason is
+    // polled through the light status call instead of the full view (which refreshes sets).
+    var statusReason = '';
+    var statusAction = '';
+    var actionStatusUntil = 0;
     var refreshingStatus = false;
+    function renderStatus() {
+      var box = document.getElementById('chromeStatus');
+      if (!box) return;
+      var action = Date.now() < actionStatusUntil ? statusAction : '';
+      box.textContent = action || statusReason || '';
+    }
+    function setReason(text) {
+      statusReason = text ? String(text) : '';
+      renderStatus();
+    }
+    function showAction(text) {
+      statusAction = text;
+      actionStatusUntil = Date.now() + 4000;
+      renderStatus();
+    }
     function refreshStatusReason() {
-      if (document.hidden || refreshingStatus || Date.now() < actionStatusUntil) return;
+      if (document.hidden || refreshingStatus || !current || !current.enabled ||
+          !current.values || current.values.autoAttack !== true) return;
+      var ask;
+      if (typeof api.status === 'function') ask = api.status();
+      else if (typeof api.getView === 'function') ask = api.getView().then(function (view) { return view && view.error; });
+      else return;
       refreshingStatus = true;
-      Promise.resolve(api.getView()).then(function (view) {
-        var next = (view && view.error) || '';
-        var box = document.getElementById('chromeStatus');
-        if (box && box.textContent !== next) box.textContent = next;
+      Promise.resolve(ask).then(function (reason) {
+        setReason(reason);
       }, function () {}).then(function () { refreshingStatus = false; });
     }
     if (typeof window.setInterval === 'function') window.setInterval(refreshStatusReason, 1000);
