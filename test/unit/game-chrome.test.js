@@ -103,6 +103,18 @@ test('the render scale is per-window, bounded, and travels with the page view', 
   assert.strictEqual(on.chrome.setRenderScale(on.win, 'nonsense'), 100);
 });
 
+test('a plugin state error reaches the page status line', async () => {
+  const on = harness(Object.assign({}, DECLARATION, {
+    state: function () {
+      return { values: { bank: 'x' }, options: {}, error: 'aura "Arcane Flux": no tap' };
+    }
+  }));
+  const view = await on.chrome.pageView(on.win);
+  assert.strictEqual(view.error, 'aura "Arcane Flux": no tap');
+  assert.deepStrictEqual(view.values, { bank: 'x' });
+  assert.deepStrictEqual(view.options, {});
+});
+
 test('toggling returns the window to exactly the plain size and back, and says so on the page', async () => {
   const on = harness(DECLARATION);
   assert.deepStrictEqual(on.chrome.setEnabled(on.win, false), { enabled: false, height: 27 });

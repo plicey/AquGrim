@@ -521,6 +521,7 @@ test('an unreadable aura read is reported while the rest of the rotation casts',
   assert.deepStrictEqual(casts(h), [['useSkill', '1']], 'the rest of the rotation still casts');
   const state = await h.chrome.state();
   assert.match(state.values.autoAttackError, /Arcane Flux.*no tap/);
+  assert.match(state.error, /Arcane Flux.*no tap/);
   assert.strictEqual(state.values.autoAttack, true, 'the loop keeps running');
   h.chrome.stop();
 });
@@ -538,9 +539,27 @@ test('a refused condition keeps its reason across other conditions and rotation 
   let state = await h.chrome.state();
   assert.match(state.values.autoAttackError, /Bad.*no tap/,
     'a later condition read does not clear the failed one');
+  assert.match(state.error, /Bad.*no tap/, 'the strip reason is the same failure');
   h.chrome.useSkillText('1;2', true);
   state = await h.chrome.state();
   assert.strictEqual(state.values.autoAttackError, null, 'a rotation change clears the reasons');
+  assert.strictEqual(state.error, null, 'and the strip reason with it');
+  h.chrome.stop();
+});
+
+test('ending Auto Attack on sign-out clears the last reason', async () => {
+  const h = await rotationHarness('if aura "Arcane Flux">=1 { 3 };1', {
+    selfAura: function () { throw new Error('no tap'); }
+  });
+  await h.chrome.tick();
+  let state = await h.chrome.state();
+  assert.match(state.error, /no tap/);
+  h.session.signedIn = async function () { return false; };
+  await h.chrome.tick();
+  state = await h.chrome.state();
+  assert.strictEqual(state.values.autoAttack, false, 'the loop stopped');
+  assert.strictEqual(state.values.autoAttackError, null, 'the aura reason is gone');
+  assert.strictEqual(state.error, engine.ERRORS.notSignedIn, 'the strip says why the loop stopped');
   h.chrome.stop();
 });
 
@@ -615,8 +634,10 @@ test('a refused priority cast does not stop the rest of the rotation', async () 
   await h.chrome.tick();
   assert.deepStrictEqual(casts(h).map(function (call) { return call[1]; }), ['4', '1'],
     'the refused priority skill is followed by the normal rotation');
-  assert.match((await h.chrome.state()).values.autoAttackError, /skill 4/,
+  const state = await h.chrome.state();
+  assert.match(state.values.autoAttackError, /skill 4/,
     'the strip keeps the priority refusal after the normal cast');
+  assert.match(state.error, /skill 4/, 'the status line carries the same refusal');
   assert.ok(logs.some(function (line) { return /skill 4/.test(line); }), JSON.stringify(logs));
   h.chrome.stop();
 });

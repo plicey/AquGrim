@@ -200,6 +200,13 @@ function createChrome(deps) {
         return null;
     }
 
+    /** Forget every condition/priority reason and the last cast error. */
+    function clearReasons() {
+        autoAttackError = null;
+        rowErrors.clear();
+        priorityErrors.clear();
+    }
+
     function controls() {
         const words = messages();
         return [
@@ -241,10 +248,11 @@ function createChrome(deps) {
 
     async function state() {
         const alive = await signedIn();
+        const reason = firstRowError() || autoAttackError || null;
         const values = {
             startBot: botState(),
             autoAttack: autoAttack,
-            autoAttackError: firstRowError() || autoAttackError,
+            autoAttackError: reason,
             cell: '',
             pad: ''
         };
@@ -254,7 +262,7 @@ function createChrome(deps) {
         const options = { cell: cells.slice(), pad: PADS,
             equipmentSet: savedSets.map(function (set) { return { label: set.name, value: set.path }; }) };
         if (alive.ok !== true) {
-            return { values: values, options: options, error: alive.error || null };
+            return { values: values, options: options, error: reason || alive.error || null };
         }
         // The cell box fills the way cbCells_Click fills it: from the game's own cell list, on
         // this redraw and on the refresh button (Root.cs:392, Root.cs:1715). A list the game will
@@ -268,7 +276,7 @@ function createChrome(deps) {
         return {
             values: values,
             options: options,
-            error: here[0].error || here[1].error || null
+            error: reason || here[0].error || here[1].error || null
         };
     }
 
@@ -473,6 +481,7 @@ function createChrome(deps) {
         if (alive.ok !== true) {
             // The reference's loop condition: not signed in ends it, and the box goes back off.
             autoAttack = false;
+            clearReasons();
             stopTimer();
             return;
         }
@@ -607,9 +616,7 @@ function createChrome(deps) {
         const requested = ++generation;
         if (checked !== true) {
             autoAttack = false;
-            autoAttackError = null;
-            rowErrors.clear();
-            priorityErrors.clear();
+            clearReasons();
             stopTimer();
             return { ok: true, error: null };
         }
@@ -624,9 +631,7 @@ function createChrome(deps) {
         customRotation = preset.length > 0;
         rotation = preset.length ? preset : skillPresets.defaultSkills();
         autoAttack = true;
-        autoAttackError = null;
-        rowErrors.clear();
-        priorityErrors.clear();
+        clearReasons();
         generation++;
         autoStep = 0;
         specialCombo = null;
@@ -644,9 +649,7 @@ function createChrome(deps) {
         const skills = skillPresets.parsePreset(text);
         customRotation = skills.length > 0;
         rotation = skills.length ? skills : skillPresets.defaultSkills();
-        autoAttackError = null;
-        rowErrors.clear();
-        priorityErrors.clear();
+        clearReasons();
         generation++;
         autoStep = 0;
         specialCombo = null;
@@ -786,7 +789,7 @@ function createChrome(deps) {
         /** One pass of the Auto Attack loop, the seam the tests drive. */
         tick: tick,
         /** Give the loop back: a plugin that stops must not leave a timer ticking. */
-        stop: function () { generation++; autoAttack = false; autoAttackError = null; rowErrors.clear(); priorityErrors.clear(); stopTimer(); },
+        stop: function () { generation++; autoAttack = false; clearReasons(); stopTimer(); },
         autoAttack: function () { return autoAttack; },
         toggleAutoAttack: toggleAutoAttack,
         useSkillText: useSkillText,

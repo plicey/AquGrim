@@ -148,6 +148,7 @@ function createGameChrome(deps) {
                 state = state || {};
                 view.values = state.values || {};
                 view.options = state.options || {};
+                if (state.error) view.error = state.error;
                 return view;
             }, function (error) {
                 // A state read that refused is a strip with its boxes empty, never a window

@@ -128,6 +128,9 @@
     }
 
     function show(text) {
+      // An action with no message leaves the drawn view's own status (a refused condition or
+      // cast) in place instead of blanking it.
+      if (!text) return;
       var box = document.getElementById('chromeStatus');
       if (box) box.textContent = text;
     }
