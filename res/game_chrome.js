@@ -102,6 +102,7 @@
     }
 
     var toastTimer = null;
+    var actionStatusUntil = 0;
     function toast(text, failed) {
       var box = document.getElementById('actionToast');
       if (!box || !text) return;
@@ -133,6 +134,7 @@
       if (!text) return;
       var box = document.getElementById('chromeStatus');
       if (box) box.textContent = text;
+      actionStatusUntil = Date.now() + 4000;
     }
 
     function openContextEditor(entry, button) {
@@ -434,4 +436,18 @@
       strip.style.display = 'none';
       show(String(error && error.message ? error.message : error));
     });
+
+    // Auto Attack records a refused condition or cast in the main process while it keeps ticking;
+    // keep the status line current instead of waiting for the next click or window focus.
+    var refreshingStatus = false;
+    function refreshStatusReason() {
+      if (document.hidden || refreshingStatus || Date.now() < actionStatusUntil) return;
+      refreshingStatus = true;
+      Promise.resolve(api.getView()).then(function (view) {
+        var next = (view && view.error) || '';
+        var box = document.getElementById('chromeStatus');
+        if (box && box.textContent !== next) box.textContent = next;
+      }, function () {}).then(function () { refreshingStatus = false; });
+    }
+    if (typeof window.setInterval === 'function') window.setInterval(refreshStatusReason, 1000);
 })();

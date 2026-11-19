@@ -474,6 +474,40 @@ test('toolbar button shows progress and reports success or failure in an expirin
   assert.strictEqual(button.disabled, false);
 });
 
+test('the wrapper keeps a refused aura reason on the status line between clicks', async () => {
+  const source = fs.readFileSync(path.join(REPO, 'res/game_chrome.js'), 'utf8');
+  const start = source.indexOf('    // Auto Attack records a refused condition');
+  const marker = "    if (typeof window.setInterval === 'function') window.setInterval(refreshStatusReason, 1000);";
+  const end = source.indexOf(marker, start) + marker.length;
+  assert.ok(start !== -1 && end > start, 'the status refresh block is present');
+  let tick = null;
+  let interval = null;
+  const status = { textContent: '' };
+  const context = {
+    actionStatusUntil: 0,
+    api: { getView: function () { return Promise.resolve({ error: 'aura "Arcane Flux": no tap' }); } },
+    document: { hidden: false, getElementById: function (id) { return id === 'chromeStatus' ? status : null; } },
+    window: {
+      setInterval: function (fn, ms) { tick = fn; interval = ms; return 1; }
+    }
+  };
+  require('vm').runInNewContext(source.slice(start, end), context);
+  assert.strictEqual(interval, 1000);
+  tick();
+  await new Promise(setImmediate);
+  assert.strictEqual(status.textContent, 'aura "Arcane Flux": no tap',
+    'the reason reaches the strip without a control action');
+  context.actionStatusUntil = Date.now() + 10000;
+  status.textContent = 'action message';
+  tick();
+  await new Promise(setImmediate);
+  assert.strictEqual(status.textContent, 'action message', 'an action message gets its moment');
+  context.actionStatusUntil = 0;
+  tick();
+  await new Promise(setImmediate);
+  assert.strictEqual(status.textContent, 'aura "Arcane Flux": no tap', 'then the reason returns');
+});
+
 test('chrome passes context editor declarations and responses through dispatch', async () => {
   const editor = { title: 'Presets', selected: 'Farm', text: '2;4', items: [] };
   const h = harness(Object.assign({}, DECLARATION, {
