@@ -201,6 +201,19 @@ function createChrome(deps) {
     }
 
     /**
+     * A closed If takes its body rows' reasons with it. The gate row's own unreadable reason is
+     * set by safeAllows and stays; only the body's stale entries and the gate's priority refusal
+     * go. Called whenever the gate is not true, from both the priority and normal walk paths.
+     */
+    function closeBlock(index) {
+        const row = rotation[index];
+        if (!row || row.type !== 'if') return;
+        priorityErrors.delete(row);
+        const end = row.skip === undefined ? index + 1 : Math.min(row.skip, rotation.length);
+        for (let i = index + 1; i < end; i++) rowErrors.delete(rotation[i]);
+    }
+
+    /**
      * The strip's aggregate reason, in the page's own order: row/cast reasons, then the
      * signed-in refusal, then the cell and pad reads. `state()` and `status()` share this rule.
      */
@@ -461,10 +474,7 @@ function createChrome(deps) {
             if (!body) continue;
             const gate = await checked(safeAllows(row, version));
             if (gate !== true) {
-                if (gate === false) {
-                    priorityErrors.delete(row);
-                    if (body.safe === true) rowErrors.delete(body);
-                }
+                closeBlock(i);
                 continue;
             }
             if (body.safe === true) {
@@ -580,7 +590,9 @@ function createChrome(deps) {
                     if (autoStep >= rotation.length) { autoStep = 0; return; }
                     continue;
                 }
-                autoStep = (await checked(safeAllows(skill, version))) ? autoStep + 1 : skill.skip;
+                const gate = await checked(safeAllows(skill, version));
+                if (gate !== true) closeBlock(autoStep);
+                autoStep = gate === true ? autoStep + 1 : skill.skip;
                 if (autoStep >= rotation.length) { autoStep = 0; return; }
                 continue;
             }

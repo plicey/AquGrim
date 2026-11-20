@@ -683,6 +683,42 @@ test('a closed priority gate clears a refusal when the block is the whole rotati
   h.chrome.stop();
 });
 
+test('a closed or unreadable aura gate drops its body safe reason', async () => {
+  const gate = { value: 1 };
+  const h = await rotationHarness('if aura "Arcane Flux">=1 {3:SH>50}', {
+    selfAura: function () {
+      if (gate.value === null) throw new Error('no tap');
+      return gate.value;
+    },
+    health: function () { throw new Error('no health'); },
+    skillAvailable: 0
+  });
+  await h.chrome.tick();
+  assert.match((await h.chrome.state()).error, /no health/);
+  gate.value = null;
+  await h.chrome.tick();
+  const state = await h.chrome.state();
+  assert.match(state.error, /aura "Arcane Flux".*no tap/);
+  assert.doesNotMatch(state.error, /no health/, 'the closed gate drops the body reason');
+  h.chrome.stop();
+});
+
+test('a closed multi-skill gate drops its body reason', async () => {
+  const x = { value: 1 };
+  const h = await rotationHarness('if aura "Arcane Flux">=1 {3:SH>50;4};1', {
+    selfAura: function () { return x.value; },
+    health: function () { throw new Error('no health'); },
+    skillAvailable: 0
+  });
+  await h.chrome.tick();
+  assert.match((await h.chrome.state()).error, /no health/);
+  x.value = 0;
+  for (let i = 0; i < 5; i++) await h.chrome.tick();
+  const state = await h.chrome.state();
+  assert.doesNotMatch(state.error || '', /no health/, 'the walk drops the body reason too');
+  h.chrome.stop();
+});
+
 test('multi-skill and basic-attack If blocks keep their rotation place', async () => {
   const block = await rotationHarness('spam 0 60000ms;if aura "Arcane Flux">=8 {4;3}',
     { selfAura: 8, skillAvailable: 0 });
