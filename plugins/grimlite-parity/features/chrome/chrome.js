@@ -200,6 +200,19 @@ function createChrome(deps) {
         return null;
     }
 
+    /**
+     * The strip's aggregate reason, in the page's own order: row/cast reasons, then the
+     * signed-in refusal, then the cell and pad reads. `state()` and `status()` share this rule.
+     */
+    function reasonFrom(alive, cell, pad) {
+        const reason = firstRowError() || autoAttackError || null;
+        if (reason) return reason;
+        if (alive && alive.ok !== true) return alive.error || null;
+        if (cell && cell.error) return cell.error;
+        if (pad && pad.error) return pad.error;
+        return null;
+    }
+
     /** Forget every condition/priority reason and the last cast error. */
     function clearReasons() {
         autoAttackError = null;
@@ -248,11 +261,12 @@ function createChrome(deps) {
 
     async function state() {
         const alive = await signedIn();
-        const reason = firstRowError() || autoAttackError || null;
+        const valuesReason = firstRowError() || autoAttackError || null;
+        const reason = reasonFrom(alive);
         const values = {
             startBot: botState(),
             autoAttack: autoAttack,
-            autoAttackError: reason,
+            autoAttackError: valuesReason,
             cell: '',
             pad: ''
         };
@@ -262,7 +276,7 @@ function createChrome(deps) {
         const options = { cell: cells.slice(), pad: PADS,
             equipmentSet: savedSets.map(function (set) { return { label: set.name, value: set.path }; }) };
         if (alive.ok !== true) {
-            return { values: values, options: options, error: reason || alive.error || null };
+            return { values: values, options: options, error: reason };
         }
         // The cell box fills the way cbCells_Click fills it: from the game's own cell list, on
         // this redraw and on the refresh button (Root.cs:392, Root.cs:1715). A list the game will
@@ -276,7 +290,7 @@ function createChrome(deps) {
         return {
             values: values,
             options: options,
-            error: reason || here[0].error || here[1].error || null
+            error: reasonFrom(alive, here[0], here[1])
         };
     }
 
@@ -445,8 +459,21 @@ function createChrome(deps) {
             const row = rotation[i];
             const body = rotation[i + 1];
             if (!body) continue;
-            if ((await checked(safeAllows(row, version))) !== true) continue;
-            if (body.safe === true && (await checked(safeAllows(body, version))) !== true) continue;
+            const gate = await checked(safeAllows(row, version));
+            if (gate !== true) {
+                if (gate === false) {
+                    priorityErrors.delete(row);
+                    if (body.safe === true) rowErrors.delete(body);
+                }
+                continue;
+            }
+            if (body.safe === true) {
+                const allowed = await checked(safeAllows(body, version));
+                if (allowed !== true) {
+                    if (allowed === false) priorityErrors.delete(row);
+                    continue;
+                }
+            }
             const ready = await checked(read('skillAvailable', [body.index]));
             if (!isReady(ready)) continue;
             // Confirm this cast: a refused gated skill must not stop the rest of the rotation.
@@ -785,12 +812,10 @@ function createChrome(deps) {
          * cell/pad refusals the page shows beside the controls.
          */
         status: async function () {
-            const reason = firstRowError() || autoAttackError || null;
-            if (reason) return reason;
             const alive = await signedIn();
-            if (alive.ok !== true) return alive.error || null;
+            if (alive.ok !== true) return reasonFrom(alive);
             const here = await Promise.all([read('cell'), read('pad')]);
-            return here[0].error || here[1].error || null;
+            return reasonFrom(alive, here[0], here[1]);
         },
         action: action,
         /** One pass of the Auto Attack loop, the seam the tests drive. */
