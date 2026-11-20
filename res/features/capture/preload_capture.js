@@ -11,6 +11,7 @@ if (/\/ruffle[-_]wrapper\.html$/.test(window.location.pathname)) {
 // declared: this exposes the two calls, and pushes a new view whenever the layout changes.
 contextBridge.exposeInMainWorld("aquastarChrome", {
   getView: function () { return ipcRenderer.invoke("getGameChromeView"); },
+  status: function () { return ipcRenderer.invoke("getGameChromeStatus"); },
   action: function (id, args) { return ipcRenderer.invoke("gameChromeAction", id, args); },
   setRenderScale: function (value) { return ipcRenderer.invoke("setGameRenderScale", value); },
   onView: function (listener) {

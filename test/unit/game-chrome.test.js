@@ -103,6 +103,27 @@ test('the render scale is per-window, bounded, and travels with the page view', 
   assert.strictEqual(on.chrome.setRenderScale(on.win, 'nonsense'), 100);
 });
 
+test('a plugin state error reaches the page status line', async () => {
+  const on = harness(Object.assign({}, DECLARATION, {
+    state: function () {
+      return { values: { bank: 'x' }, options: {}, error: 'aura "Arcane Flux": no tap' };
+    }
+  }));
+  const view = await on.chrome.pageView(on.win);
+  assert.strictEqual(view.error, 'aura "Arcane Flux": no tap');
+  assert.deepStrictEqual(view.values, { bank: 'x' });
+  assert.deepStrictEqual(view.options, {});
+});
+
+test('the strip status is the plugin light reason, not the full state', async () => {
+  const on = harness(Object.assign({}, DECLARATION, {
+    status: function () { return 'aura "Arcane Flux": no tap'; }
+  }));
+  assert.strictEqual(await on.chrome.status(on.win), 'aura "Arcane Flux": no tap');
+  const plain = harness(DECLARATION);
+  assert.strictEqual(await plain.chrome.status(plain.win), null);
+});
+
 test('toggling returns the window to exactly the plain size and back, and says so on the page', async () => {
   const on = harness(DECLARATION);
   assert.deepStrictEqual(on.chrome.setEnabled(on.win, false), { enabled: false, height: 27 });
@@ -460,6 +481,46 @@ test('toolbar button shows progress and reports success or failure in an expirin
   assert.strictEqual(duration, 8000);
   assert.strictEqual(status, '');
   assert.strictEqual(button.disabled, false);
+});
+
+test('the wrapper keeps a refused aura reason on the status line between clicks', async () => {
+  const source = fs.readFileSync(path.join(REPO, 'res/game_chrome.js'), 'utf8');
+  const start = source.indexOf('    // The status line has one writer');
+  const marker = "    if (typeof window.setInterval === 'function') window.setInterval(refreshStatusReason, 1000);";
+  const end = source.indexOf(marker, start) + marker.length;
+  assert.ok(start !== -1 && end > start, 'the status refresh block is present');
+  let tick = null;
+  let interval = null;
+  const status = { textContent: '' };
+  const context = {
+    api: { status: function () { return Promise.resolve('aura "Arcane Flux": no tap'); } },
+    current: { enabled: true },
+    document: { hidden: false, getElementById: function (id) { return id === 'chromeStatus' ? status : null; } },
+    window: {
+      setInterval: function (fn, ms) { tick = fn; interval = ms; return 1; }
+    },
+    Date: Date
+  };
+  require('vm').runInNewContext(source.slice(start, end), context);
+  assert.strictEqual(interval, 1000);
+  tick();
+  await new Promise(setImmediate);
+  assert.strictEqual(status.textContent, 'aura "Arcane Flux": no tap',
+    'the reason reaches the strip without a control action');
+  // The action message arrives while the status read is still in flight.
+  tick();
+  require('vm').runInNewContext('showAction("action message")', context);
+  await new Promise(setImmediate);
+  assert.strictEqual(status.textContent, 'action message', 'an action message wins over the poll');
+  context.actionStatusUntil = 0;
+  tick();
+  await new Promise(setImmediate);
+  assert.strictEqual(status.textContent, 'aura "Arcane Flux": no tap', 'then the reason returns');
+  context.api.status = function () { return Promise.resolve('the game is not signed in'); };
+  tick();
+  await new Promise(setImmediate);
+  assert.strictEqual(status.textContent, 'the game is not signed in',
+    'a state-read reason is carried by the light read too');
 });
 
 test('chrome passes context editor declarations and responses through dispatch', async () => {

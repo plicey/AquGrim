@@ -112,6 +112,51 @@ test('a value other than one replaces the stack even on a frame that is not new'
   assert.strictEqual(selfValue(cache, 'Chi'), 7);
 });
 
+test('a frame carrying the HUD stk count uses it instead of the effect val', () => {
+  // King's Echo sends `val: 24, stk: 8`: val is the effect value, stk is the 8 stacks the icon
+  // shows. The reference cache stored val; modern frames carry the display count beside it.
+  const cache = store();
+  cache.observe(fromServer(auraFrame('p:' + SELF,
+    auraOf('Residual Energy', 24, 10, { stk: 8 }))));
+  assert.strictEqual(selfValue(cache, 'Residual Energy'), 8);
+  assert.strictEqual(selfRemaining(cache, 'Residual Energy'), 10000);
+});
+
+test('a repeated stk frame is idempotent, so duplicate delivery cannot inflate the stacks', () => {
+  const clock = { at: 0 };
+  const cache = store(clock);
+  const frame = fromServer(auraFrame('p:' + SELF,
+    auraOf('Residual Energy', 24, 10, { stk: 8, isNew: false })));
+  cache.observe(frame);
+  cache.observe(frame);
+  cache.observe(frame);
+  assert.strictEqual(selfValue(cache, 'Residual Energy'), 8);
+  clock.at = 3000;
+  cache.observe(fromServer(auraFrame('p:' + SELF,
+    auraOf('Residual Energy', 99, 10, { stk: 3, isNew: false }))));
+  assert.strictEqual(selfValue(cache, 'Residual Energy'), 3, 'a later HUD count replaces it');
+});
+
+test('a stk update on a live aura keeps its own duration, not a shorter frame dur', () => {
+  const clock = { at: 0 };
+  const cache = store(clock);
+  cache.observe(fromServer(auraFrame('p:' + SELF, auraOf('Residual Energy', 24, 10, { stk: 8 }))));
+  clock.at = 3000;
+  cache.observe(fromServer(auraFrame('p:' + SELF,
+    auraOf('Residual Energy', 24, 2, { stk: 5, isNew: false }))));
+  assert.strictEqual(selfValue(cache, 'Residual Energy'), 5);
+  assert.strictEqual(selfRemaining(cache, 'Residual Energy'), 10000,
+    'the aura own 10 s, not the 2 s the frame carried');
+});
+
+test('a stk value that is not a number leaves the reference val rule in place', () => {
+  const cache = store();
+  cache.observe(fromServer(CHI));
+  cache.observe(fromServer(auraFrame('p:' + SELF,
+    auraOf('Chi', 1, 10, { stk: 'n/a', isNew: false }))));
+  assert.strictEqual(selfValue(cache, 'Chi'), 3, 'the val-one increment still applies');
+});
+
 test('a stack for an aura the bot never saw created is created rather than throwing', () => {
   // Upstream AuraIncrement dereferences a null entry here, which a live game can produce. The
   // frame itself says the aura is on the target, so the entry starts at the stack it acknowledged.

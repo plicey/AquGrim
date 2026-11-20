@@ -118,6 +118,12 @@ function createChrome(deps) {
 
     let autoAttack = false;
     let autoAttackError = null;
+    // Reasons are kept per parsed row, so one condition's success cannot clear another's
+    // refusal. A row's entry is dropped when that row succeeds, or when the rotation changes.
+    const rowErrors = new Map();
+    // A priority cast's own refusal lives beside the condition reasons: a normal cast's success
+    // clears autoAttackError, but this must stay until that gated cast succeeds.
+    const priorityErrors = new Map();
     let autoStep = 0;
     let rotation = skillPresets.defaultSkills();
     let customRotation = false;
@@ -181,6 +187,52 @@ function createChrome(deps) {
         });
     }
 
+    /** The loader's SkillAvailable answer: a finite number at or below zero means ready. */
+    function isReady(answer) {
+        return !answer.error && answer.value !== null && answer.value !== undefined &&
+            isFinite(Number(answer.value)) && Number(answer.value) <= 0;
+    }
+
+    /** The first row still holding a condition or priority-cast reason, for the strip. */
+    function firstRowError() {
+        for (const message of rowErrors.values()) return message;
+        for (const message of priorityErrors.values()) return message;
+        return null;
+    }
+
+    /**
+     * A closed If takes its body rows' reasons with it. The gate row's own unreadable reason is
+     * set by safeAllows and stays; only the body's stale entries and the gate's priority refusal
+     * go. Called whenever the gate is not true, from both the priority and normal walk paths.
+     */
+    function closeBlock(index) {
+        const row = rotation[index];
+        if (!row || row.type !== 'if') return;
+        priorityErrors.delete(row);
+        const end = row.skip === undefined ? index + 1 : Math.min(row.skip, rotation.length);
+        for (let i = index + 1; i < end; i++) rowErrors.delete(rotation[i]);
+    }
+
+    /**
+     * The strip's aggregate reason, in the page's own order: row/cast reasons, then the
+     * signed-in refusal, then the cell and pad reads. `state()` and `status()` share this rule.
+     */
+    function reasonFrom(alive, cell, pad) {
+        const reason = firstRowError() || autoAttackError || null;
+        if (reason) return reason;
+        if (alive && alive.ok !== true) return alive.error || null;
+        if (cell && cell.error) return cell.error;
+        if (pad && pad.error) return pad.error;
+        return null;
+    }
+
+    /** Forget every condition/priority reason and the last cast error. */
+    function clearReasons() {
+        autoAttackError = null;
+        rowErrors.clear();
+        priorityErrors.clear();
+    }
+
     function controls() {
         const words = messages();
         return [
@@ -222,10 +274,12 @@ function createChrome(deps) {
 
     async function state() {
         const alive = await signedIn();
+        const valuesReason = firstRowError() || autoAttackError || null;
+        const reason = reasonFrom(alive);
         const values = {
             startBot: botState(),
             autoAttack: autoAttack,
-            autoAttackError: autoAttackError,
+            autoAttackError: valuesReason,
             cell: '',
             pad: ''
         };
@@ -235,7 +289,7 @@ function createChrome(deps) {
         const options = { cell: cells.slice(), pad: PADS,
             equipmentSet: savedSets.map(function (set) { return { label: set.name, value: set.path }; }) };
         if (alive.ok !== true) {
-            return { values: values, options: options, error: alive.error || null };
+            return { values: values, options: options, error: reason };
         }
         // The cell box fills the way cbCells_Click fills it: from the game's own cell list, on
         // this redraw and on the refresh button (Root.cs:392, Root.cs:1715). A list the game will
@@ -249,7 +303,7 @@ function createChrome(deps) {
         return {
             values: values,
             options: options,
-            error: here[0].error || here[1].error || null
+            error: reasonFrom(alive, here[0], here[1])
         };
     }
 
@@ -282,11 +336,16 @@ function createChrome(deps) {
 
     // ------------------------------------------------------------------- Auto Attack
 
+    /** The session read behind Player.GetAuras(true/false, name): this character's stacks or a target's. */
+    function auraRead(name, target) {
+        return target ? read('targetAura', [name]) : read('selfAura', [name]);
+    }
+
     /** Player.GetAuras(true, name) for the class combos; an unreadable aura counts as none. */
     async function aura(name) {
-        const answer = await read('selfAura', [name]);
+        const answer = await auraRead(name, false);
         const value = Number(answer.value);
-        return isFinite(value) ? value : 0;
+        return !answer.error && isFinite(value) ? value : 0;
     }
 
     /** SpecialClassCombo: this class's own skills when its own condition holds, else none. */
@@ -332,6 +391,22 @@ function createChrome(deps) {
 
     /** Null means unreadable: conditional spam must pause rather than cast on an unknown value. */
     async function safeAllows(skill, version) {
+        // An aura block reads the tapped cache (bot/auras.js): absent or no target is 0 stacks.
+        if (skill.aura) {
+            const answer = await auraRead(skill.aura, skill.target === true);
+            ensureCurrent(version);
+            const stacks = Number(answer.value);
+            if (answer.error || answer.value === null || answer.value === undefined || !isFinite(stacks)) {
+                const message = (skill.target ? 'target aura "' : 'aura "') + skill.aura + '": ' +
+                    (answer.error || 'the game reports no stacks for that aura');
+                rowErrors.set(skill, message);
+                log(message);
+                return null;
+            }
+            rowErrors.delete(skill);
+            const result = skillPresets.compare(skill.op, stacks, skill.value, true);
+            return result === null ? null : result;
+        }
         const currentName = skill.isMp ? 'mana' : 'health';
         const maxName = skill.isMp ? 'manaMax' : 'healthMax';
         const answers = await Promise.all([read(currentName), read(maxName)]);
@@ -341,17 +416,16 @@ function createChrome(deps) {
         if (answers[0].error || answers[1].error ||
             answers.some(function (answer) { return answer.value === null || answer.value === undefined; }) ||
             !isFinite(now) || !isFinite(max) || max <= 0) {
-            autoAttackError = (skill.type === 'if' ? 'condition' : 'skill ' + skill.index) + ': ' +
+            const message = (skill.type === 'if' ? 'condition' : 'skill ' + skill.index) + ': ' +
                 (answers[0].error || answers[1].error || 'the game reports no health or mana percentage');
-            log(autoAttackError);
+            rowErrors.set(skill, message);
+            log(message);
             return null;
         }
+        rowErrors.delete(skill);
         const percent = now / max * 100;
-        if (skill.type && skill.op === '>') return percent > skill.value;
-        if (skill.type && skill.op === '<') return percent < skill.value;
-        if (skill.op === '>' || skill.op === '>=') return percent >= skill.value;
-        if (skill.op === '<' || skill.op === '<=') return percent <= skill.value;
-        return percent === skill.value;
+        const result = skillPresets.compare(skill.op, percent, skill.value, skill.type !== undefined);
+        return result === null ? null : result;
     }
 
     /** The unsaved draft loaded for this character's class, read when Auto Attack starts. */
@@ -380,6 +454,56 @@ function createChrome(deps) {
         finally { ticking = false; }
     }
 
+    /**
+     * A one-skill If is a priority check: the gated skill fires on its own as soon as its
+     * condition holds and it is ready, ahead of the rotation and of any spam, wait or delay
+     * hold. The parser marks such a block (`priority`), and the normal walk skips it so it is
+     * never cast twice. Multi-skill blocks keep their in-order semantics; slot 0 is never a
+     * priority rule because it would run every tick.
+     */
+    function isPriorityBlock(index) {
+        const row = rotation[index];
+        return !!row && row.type === 'if' && row.priority === true;
+    }
+
+    async function priorityConditional(version, checked) {
+        for (let i = 0; i < rotation.length; i++) {
+            if (!isPriorityBlock(i) || i + 1 === autoStep) continue;
+            const row = rotation[i];
+            const body = rotation[i + 1];
+            if (!body) continue;
+            const gate = await checked(safeAllows(row, version));
+            if (gate !== true) {
+                closeBlock(i);
+                continue;
+            }
+            if (body.safe === true) {
+                const allowed = await checked(safeAllows(body, version));
+                if (allowed !== true) {
+                    if (allowed === false) priorityErrors.delete(row);
+                    continue;
+                }
+            }
+            const ready = await checked(read('skillAvailable', [body.index]));
+            if (!isReady(ready)) continue;
+            // Confirm this cast: a refused gated skill must not stop the rest of the rotation.
+            const before = autoAttackError;
+            if (await checked(cast(body.index, version, false, true))) {
+                priorityErrors.delete(row);
+                return true;
+            }
+            // The priority refusal lives on its row. It is not mirrored into the normal cast slot,
+            // whose lifetime is the rotation rather than this gate; a gate that closes must be
+            // able to take the reason with it.
+            const fresh = autoAttackError !== before ? autoAttackError : null;
+            const message = fresh || ('skill ' + body.index + ': the game did not use it');
+            priorityErrors.set(row, message);
+            autoAttackError = null;
+            if (!fresh) log(message);
+        }
+        return false;
+    }
+
     async function attackTick(version) {
         async function checked(promise) {
             const value = await promise;
@@ -391,6 +515,7 @@ function createChrome(deps) {
         if (alive.ok !== true) {
             // The reference's loop condition: not signed in ends it, and the box goes back off.
             autoAttack = false;
+            clearReasons();
             stopTimer();
             return;
         }
@@ -411,6 +536,8 @@ function createChrome(deps) {
                 return;
             }
         }
+        // A single-skill conditional wins over the rotation and any hold.
+        if (await priorityConditional(version, checked)) return;
         const cooldowns = rotation.filter(function (row) { return row.type === 'cooldown'; });
         // One optional cast per gap, rotating priority; the main cursor never moves here.
         // A pending main cast gets first refusal when its cooldown finally expires.
@@ -418,8 +545,7 @@ function createChrome(deps) {
             if (pendingWait.until !== undefined && now() >= pendingWait.until) cooldownTurn = false;
             else if (pendingWait.ready) {
                 const ready = await checked(read('skillAvailable', [pendingWait.ready]));
-                if (!ready.error && ready.value !== null && ready.value !== undefined &&
-                    isFinite(Number(ready.value)) && Number(ready.value) <= 0) cooldownTurn = false;
+                if (isReady(ready)) cooldownTurn = false;
             }
         }
         if (cooldownTurn && (!rotation[autoStep] || rotation[autoStep].type !== 'spam')) {
@@ -427,8 +553,7 @@ function createChrome(deps) {
                 const slot = (cooldownStep + i) % cooldowns.length;
                 const skill = cooldowns[slot];
                 const ready = await checked(read('skillAvailable', [skill.index]));
-                if (!ready.error && ready.value !== null && ready.value !== undefined &&
-                    isFinite(Number(ready.value)) && Number(ready.value) <= 0) {
+                if (isReady(ready)) {
                     await checked(cast(skill.index, version, true));
                     cooldownStep = (slot + 1) % cooldowns.length;
                     cooldownTurn = false;
@@ -442,8 +567,7 @@ function createChrome(deps) {
         if (specialCombo.length) {
             const index = specialCombo[0];
             const ready = await checked(read('skillAvailable', [index]));
-            if (ready.error || ready.value === null || ready.value === undefined ||
-                !isFinite(Number(ready.value)) || Number(ready.value) > 0) {
+            if (!isReady(ready)) {
                 pendingWait = { ready: index };
                 return;
             }
@@ -460,7 +584,15 @@ function createChrome(deps) {
             const skill = rotation[autoStep];
             if (!skill) return;
             if (skill.type === 'if') {
-                autoStep = (await checked(safeAllows(skill, version))) ? autoStep + 1 : skill.skip;
+                if (isPriorityBlock(autoStep)) {
+                    // priorityConditional owns this row; the walk must not cast it again.
+                    autoStep = skill.skip;
+                    if (autoStep >= rotation.length) { autoStep = 0; return; }
+                    continue;
+                }
+                const gate = await checked(safeAllows(skill, version));
+                if (gate !== true) closeBlock(autoStep);
+                autoStep = gate === true ? autoStep + 1 : skill.skip;
                 if (autoStep >= rotation.length) { autoStep = 0; return; }
                 continue;
             }
@@ -475,8 +607,7 @@ function createChrome(deps) {
                     if (finished === null) return;
                     if ((skill.wait === true && !pendingWait.casted) || !finished) {
                         const ready = await checked(read('skillAvailable', [skill.index]));
-                        if (!ready.error && ready.value !== null && ready.value !== undefined &&
-                            isFinite(Number(ready.value)) && Number(ready.value) <= 0) {
+                        if (isReady(ready)) {
                             if (await checked(cast(skill.index, version, false, skill.wait === true))) pendingWait.casted = true;
                         }
                         return;
@@ -487,8 +618,7 @@ function createChrome(deps) {
                 if (now() < pendingWait.until) return;
             } else if (skill.type === 'ready' || skill.wait === true) {
                 const ready = await checked(read('skillAvailable', [skill.index]));
-                if (ready.error || ready.value === null || ready.value === undefined ||
-                    !isFinite(Number(ready.value)) || Number(ready.value) > 0) {
+                if (!isReady(ready)) {
                     pendingWait = { ready: skill.index };
                     return;
                 }
@@ -522,6 +652,7 @@ function createChrome(deps) {
         const requested = ++generation;
         if (checked !== true) {
             autoAttack = false;
+            clearReasons();
             stopTimer();
             return { ok: true, error: null };
         }
@@ -536,7 +667,7 @@ function createChrome(deps) {
         customRotation = preset.length > 0;
         rotation = preset.length ? preset : skillPresets.defaultSkills();
         autoAttack = true;
-        autoAttackError = null;
+        clearReasons();
         generation++;
         autoStep = 0;
         specialCombo = null;
@@ -554,6 +685,7 @@ function createChrome(deps) {
         const skills = skillPresets.parsePreset(text);
         customRotation = skills.length > 0;
         rotation = skills.length ? skills : skillPresets.defaultSkills();
+        clearReasons();
         generation++;
         autoStep = 0;
         specialCombo = null;
@@ -689,11 +821,22 @@ function createChrome(deps) {
     return {
         controls: controls,
         state: state,
+        /**
+         * The light strip status read: the same aggregate reason `state()` reports, without the
+         * equipment-sets refresh. The condition/cast reasons come first, then the signed-out and
+         * cell/pad refusals the page shows beside the controls.
+         */
+        status: async function () {
+            const alive = await signedIn();
+            if (alive.ok !== true) return reasonFrom(alive);
+            const here = await Promise.all([read('cell'), read('pad')]);
+            return reasonFrom(alive, here[0], here[1]);
+        },
         action: action,
         /** One pass of the Auto Attack loop, the seam the tests drive. */
         tick: tick,
         /** Give the loop back: a plugin that stops must not leave a timer ticking. */
-        stop: function () { generation++; autoAttack = false; stopTimer(); },
+        stop: function () { generation++; autoAttack = false; clearReasons(); stopTimer(); },
         autoAttack: function () { return autoAttack; },
         toggleAutoAttack: toggleAutoAttack,
         useSkillText: useSkillText,

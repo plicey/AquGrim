@@ -385,6 +385,38 @@ test('Insert uses the editor input flow and Default failures leave its text inta
   nodes.waitDuration.value = '0';
   nodes.insertSpam.handlers.click();
   assert.strictEqual(nodes.skills.value, validSpam, 'invalid spam never mutates text');
+  // Aura conditions reuse the When/comparison/stack controls and produce an If block.
+  nodes.skills.value = '1;2';
+  nodes.skills.setSelectionRange(2, 3);
+  nodes.stepCondition.value = 'TAURA';
+  nodes.stepCondition.handlers.change();
+  nodes.stepComparator.value = '=';
+  assert.strictEqual(nodes.stepThreshold.disabled, false);
+  assert.strictEqual(nodes.stepThreshold.max, '');
+  assert.strictEqual(nodes.thresholdLabel.textContent, 'Stacks');
+  assert.strictEqual(nodes.stepThreshold.value, '1', 'an aura starts at one stack');
+  nodes.stepAura.value = 'Chi';
+  nodes.stepThreshold.value = '0';
+  nodes.insertBlock.handlers.click();
+  assert.strictEqual(nodes.skills.value, '1;if target aura "Chi"=0 {\n2\n}');
+  assert.doesNotThrow(function () { presets.parsePreset(nodes.skills.value); });
+  nodes.stepCondition.value = 'AURA';
+  nodes.stepCondition.handlers.change();
+  nodes.stepComparator.value = '>=';
+  assert.strictEqual(nodes.stepThreshold.value, '0', 'switching scopes keeps the stacks');
+  assert.strictEqual(nodes.auraNameField.hidden, false);
+  nodes.stepSkill.value = '3';
+  nodes.stepThreshold.value = '2';
+  nodes.skills.value = '';
+  nodes.skills.setSelectionRange(0, 0);
+  nodes.insertStep.handlers.click();
+  assert.strictEqual(nodes.skills.value, 'if aura "Chi">=2 {\n3\n}');
+  assert.doesNotThrow(function () { presets.parsePreset(nodes.skills.value); });
+  nodes.stepCondition.value = '';
+  nodes.stepCondition.handlers.change();
+  assert.strictEqual(nodes.thresholdLabel.textContent, 'Percent');
+  assert.strictEqual(nodes.stepThreshold.value, '50');
+  assert.strictEqual(nodes.auraNameField.hidden, true);
   assert.doesNotThrow(function () { presets.parsePreset(nodes.skills.value); });
   assert.ok(/class="block-builder"/.test(page));
   assert.ok(/class="wait-builder"/.test(page));
@@ -497,6 +529,87 @@ test('block and wait builders validate before insertion and preserve surrounding
   });
 });
 
+test('aura blocks parse for self and target and the builder generates them', () => {
+  const step = require('../../plugins/grimlite-parity/features/auto-attack/skill-step.js');
+  assert.deepStrictEqual(presets.parsePreset('1; if aura "Arcane Flux">=2 { 3;4 }; if target aura "Chi"=0 { 2 }'), [
+    { index: '1', safe: false, wait: false },
+    { type: 'if', aura: 'Arcane Flux', op: '>=', value: 2, skip: 4 },
+    { index: '3', safe: false, wait: false },
+    { index: '4', safe: false, wait: false },
+    { type: 'if', aura: 'Chi', target: true, op: '=', value: 0, priority: true, skip: 6 },
+    { index: '2', safe: false, wait: false }
+  ]);
+  assert.deepStrictEqual(presets.parsePreset('IF AURA Arcane Flux > 1 { 2 }'), [
+    { type: 'if', aura: 'Arcane Flux', op: '>', value: 1, priority: true, skip: 2 },
+    { index: '2', safe: false, wait: false }
+  ]);
+  assert.deepStrictEqual(presets.parsePreset('if aura "Arcane Flux" >= 2 { 3 }')[0],
+    { type: 'if', aura: 'Arcane Flux', op: '>=', value: 2, priority: true, skip: 2 });
+  assert.deepStrictEqual(presets.parsePreset('if target aura "Chi"<=0 { 1 }')[0],
+    { type: 'if', aura: 'Chi', target: true, op: '<=', value: 0, priority: true, skip: 2 });
+  assert.strictEqual(presets.parsePreset('if aura "X">=1 {3;4}')[0].priority, undefined,
+    'a block with two skills stays in rotation order');
+  assert.strictEqual(presets.parsePreset('if aura "X">=1 {0}')[0].priority, undefined,
+    'slot 0 stays in the rotation');
+  assert.strictEqual(presets.parsePreset('if aura "X">=1 {3:SH>50}')[0].priority, true,
+    'a one-skill block with a safe step is still a priority check');
+
+  const self = step.aura('AURA', 'Arcane Flux', '>=', '2', '3;4');
+  assert.strictEqual(self, 'if aura "Arcane Flux">=2 {\n3;4\n}');
+  assert.deepStrictEqual(presets.parsePreset(self), [
+    { type: 'if', aura: 'Arcane Flux', op: '>=', value: 2, skip: 3 },
+    { index: '3', safe: false, wait: false },
+    { index: '4', safe: false, wait: false }
+  ]);
+  assert.strictEqual(step.aura('TAURA', 'Chi', '=', '0', ''),
+    'if target aura "Chi"=0 {\n1;2\n}');
+  assert.deepStrictEqual(presets.parsePreset(step.aura('TAURA', 'Chi', '<=', '0', '')), [
+    { type: 'if', aura: 'Chi', target: true, op: '<=', value: 0, skip: 3 },
+    { index: '1', safe: false, wait: false },
+    { index: '2', safe: false, wait: false }
+  ]);
+
+  ['', '   '].forEach(function (name) {
+    assert.throws(function () { step.aura('AURA', name, '>=', '1', '1'); }, /aura name/);
+  });
+  ['a;b', 'a,b', 'a{b', 'a"b', 'a\nb'].forEach(function (name) {
+    assert.throws(function () { step.aura('AURA', name, '>=', '1', '1'); }, /Aura names/);
+  });
+  ['-1', '1.5', '', 'NaN', '1e2'].forEach(function (stacks) {
+    assert.throws(function () { step.aura('AURA', 'X', '>=', stacks, '1'); }, /stacks/);
+  });
+  ['>', '<', '==', ''].forEach(function (comparator) {
+    assert.throws(function () { step.aura('AURA', 'X', comparator, '1', '1'); }, /comparison/);
+  });
+  assert.throws(function () { step.aura('SH', 'X', '>=', '1', '1'); }, /my aura/);
+  assert.throws(function () { step.aura('AURA', 'X', '>=', '1', 'if SH<50 { 1 }'); }, /nested/);
+  assert.throws(function () { presets.parsePreset('if aura "X">=1 { 1'); }, /brace/);
+  ['if aura >=1 { 1 }', 'if aura "X">=1', 'if aura "X">=-1 { 1 }'].forEach(function (text) {
+    assert.throws(function () { presets.parsePreset(text); }, Error, text);
+  });
+});
+
+test('condition comparisons share one strict/inclusive rule', () => {
+  assert.strictEqual(presets.compare('>', 50, 50, true), false, 'a block > is strict');
+  assert.strictEqual(presets.compare('>', 50, 50, false), true, 'a legacy inline > is inclusive');
+  assert.strictEqual(presets.compare('<', 50, 50, true), false, 'a block < is strict');
+  assert.strictEqual(presets.compare('<', 50, 50, false), true, 'a legacy inline < is inclusive');
+  assert.strictEqual(presets.compare('>=', 50, 50, true), true);
+  assert.strictEqual(presets.compare('<=', 50, 50, true), true);
+  assert.strictEqual(presets.compare('=', 50, 50, true), true);
+  assert.strictEqual(presets.compare('!', 50, 50, true), null, 'an unknown operator is not equality');
+});
+
+test('every comparator the editor offers is accepted by the parser', () => {
+  const step = require('../../plugins/grimlite-parity/features/auto-attack/skill-step.js');
+  assert.deepStrictEqual(step.comparators, ['>=', '<=', '=']);
+  step.comparators.forEach(function (op) {
+    assert.doesNotThrow(function () { presets.parsePreset(step.format('1', 'SH', op, '50')); }, op);
+    assert.doesNotThrow(function () { presets.parsePreset(step.aura('AURA', 'X', op, '2', '1')); }, op);
+  });
+  assert.strictEqual(step.comparatorLabels['>='], 'At least');
+});
+
 test('await waits and casts only its own skill, including inside If blocks', () => {
   assert.deepStrictEqual(presets.parsePreset('1; await 2;3'), [
     { index: '1', safe: false, wait: false },
@@ -504,7 +617,7 @@ test('await waits and casts only its own skill, including inside If blocks', () 
     { index: '3', safe: false, wait: false }
   ]);
   assert.deepStrictEqual(presets.parsePreset('if SH<50 { AWAIT 4 }'), [
-    { type: 'if', isMp: false, op: '<', value: 50, skip: 2 },
+    { type: 'if', isMp: false, op: '<', value: 50, priority: true, skip: 2 },
     { index: '4', safe: false, wait: true }
   ]);
 });

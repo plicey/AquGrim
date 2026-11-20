@@ -1,9 +1,15 @@
 (function () {
+  var shared = typeof module !== 'undefined' && module.exports
+    ? require('./operators.js')
+    : window.autoAttackOperators;
+  var COMPARATORS = shared.INCLUSIVE;
+  var COMPARATOR_LABELS = shared.LABELS;
+
   function format(skill, condition, comparator, threshold) {
     if (!/^[0-4]$/.test(skill)) throw new Error('Choose a skill from 0 to 4.');
     if (condition === '') return skill;
     if (condition !== 'SH' && condition !== 'SM') throw new Error('Choose HP or MP.');
-    if (['>=', '<=', '='].indexOf(comparator) === -1) throw new Error('Choose a comparison.');
+    if (COMPARATORS.indexOf(comparator) === -1) throw new Error('Choose a comparison.');
     if (!/^\d+$/.test(threshold) || Number(threshold) > 100) {
       throw new Error('Enter a whole percentage from 0 to 100.');
     }
@@ -31,6 +37,21 @@
     return 'if ' + predicate + ' {\n' + (text.trim() || '1;2') + '\n}';
   }
 
+  function aura(condition, name, comparator, stacks, text) {
+    if (condition !== 'AURA' && condition !== 'TAURA') throw new Error('Choose my aura or the target aura.');
+    var clean = String(name === null || name === undefined ? '' : name).trim();
+    if (!clean) throw new Error('Enter an aura name.');
+    if (/[{};,"\r\n]/.test(clean)) {
+      throw new Error('Aura names cannot contain { } ; , " or line breaks.');
+    }
+    if (COMPARATORS.indexOf(comparator) === -1) throw new Error('Choose a comparison.');
+    if (!/^\d+$/.test(String(stacks))) throw new Error('Enter whole stacks of 0 or more.');
+    var body = String(text === null || text === undefined ? '' : text).trim() || '1;2';
+    if (/[{}]|\b(if|else|cooldown)\b/i.test(body)) throw new Error('Blocks cannot be nested.');
+    return 'if ' + (condition === 'TAURA' ? 'target aura ' : 'aura ') + '"' + clean + '"' +
+      comparator + Number(stacks) + ' {\n' + body + '\n}';
+  }
+
   function cooldown(text, skill) {
     var skills = text.trim() || skill;
     if (!/^[0-4](?:[;,\s]+[0-4])*[;,\s]*$/.test(skills)) {
@@ -56,8 +77,8 @@
     return 'spam ' + skill + ' until ' + predicate + ' max ' + wait(duration).slice(5);
   }
 
-  var api = { format: format, insert: insert, block: block, cooldown: cooldown, wait: wait,
-    spam: spam, spamUntil: spamUntil };
+  var api = { format: format, insert: insert, block: block, aura: aura, cooldown: cooldown, wait: wait,
+    spam: spam, spamUntil: spamUntil, comparators: COMPARATORS, comparatorLabels: COMPARATOR_LABELS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.autoAttackStep = api;
 })();

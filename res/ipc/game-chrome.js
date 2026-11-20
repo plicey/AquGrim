@@ -14,6 +14,10 @@ ipcMain.handle('getGameChromeView', function (event) {
     return gameChrome().pageView(windowOf(event));
 });
 
+ipcMain.handle('getGameChromeStatus', function (event) {
+    return gameChrome().status(windowOf(event));
+});
+
 ipcMain.handle('gameChromeAction', function (event, id, args) {
     return gameChrome().dispatch(windowOf(event), id, args);
 });

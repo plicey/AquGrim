@@ -749,6 +749,7 @@ async function activate(host) {
         height: chromeFeature.HEIGHT,
         controls: function () { return chrome.controls(); },
         state: function () { return chrome.state(); },
+        status: function () { return chrome.status(); },
         action: function (id, args) { return chrome.action(id, args); }
     });
 

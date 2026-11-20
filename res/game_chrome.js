@@ -128,8 +128,9 @@
     }
 
     function show(text) {
-      var box = document.getElementById('chromeStatus');
-      if (box) box.textContent = text;
+      // An action with no message leaves the drawn view's own status (a refused condition or
+      // cast) in place instead of blanking it.
+      if (text) showAction(text);
     }
 
     function openContextEditor(entry, button) {
@@ -398,6 +399,7 @@
       });
       if (view) view.values = Object.assign({}, view.values, selected);
       current = view;
+      statusReason = (view && view.error) || '';
       // The strip is hidden and the surface keeps the whole page: that is the no-chrome mode the
       // screenshot and recording paths size their capture from.
       strip.style.display = view && view.enabled ? 'flex' : 'none';
@@ -409,10 +411,11 @@
         strip.appendChild(control(entry, view));
       });
       strip.appendChild(renderScaleControl());
-      strip.appendChild(el('span', 'status', view.error || ''));
+      strip.appendChild(el('span', 'status', ''));
       strip.lastChild.id = 'chromeStatus';
       strip.lastChild.setAttribute('role', 'status');
       strip.lastChild.setAttribute('aria-live', 'polite');
+      renderStatus();
       if (document.activeElement === document.body) focusGame();
     }
 
@@ -431,4 +434,39 @@
       strip.style.display = 'none';
       show(String(error && error.message ? error.message : error));
     });
+
+    // The status line has one writer: an action message wins for four seconds, then the
+    // condition/cast reason the main process holds. Auto Attack keeps ticking, so the reason is
+    // polled through the light status call instead of the full view (which refreshes sets).
+    var statusReason = '';
+    var statusAction = '';
+    var actionStatusUntil = 0;
+    var refreshingStatus = false;
+    function renderStatus() {
+      var box = document.getElementById('chromeStatus');
+      if (!box) return;
+      var action = Date.now() < actionStatusUntil ? statusAction : '';
+      box.textContent = action || statusReason || '';
+    }
+    function setReason(text) {
+      statusReason = text ? String(text) : '';
+      renderStatus();
+    }
+    function showAction(text) {
+      statusAction = text;
+      actionStatusUntil = Date.now() + 4000;
+      renderStatus();
+    }
+    function refreshStatusReason() {
+      if (document.hidden || refreshingStatus || !current || !current.enabled) return;
+      var ask;
+      if (typeof api.status === 'function') ask = api.status();
+      else if (typeof api.getView === 'function') ask = api.getView().then(function (view) { return view && view.error; });
+      else return;
+      refreshingStatus = true;
+      Promise.resolve(ask).then(function (reason) {
+        setReason(reason);
+      }, function () {}).then(function () { refreshingStatus = false; });
+    }
+    if (typeof window.setInterval === 'function') window.setInterval(refreshStatusReason, 1000);
 })();

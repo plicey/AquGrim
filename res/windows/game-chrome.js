@@ -148,6 +148,7 @@ function createGameChrome(deps) {
                 state = state || {};
                 view.values = state.values || {};
                 view.options = state.options || {};
+                if (state.error) view.error = state.error;
                 return view;
             }, function (error) {
                 // A state read that refused is a strip with its boxes empty, never a window
@@ -217,6 +218,22 @@ function createGameChrome(deps) {
             });
     }
 
+    /**
+     * The plugin's light strip reason, not the full state. A strip polls this while Auto Attack
+     * runs, so it must not do the reads `state()` does; a missing declaration is no reason.
+     */
+    function status(win) {
+        const declaration = declared();
+        if (!available() || !declaration || typeof declaration.status !== 'function') {
+            return Promise.resolve(null);
+        }
+        return Promise.resolve()
+            .then(function () { return declaration.status({ win: win }); })
+            .then(function (reason) {
+                return reason === null || reason === undefined ? null : String(reason);
+            }, function () { return null; });
+    }
+
     return {
         available: available,
         height: height,
@@ -227,6 +244,7 @@ function createGameChrome(deps) {
         stripHeight: stripHeight,
         contentSize: contentSize,
         pageView: pageView,
+        status: status,
         setEnabled: setEnabled,
         dispatch: dispatch
     };

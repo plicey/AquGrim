@@ -77,7 +77,8 @@ function harness(options) {
     healthMax: member('healthMax', 100),
     mana: member('mana', 100),
     manaMax: member('manaMax', 100),
-    selfAura: member('selfAura', 0)
+    selfAura: member('selfAura', 0),
+    targetAura: member('targetAura', 0)
   };
 
   const chrome = createChrome({
@@ -114,7 +115,7 @@ function harness(options) {
     now: options.now,
     openAutoSkillSet: options.openAutoSkillSet,
     messages: options.messages || {},
-    log: function () {},
+    log: options.log || function () {},
     sleep: function () { return Promise.resolve(); },
     timers: timers
   });
@@ -484,6 +485,254 @@ test('Auto Attack runs the loaded draft and skips a safe skill whose condition i
   h.chrome.stop();
 });
 
+test('aura If blocks read self and target stacks and skip when their condition is not met', async () => {
+  const auras = { self: 2, target: 0 };
+  const cooldown = {};
+  const h = await rotationHarness(
+    'if aura "Arcane Flux">=2 { 3 };if target aura "Chi">=1 { 4 };1',
+    {
+      selfAura: function () { return auras.self; },
+      targetAura: function () { return auras.target; },
+      skillAvailable: function (index) { return cooldown[index] ? 400 : 0; },
+      useSkill: function (index) { cooldown[index] = true; return true; }
+    });
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h), [['useSkill', '3']], 'two self stacks meet the condition');
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h), [['useSkill', '3'], ['useSkill', '1']],
+    'no target stacks skips the target block and the rotation keeps going');
+  auras.target = 1;
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h).slice(-1), [['useSkill', '4']],
+    'one target stack meets the condition, ahead of the rotation');
+  h.chrome.stop();
+
+  const absent = await rotationHarness('if aura "Arcane Flux"=0 { 2 };1', { selfAura: 0 });
+  await absent.chrome.tick();
+  assert.deepStrictEqual(casts(absent), [['useSkill', '2']], 'an absent aura is zero stacks');
+  absent.chrome.stop();
+});
+
+test('an unreadable aura read is reported while the rest of the rotation casts', async () => {
+  const h = await rotationHarness('if aura "Arcane Flux">=1 { 3 };1', {
+    selfAura: function () { throw new Error('no tap'); }
+  });
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h), [['useSkill', '1']], 'the rest of the rotation still casts');
+  const state = await h.chrome.state();
+  assert.match(state.values.autoAttackError, /Arcane Flux.*no tap/);
+  assert.match(state.error, /Arcane Flux.*no tap/);
+  assert.match(await h.chrome.status(), /Arcane Flux.*no tap/, 'the light status read carries it');
+  assert.strictEqual(state.values.autoAttack, true, 'the loop keeps running');
+  h.chrome.stop();
+});
+
+test('a refused condition keeps its reason across other conditions and rotation changes', async () => {
+  const h = await rotationHarness('if aura "Bad">=1 {3};if aura "Good">=1 {2};4', {
+    selfAura: function (name) {
+      if (name === 'Bad') throw new Error('no tap');
+      return 1;
+    },
+    skillAvailable: function (index) { return index === '2' ? 400 : 0; }
+  });
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h), [['useSkill', '4']], 'the rest of the rotation still casts');
+  let state = await h.chrome.state();
+  assert.match(state.values.autoAttackError, /Bad.*no tap/,
+    'a later condition read does not clear the failed one');
+  assert.match(state.error, /Bad.*no tap/, 'the strip reason is the same failure');
+  h.chrome.useSkillText('1;2', true);
+  state = await h.chrome.state();
+  assert.strictEqual(state.values.autoAttackError, null, 'a rotation change clears the reasons');
+  assert.strictEqual(state.error, null, 'and the strip reason with it');
+  h.chrome.stop();
+});
+
+test('ending Auto Attack on sign-out clears the last reason', async () => {
+  const h = await rotationHarness('if aura "Arcane Flux">=1 { 3 };1', {
+    selfAura: function () { throw new Error('no tap'); }
+  });
+  await h.chrome.tick();
+  let state = await h.chrome.state();
+  assert.match(state.error, /no tap/);
+  h.session.signedIn = async function () { return false; };
+  await h.chrome.tick();
+  state = await h.chrome.state();
+  assert.strictEqual(state.values.autoAttack, false, 'the loop stopped');
+  assert.strictEqual(state.values.autoAttackError, null, 'the aura reason is gone');
+  assert.strictEqual(state.error, engine.ERRORS.notSignedIn, 'the strip says why the loop stopped');
+  h.chrome.stop();
+});
+
+test('the light status carries the signed-out reason too', async () => {
+  const h = harness({ answers: { signedIn: false } });
+  assert.strictEqual(await h.chrome.status(), engine.ERRORS.notSignedIn);
+  h.chrome.stop();
+});
+
+test('a single-skill aura If is a priority check, ahead of spam, waits and the rotation', async () => {
+  const spam = await rotationHarness('spam 0 60000ms;if aura "Arcane Flux">=8 {4}',
+    { selfAura: 8, skillAvailable: 0 });
+  await spam.chrome.tick();
+  assert.deepStrictEqual(casts(spam), [['useSkill', '4']], 'the conditional cast wins over the spam');
+  spam.session.skillAvailable = async function (index) { return index === '4' ? 400 : 0; };
+  await spam.chrome.tick();
+  assert.deepStrictEqual(casts(spam), [['useSkill', '4'], ['useSkill', '0']],
+    'an unready conditional leaves the spam to cast');
+  spam.chrome.stop();
+
+  const waiting = await rotationHarness('wait 500ms;if aura "Arcane Flux">=8 {4};2',
+    { selfAura: 8, skillAvailable: 0 });
+  await waiting.chrome.tick();
+  assert.deepStrictEqual(casts(waiting), [['useSkill', '4']],
+    'the conditional fires while the wait holds the rotation');
+  waiting.chrome.stop();
+
+  const ahead = await rotationHarness('1;if aura "Arcane Flux">=8 {4};2',
+    { selfAura: 8, skillAvailable: 0 });
+  await ahead.chrome.tick();
+  assert.deepStrictEqual(casts(ahead), [['useSkill', '4']],
+    'the conditional fires before the normal step');
+  ahead.chrome.stop();
+
+  const used = {};
+  const skip = await rotationHarness('1;if aura "Arcane Flux">=8 {4};2', {
+    selfAura: 8,
+    skillAvailable: function (index) { return used[index] ? 400 : 0; },
+    useSkill: function (index) { used[index] = true; return true; }
+  });
+  for (let i = 0; i < 3; i++) await skip.chrome.tick();
+  assert.deepStrictEqual(casts(skip).map(function (call) { return call[1]; }), ['4', '1', '2'],
+    'the walk skips a priority block, so its skill is not cast a second time');
+  skip.chrome.stop();
+
+  const safe = await rotationHarness('1;if aura "Arcane Flux">=1 {3:SH>50};2',
+    { selfAura: 1, health: 100, healthMax: 100, skillAvailable: 0 });
+  await safe.chrome.tick();
+  assert.deepStrictEqual(casts(safe), [['useSkill', '3']],
+    'a one-skill block with a safe step is a priority check');
+  safe.chrome.stop();
+
+  const held = await rotationHarness('1;if aura "Arcane Flux">=1 {3:SH>50};2',
+    { selfAura: 1, health: 40, healthMax: 100, skillAvailable: 0 });
+  await held.chrome.tick();
+  assert.deepStrictEqual(casts(held), [['useSkill', '1']],
+    'the safe step holds the priority cast');
+  held.chrome.stop();
+});
+
+test('a refused priority cast does not stop the rest of the rotation', async () => {
+  const logs = [];
+  const h = harness({
+    answers: {
+      hasTarget: true,
+      selfAura: 1,
+      skillAvailable: 0,
+      useSkill: function (index) { return index !== '4'; }
+    },
+    presets: {
+      draftFor: function () {
+        return { skills: skillPresets.parsePreset('if aura "Arcane Flux">=1 {4};1') };
+      }
+    },
+    log: function (line) { logs.push(line); }
+  });
+  await h.chrome.action('autoAttack', { checked: true });
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h).map(function (call) { return call[1]; }), ['4', '1'],
+    'the refused priority skill is followed by the normal rotation');
+  const state = await h.chrome.state();
+  assert.match(state.values.autoAttackError, /skill 4/,
+    'the strip keeps the priority refusal after the normal cast');
+  assert.match(state.error, /skill 4/, 'the status line carries the same refusal');
+  assert.ok(logs.some(function (line) { return /skill 4/.test(line); }), JSON.stringify(logs));
+  h.chrome.stop();
+});
+
+test('a priority refusal clears when its gate closes', async () => {
+  const gate = { open: true };
+  const h = await rotationHarness('if aura "Arcane Flux">=1 {4};1', {
+    selfAura: function () { return gate.open ? 1 : 0; },
+    skillAvailable: 0,
+    useSkill: function (index) { return index !== '4'; }
+  });
+  await h.chrome.tick();
+  assert.match((await h.chrome.state()).error, /skill 4/);
+  gate.open = false;
+  await h.chrome.tick();
+  const state = await h.chrome.state();
+  assert.strictEqual(state.values.autoAttackError, null, 'the closed gate drops the refusal');
+  assert.strictEqual(state.error, null);
+  h.chrome.stop();
+});
+
+test('a closed priority gate clears a refusal when the block is the whole rotation', async () => {
+  const gate = { open: true };
+  const h = await rotationHarness('if aura "Arcane Flux">=1 {4}', {
+    selfAura: function () { return gate.open ? 1 : 0; },
+    skillAvailable: 0,
+    useSkill: function () { return false; }
+  });
+  await h.chrome.tick();
+  assert.match((await h.chrome.state()).error, /skill 4/);
+  gate.open = false;
+  await h.chrome.tick();
+  const state = await h.chrome.state();
+  assert.strictEqual(state.values.autoAttackError, null);
+  assert.strictEqual(state.error, null);
+  h.chrome.stop();
+});
+
+test('a closed or unreadable aura gate drops its body safe reason', async () => {
+  const gate = { value: 1 };
+  const h = await rotationHarness('if aura "Arcane Flux">=1 {3:SH>50}', {
+    selfAura: function () {
+      if (gate.value === null) throw new Error('no tap');
+      return gate.value;
+    },
+    health: function () { throw new Error('no health'); },
+    skillAvailable: 0
+  });
+  await h.chrome.tick();
+  assert.match((await h.chrome.state()).error, /no health/);
+  gate.value = null;
+  await h.chrome.tick();
+  const state = await h.chrome.state();
+  assert.match(state.error, /aura "Arcane Flux".*no tap/);
+  assert.doesNotMatch(state.error, /no health/, 'the closed gate drops the body reason');
+  h.chrome.stop();
+});
+
+test('a closed multi-skill gate drops its body reason', async () => {
+  const x = { value: 1 };
+  const h = await rotationHarness('if aura "Arcane Flux">=1 {3:SH>50;4};1', {
+    selfAura: function () { return x.value; },
+    health: function () { throw new Error('no health'); },
+    skillAvailable: 0
+  });
+  await h.chrome.tick();
+  assert.match((await h.chrome.state()).error, /no health/);
+  x.value = 0;
+  for (let i = 0; i < 5; i++) await h.chrome.tick();
+  const state = await h.chrome.state();
+  assert.doesNotMatch(state.error || '', /no health/, 'the walk drops the body reason too');
+  h.chrome.stop();
+});
+
+test('multi-skill and basic-attack If blocks keep their rotation place', async () => {
+  const block = await rotationHarness('spam 0 60000ms;if aura "Arcane Flux">=8 {4;3}',
+    { selfAura: 8, skillAvailable: 0 });
+  await block.chrome.tick();
+  assert.deepStrictEqual(casts(block), [['useSkill', '0']], 'a two-skill If is not a priority rule');
+  block.chrome.stop();
+
+  const basic = await rotationHarness('1;if aura "Arcane Flux">=8 {0};2',
+    { selfAura: 8, skillAvailable: 0 });
+  await basic.chrome.tick();
+  assert.deepStrictEqual(casts(basic), [['useSkill', '1']], 'a basic-attack If is not a priority rule');
+  basic.chrome.stop();
+});
+
 test('no loaded draft falls back to skills 1-4', async () => {
   const h = harness({
     answers: { hasTarget: true, className: 'No Class' },
@@ -660,7 +909,7 @@ test('every game read the strip makes is a loader name the surface answers', () 
   // The session members the strip reads, each of which is a loader name in bot/session.js rather
   // than a dot-path spelled out here.
   ['signedIn', 'cell', 'pad', 'cells', 'ready', 'jump', 'hasTarget', 'attackMonster',
-    'skillAvailable', 'useSkill', 'className', 'mana', 'selfAura'].forEach(function (name) {
+    'skillAvailable', 'useSkill', 'className', 'mana', 'selfAura', 'targetAura'].forEach(function (name) {
       assert.ok(source.indexOf("read('" + name + "'") !== -1 ||
         source.indexOf('read("' + name + '"') !== -1, 'the strip must read ' + name);
     });

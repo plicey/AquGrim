@@ -8,7 +8,14 @@
 //
 // Skills are separated by ';' (the reference's form) or ',' (common in hand-written configs).
 // One safe condition may follow a skill: `3:SH>60` or `2:SM<30`. `wait` makes every normal skill
-// wait out its own cooldown. Blocks: `if SH<50 { 2;3 }`, optional casts: `cooldown { 4 }`.
+// wait out its own cooldown. Blocks: `if SH<50 { 2;3 }`, aura stacks:
+// `if aura "Arcane Flux">=2 { 3;4 }` and `if target aura "Chi"=0 { 1 }`, optional casts:
+// `cooldown { 4 }`. Aura names are matched case-insensitively by the game's own aura cache;
+// a name cannot contain braces, quotes, semicolons, commas or line breaks (the tokenizer's
+// separators). A block is tested when the rotation reaches it and its steps then run in order,
+// except that a block holding one skill is a priority check: it casts as soon as its skill is
+// ready, ahead of the rest of the rotation (and of any spam or wait hold), and the rotation
+// skips over it. Slot 0 keeps its rotation place.
 // `await 2` waits for readiness and casts only that skill; `spam 0 2000ms` repeats for a duration.
 // `spam 0 until SM<=15 max 5000ms` stops at the percentage or timeout (default max: 60000ms).
 // `await spam ...` requires a usable cast before its stop condition can finish the step.
@@ -17,6 +24,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const operators = require('../auto-attack/operators.js');
 
 const STORE_NAMESPACE = 'auto-attack';
 const STORE_KEY = 'autoAttackPresets';
@@ -24,6 +32,15 @@ const SELECTION_KEY = 'autoAttackSelectedPresets';
 const DRAFT_KEY = 'autoAttackDrafts';
 const CONFIG_FILE = 'ClientConfig.cfg';
 const FILE_PRESET_NAME = 'ClientConfig';
+const OPERATOR_PATTERN = operators.PATTERN;
+const OPERATOR_CAPTURE = operators.CAPTURE;
+const SAFE_CONDITION = new RegExp('^([^:]+):\\s*(SH|SM)\\s*' + OPERATOR_CAPTURE + '\\s*(\\d+)$', 'i');
+const IF_CONDITION = new RegExp('^if\\s+(SH|SM)\\s*' + OPERATOR_CAPTURE + '\\s*(\\d+)$', 'i');
+const AURA_CONDITION = new RegExp('^if\\s+(target\\s+)?aura\\s+(?:"([^"]+)"\\s*|(.+?)\\s+)' +
+    OPERATOR_CAPTURE + '\\s*(\\d+)$', 'i');
+const SPAM_UNTIL = new RegExp('^spam\\s+([0-4])\\s+until\\s+(SH|SM)\\s*' + OPERATOR_CAPTURE +
+    '\\s*(\\d+)(?:\\s+max\\s+(\\d+)ms)?$', 'i');
+const SIMPLE_STEP = new RegExp('^[0-4](?:wait|:\\s*(?:SH|SM)\\s*' + OPERATOR_PATTERN + '\\s*\\d+)?$', 'i');
 const DEFAULT_SKILLS = [
     { index: '1', safe: false, wait: false },
     { index: '2', safe: false, wait: false },
@@ -45,7 +62,7 @@ function parseLegacyPreset(value) {
     text.split(/[;,\r\n]/).forEach(function (part) {
         const token = part.trim();
         if (!token) return;
-        const safe = /^([^:]+):\s*(SH|SM)\s*([<>]=?|=)\s*(\d+)$/i.exec(token);
+        const safe = SAFE_CONDITION.exec(token);
         if (safe) {
             skills.push({
                 index: safe[1].trim(),
@@ -76,16 +93,33 @@ function parsePreset(value) {
         const token = parts[i];
         if (token === '}') {
             if (!block || rows.length === block.start) throw new Error('Unexpected or empty block.');
-            if (block.row) block.row.skip = rows.length;
+            if (block.row) {
+                block.row.skip = rows.length;
+                // A one-skill If is the priority form. The parser owns that fact so the tick
+                // does not infer it from the row layout; slot 0 stays in the rotation.
+                if (block.row.type === 'if' && rows.length === block.start + 1) {
+                    const body = rows[block.start];
+                    if (body && !body.type && body.index !== '0') block.row.priority = true;
+                }
+            }
             block = null;
             continue;
         }
-        const condition = /^if\s+(SH|SM)\s*([<>]=?|=)\s*(\d+)$/i.exec(token);
-        if (condition || /^cooldown$/i.test(token)) {
+        const condition = IF_CONDITION.exec(token);
+        const auraCondition = AURA_CONDITION.exec(token);
+        if (condition || auraCondition || /^cooldown$/i.test(token)) {
             if (block || parts[++i] !== '{') throw new Error('Blocks need braces and cannot be nested.');
             if (condition && Number(condition[3]) > 100) throw new Error('Percent must be from 0 to 100.');
-            const row = condition ? { type: 'if', isMp: condition[1].toUpperCase() === 'SM',
-                op: condition[2], value: Number(condition[3]) } : null;
+            let row = null;
+            if (condition) {
+                row = { type: 'if', isMp: condition[1].toUpperCase() === 'SM',
+                    op: condition[2], value: Number(condition[3]) };
+            } else if (auraCondition) {
+                const name = String(auraCondition[2] !== undefined ? auraCondition[2] : auraCondition[3]).trim();
+                if (!name || /[{};,"]/.test(name)) throw new Error('Invalid aura name.');
+                row = { type: 'if', aura: name, op: auraCondition[4], value: Number(auraCondition[5]) };
+                if (auraCondition[1]) row.target = true;
+            }
             if (row) rows.push(row);
             block = { row: row, start: rows.length };
             continue;
@@ -97,7 +131,7 @@ function parsePreset(value) {
         const spamText = token.replace(/^await\s+(?=spam\b)/i, '');
         const awaitSpam = spamText !== token;
         const spam = /^spam\s+([0-4])\s+(\d+)ms$/i.exec(spamText);
-        const until = /^spam\s+([0-4])\s+until\s+(SH|SM)\s*([<>]=?|=)\s*(\d+)(?:\s+max\s+(\d+)ms)?$/i.exec(spamText);
+        const until = SPAM_UNTIL.exec(spamText);
         if (block && !block.row) {
             if (!/^[0-4]$/.test(token)) throw new Error('Cooldown blocks contain only skills 0 to 4.');
             if (!rows.some(function (row) { return row.type === 'cooldown' && row.index === token; })) {
@@ -124,7 +158,7 @@ function parsePreset(value) {
         } else if (/^wait$/i.test(token)) {
             globalWait = true;
         } else {
-            if (!/^[0-4](?:wait|:\s*(?:SH|SM)\s*[<>]=?\s*\d+|:\s*(?:SH|SM)\s*=\s*\d+)?$/i.test(token)) {
+            if (!SIMPLE_STEP.test(token)) {
                 throw new Error('Invalid step: ' + token);
             }
             const skill = parseLegacyPreset(token)[0];
@@ -432,6 +466,7 @@ module.exports = {
     CONFIG_FILE: CONFIG_FILE,
     FILE_PRESET_NAME: FILE_PRESET_NAME,
     DEFAULT_SKILLS: DEFAULT_SKILLS,
+    compare: operators.compare,
     defaultSkills: defaultSkills,
     parsePreset: parsePreset,
     parseConfigValues: parseConfigValues,

@@ -6,6 +6,7 @@
 <link rel="stylesheet" href="../../../../res/features/common/focus.css">
 <style>
   :root { color-scheme: dark; }
+  [hidden] { display: none !important; }
   html, body {
     margin: 0; height: 100%; background: #121212; color: #e6e6e6;
     font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px;
@@ -100,14 +101,14 @@
     </select></label>
     <label>When<select id="stepCondition">
       <option value="">Always</option><option value="SH">My health (%)</option><option value="SM">My mana (%)</option>
+      <option value="AURA">My aura</option><option value="TAURA">Target aura</option>
     </select></label>
-    <label>Comparison<select id="stepComparator" disabled>
-      <option value=">=">At least</option><option value="<=">At most</option><option value="=">Exactly</option>
-    </select></label>
-    <label>Percent<input id="stepThreshold" type="number" min="0" max="100" step="1" value="50" disabled></label>
+    <label id="auraNameField" hidden>Aura name<input id="stepAura" spellcheck="false" placeholder="e.g. Arcane Flux"></label>
+    <label>Comparison<select id="stepComparator" disabled></select></label>
+    <label><span id="thresholdLabel">Percent</span><input id="stepThreshold" type="number" min="0" max="100" step="1" value="50" disabled></label>
     <button id="insertStep">Add skill</button>
   </div>
-  <p>Add a skill at the cursor, or select text in the rotation to replace it.</p>
+  <p>Add a skill at the cursor, or select text in the rotation to replace it. My aura and Target aura wrap the skill in an If block that runs only while that aura has the chosen stacks; at least 1 means the aura is active. A single-skill aura step is a priority check: it fires as soon as the skill is ready, ahead of the rest of the rotation (including spam and waits), and the rotation skips over it. Wrap two or more skills to keep them in order; a basic-attack step (slot 0) also keeps its rotation place.</p>
   </section>
   <details class="advanced"><summary>Advanced: conditions, cooldowns, waits and spam</summary>
   <div class="block-builder" role="group" aria-label="Insert blocks and waits">
@@ -124,12 +125,15 @@
     <button id="insertAwaitSpam">Await spam</button>
     <button id="insertAwaitSpamUntil">Await spam until condition</button>
   </div>
-  <p>Insert at the cursor or replace selected steps. If uses the HP/MP controls above; Cooldown uses selected skills. Wait and cast waits until the selected skill is ready, then casts it. Wait for selected skill checks readiness without casting.</p>
+  <p>Insert at the cursor or replace selected steps. If uses the HP, MP or aura controls above; Cooldown uses selected skills. Wait and cast waits until the selected skill is ready, then casts it. Wait for selected skill checks readiness without casting.</p>
   <p>Spam until condition uses the HP/MP, comparison and percent controls above as its stop condition. Duration sets its maximum time.</p>
   <details><summary>Syntax and behavior</summary>
-    <p><code>1; if SH&lt;=50 { 2;3 }; wait 500ms; await 2; 4; cooldown { 3 }</code></p>
+    <p><code>1; if SH&lt;=50 { 2;3 }; if aura "Arcane Flux"&gt;=2 { 4 }; wait 500ms; await 2; cooldown { 3 }</code></p>
     <p>SH = my HP %, SM = my MP %. Block &lt; and &gt; are strict; &lt;= and &gt;= include equality. Legacy inline conditions keep inclusive comparisons.
-    If is tested once on entry; its steps continue in order. Blocks cannot nest; no else. Without a selection, If inserts 1;2 and Cooldown inserts the selected skill.</p>
+    A block holding one skill is a priority check: it casts as soon as that skill is ready, ahead of the rest of the rotation and any spam or wait hold, and the rotation skips over it. A basic-attack step (slot 0) keeps its rotation place. A block holding two or more skills is tested once on entry; its steps continue in order. Blocks cannot nest; no else. Without a selection, If inserts 1;2 and Cooldown inserts the selected skill.</p>
+    <p><code>if aura "Name"&gt;=2 { 3 }</code> reads my own stacks and <code>if target aura "Name"=0 { 1 }</code> reads the current target's; an absent aura, or no target, is 0.
+    Names match case-insensitively. Quote names that contain spaces; an unquoted name needs a space before the comparison. Names cannot contain braces, quotes, semicolons, commas or line breaks.
+    Stacks are the count the game shows on the aura icon. Aura conditions apply to If blocks only, not to spam stop conditions.</p>
     <p>Slot 0 is button 1 (basic attack); slots 1–4 are buttons 2–5. <code>spam 0 2000ms</code> repeatedly casts basic attack when ready for 2000ms, then advances. Spam holds the rotation and pauses optional Cooldown casts; attempts run on the 150ms loop, so timing depends on game responsiveness.</p>
     <p><code>await spam 0 until SM&lt;=15 max 5000ms</code> awaits a ready, usable cast first, then checks mana on following ticks and repeats until it is at most 15%. Plain <code>spam 0 until SM&lt;=15</code> may skip immediately if the condition already holds. Both hold the rotation while active. The time limit still advances the rotation if no cast becomes usable. Use SH for health; comparisons support &lt;, &lt;=, =, &gt;= and &gt;. Without max, the limit is 60000ms. Unreadable HP/MP pauses casting until it recovers or the time limit expires. Timed spam also accepts <code>await spam 0 2000ms</code>.</p>
     <p>Wait and Spam durations are 1–60000ms; await 0 waits for skill 0–4 and casts it; ready 0 only waits without casting. The old global wait marker still waits before normal casts.
@@ -148,6 +152,7 @@
   </div>
   </section>
   </main>
+<script src="operators.js"></script>
 <script src="skill-step.js"></script>
 <script>
 (function () {
@@ -163,15 +168,44 @@
   var pending = null;
   var condition = document.getElementById('stepCondition');
   var comparator = document.getElementById('stepComparator');
+  var comparatorLabels = window.autoAttackStep.comparatorLabels || {};
+  comparator.replaceChildren();
+  (window.autoAttackStep.comparators || []).forEach(function (op) {
+    var option = document.createElement('option');
+    option.value = op;
+    option.textContent = comparatorLabels[op] || op;
+    comparator.appendChild(option);
+  });
   var threshold = document.getElementById('stepThreshold');
+  var thresholdLabel = document.getElementById('thresholdLabel');
+  var auraField = document.getElementById('auraNameField');
+  var auraBox = document.getElementById('stepAura');
+  var auraMode = false;
+
+  function wantsAura() {
+    return condition.value === 'AURA' || condition.value === 'TAURA';
+  }
 
   condition.addEventListener('change', function () {
+    var aura = wantsAura();
     comparator.disabled = threshold.disabled = !condition.value;
+    auraField.hidden = !aura;
+    thresholdLabel.textContent = aura ? 'Stacks' : 'Percent';
+    threshold.max = aura ? '' : '100';
+    // Entering aura mode starts at one stack (an active aura); percentages get their default back.
+    if (aura && !auraMode) {
+      threshold.value = '1';
+      comparator.value = '>=';
+    }
+    if (!aura && auraMode) threshold.value = '50';
+    auraMode = aura;
   });
   document.getElementById('insertStep').addEventListener('click', function () {
     try {
-      var step = window.autoAttackStep.format(document.getElementById('stepSkill').value,
-        condition.value, comparator.value, threshold.value);
+      var skill = document.getElementById('stepSkill').value;
+      var step = wantsAura()
+        ? window.autoAttackStep.aura(condition.value, auraBox.value, comparator.value, threshold.value, skill)
+        : window.autoAttackStep.format(skill, condition.value, comparator.value, threshold.value);
       var inserted = window.autoAttackStep.insert(box.value, box.selectionStart, box.selectionEnd, step);
       box.value = inserted.text;
       box.focus();
@@ -193,7 +227,11 @@
     } catch (error) { say(error.message, true); }
   }
   document.getElementById('insertBlock').addEventListener('click', function () {
-    insertBuilt(function (text) { return window.autoAttackStep.block(condition.value, comparator.value, threshold.value, text); });
+    insertBuilt(function (text) {
+      return wantsAura()
+        ? window.autoAttackStep.aura(condition.value, auraBox.value, comparator.value, threshold.value, text)
+        : window.autoAttackStep.block(condition.value, comparator.value, threshold.value, text);
+    });
   });
   document.getElementById('insertCooldown').addEventListener('click', function () {
     insertBuilt(function (text) { return window.autoAttackStep.cooldown(text, document.getElementById('stepSkill').value); });
