@@ -1,6 +1,9 @@
 (function () {
-  // The parser also accepts the strict > and < forms; the builder offers the inclusive ones.
-  var COMPARATORS = ['>=', '<=', '='];
+  var shared = typeof module !== 'undefined' && module.exports
+    ? require('./operators.js')
+    : window.autoAttackOperators;
+  var COMPARATORS = shared.INCLUSIVE;
+  var COMPARATOR_LABELS = shared.LABELS;
 
   function format(skill, condition, comparator, threshold) {
     if (!/^[0-4]$/.test(skill)) throw new Error('Choose a skill from 0 to 4.');
@@ -75,7 +78,7 @@
   }
 
   var api = { format: format, insert: insert, block: block, aura: aura, cooldown: cooldown, wait: wait,
-    spam: spam, spamUntil: spamUntil, comparators: COMPARATORS };
+    spam: spam, spamUntil: spamUntil, comparators: COMPARATORS, comparatorLabels: COMPARATOR_LABELS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.autoAttackStep = api;
 })();

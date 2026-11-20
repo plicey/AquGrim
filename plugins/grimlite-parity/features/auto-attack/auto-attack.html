@@ -152,6 +152,7 @@
   </div>
   </section>
   </main>
+<script src="operators.js"></script>
 <script src="skill-step.js"></script>
 <script>
 (function () {
@@ -167,9 +168,9 @@
   var pending = null;
   var condition = document.getElementById('stepCondition');
   var comparator = document.getElementById('stepComparator');
-  var comparatorLabels = { '>=': 'At least', '<=': 'At most', '=': 'Exactly' };
+  var comparatorLabels = window.autoAttackStep.comparatorLabels || {};
   comparator.replaceChildren();
-  (window.autoAttackStep.comparators || ['>=', '<=', '=']).forEach(function (op) {
+  (window.autoAttackStep.comparators || []).forEach(function (op) {
     var option = document.createElement('option');
     option.value = op;
     option.textContent = comparatorLabels[op] || op;

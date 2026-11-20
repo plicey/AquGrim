@@ -522,7 +522,7 @@ test('an unreadable aura read is reported while the rest of the rotation casts',
   const state = await h.chrome.state();
   assert.match(state.values.autoAttackError, /Arcane Flux.*no tap/);
   assert.match(state.error, /Arcane Flux.*no tap/);
-  assert.match(h.chrome.status(), /Arcane Flux.*no tap/, 'the light status read carries it');
+  assert.match(await h.chrome.status(), /Arcane Flux.*no tap/, 'the light status read carries it');
   assert.strictEqual(state.values.autoAttack, true, 'the loop keeps running');
   h.chrome.stop();
 });
@@ -561,6 +561,12 @@ test('ending Auto Attack on sign-out clears the last reason', async () => {
   assert.strictEqual(state.values.autoAttack, false, 'the loop stopped');
   assert.strictEqual(state.values.autoAttackError, null, 'the aura reason is gone');
   assert.strictEqual(state.error, engine.ERRORS.notSignedIn, 'the strip says why the loop stopped');
+  h.chrome.stop();
+});
+
+test('the light status carries the signed-out reason too', async () => {
+  const h = harness({ answers: { signedIn: false } });
+  assert.strictEqual(await h.chrome.status(), engine.ERRORS.notSignedIn);
   h.chrome.stop();
 });
 

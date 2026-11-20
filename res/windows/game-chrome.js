@@ -224,13 +224,14 @@ function createGameChrome(deps) {
      */
     function status(win) {
         const declaration = declared();
-        if (!available() || !declaration || typeof declaration.status !== 'function') return null;
-        try {
-            const reason = declaration.status({ win: win });
-            return reason === null || reason === undefined ? null : String(reason);
-        } catch (error) {
-            return null;
+        if (!available() || !declaration || typeof declaration.status !== 'function') {
+            return Promise.resolve(null);
         }
+        return Promise.resolve()
+            .then(function () { return declaration.status({ win: win }); })
+            .then(function (reason) {
+                return reason === null || reason === undefined ? null : String(reason);
+            }, function () { return null; });
     }
 
     return {

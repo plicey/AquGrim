@@ -779,8 +779,19 @@ function createChrome(deps) {
     return {
         controls: controls,
         state: state,
-        /** The light strip status read: the condition/cast reason, without the full state. */
-        status: function () { return firstRowError() || autoAttackError || null; },
+        /**
+         * The light strip status read: the same aggregate reason `state()` reports, without the
+         * equipment-sets refresh. The condition/cast reasons come first, then the signed-out and
+         * cell/pad refusals the page shows beside the controls.
+         */
+        status: async function () {
+            const reason = firstRowError() || autoAttackError || null;
+            if (reason) return reason;
+            const alive = await signedIn();
+            if (alive.ok !== true) return alive.error || null;
+            const here = await Promise.all([read('cell'), read('pad')]);
+            return here[0].error || here[1].error || null;
+        },
         action: action,
         /** One pass of the Auto Attack loop, the seam the tests drive. */
         tick: tick,

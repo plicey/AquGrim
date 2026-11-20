@@ -600,6 +600,16 @@ test('condition comparisons share one strict/inclusive rule', () => {
   assert.strictEqual(presets.compare('!', 50, 50, true), null, 'an unknown operator is not equality');
 });
 
+test('every comparator the editor offers is accepted by the parser', () => {
+  const step = require('../../plugins/grimlite-parity/features/auto-attack/skill-step.js');
+  assert.deepStrictEqual(step.comparators, ['>=', '<=', '=']);
+  step.comparators.forEach(function (op) {
+    assert.doesNotThrow(function () { presets.parsePreset(step.format('1', 'SH', op, '50')); }, op);
+    assert.doesNotThrow(function () { presets.parsePreset(step.aura('AURA', 'X', op, '2', '1')); }, op);
+  });
+  assert.strictEqual(step.comparatorLabels['>='], 'At least');
+});
+
 test('await waits and casts only its own skill, including inside If blocks', () => {
   assert.deepStrictEqual(presets.parsePreset('1; await 2;3'), [
     { index: '1', safe: false, wait: false },

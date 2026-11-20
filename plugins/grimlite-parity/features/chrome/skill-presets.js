@@ -24,6 +24,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const operators = require('../auto-attack/operators.js');
 
 const STORE_NAMESPACE = 'auto-attack';
 const STORE_KEY = 'autoAttackPresets';
@@ -31,19 +32,8 @@ const SELECTION_KEY = 'autoAttackSelectedPresets';
 const DRAFT_KEY = 'autoAttackDrafts';
 const CONFIG_FILE = 'ClientConfig.cfg';
 const FILE_PRESET_NAME = 'ClientConfig';
-// One operator table: the grammar regexes and the runtime comparison both read it. The order
-// matters for the regex alternation, so two-character forms come before their one-character
-// prefixes.
-const OPERATORS = {
-    '>=': function (actual, expected) { return actual >= expected; },
-    '<=': function (actual, expected) { return actual <= expected; },
-    '=': function (actual, expected) { return actual === expected; },
-    '>': function (actual, expected, strict) { return strict ? actual > expected : actual >= expected; },
-    '<': function (actual, expected, strict) { return strict ? actual < expected : actual <= expected; }
-};
-const OPERATOR_LIST = Object.keys(OPERATORS);
-const OPERATOR_PATTERN = '(?:' + OPERATOR_LIST.join('|') + ')';
-const OPERATOR_CAPTURE = '(' + OPERATOR_LIST.join('|') + ')';
+const OPERATOR_PATTERN = operators.PATTERN;
+const OPERATOR_CAPTURE = operators.CAPTURE;
 const SAFE_CONDITION = new RegExp('^([^:]+):\\s*(SH|SM)\\s*' + OPERATOR_CAPTURE + '\\s*(\\d+)$', 'i');
 const IF_CONDITION = new RegExp('^if\\s+(SH|SM)\\s*' + OPERATOR_CAPTURE + '\\s*(\\d+)$', 'i');
 const AURA_CONDITION = new RegExp('^if\\s+(target\\s+)?aura\\s+(?:"([^"]+)"\\s*|(.+?)\\s+)' +
@@ -57,16 +47,6 @@ const DEFAULT_SKILLS = [
     { index: '3', safe: false, wait: false },
     { index: '4', safe: false, wait: false }
 ];
-
-/**
- * One condition comparison for every consumer. `strict` is the block/spam rule (`>`/`<` are
- * strict); legacy inline conditions use the inclusive rule. An unknown operator answers null,
- * which the caller treats as unreadable rather than silently as equality.
- */
-function compare(operator, actual, expected, strict) {
-    const check = OPERATORS[operator];
-    return check ? check(actual, expected, strict === true) : null;
-}
 
 function defaultSkills() {
     return DEFAULT_SKILLS.map(function (skill) { return Object.assign({}, skill); });
@@ -486,7 +466,7 @@ module.exports = {
     CONFIG_FILE: CONFIG_FILE,
     FILE_PRESET_NAME: FILE_PRESET_NAME,
     DEFAULT_SKILLS: DEFAULT_SKILLS,
-    compare: compare,
+    compare: operators.compare,
     defaultSkills: defaultSkills,
     parsePreset: parsePreset,
     parseConfigValues: parseConfigValues,

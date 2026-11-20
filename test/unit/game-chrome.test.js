@@ -115,13 +115,13 @@ test('a plugin state error reaches the page status line', async () => {
   assert.deepStrictEqual(view.options, {});
 });
 
-test('the strip status is the plugin light reason, not the full state', () => {
+test('the strip status is the plugin light reason, not the full state', async () => {
   const on = harness(Object.assign({}, DECLARATION, {
     status: function () { return 'aura "Arcane Flux": no tap'; }
   }));
-  assert.strictEqual(on.chrome.status(on.win), 'aura "Arcane Flux": no tap');
+  assert.strictEqual(await on.chrome.status(on.win), 'aura "Arcane Flux": no tap');
   const plain = harness(DECLARATION);
-  assert.strictEqual(plain.chrome.status(plain.win), null);
+  assert.strictEqual(await plain.chrome.status(plain.win), null);
 });
 
 test('toggling returns the window to exactly the plain size and back, and says so on the page', async () => {
@@ -516,6 +516,11 @@ test('the wrapper keeps a refused aura reason on the status line between clicks'
   tick();
   await new Promise(setImmediate);
   assert.strictEqual(status.textContent, 'aura "Arcane Flux": no tap', 'then the reason returns');
+  context.api.status = function () { return Promise.resolve('the game is not signed in'); };
+  tick();
+  await new Promise(setImmediate);
+  assert.strictEqual(status.textContent, 'the game is not signed in',
+    'a state-read reason is carried by the light read too');
 });
 
 test('chrome passes context editor declarations and responses through dispatch', async () => {
