@@ -75,7 +75,7 @@
   }
 
   var api = { format: format, insert: insert, block: block, aura: aura, cooldown: cooldown, wait: wait,
-    spam: spam, spamUntil: spamUntil };
+    spam: spam, spamUntil: spamUntil, comparators: COMPARATORS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.autoAttackStep = api;
 })();

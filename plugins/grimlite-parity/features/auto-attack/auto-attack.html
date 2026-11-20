@@ -104,9 +104,7 @@
       <option value="AURA">My aura</option><option value="TAURA">Target aura</option>
     </select></label>
     <label id="auraNameField" hidden>Aura name<input id="stepAura" spellcheck="false" placeholder="e.g. Arcane Flux"></label>
-    <label>Comparison<select id="stepComparator" disabled>
-      <option value=">=">At least</option><option value="<=">At most</option><option value="=">Exactly</option>
-    </select></label>
+    <label>Comparison<select id="stepComparator" disabled></select></label>
     <label><span id="thresholdLabel">Percent</span><input id="stepThreshold" type="number" min="0" max="100" step="1" value="50" disabled></label>
     <button id="insertStep">Add skill</button>
   </div>
@@ -169,6 +167,14 @@
   var pending = null;
   var condition = document.getElementById('stepCondition');
   var comparator = document.getElementById('stepComparator');
+  var comparatorLabels = { '>=': 'At least', '<=': 'At most', '=': 'Exactly' };
+  comparator.replaceChildren();
+  (window.autoAttackStep.comparators || ['>=', '<=', '=']).forEach(function (op) {
+    var option = document.createElement('option');
+    option.value = op;
+    option.textContent = comparatorLabels[op] || op;
+    comparator.appendChild(option);
+  });
   var threshold = document.getElementById('stepThreshold');
   var thresholdLabel = document.getElementById('thresholdLabel');
   var auraField = document.getElementById('auraNameField');

@@ -494,7 +494,7 @@ test('the wrapper keeps a refused aura reason on the status line between clicks'
   const status = { textContent: '' };
   const context = {
     api: { status: function () { return Promise.resolve('aura "Arcane Flux": no tap'); } },
-    current: { enabled: true, values: { autoAttack: true } },
+    current: { enabled: true },
     document: { hidden: false, getElementById: function (id) { return id === 'chromeStatus' ? status : null; } },
     window: {
       setInterval: function (fn, ms) { tick = fn; interval = ms; return 1; }
@@ -516,11 +516,6 @@ test('the wrapper keeps a refused aura reason on the status line between clicks'
   tick();
   await new Promise(setImmediate);
   assert.strictEqual(status.textContent, 'aura "Arcane Flux": no tap', 'then the reason returns');
-  context.current = { enabled: true, values: { autoAttack: false } };
-  status.textContent = 'manual';
-  tick();
-  await new Promise(setImmediate);
-  assert.strictEqual(status.textContent, 'manual', 'Auto Attack off stops the poll');
 });
 
 test('chrome passes context editor declarations and responses through dispatch', async () => {

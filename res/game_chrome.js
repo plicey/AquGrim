@@ -458,8 +458,7 @@
       renderStatus();
     }
     function refreshStatusReason() {
-      if (document.hidden || refreshingStatus || !current || !current.enabled ||
-          !current.values || current.values.autoAttack !== true) return;
+      if (document.hidden || refreshingStatus || !current || !current.enabled) return;
       var ask;
       if (typeof api.status === 'function') ask = api.status();
       else if (typeof api.getView === 'function') ask = api.getView().then(function (view) { return view && view.error; });

@@ -31,7 +31,26 @@ const SELECTION_KEY = 'autoAttackSelectedPresets';
 const DRAFT_KEY = 'autoAttackDrafts';
 const CONFIG_FILE = 'ClientConfig.cfg';
 const FILE_PRESET_NAME = 'ClientConfig';
-const OPERATORS = ['>', '>=', '<', '<=', '='];
+// One operator table: the grammar regexes and the runtime comparison both read it. The order
+// matters for the regex alternation, so two-character forms come before their one-character
+// prefixes.
+const OPERATORS = {
+    '>=': function (actual, expected) { return actual >= expected; },
+    '<=': function (actual, expected) { return actual <= expected; },
+    '=': function (actual, expected) { return actual === expected; },
+    '>': function (actual, expected, strict) { return strict ? actual > expected : actual >= expected; },
+    '<': function (actual, expected, strict) { return strict ? actual < expected : actual <= expected; }
+};
+const OPERATOR_LIST = Object.keys(OPERATORS);
+const OPERATOR_PATTERN = '(?:' + OPERATOR_LIST.join('|') + ')';
+const OPERATOR_CAPTURE = '(' + OPERATOR_LIST.join('|') + ')';
+const SAFE_CONDITION = new RegExp('^([^:]+):\\s*(SH|SM)\\s*' + OPERATOR_CAPTURE + '\\s*(\\d+)$', 'i');
+const IF_CONDITION = new RegExp('^if\\s+(SH|SM)\\s*' + OPERATOR_CAPTURE + '\\s*(\\d+)$', 'i');
+const AURA_CONDITION = new RegExp('^if\\s+(target\\s+)?aura\\s+(?:"([^"]+)"\\s*|(.+?)\\s+)' +
+    OPERATOR_CAPTURE + '\\s*(\\d+)$', 'i');
+const SPAM_UNTIL = new RegExp('^spam\\s+([0-4])\\s+until\\s+(SH|SM)\\s*' + OPERATOR_CAPTURE +
+    '\\s*(\\d+)(?:\\s+max\\s+(\\d+)ms)?$', 'i');
+const SIMPLE_STEP = new RegExp('^[0-4](?:wait|:\\s*(?:SH|SM)\\s*' + OPERATOR_PATTERN + '\\s*\\d+)?$', 'i');
 const DEFAULT_SKILLS = [
     { index: '1', safe: false, wait: false },
     { index: '2', safe: false, wait: false },
@@ -44,13 +63,9 @@ const DEFAULT_SKILLS = [
  * strict); legacy inline conditions use the inclusive rule. An unknown operator answers null,
  * which the caller treats as unreadable rather than silently as equality.
  */
-function compare(op, actual, expected, strict) {
-    if (op === '>') return strict ? actual > expected : actual >= expected;
-    if (op === '<') return strict ? actual < expected : actual <= expected;
-    if (op === '>=') return actual >= expected;
-    if (op === '<=') return actual <= expected;
-    if (op === '=') return actual === expected;
-    return null;
+function compare(operator, actual, expected, strict) {
+    const check = OPERATORS[operator];
+    return check ? check(actual, expected, strict === true) : null;
 }
 
 function defaultSkills() {
@@ -67,7 +82,7 @@ function parseLegacyPreset(value) {
     text.split(/[;,\r\n]/).forEach(function (part) {
         const token = part.trim();
         if (!token) return;
-        const safe = /^([^:]+):\s*(SH|SM)\s*([<>]=?|=)\s*(\d+)$/i.exec(token);
+        const safe = SAFE_CONDITION.exec(token);
         if (safe) {
             skills.push({
                 index: safe[1].trim(),
@@ -110,8 +125,8 @@ function parsePreset(value) {
             block = null;
             continue;
         }
-        const condition = /^if\s+(SH|SM)\s*([<>]=?|=)\s*(\d+)$/i.exec(token);
-        const auraCondition = /^if\s+(target\s+)?aura\s+(?:"([^"]+)"\s*|(.+?)\s+)([<>]=?|=)\s*(\d+)$/i.exec(token);
+        const condition = IF_CONDITION.exec(token);
+        const auraCondition = AURA_CONDITION.exec(token);
         if (condition || auraCondition || /^cooldown$/i.test(token)) {
             if (block || parts[++i] !== '{') throw new Error('Blocks need braces and cannot be nested.');
             if (condition && Number(condition[3]) > 100) throw new Error('Percent must be from 0 to 100.');
@@ -136,7 +151,7 @@ function parsePreset(value) {
         const spamText = token.replace(/^await\s+(?=spam\b)/i, '');
         const awaitSpam = spamText !== token;
         const spam = /^spam\s+([0-4])\s+(\d+)ms$/i.exec(spamText);
-        const until = /^spam\s+([0-4])\s+until\s+(SH|SM)\s*([<>]=?|=)\s*(\d+)(?:\s+max\s+(\d+)ms)?$/i.exec(spamText);
+        const until = SPAM_UNTIL.exec(spamText);
         if (block && !block.row) {
             if (!/^[0-4]$/.test(token)) throw new Error('Cooldown blocks contain only skills 0 to 4.');
             if (!rows.some(function (row) { return row.type === 'cooldown' && row.index === token; })) {
@@ -163,7 +178,7 @@ function parsePreset(value) {
         } else if (/^wait$/i.test(token)) {
             globalWait = true;
         } else {
-            if (!/^[0-4](?:wait|:\s*(?:SH|SM)\s*[<>]=?\s*\d+|:\s*(?:SH|SM)\s*=\s*\d+)?$/i.test(token)) {
+            if (!SIMPLE_STEP.test(token)) {
                 throw new Error('Invalid step: ' + token);
             }
             const skill = parseLegacyPreset(token)[0];
@@ -470,7 +485,6 @@ module.exports = {
     DRAFT_KEY: DRAFT_KEY,
     CONFIG_FILE: CONFIG_FILE,
     FILE_PRESET_NAME: FILE_PRESET_NAME,
-    OPERATORS: OPERATORS,
     DEFAULT_SKILLS: DEFAULT_SKILLS,
     compare: compare,
     defaultSkills: defaultSkills,
