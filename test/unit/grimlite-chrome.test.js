@@ -666,6 +666,23 @@ test('a priority refusal clears when its gate closes', async () => {
   h.chrome.stop();
 });
 
+test('a closed priority gate clears a refusal when the block is the whole rotation', async () => {
+  const gate = { open: true };
+  const h = await rotationHarness('if aura "Arcane Flux">=1 {4}', {
+    selfAura: function () { return gate.open ? 1 : 0; },
+    skillAvailable: 0,
+    useSkill: function () { return false; }
+  });
+  await h.chrome.tick();
+  assert.match((await h.chrome.state()).error, /skill 4/);
+  gate.open = false;
+  await h.chrome.tick();
+  const state = await h.chrome.state();
+  assert.strictEqual(state.values.autoAttackError, null);
+  assert.strictEqual(state.error, null);
+  h.chrome.stop();
+});
+
 test('multi-skill and basic-attack If blocks keep their rotation place', async () => {
   const block = await rotationHarness('spam 0 60000ms;if aura "Arcane Flux">=8 {4;3}',
     { selfAura: 8, skillAvailable: 0 });

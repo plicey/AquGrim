@@ -477,16 +477,19 @@ function createChrome(deps) {
             const ready = await checked(read('skillAvailable', [body.index]));
             if (!isReady(ready)) continue;
             // Confirm this cast: a refused gated skill must not stop the rest of the rotation.
+            const before = autoAttackError;
             if (await checked(cast(body.index, version, false, true))) {
                 priorityErrors.delete(row);
                 return true;
             }
-            const message = autoAttackError || ('skill ' + body.index + ': the game did not use it');
+            // The priority refusal lives on its row. It is not mirrored into the normal cast slot,
+            // whose lifetime is the rotation rather than this gate; a gate that closes must be
+            // able to take the reason with it.
+            const fresh = autoAttackError !== before ? autoAttackError : null;
+            const message = fresh || ('skill ' + body.index + ': the game did not use it');
             priorityErrors.set(row, message);
-            if (!autoAttackError) {
-                autoAttackError = message;
-                log(message);
-            }
+            autoAttackError = null;
+            if (!fresh) log(message);
         }
         return false;
     }
