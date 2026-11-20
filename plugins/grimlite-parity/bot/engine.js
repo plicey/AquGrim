@@ -1388,6 +1388,16 @@ function createEngine(deps) {
         return { ok: true, value: every };
     }
 
+    /**
+     * CmdKillFor.cs's own last line, `if (Player.HasTarget) Player.CancelTarget();`. A monster
+     * that respawns in the same cell can leave the character auto-attacking after the item is
+     * already held, so the target is dropped before the command hands the list on.
+     */
+    async function dropTarget() {
+        const target = await read('hasTarget');
+        if (target.ok && target.value === true) await read('cancelTargets');
+    }
+
     /** CmdKill's KillPriority: the first name on the list that is in the cell wins. */
     async function killPriority(list) {
         const wanted = String(list || '').split(',').map(function (part) { return part.trim(); })
@@ -2144,16 +2154,29 @@ function createEngine(deps) {
             const quantities = varOf(command.Quantity);
             const start = await collected(names, quantities, itemType);
             if (!start.ok) return 'could not read the inventory: ' + start.error;
-            if (start.value) return undefined;
-            for (let round = 0; round < HUNT_SAFETY_ROUNDS && running; round++) {
-                const reason = await killOnce(killOptions);
-                if (reason) return reason;
-                await sleep(delayAfter);
-                const now = await collected(names, quantities, itemType);
-                if (!now.ok) return 'could not read the inventory: ' + now.error;
-                if (now.value) return undefined;
+            let done = start.value;
+            if (!done) {
+                for (let round = 0; round < HUNT_SAFETY_ROUNDS && running; round++) {
+                    const reason = await killOnce(killOptions);
+                    if (reason) return reason;
+                    await sleep(delayAfter);
+                    const now = await collected(names, quantities, itemType);
+                    if (!now.ok) return 'could not read the inventory: ' + now.error;
+                    if (now.value) {
+                        done = true;
+                        break;
+                    }
+                }
+                if (!done) {
+                    return 'stopped after ' + HUNT_SAFETY_ROUNDS + ' kill(s) without ' +
+                        names + ' ' + quantities + 'x';
+                }
             }
-            return 'stopped after ' + HUNT_SAFETY_ROUNDS + ' kill(s) without ' + names + ' ' + quantities + 'x';
+            // The reference's own closing pair for both inventory branches: drop the target the
+            // fight left behind, then give the game its 500 ms before the next command.
+            await dropTarget();
+            await sleep(500);
+            return undefined;
         },
 
         CmdShortHunt: async function (ctx, command) {
