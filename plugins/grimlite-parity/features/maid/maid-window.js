@@ -540,23 +540,25 @@ function createDialogs(deps) {
 /**
  * The Maid's own two keys: Unfollow and StopAttack. The reference has a KeyDown handler on its own
  * form for both while it has focus, and one LowLevelKeyboardHook for the same two keys app-wide
- * once its Global Hotkey box is ticked.
+ * once its Global Hotkey box is ticked. They are the reference's bare R and T in both places
+ * (MaidRemake.designer.cs: "Unfollow (R)" and "StopAttack (T)").
  *
- * Here that is the app's two shortcut layers, injected exactly as the Hotkeys window (#34) takes
- * them, and the choice between them is the`Global Hotkey` box. Both keys are the plugin's own
- * keybind ids, so they are rebindable from the app's Settings like any other binding, and the
- * accelerators are read from what the app merged for this session rather than from a second copy
- * of the defaults.
+ * Here the form's half is the page's own keydown handler. The app-wide half is an injected layer
+ * (main.js makes it from the app's focus-scoped shortcut layer): it registers the two plugin
+ * keybind ids, whose defaults are R and T, so rebinding from Settings still works. The layer skips
+ * the Maid window itself, where the page owns the keys, which is what keeps one press from
+ * toggling the box twice. Nothing is registered while the box is unticked.
  */
 function createKeys(deps) {
     deps = deps || {};
     const maid = deps.maid;
     const log = typeof deps.log === 'function' ? deps.log : function () {};
-    const local = deps.localShortcuts || null;
-    const global = deps.globalShortcuts || null;
+    const appWide = deps.shortcuts || deps.globalShortcuts || null;
     const ids = deps.ids || {};
-    const accelerators = deps.accelerators || function () { return {}; };
-    let onLayer = null;
+    const accelerators = deps.accelerators || function () {
+        return { grimliteMaidUnfollow: 'R', grimliteMaidStopAttack: 'T' };
+    };
+    let onLayer = null;   // 'form' (the page's own handler) or 'app-wide'
     let registered = [];
 
     // The reference's own two handlers (MaidRemake.hotkey / globalHotkey): each key flips its box.
@@ -582,21 +584,22 @@ function createKeys(deps) {
         onLayer = null;
     }
 
-    /** Put both keys on the layer the Global Hotkey box asks for, and only on that one. */
+    /** Move the keys between the form's own handler and the app-wide shortcut layer. */
     function apply(isGlobal) {
-        const want = isGlobal === true ? 'global' : 'local';
+        const want = isGlobal === true ? 'app-wide' : 'form';
         if (onLayer === want) return { ok: true, layer: want, registered: registered.length };
         release();
         // cbEnableGlobalHotkey_CheckedChanged's own untick (:1041-1043): both boxes go off with
         // the app-wide hook, whether the hook was taken or the box merely starts unticked.
-        if (want === 'local') {
+        if (want === 'form') {
             if (typeof maid.setUnfollow === 'function') maid.setUnfollow(false);
             if (typeof maid.setStopAttack === 'function') maid.setStopAttack(false);
+            onLayer = 'form';
+            return { ok: true, layer: 'form', registered: 0 };
         }
-        const layer = (want === 'global' ? global : local) || null;
-        if (!layer || typeof layer.register !== 'function') {
-            log('maid: this app session has no ' + want + ' shortcut layer to put the keys on');
-            return { ok: false, error: 'no ' + want + ' shortcut layer' };
+        if (!appWide || typeof appWide.register !== 'function') {
+            log('maid: this app session has no app-wide shortcut layer to put the keys on');
+            return { ok: false, error: 'no app-wide shortcut layer' };
         }
         const keys = accelerators() || {};
         Object.keys(bindings).forEach(function (id) {
@@ -607,7 +610,7 @@ function createKeys(deps) {
             }
             let took;
             try {
-                took = layer.register(accel, bindings[id]);
+                took = appWide.register(accel, bindings[id]);
             } catch (error) {
                 log('maid: could not put ' + id + ' on ' + accel + ': ' + message(error));
                 return;
@@ -616,10 +619,10 @@ function createKeys(deps) {
                 log('maid: ' + accel + ' is already taken, so ' + id + ' is not bound app-wide');
                 return;
             }
-            registered.push({ id: id, accel: accel, layer: layer });
+            registered.push({ id: id, accel: accel, layer: appWide });
         });
-        onLayer = want;
-        return { ok: true, layer: want, registered: registered.length };
+        onLayer = 'app-wide';
+        return { ok: true, layer: 'app-wide', registered: registered.length };
     }
 
     return {
@@ -783,8 +786,7 @@ function createFromHost(host, deps) {
     const keys = deps.keys || createKeys({
         maid: maid,
         log: log,
-        localShortcuts: deps.localShortcuts,
-        globalShortcuts: deps.globalShortcuts,
+        shortcuts: deps.shortcuts,
         // The user's own rebindings win over the plugin's defaults: the platform merges them into
         // what it hands a plugin (`host.getPlatformSettings()`), the way the Hotkeys window reads
         // them, so a key the user changed in Settings is the key that fires here too.

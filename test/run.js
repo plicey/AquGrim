@@ -59,6 +59,7 @@ global.test = function (name, fn) {
   './unit/plugin-runtime.test.js',
   './unit/flash-trust.test.js',
   './unit/keybind-dispatcher.test.js',
+  './unit/shortcut-layers.test.js',
   './unit/aqw-adapter-boot.test.js',
   './unit/aqw-session-urls.test.js',
   './unit/aqw-user-agent.test.js',

@@ -366,7 +366,7 @@ exports.maidMessages = {
     unfollow: 'Unfollow (R)',
     stopAttack: 'StopAttack (T)',
     globalHotkey: 'Global Hotkey',
-    keyHint: 'With Global Hotkey ticked, Unfollow and StopAttack work whichever window has focus.',
+    keyHint: 'R and T work while the Maid has focus; with Global Hotkey ticked they also work while the game or any other AquGrim window has focus.',
     // MaidRemake.designer.cs's own box words, in its own spelling (including its capitalisation).
     optionAntiCounter: 'Anti Counter',
     optionCopyWalk: 'Copy Walk',
