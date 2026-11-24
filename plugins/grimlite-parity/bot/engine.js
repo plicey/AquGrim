@@ -23,7 +23,6 @@ const bots = require('./bots.js');
 const catalog = require('./command-catalog.js');
 const miscCommands = require('./misc-commands.js');
 const miscRules = require('./misc.js');
-const { requirementsOf } = require('./quest-requirements.js');
 // The state-reading statements (#41) live in their own module: #42 adds its own table beside it,
 // and a union of two tables is a one-line change where one long inline object is not.
 const statements = require('./statements.js');
@@ -2302,7 +2301,7 @@ function createEngine(deps) {
             } else if (typeof game.ghostAccept === 'function') {
                 await game.ghostAccept(qid).catch(function () {});
             }
-            const required = requirementsOf(row);
+            const required = Array.isArray(row.RequiredItems) ? row.RequiredItems : [];
             const monsters = String(varOf(command.Monster)).split(',');
             for (let i = 0; i < required.length && running; i++) {
                 const need = required[i] || {};
