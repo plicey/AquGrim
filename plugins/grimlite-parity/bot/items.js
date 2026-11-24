@@ -679,11 +679,8 @@ async function maximumTurnIns(access, id) {
         const temp = asList(await access.tempItems().catch(function () { return []; }));
         for (let i = 0; i < required.length; i++) {
             const need = required[i];
-            // The requirement's own bTemp names the bag, but a row that has it wrong must not
-            // count as none: the same ItemID lives in exactly one of the two bags.
-            const first = truthy(need.bTemp) ? temp : inventory;
-            const second = first === temp ? inventory : temp;
-            const held = inBag(first, need.ItemID) || inBag(second, need.ItemID);
+            // bTemp names the bag, as it does in CmdQuestHunt and in the reference's own getMax.
+            const held = inBag(truthy(need.bTemp) ? temp : inventory, need.ItemID);
             const perTurnIn = Number(need.iQty === undefined ? need.Quantity : need.iQty) || 1;
             complete = Math.min(complete, Math.floor(qtyOf(held) / perTurnIn));
         }

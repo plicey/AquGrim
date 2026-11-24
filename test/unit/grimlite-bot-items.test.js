@@ -844,18 +844,6 @@ test('Quest.getMax counts the required items the bag and the temp bag hold, per 
     'floor(9/2) = 4 beats floor(11/1) = 11, and 4 beats the game own 3');
 });
 
-test('Quest.getMax finds a temporary item even when the requirement omits bTemp', async () => {
-  // A live quest row that does not mark its temp requirement must not count as none: the id is
-  // looked for in the other bag too.
-  const quest = { QuestID: 31, RequiredItems: [{ sName: 'Medal', ItemID: 7, iQty: 5 }] };
-  const game = questGame(quest, {
-    state: { bag: [], temp: [{ sName: 'Medal', ItemID: 7, iQty: 25 }] }
-  });
-  await run('CmdCompleteQuest', { Quest: { QuestID: 31 }, CompleteTry: -1 }, null, { game: game });
-  assert.deepStrictEqual(game.state.completed, ['31', '5', '-1', 'False'],
-    '25 medals / 5 per turn-in = 5, which beats the game own 3');
-});
-
 test('CmdCompleteQuest carries the quest own ItemId when it has one, and -1 when it does not', async () => {
   // Quest.Complete: with an ItemId it is handed over; without one the loader default '-1' stands.
   const withId = questGame({});
