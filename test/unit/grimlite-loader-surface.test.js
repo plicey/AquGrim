@@ -349,13 +349,13 @@ test('GetQuestTree builds RequiredItems from turnin and the quest own oItems', (
   const quest = {
     QuestID: 31,
     turnin: [{ ItemID: 6, iQty: 5 }],
-    oItems: { '6': { ItemID: 6, sName: 'Medal', bTemp: true } }
+    oItems: { '6': { ItemID: 6, sName: 'Medal', sDesc: 'A war medal', bTemp: true } }
   };
   const bridge = fakeBridge({ 'world.questTree': { '31': quest } }, {});
   const game = access(bridge);
   return game.call('GetQuestTree', []).then((tree) => {
     assert.deepStrictEqual(tree[0].RequiredItems,
-      [{ sName: 'Medal', ItemID: 6, bTemp: true, iQty: 5 }]);
+      [{ sName: 'Medal', sDesc: 'A war medal', ItemID: 6, bTemp: true, iQty: 5 }]);
   });
 });
 

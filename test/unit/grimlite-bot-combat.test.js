@@ -1341,6 +1341,43 @@ test('CmdQuestHunt reads the loader RequiredItems and hunts a missing one', asyn
         'a missing requirement sends the bot to the hunt map');
 });
 
+test('CmdQuestHunt matches a requirement by ItemID, not by a shared name', async () => {
+    // CmdQuestHunt.cs itemCollected reads the bag named by IsTemporary and matches the item Id;
+    // a same-named item of another id must not count as the requirement.
+    const session = fakeSession({ map: 'battleontown' });
+    session.items = function () { return Promise.resolve([]); };
+    session.tempItems = function () {
+        return Promise.resolve([{ sName: 'Grimskull War Medal', ItemID: 99, iQty: 5 }]);
+    };
+    session.join = function (map, cell, pad) {
+        session.calls.push({ name: 'join', args: [map, cell, pad] });
+        session.snapshot.map = map.split('-')[0];
+        return Promise.resolve();
+    };
+    session.attackMonster = function () { return Promise.reject(new Error('no live Avatar')); };
+    const game = {
+        quest: function () {
+            return Promise.resolve({
+                QuestID: 4321, iSlot: 0, iValue: 0, bOnce: 0,
+                RequiredItems: [{ sName: 'Grimskull War Medal', ItemID: 7, bTemp: 1, iQty: 5 }]
+            });
+        },
+        isInProgress: function () { return Promise.resolve(true); },
+        accept: function () { return Promise.resolve(); },
+        questProgress: function () { return Promise.resolve(0); }
+    };
+    const made = engine({ session: session, game: game });
+    await made.start({
+        Commands: [command('CmdQuestHunt', {
+            Map: 'necrodungeon', Cell: 'r22', Pad: 'Down', Monster: 'Dragon',
+            ItemName: '', Quantity: '', QID: 4321
+        })]
+    });
+    await made.tick();
+    assert.deepStrictEqual(session.asked('join')[0].args, ['necrodungeon', 'r22', 'Down'],
+        'the same name under another id is not the requirement');
+});
+
 test('CmdFollow walks to the player it follows, then fights what is there', async () => {
     // CmdFollow.cs: Player.GoToPlayer(name) then a CmdKill over "*". Its cell-following packet tap
     // is not available here, which the log has to say rather than the bot appearing to follow.

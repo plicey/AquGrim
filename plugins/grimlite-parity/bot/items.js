@@ -688,11 +688,11 @@ async function maximumTurnIns(access, id) {
     return Math.max(await access.maximumTurnIns(id), complete);
 }
 
-/** The bag row for an item id, by either of the id names a quest or a bag row uses. */
+/** The bag row for an item id; both the bag lists and RequiredItems name it ItemID. */
 function inBag(list, id) {
     const wanted = Number(id);
     return list.filter(function (item) {
-        return Number(item.ItemID === undefined ? item.ID : item.ItemID) === wanted;
+        return Number(item.ItemID) === wanted;
     })[0];
 }
 

@@ -552,6 +552,7 @@ const SURFACE = {
                                 const item = items[req.ItemID] || {};
                                 return {
                                     sName: item.sName,
+                                    sDesc: item.sDesc,
                                     ItemID: item.ItemID === undefined ? req.ItemID : item.ItemID,
                                     bTemp: item.bTemp,
                                     iQty: req.iQty
