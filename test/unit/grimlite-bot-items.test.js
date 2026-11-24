@@ -193,15 +193,16 @@ test('the generic reads the handlers make are recorded with their evidence', () 
 });
 
 test('the routes that are not loader names are recorded with why they are not', () => {
-  // ExitCombat, GetDrop and GhostAccept have no helper in the reference loader. Each is a frame or
-  // a composition, and each is written down rather than worked around quietly.
-  ['ExitCombat', 'GetDrop', 'GhostAccept'].forEach(function (name) {
+  // ExitCombat, GetDrop, GhostAccept and the bulk turn-in have no helper in the reference loader.
+  // Each is a frame or a composition, and each is written down rather than worked around quietly.
+  ['ExitCombat', 'GetDrop', 'GhostAccept', 'CompleteBulk'].forEach(function (name) {
     const why = items.OWN_ROUTES[name];
     assert.ok(why, name + ' has no recorded reason');
     assert.ok(why.length > 40, name + ' records a reason too short to act on');
   });
   assert.ok(/frame/.test(items.OWN_ROUTES.GetDrop), 'the drop route says it is a frame');
   assert.ok(/frame/.test(items.OWN_ROUTES.GhostAccept), 'the ghost accept says it is a frame');
+  assert.ok(/frame/.test(items.OWN_ROUTES.CompleteBulk), 'the bulk turn-in says it is a frame');
 });
 
 test('a want that is in neither table is refused rather than answered', async () => {
@@ -826,6 +827,24 @@ test('CmdCompleteQuest turns in once with the game call, and -1 turns in all wit
   assert.deepStrictEqual(bare.frames,
     [{ direction: 'toServer', text: '%xt%zm%tryQuestComplete%12345%31%-1%false%10000%wvz%' }]);
   assert.strictEqual(bare.state.completed, undefined, 'the single-turn-in call is not made for max');
+});
+
+test('an explicit count above one also rides the bulk frame', async () => {
+  // The reference's Complete(qty) carries the caller's count; world.tryQuestComplete has no
+  // quantity argument, so the frame is the route for every count above one.
+  const game = questGame({});
+  await run('CmdCompleteQuest', { Quest: { QuestID: 31 }, CompleteTry: 5 }, null, { game: game });
+  assert.deepStrictEqual(game.frames,
+    [{ direction: 'toServer', text: '%xt%zm%tryQuestComplete%12345%31%-1%false%5%wvz%' }]);
+  assert.strictEqual(game.state.completed, undefined);
+});
+
+test('a missing packet relay falls back to the game call with the same count', async () => {
+  // The relay is optional (packet steering can be off); a failed frame must not end the bot.
+  const game = questGame({}, { relay: false });
+  await run('CmdCompleteQuest', { Quest: { QuestID: 31 }, CompleteTry: 5 }, null, { game: game });
+  assert.deepStrictEqual(game.state.completed, ['31', '5', '-1', 'False'],
+    'the game call still carries the count');
 });
 
 test('Quest.getMax counts the required items the bag and the temp bag hold, per turn-in', async () => {

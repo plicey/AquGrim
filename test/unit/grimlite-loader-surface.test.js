@@ -331,14 +331,31 @@ test('the surface and the options adapter agree on the names they both route', (
 // :BuyItemQtyById). Each expectation below is the loader body it comes from.
 
 test('GetQuestTree answers the tree as the list its loader body builds', () => {
-  // Quests.as:GetQuestTree iterates Root.Game.world.questTree, clones each quest and pushes it,
-  // so the answer is the tree's values as a list - the shape GetQuestTree returns in C#.
+  // Quests.as:GetQuestTree iterates Root.Game.world.questTree, clones each quest, gives it a
+  // RequiredItems list and pushes it, so the answer is the tree's values as a list.
   const task = { QuestID: 31, sName: 'A task' };
   const bridge = fakeBridge({ 'world.questTree': { '31': task } }, {});
   const game = access(bridge);
   return game.call('GetQuestTree', []).then((tree) => {
-    assert.deepStrictEqual(tree, [task], 'the tree keyed by id, as a list');
+    assert.deepStrictEqual(tree, [Object.assign({}, task, { RequiredItems: [] })],
+      'the tree keyed by id, as a list, in the loader own shape');
     assert.deepStrictEqual(bridge.asked, ['world.questTree']);
+  });
+});
+
+test('GetQuestTree builds RequiredItems from turnin and the quest own oItems', () => {
+  // Quests.as:GetQuestTree: a turnin row carries ItemID and iQty; the name and temp flag are read
+  // off q.oItems[req.ItemID], which is where the displayed requirement gets them.
+  const quest = {
+    QuestID: 31,
+    turnin: [{ ItemID: 6, iQty: 5 }],
+    oItems: { '6': { ItemID: 6, sName: 'Medal', bTemp: true } }
+  };
+  const bridge = fakeBridge({ 'world.questTree': { '31': quest } }, {});
+  const game = access(bridge);
+  return game.call('GetQuestTree', []).then((tree) => {
+    assert.deepStrictEqual(tree[0].RequiredItems,
+      [{ sName: 'Medal', ItemID: 6, bTemp: true, iQty: 5 }]);
   });
 });
 

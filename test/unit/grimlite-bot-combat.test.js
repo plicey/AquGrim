@@ -239,6 +239,7 @@ function engine(deps) {
     const records = [];
     const made = engineModel.createEngine({
         session: options.session || fakeSession(),
+        game: options.game,
         sleep: function (ms) { waited.push(ms); return Promise.resolve(); },
         log: function (line) { records.push(line); }
     });
@@ -1303,6 +1304,41 @@ test('a quest hunt without game access says what it cannot read', async () => {
     assert.ok(made.records.some(function (line) {
         return /quest access/.test(line) && /4321/.test(line);
     }), made.records.join(' | '));
+});
+
+test('CmdQuestHunt reads the loader RequiredItems and hunts a missing one', async () => {
+    // Quests.as:GetQuestTree builds RequiredItems with sName and bTemp; a row read that way must
+    // be hunted by name instead of skipped for carrying none.
+    const session = fakeSession({ map: 'battleontown' });
+    session.items = function () { return Promise.resolve([]); };
+    session.tempItems = function () { return Promise.resolve([]); };
+    session.join = function (map, cell, pad) {
+        session.calls.push({ name: 'join', args: [map, cell, pad] });
+        session.snapshot.map = map.split('-')[0];
+        return Promise.resolve();
+    };
+    session.attackMonster = function () { return Promise.reject(new Error('no live Avatar')); };
+    const game = {
+        quest: function () {
+            return Promise.resolve({
+                QuestID: 4321, iSlot: 0, iValue: 0, bOnce: 0,
+                RequiredItems: [{ sName: 'Grimskull War Medal', ItemID: 7, bTemp: 1, iQty: 5 }]
+            });
+        },
+        isInProgress: function () { return Promise.resolve(true); },
+        accept: function () { return Promise.resolve(); },
+        questProgress: function () { return Promise.resolve(0); }
+    };
+    const made = engine({ session: session, game: game });
+    await made.start({
+        Commands: [command('CmdQuestHunt', {
+            Map: 'necrodungeon', Cell: 'r22', Pad: 'Down', Monster: 'Dragon',
+            ItemName: '', Quantity: '', QID: 4321
+        })]
+    });
+    await made.tick();
+    assert.deepStrictEqual(session.asked('join')[0].args, ['necrodungeon', 'r22', 'Down'],
+        'a missing requirement sends the bot to the hunt map');
 });
 
 test('CmdFollow walks to the player it follows, then fights what is there', async () => {

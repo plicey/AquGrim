@@ -540,7 +540,25 @@ const SURFACE = {
             return ctx.get('world.questTree').then(function (tree) {
                 const keys = tree && typeof tree === 'object' ? Object.keys(tree) : [];
                 return keys.map(function (key) { return tree[key]; })
-                    .filter(function (quest) { return quest && typeof quest === 'object'; });
+                    .filter(function (quest) { return quest && typeof quest === 'object'; })
+                    .map(function (quest) {
+                        // Quests.as:GetQuestTree builds RequiredItems from turnin, taking the name
+                        // and temp flag off the same quest row's oItems; the raw turnin rows carry
+                        // only ItemID and iQty.
+                        const turnin = Array.isArray(quest.turnin) ? quest.turnin : [];
+                        const items = quest.oItems && typeof quest.oItems === 'object' ? quest.oItems : {};
+                        return Object.assign({}, quest, {
+                            RequiredItems: turnin.map(function (req) {
+                                const item = items[req.ItemID] || {};
+                                return {
+                                    sName: item.sName,
+                                    ItemID: item.ItemID === undefined ? req.ItemID : item.ItemID,
+                                    bTemp: item.bTemp,
+                                    iQty: req.iQty
+                                };
+                            })
+                        });
+                    });
             });
         }
     },

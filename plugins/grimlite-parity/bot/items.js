@@ -23,6 +23,7 @@
 // route rather than faking a result: see OWN_ROUTES.
 
 const surface = require('../loader-surface.js');
+const { requirementsOf } = require('./quest-requirements.js');
 
 /**
  * The reference loader's own helper names this module asks for, with the body each one stands for
@@ -98,6 +99,10 @@ const GAME_READS = {
  * the packet path. Records rather than refusals - the frame the reference sends is sent here too.
  */
 const OWN_ROUTES = {
+    CompleteBulk: 'Quest.Complete\'s max form: the client turns in more than once per request by ' +
+        'sending %xt%zm%tryQuestComplete%<room>%<quest>%<item>%false%<count>%wvz% through the ' +
+        'socket - the same frame the quest-log bulk turn-in and current clients send - so a count ' +
+        'above one is a frame and not a loader name',
     ExitCombat: 'Player.ExitCombat and Player.refreshCell both move the character to the cell it ' +
         'already stands in (MoveToCell(Cell, Pad) -> Flash.Call("Jump")), and the loader registers ' +
         'neither name, so both are the loader own Jump on Cell and Pad - ExitCombat keeping the ' +
@@ -509,6 +514,20 @@ function createAccess(deps) {
             return ask('Complete', [String(id), String(qty === undefined ? 1 : qty),
                 itemId === undefined || itemId === null ? '-1' : String(itemId), 'False']);
         },
+        /**
+         * Quest.Complete's max form (OWN_ROUTES): world.tryQuestComplete has no quantity argument,
+         * so a count above one rides the client's own frame. The id and item defaults are the same
+         * ones `complete` uses.
+         */
+        completeBulk: function (id, qty, itemId) {
+            return access.roomId().then(function (room) {
+                return access.send('toServer', '%xt%zm%tryQuestComplete%' + room + '%' + id +
+                    '%' + (itemId === undefined || itemId === null ? '-1' : itemId) +
+                    '%false%' + qty + '%wvz%');
+            }).then(function () {
+                log('CmdCompleteQuest: turned in ' + qty + 'x quest ' + id + ' in one frame');
+            });
+        },
         loadQuest: function (id) { return ask('LoadQuest', [String(id)]); },
         equip: function (id) { return ask('Equip', [String(id)]); },
         equipPotion: function (id, desc, file, name) {
@@ -671,9 +690,9 @@ async function maximumShopBuys(access, shopItem) {
 async function maximumTurnIns(access, id) {
     let complete = 10000;
     const quest = await access.quest(id).catch(function () { return null; });
-    // The game's quest rows carry their requirements under "turnin" (Grimlite's Quest.cs reads
-    // the same name); the other two spellings are kept for rows that came from elsewhere.
-    const required = (quest && (quest.turnin || quest.reqd || quest.RequiredItems)) || [];
+    // Quests.GetQuestTree answers the requirements as RequiredItems; the raw turnin and legacy
+    // reqd spellings are kept for rows read through an older surface.
+    const required = requirementsOf(quest);
     if (Array.isArray(required) && required.length) {
         const inventory = asList(await access.inventoryItems());
         const temp = asList(await access.tempItems().catch(function () { return []; }));
@@ -1231,13 +1250,13 @@ function handlers(access) {
                     ? await maximumTurnIns(access, id)
                     : tries;
                 if (qty > 1) {
-                    // The game's own tryQuestComplete turns one in per call; bulk comes from the
-                    // client's frame, which carries the count before the token.
-                    const room = await access.roomId();
-                    access.log('CmdCompleteQuest: turning in ' + qty + 'x quest ' + id + ' in one frame');
-                    await access.send('toServer', '%xt%zm%tryQuestComplete%' + room + '%' + id +
-                        '%' + (itemId === undefined || itemId === null ? '-1' : itemId) +
-                        '%false%' + qty + '%wvz%');
+                    // world.tryQuestComplete has no quantity argument, so the count rides the
+                    // client's frame; if the relay is not there, the game call still carries it.
+                    await access.completeBulk(id, qty, itemId).catch(function (error) {
+                        access.log('CmdCompleteQuest: the bulk frame failed (' + message(error) +
+                            '), so the game call carries the count instead');
+                        return access.complete(id, qty, itemId);
+                    });
                 } else {
                     await access.complete(id, qty, itemId);
                 }
