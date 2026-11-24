@@ -2301,7 +2301,8 @@ function createEngine(deps) {
             } else if (typeof game.ghostAccept === 'function') {
                 await game.ghostAccept(qid).catch(function () {});
             }
-            const required = Array.isArray(row.reqd) ? row.reqd
+            const required = Array.isArray(row.turnin) ? row.turnin
+                : Array.isArray(row.reqd) ? row.reqd
                 : (Array.isArray(row.RequiredItems) ? row.RequiredItems : []);
             const monsters = String(varOf(command.Monster)).split(',');
             for (let i = 0; i < required.length && running; i++) {

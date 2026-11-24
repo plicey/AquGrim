@@ -671,21 +671,32 @@ async function maximumShopBuys(access, shopItem) {
 async function maximumTurnIns(access, id) {
     let complete = 10000;
     const quest = await access.quest(id).catch(function () { return null; });
-    const required = (quest && (quest.reqd || quest.RequiredItems)) || [];
+    // The game's quest rows carry their requirements under "turnin" (Grimlite's Quest.cs reads
+    // the same name); the other two spellings are kept for rows that came from elsewhere.
+    const required = (quest && (quest.turnin || quest.reqd || quest.RequiredItems)) || [];
     if (Array.isArray(required) && required.length) {
         const inventory = asList(await access.inventoryItems());
         const temp = asList(await access.tempItems().catch(function () { return []; }));
         for (let i = 0; i < required.length; i++) {
             const need = required[i];
-            const where = truthy(need.bTemp) ? temp : inventory;
-            const held = where.filter(function (item) {
-                return Number(item.ItemID) === Number(need.ItemID);
-            })[0];
+            // The requirement's own bTemp names the bag, but a row that has it wrong must not
+            // count as none: the same ItemID lives in exactly one of the two bags.
+            const first = truthy(need.bTemp) ? temp : inventory;
+            const second = first === temp ? inventory : temp;
+            const held = inBag(first, need.ItemID) || inBag(second, need.ItemID);
             const perTurnIn = Number(need.iQty === undefined ? need.Quantity : need.iQty) || 1;
             complete = Math.min(complete, Math.floor(qtyOf(held) / perTurnIn));
         }
     }
     return Math.max(await access.maximumTurnIns(id), complete);
+}
+
+/** The bag row for an item id, by either of the id names a quest or a bag row uses. */
+function inBag(list, id) {
+    const wanted = Number(id);
+    return list.filter(function (item) {
+        return Number(item.ItemID === undefined ? item.ID : item.ItemID) === wanted;
+    })[0];
 }
 
 /** CmdEquip's own IsEquipped: an inventory row carrying the same id and the worn flag. */
@@ -1219,7 +1230,17 @@ function handlers(access) {
                 const qty = tries <= -1 || command.SafeRelogin
                     ? await maximumTurnIns(access, id)
                     : tries;
-                await access.complete(id, qty, itemId);
+                if (qty > 1) {
+                    // The game's own tryQuestComplete turns one in per call; bulk comes from the
+                    // client's frame, which carries the count before the token.
+                    const room = await access.roomId();
+                    access.log('CmdCompleteQuest: turning in ' + qty + 'x quest ' + id + ' in one frame');
+                    await access.send('toServer', '%xt%zm%tryQuestComplete%' + room + '%' + id +
+                        '%' + (itemId === undefined || itemId === null ? '-1' : itemId) +
+                        '%false%' + qty + '%wvz%');
+                } else {
+                    await access.complete(id, qty, itemId);
+                }
             } finally {
                 if (provoke) setConfig(ctx, access, 'ProvokeMonsters', true);
             }
