@@ -670,16 +670,17 @@ async function maximumShopBuys(access, shopItem) {
  */
 async function maximumTurnIns(access, id) {
     let complete = 10000;
+    const gameMax = await access.maximumTurnIns(id);
     const quest = await access.quest(id).catch(function () { return null; });
     // A quest row that cannot be read is not a quest without requirements; the game's own
     // answer (or one) is the only count that is not the 10000 sentinel.
-    if (!quest) return Math.max(await access.maximumTurnIns(id), 1);
+    if (!quest) return Math.max(gameMax, 1);
     const required = Array.isArray(quest.RequiredItems) ? quest.RequiredItems : [];
     if (Array.isArray(required) && required.length) {
         // A bag that cannot be read leaves the count unknowable; the game's own answer still
         // stands, and a missing requirement must not end the bot.
         const inventory = await access.inventoryItems().catch(function () { return null; });
-        if (!inventory) return Math.max(await access.maximumTurnIns(id), 1);
+        if (!inventory) return Math.max(gameMax, 1);
         const temp = asList(await access.tempItems().catch(function () { return []; }));
         for (let i = 0; i < required.length; i++) {
             const need = required[i];
@@ -688,7 +689,7 @@ async function maximumTurnIns(access, id) {
             complete = Math.min(complete, requirementTurnIns(need, bag));
         }
     }
-    return Math.max(await access.maximumTurnIns(id), complete);
+    return Math.max(gameMax, complete);
 }
 
 /** The bag row for an item id; both the bag lists and RequiredItems name it ItemID. */
