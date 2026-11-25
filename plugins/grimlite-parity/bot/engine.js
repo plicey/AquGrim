@@ -676,7 +676,7 @@ function createEngine(deps) {
                 let qty = 1;
                 if (found.row && found.row.SafeRelogin === true &&
                     typeof game.maximumTurnIns === 'function') {
-                    qty = await game.maximumTurnIns(id).catch(function () { return 1; });
+                    qty = await itemsModel.maximumTurnIns(game, id).catch(function () { return 1; });
                 }
                 const itemId = found.row ? found.row.ItemId : undefined;
                 try {

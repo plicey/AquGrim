@@ -1414,6 +1414,35 @@ test('CmdQuestHunt reports a map item that never arrives', async () => {
     }), made.records.join(' | '));
 });
 
+test('the quest list uses the requirement-aware max when SafeRelogin is on', async () => {
+    // Bot.StartQuestList turns in the first completable row; SafeRelogin asks for the max, which
+    // is the same requirement-aware count CmdCompleteQuest uses.
+    const session = fakeSession({});
+    const calls = [];
+    const game = {
+        quest: function () {
+            return Promise.resolve({
+                QuestID: 4321,
+                RequiredItems: [{ sName: 'Grimskull War Medal', ItemID: 7, bTemp: 1, iQty: 5 }]
+            });
+        },
+        inventoryItems: function () { return Promise.resolve([]); },
+        tempItems: function () { return Promise.resolve([{ ItemID: 7, iQty: 25 }]); },
+        maximumTurnIns: function () { return Promise.resolve(3); },
+        canComplete: function () { return Promise.resolve(true); },
+        complete: function (id, qty, itemId) {
+            calls.push({ id: id, qty: qty, itemId: itemId });
+            session.snapshot.signedIn = false;
+            return Promise.resolve();
+        }
+    };
+    const made = engine({ session: session, game: game });
+    await made.start({ Quests: [{ QuestID: 4321, SafeRelogin: true }], Commands: [command('CmdBlank', {})] });
+    await new Promise(function (resolve) { setTimeout(resolve, 20); });
+    assert.deepStrictEqual(calls, [{ id: 4321, qty: 5, itemId: undefined }],
+        '25 medals / 5 per turn-in = 5, not the game raw 3');
+});
+
 test('CmdFollow walks to the player it follows, then fights what is there', async () => {
     // CmdFollow.cs: Player.GoToPlayer(name) then a CmdKill over "*". Its cell-following packet tap
     // is not available here, which the log has to say rather than the bot appearing to follow.
