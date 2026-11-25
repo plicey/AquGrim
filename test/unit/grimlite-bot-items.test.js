@@ -870,6 +870,24 @@ test('a failed temp bag read falls back like the normal bag', async () => {
   assert.deepStrictEqual(game.state.completed, ['31', '3', '-1', 'False']);
 });
 
+test('a failed temp bag read only matters to the requirements that use it', async () => {
+  const quest = { QuestID: 31, RequiredItems: [{ sName: 'Bone', ItemID: 5, iQty: 2 }] };
+  const game = questGame(quest, { state: { bag: [{ ItemID: 5, iQty: 9 }] } });
+  game.answers.GetTempItems = function () { return Promise.reject(new Error('no temp bag')); };
+  await run('CmdCompleteQuest', { Quest: { QuestID: 31 }, CompleteTry: -1 }, null, { game: game });
+  assert.deepStrictEqual(game.state.completed, ['31', '4', '-1', 'False'],
+    'the normal bag still counts four turn-ins');
+});
+
+test('a failed normal bag read only matters to the requirements that use it', async () => {
+  const quest = { QuestID: 31, RequiredItems: [{ sName: 'Medal', ItemID: 7, iQty: 5, bTemp: 1 }] };
+  const game = questGame(quest, { state: { temp: [{ ItemID: 7, iQty: 25 }] } });
+  game.answers.GetInventoryItems = function () { return Promise.reject(new Error('no bag')); };
+  await run('CmdCompleteQuest', { Quest: { QuestID: 31 }, CompleteTry: -1 }, null, { game: game });
+  assert.deepStrictEqual(game.state.completed, ['31', '5', '-1', 'False'],
+    'the temp bag still counts five turn-ins');
+});
+
 test('the requirement rules are one shared pair for max turn-in and quest hunt', () => {
   // CmdCompleteQuest and CmdQuestHunt read the same RequiredItems rows; the bag flag and the
   // per-turn-in quantity are resolved here once, including the loader's string spellings.

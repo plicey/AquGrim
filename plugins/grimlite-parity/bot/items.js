@@ -673,15 +673,22 @@ async function maximumTurnIns(access, id) {
     if (!quest) return Math.max(gameMax, 1);
     const required = Array.isArray(quest.RequiredItems) ? quest.RequiredItems : [];
     if (Array.isArray(required) && required.length) {
-        // A bag that cannot be read leaves the count unknowable; the game's own answer still
-        // stands, and a missing requirement must not end the bot.
-        const inventory = await access.inventoryItems().catch(function () { return null; });
-        const temp = await access.tempItems().catch(function () { return null; });
-        if (!inventory || !temp) return Math.max(gameMax, 1);
+        // Each bag is read only when a requirement needs it, and a bag that cannot be read
+        // leaves the count unknowable: the game's own answer (or one) is the fallback.
+        const bags = {};
+        async function bagFor(tempBag) {
+            const which = tempBag ? 'temp' : 'inventory';
+            if (!Object.prototype.hasOwnProperty.call(bags, which)) {
+                const read = tempBag ? access.tempItems() : access.inventoryItems();
+                bags[which] = await read.then(asList, function () { return null; });
+            }
+            return bags[which];
+        }
         for (let i = 0; i < required.length; i++) {
             const need = required[i];
             // bTemp names the bag, as it does in CmdQuestHunt and in the reference's own getMax.
-            const bag = requirementIsTemporary(need) ? temp : inventory;
+            const bag = await bagFor(requirementIsTemporary(need));
+            if (!bag) return Math.max(gameMax, 1);
             complete = Math.min(complete, requirementTurnIns(need, bag));
         }
     }
