@@ -1400,11 +1400,12 @@ function createEngine(deps) {
     }
 
     /** The same check for a map item, whose id is all the command knows. */
-    async function holdsItemId(id, qty, itemType) {
-        const list = await read(itemType === 1 ? 'tempItems' : 'items');
-        if (!list.ok) return { ok: false, error: list.error };
-        return { ok: true, value: itemsModel.requirementTurnIns(
-            { ItemID: Number(id), iQty: Number(qty) || 1 }, list.value) >= 1 };
+    function holdsItemId(id, qty, itemType) {
+        return holdsRequirement({
+            ItemID: Number(id),
+            bTemp: itemType === 1,
+            iQty: itemsModel.requirementQty({ iQty: qty })
+        });
     }
 
     /**
