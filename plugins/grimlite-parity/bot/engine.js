@@ -1399,6 +1399,14 @@ function createEngine(deps) {
         return { ok: true, value: itemsModel.requirementTurnIns(need, list.value) >= 1 };
     }
 
+    /** The same check for a map item, whose id is all the command knows. */
+    async function holdsItemId(id, qty, itemType) {
+        const list = await read(itemType === 1 ? 'tempItems' : 'items');
+        if (!list.ok) return { ok: false, error: list.error };
+        return { ok: true, value: itemsModel.requirementTurnIns(
+            { ItemID: Number(id), iQty: Number(qty) || 1 }, list.value) >= 1 };
+    }
+
     /**
      * CmdQuestHunt's map-item branch: fetch the id, then wait for the item check; a timeout is a
      * reason, not a pass.
@@ -1409,9 +1417,13 @@ function createEngine(deps) {
         } catch (error) {
             return 'could not get map item ' + id + ': ' + message(error);
         }
-        await waitUntil(held, {});
+        await waitUntil(async function () {
+            const now = await held();
+            return now.ok && now.value === true;
+        }, {});
         const arrived = await held();
-        if (!arrived.ok || arrived.value !== true) {
+        if (!arrived.ok) return 'could not read the inventory: ' + arrived.error;
+        if (arrived.value !== true) {
             return 'could not get map item ' + id + ': the item is still missing';
         }
         return undefined;
@@ -2276,7 +2288,7 @@ function createEngine(deps) {
                     if (/^[0-9]+$/.test(named) && game && typeof game.getMapItem === 'function') {
                         // CmdQuestHunt's own branch: a numeric item name is a map item id.
                         const reason = await getMapItemAndWait(named, function () {
-                            return collected(names[i], wantedQty, itemType);
+                            return holdsItemId(named, wantedQty, itemType);
                         });
                         if (reason) return reason;
                         continue;

@@ -1443,6 +1443,40 @@ test('the quest list uses the requirement-aware max when SafeRelogin is on', asy
         '25 medals / 5 per turn-in = 5, not the game raw 3');
 });
 
+test('CmdQuestHunt continues past a numeric map item it obtained by id', async () => {
+    // The granted map item carries its real name, so the arrival check must use the id that was
+    // requested; the next entry still runs.
+    const session = fakeSession({ map: 'battleontown' });
+    const bag = [];
+    session.items = function () { return Promise.resolve(bag); };
+    session.join = function (map, cell, pad) {
+        session.calls.push({ name: 'join', args: [map, cell, pad] });
+        session.snapshot.map = map.split('-')[0];
+        return Promise.resolve();
+    };
+    session.attackMonster = function () { return Promise.reject(new Error('no live Avatar')); };
+    const got = [];
+    const game = {
+        getMapItem: function (id) {
+            got.push(id);
+            bag.push({ sName: 'Mystery Map Item', ItemID: id, iQty: 1 });
+            return Promise.resolve();
+        }
+    };
+    const made = engine({ session: session, game: game });
+    await made.start({
+        Commands: [command('CmdQuestHunt', {
+            Map: 'necrodungeon', Cell: 'r22', Pad: 'Down', Monster: 'Dragon',
+            ItemName: '7,Thing Two', Quantity: '1,1', ItemType: 0, QID: 0
+        })]
+    });
+    await made.tick();
+    assert.deepStrictEqual(got, [7]);
+    assert.strictEqual(session.asked('join').length, 2, 'the next entry is still hunted');
+    assert.ok(!made.records.some(function (line) { return /still missing/.test(line); }),
+        made.records.join(' | '));
+});
+
 test('CmdFollow walks to the player it follows, then fights what is there', async () => {
     // CmdFollow.cs: Player.GoToPlayer(name) then a CmdKill over "*". Its cell-following packet tap
     // is not available here, which the log has to say rather than the bot appearing to follow.
