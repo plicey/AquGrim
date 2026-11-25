@@ -680,9 +680,8 @@ async function maximumTurnIns(access, id) {
         for (let i = 0; i < required.length; i++) {
             const need = required[i];
             // bTemp names the bag, as it does in CmdQuestHunt and in the reference's own getMax.
-            const held = inBag(truthy(need.bTemp) ? temp : inventory, need.ItemID);
-            const perTurnIn = Number(need.iQty === undefined ? need.Quantity : need.iQty) || 1;
-            complete = Math.min(complete, Math.floor(qtyOf(held) / perTurnIn));
+            const bag = requirementIsTemporary(need) ? temp : inventory;
+            complete = Math.min(complete, requirementTurnIns(need, bag));
         }
     }
     return Math.max(await access.maximumTurnIns(id), complete);
@@ -694,6 +693,21 @@ function inBag(list, id) {
     return list.filter(function (item) {
         return Number(item.ItemID) === wanted;
     })[0];
+}
+
+/** Which bag a quest requirement is turned in from: Quest.RequiredItems[].bTemp. */
+function requirementIsTemporary(need) {
+    return truthy(need && need.bTemp);
+}
+
+/** The quantity one turn-in consumes for a requirement row. */
+function requirementQty(need) {
+    return Number(need.iQty === undefined ? need.Quantity : need.iQty) || 1;
+}
+
+/** How many turn-ins the given bag covers for one requirement row. */
+function requirementTurnIns(need, bag) {
+    return Math.floor(qtyOf(inBag(asList(bag), need.ItemID)) / requirementQty(need));
 }
 
 /** CmdEquip's own IsEquipped: an inventory row carrying the same id and the worn flag. */
@@ -1294,6 +1308,9 @@ module.exports = {
     maximumShopBuys: maximumShopBuys,
     shopItemById: shopItemById,
     maximumTurnIns: maximumTurnIns,
+    requirementIsTemporary: requirementIsTemporary,
+    requirementQty: requirementQty,
+    requirementTurnIns: requirementTurnIns,
     pickEquipTarget: pickEquipTarget,
     EQUIP_TRIES: EQUIP_TRIES,
     ACCEPT_TRIES: ACCEPT_TRIES,

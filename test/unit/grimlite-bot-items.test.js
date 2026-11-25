@@ -844,6 +844,16 @@ test('Quest.getMax counts the required items the bag and the temp bag hold, per 
     'floor(9/2) = 4 beats floor(11/1) = 11, and 4 beats the game own 3');
 });
 
+test('the requirement rules are one shared pair for max turn-in and quest hunt', () => {
+  // CmdCompleteQuest and CmdQuestHunt read the same RequiredItems rows; the bag flag and the
+  // per-turn-in quantity are resolved here once, including the loader's string spellings.
+  assert.strictEqual(items.requirementIsTemporary({ bTemp: 'true' }), true);
+  assert.strictEqual(items.requirementIsTemporary({ bTemp: false }), false);
+  assert.strictEqual(items.requirementTurnIns({ ItemID: 7, iQty: 5 },
+    [{ ItemID: 7, iQty: 25 }]), 5);
+  assert.strictEqual(items.requirementTurnIns({ ItemID: 8, iQty: 5 }, []), 0);
+});
+
 test('CmdCompleteQuest carries the quest own ItemId when it has one, and -1 when it does not', async () => {
   // Quest.Complete: with an ItemId it is handed over; without one the loader default '-1' stands.
   const withId = questGame({});
