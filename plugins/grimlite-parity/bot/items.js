@@ -710,7 +710,7 @@ function requirementIsTemporary(need) {
 
 /** The quantity one turn-in consumes for a requirement row. */
 function requirementQty(need) {
-    return Number(need.iQty === undefined ? need.Quantity : need.iQty) || 1;
+    return qtyOf(need) || 1;
 }
 
 /** How many turn-ins the given bag covers for one requirement row. */
