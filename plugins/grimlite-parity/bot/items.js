@@ -675,7 +675,10 @@ async function maximumTurnIns(access, id) {
     // Quests.as builds from turnin + oItems.
     const required = quest && Array.isArray(quest.RequiredItems) ? quest.RequiredItems : [];
     if (Array.isArray(required) && required.length) {
-        const inventory = asList(await access.inventoryItems());
+        // A bag that cannot be read leaves the count unknowable; the game's own answer still
+        // stands, and a missing requirement must not end the bot.
+        const inventory = await access.inventoryItems().catch(function () { return null; });
+        if (!inventory) return Math.max(await access.maximumTurnIns(id), 1);
         const temp = asList(await access.tempItems().catch(function () { return []; }));
         for (let i = 0; i < required.length; i++) {
             const need = required[i];

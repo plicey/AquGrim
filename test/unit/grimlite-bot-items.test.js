@@ -844,6 +844,16 @@ test('Quest.getMax counts the required items the bag and the temp bag hold, per 
     'floor(9/2) = 4 beats floor(11/1) = 11, and 4 beats the game own 3');
 });
 
+test('a failed inventory read does not end a max turn-in', async () => {
+  // The requirement loop must not turn a bag that cannot be read into a stopped bot: the game's
+  // own maximum is still a count the completion can carry.
+  const quest = { QuestID: 31, RequiredItems: [{ sName: 'Bone', ItemID: 5, iQty: 2 }] };
+  const game = questGame(quest);
+  game.answers.GetInventoryItems = function () { return Promise.reject(new Error('no bag')); };
+  await run('CmdCompleteQuest', { Quest: { QuestID: 31 }, CompleteTry: -1 }, null, { game: game });
+  assert.deepStrictEqual(game.state.completed, ['31', '3', '-1', 'False']);
+});
+
 test('the requirement rules are one shared pair for max turn-in and quest hunt', () => {
   // CmdCompleteQuest and CmdQuestHunt read the same RequiredItems rows; the bag flag and the
   // per-turn-in quantity are resolved here once, including the loader's string spellings.

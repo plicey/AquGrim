@@ -1378,6 +1378,42 @@ test('CmdQuestHunt matches a requirement by ItemID, not by a shared name', async
         'the same name under another id is not the requirement');
 });
 
+test('CmdQuestHunt reports a map item that never arrives', async () => {
+    // The map-item branch waits for the requirement; a timeout must end the command with a
+    // reason, not look like success.
+    const session = fakeSession({ map: 'battleontown' });
+    session.items = function () { return Promise.resolve([]); };
+    session.tempItems = function () { return Promise.resolve([]); };
+    session.join = function (map, cell, pad) {
+        session.calls.push({ name: 'join', args: [map, cell, pad] });
+        session.snapshot.map = map.split('-')[0];
+        return Promise.resolve();
+    };
+    const game = {
+        quest: function () {
+            return Promise.resolve({
+                QuestID: 4321, iSlot: 0, iValue: 0, bOnce: 0,
+                RequiredItems: [{ sName: 'Grimskull War Medal', ItemID: 7, bTemp: 1, iQty: 5 }]
+            });
+        },
+        isInProgress: function () { return Promise.resolve(true); },
+        accept: function () { return Promise.resolve(); },
+        questProgress: function () { return Promise.resolve(0); },
+        getMapItem: function () { return Promise.resolve(); }
+    };
+    const made = engine({ session: session, game: game });
+    await made.start({
+        Commands: [command('CmdQuestHunt', {
+            Map: 'necrodungeon', Cell: 'r22', Pad: 'Down', Monster: 'Dragon',
+            ItemName: '7', Quantity: '5', QID: 4321
+        })]
+    });
+    await made.tick();
+    assert.ok(made.records.some(function (line) {
+        return /still missing/.test(line) && /7/.test(line);
+    }), made.records.join(' | '));
+});
+
 test('CmdFollow walks to the player it follows, then fights what is there', async () => {
     // CmdFollow.cs: Player.GoToPlayer(name) then a CmdKill over "*". Its cell-following packet tap
     // is not available here, which the log has to say rather than the bot appearing to follow.

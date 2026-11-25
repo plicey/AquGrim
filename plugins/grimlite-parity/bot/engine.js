@@ -2320,7 +2320,7 @@ function createEngine(deps) {
             for (let i = 0; i < required.length && running; i++) {
                 const need = required[i] || {};
                 const name = String(need.sName === undefined ? (need.Name === undefined ? '' : need.Name) : need.sName);
-                const quantity = String(need.iQty === undefined ? (need.Quantity === undefined ? '1' : need.Quantity) : need.iQty);
+                const quantity = String(itemsModel.requirementQty(need));
                 if (!name) continue;
                 const held = await holdsRequirement(need);
                 if (held.ok && held.value) continue;
@@ -2341,6 +2341,11 @@ function createEngine(deps) {
                         const now = await holdsRequirement(need);
                         return now.ok && now.value === true;
                     }, {});
+                    const arrived = await holdsRequirement(need);
+                    if (!arrived.ok || arrived.value !== true) {
+                        return 'could not get map item ' + writtenItem + ' for quest #' + qid +
+                            ': the requirement is still missing';
+                    }
                 } else {
                     const reason = await huntRounds(command, name, quantity,
                         monsters[i] === undefined || monsters[i] === '' ? '*' : monsters[i], 50,
