@@ -204,7 +204,8 @@ test('selection persistence failures return IPC errors without changing the live
 
 test('step controls generate only parser-supported HP/MP percentages and preserve insertion boundaries', () => {
   const step = require('../../plugins/grimlite-parity/features/auto-attack/skill-step.js');
-  ['0', '1', '2', '3', '4', '5'].forEach(function (skill) {
+  assert.deepStrictEqual(step.slots, presets.SLOTS, 'the builder and parser share one slot table');
+  step.slots.forEach(function (skill) {
     assert.strictEqual(step.format(skill, '', '', ''), skill);
     ['SH', 'SM'].forEach(function (condition) {
       ['>=', '<=', '='].forEach(function (op) {
@@ -280,6 +281,8 @@ test('Insert uses the editor input flow and Default failures leave its text inta
     setTimeout: function (fn) { timer = fn; return 1; }, clearTimeout: function () { timer = null; }
   });
   await new Promise(setImmediate);
+  assert.deepStrictEqual(nodes.stepSkill.options.map(function (option) { return option.value; }),
+    step.slots, 'the editor builds its skill choices from the shared slots');
   nodes.stepSkill = element();
   nodes.stepSkill.value = '2';
   nodes.stepCondition.value = 'SM';

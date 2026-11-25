@@ -35,13 +35,20 @@ const CONFIG_FILE = 'ClientConfig.cfg';
 const FILE_PRESET_NAME = 'ClientConfig';
 const OPERATOR_PATTERN = operators.PATTERN;
 const OPERATOR_CAPTURE = operators.CAPTURE;
+const SLOT_PATTERN = operators.SLOT_PATTERN;
+const SLOT_CAPTURE = operators.SLOT_CAPTURE;
+const SLOT_RANGE = operators.SLOT_RANGE;
 const SAFE_CONDITION = new RegExp('^([^:]+):\\s*(SH|SM)\\s*' + OPERATOR_CAPTURE + '\\s*(\\d+)$', 'i');
 const IF_CONDITION = new RegExp('^if\\s+(SH|SM)\\s*' + OPERATOR_CAPTURE + '\\s*(\\d+)$', 'i');
 const AURA_CONDITION = new RegExp('^if\\s+(target\\s+)?aura\\s+(?:"([^"]+)"\\s*|(.+?)\\s+)' +
     OPERATOR_CAPTURE + '\\s*(\\d+)$', 'i');
-const SPAM_UNTIL = new RegExp('^spam\\s+([0-5])\\s+until\\s+(SH|SM)\\s*' + OPERATOR_CAPTURE +
+const SPAM_UNTIL = new RegExp('^spam\\s+' + SLOT_CAPTURE + '\\s+until\\s+(SH|SM)\\s*' + OPERATOR_CAPTURE +
     '\\s*(\\d+)(?:\\s+max\\s+(\\d+)ms)?$', 'i');
-const SIMPLE_STEP = new RegExp('^[0-5](?:wait|:\\s*(?:SH|SM)\\s*' + OPERATOR_PATTERN + '\\s*\\d+)?$', 'i');
+const SIMPLE_STEP = new RegExp('^' + SLOT_PATTERN + '(?:wait|:\\s*(?:SH|SM)\\s*' + OPERATOR_PATTERN + '\\s*\\d+)?$', 'i');
+const READY_STEP = new RegExp('^ready\\s+' + SLOT_CAPTURE + '$', 'i');
+const AWAIT_STEP = new RegExp('^await\\s+' + SLOT_CAPTURE + '$', 'i');
+const TIMED_SPAM = new RegExp('^spam\\s+' + SLOT_CAPTURE + '\\s+(\\d+)ms$', 'i');
+const COOLDOWN_SLOT = new RegExp('^' + SLOT_PATTERN + '$');
 const DEFAULT_SKILLS = [
     { index: '1', safe: false, wait: false },
     { index: '2', safe: false, wait: false },
@@ -127,14 +134,14 @@ function parsePreset(value) {
         }
         if (token === '{' || /\b(if|else|cooldown)\b/i.test(token)) throw new Error('Invalid block syntax.');
         const delay = /^wait\s+(\d+)ms$/i.exec(token);
-        const ready = /^ready\s+([0-5])$/i.exec(token);
-        const awaited = /^await\s+([0-5])$/i.exec(token);
+        const ready = READY_STEP.exec(token);
+        const awaited = AWAIT_STEP.exec(token);
         const spamText = token.replace(/^await\s+(?=spam\b)/i, '');
         const awaitSpam = spamText !== token;
-        const spam = /^spam\s+([0-5])\s+(\d+)ms$/i.exec(spamText);
+        const spam = TIMED_SPAM.exec(spamText);
         const until = SPAM_UNTIL.exec(spamText);
         if (block && !block.row) {
-            if (!/^[0-5]$/.test(token)) throw new Error('Cooldown blocks contain only skills 0 to 5.');
+            if (!COOLDOWN_SLOT.test(token)) throw new Error('Cooldown blocks contain only skills ' + SLOT_RANGE + '.');
             if (!rows.some(function (row) { return row.type === 'cooldown' && row.index === token; })) {
                 rows.push({ type: 'cooldown', index: token });
             }
@@ -467,6 +474,7 @@ module.exports = {
     CONFIG_FILE: CONFIG_FILE,
     FILE_PRESET_NAME: FILE_PRESET_NAME,
     DEFAULT_SKILLS: DEFAULT_SKILLS,
+    SLOTS: operators.SLOTS,
     compare: operators.compare,
     defaultSkills: defaultSkills,
     parsePreset: parsePreset,

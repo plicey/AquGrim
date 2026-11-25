@@ -4,9 +4,15 @@
     : window.autoAttackOperators;
   var COMPARATORS = shared.INCLUSIVE;
   var COMPARATOR_LABELS = shared.LABELS;
+  var SLOTS = shared.SLOTS;
+  var SLOT_LABELS = shared.SLOT_LABELS;
+  var SLOT_RANGE = shared.SLOT_RANGE;
+  var SLOT_ONE = new RegExp('^' + shared.SLOT_PATTERN + '$');
+  var SLOT_LIST = new RegExp('^' + shared.SLOT_PATTERN + '(?:[;,\\s]+' + shared.SLOT_PATTERN +
+    ')*[;,\\s]*$');
 
   function format(skill, condition, comparator, threshold) {
-    if (!/^[0-5]$/.test(skill)) throw new Error('Choose a skill from 0 to 5.');
+    if (!SLOT_ONE.test(skill)) throw new Error('Choose a skill from ' + SLOT_RANGE + '.');
     if (condition === '') return skill;
     if (condition !== 'SH' && condition !== 'SM') throw new Error('Choose HP or MP.');
     if (COMPARATORS.indexOf(comparator) === -1) throw new Error('Choose a comparison.');
@@ -54,8 +60,8 @@
 
   function cooldown(text, skill) {
     var skills = text.trim() || skill;
-    if (!/^[0-5](?:[;,\s]+[0-5])*[;,\s]*$/.test(skills)) {
-      throw new Error('Select only skills 0 to 5 for Cooldown.');
+    if (!SLOT_LIST.test(skills)) {
+      throw new Error('Select only skills ' + SLOT_RANGE + ' for Cooldown.');
     }
     return 'cooldown { ' + skills.split(/[;,\s]+/).filter(Boolean).join(';') + ' }';
   }
@@ -78,7 +84,8 @@
   }
 
   var api = { format: format, insert: insert, block: block, aura: aura, cooldown: cooldown, wait: wait,
-    spam: spam, spamUntil: spamUntil, comparators: COMPARATORS, comparatorLabels: COMPARATOR_LABELS };
+    spam: spam, spamUntil: spamUntil, comparators: COMPARATORS, comparatorLabels: COMPARATOR_LABELS,
+    slots: SLOTS, slotLabels: SLOT_LABELS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.autoAttackStep = api;
 })();

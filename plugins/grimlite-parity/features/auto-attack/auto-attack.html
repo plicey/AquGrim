@@ -94,12 +94,7 @@
   <label class="basic-attack-toggle"><input type="checkbox" id="automaticBasicAttack" checked> Use basic attack automatically</label>
   <h2 id="builderHeading">2. Build your rotation</h2>
   <div class="builder" role="group" aria-label="Insert a rotation step">
-    <label>Skill<select id="stepSkill">
-      <option value="0">Basic attack (button 1)</option>
-      <option value="1" selected>Skill 1</option><option value="2">Skill 2</option>
-      <option value="3">Skill 3</option><option value="4">Skill 4</option>
-      <option value="5">Skill 5 (potion)</option>
-    </select></label>
+    <label>Skill<select id="stepSkill"></select></label>
     <label>When<select id="stepCondition">
       <option value="">Always</option><option value="SH">My health (%)</option><option value="SM">My mana (%)</option>
       <option value="AURA">My aura</option><option value="TAURA">Target aura</option>
@@ -177,6 +172,15 @@
     option.textContent = comparatorLabels[op] || op;
     comparator.appendChild(option);
   });
+  var skillSelect = document.getElementById('stepSkill');
+  skillSelect.replaceChildren();
+  (window.autoAttackStep.slots || []).forEach(function (slot) {
+    var option = document.createElement('option');
+    option.value = slot;
+    option.textContent = (window.autoAttackStep.slotLabels || {})[slot] || ('Skill ' + slot);
+    skillSelect.appendChild(option);
+  });
+  skillSelect.value = '1';
   var threshold = document.getElementById('stepThreshold');
   var thresholdLabel = document.getElementById('thresholdLabel');
   var auraField = document.getElementById('auraNameField');
