@@ -153,7 +153,7 @@ test('Load Map and Add item whitelist reach their reference actions', async () =
       loadQuest: function (id) { calls.push(['loadQuest', id]); return Promise.resolve(); },
       quest: function (id) {
         calls.push(['quest', id]);
-        return Promise.resolve({ rewards: [{ sName: 'Reward' }], reqd: [],
+        return Promise.resolve({ rewards: [{ sName: 'Reward' }],
           RequiredItems: [{ sName: 'Requirement' }] });
       }
     },

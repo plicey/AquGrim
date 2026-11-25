@@ -1070,11 +1070,7 @@ function createBotManager(deps) {
                 });
             }
             if (fields.chkQRewards) collect(row.rewards || row.Rewards);
-            if (fields.chkQRequirements) {
-                // A loader-shaped row carries RequiredItems; an empty legacy reqd must not win.
-                collect(Array.isArray(row.RequiredItems) ? row.RequiredItems
-                    : (Array.isArray(row.reqd) ? row.reqd : []));
-            }
+            if (fields.chkQRequirements) collect(row.RequiredItems);
             if (!names.length) {
                 return { ok: false, error: 'the quest has no rewards or requirements to add' };
             }
