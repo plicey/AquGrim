@@ -627,9 +627,7 @@ async function maximumShopBuys(access, shopItem) {
     if (String(shopItem.sES) === 'ar') return 1;
 
     const inventory = asList(await access.inventoryItems());
-    const owned = inventory.filter(function (item) {
-        return Number(item.ItemID) === Number(shopItem.ItemID);
-    })[0];
+    const owned = inBag(inventory, shopItem.ItemID);
     const perBuy = Number(shopItem.iQty) || 1;
     const stackRemaining = owned
         ? (Number(shopItem.iStk) || 0) - qtyOf(owned)
@@ -651,9 +649,7 @@ async function maximumShopBuys(access, shopItem) {
     if (Array.isArray(turnin) && turnin.length) {
         for (let i = 0; i < turnin.length; i++) {
             const need = turnin[i];
-            const material = inventory.filter(function (item) {
-                return Number(item.ItemID) === Number(need.ItemID);
-            })[0];
+            const material = inBag(inventory, need.ItemID);
             if (!material) return 0;
             const materialLimit = Math.floor(qtyOf(material) / (Number(need.iQty) || 1));
             if (materialLimit === 0) return 0;
@@ -670,22 +666,56 @@ async function maximumShopBuys(access, shopItem) {
  */
 async function maximumTurnIns(access, id) {
     let complete = 10000;
+    const gameMax = await access.maximumTurnIns(id);
     const quest = await access.quest(id).catch(function () { return null; });
-    const required = (quest && (quest.reqd || quest.RequiredItems)) || [];
+    // A quest row that cannot be read is not a quest without requirements; the game's own
+    // answer (or one) is the only count that is not the 10000 sentinel.
+    if (!quest) return Math.max(gameMax, 1);
+    const required = Array.isArray(quest.RequiredItems) ? quest.RequiredItems : [];
     if (Array.isArray(required) && required.length) {
-        const inventory = asList(await access.inventoryItems());
-        const temp = asList(await access.tempItems().catch(function () { return []; }));
+        // Each bag is read only when a requirement needs it, and a bag that cannot be read
+        // leaves the count unknowable: the game's own answer (or one) is the fallback.
+        const bags = {};
+        async function bagFor(tempBag) {
+            const which = tempBag ? 'temp' : 'inventory';
+            if (!Object.prototype.hasOwnProperty.call(bags, which)) {
+                const read = tempBag ? access.tempItems() : access.inventoryItems();
+                bags[which] = await read.then(asList, function () { return null; });
+            }
+            return bags[which];
+        }
         for (let i = 0; i < required.length; i++) {
             const need = required[i];
-            const where = truthy(need.bTemp) ? temp : inventory;
-            const held = where.filter(function (item) {
-                return Number(item.ItemID) === Number(need.ItemID);
-            })[0];
-            const perTurnIn = Number(need.iQty === undefined ? need.Quantity : need.iQty) || 1;
-            complete = Math.min(complete, Math.floor(qtyOf(held) / perTurnIn));
+            // bTemp names the bag, as it does in CmdQuestHunt and in the reference's own getMax.
+            const bag = await bagFor(requirementIsTemporary(need));
+            if (!bag) return Math.max(gameMax, 1);
+            complete = Math.min(complete, requirementTurnIns(need, bag));
         }
     }
-    return Math.max(await access.maximumTurnIns(id), complete);
+    return Math.max(gameMax, complete);
+}
+
+/** The bag row for an item id; both the bag lists and RequiredItems name it ItemID. */
+function inBag(list, id) {
+    const wanted = Number(id);
+    return list.filter(function (item) {
+        return Number(item.ItemID) === wanted;
+    })[0];
+}
+
+/** Which bag a quest requirement is turned in from: Quest.RequiredItems[].bTemp. */
+function requirementIsTemporary(need) {
+    return truthy(need && need.bTemp);
+}
+
+/** The quantity one turn-in consumes for a requirement row. */
+function requirementQty(need) {
+    return qtyOf(need) || 1;
+}
+
+/** How many turn-ins the given bag covers for one requirement row. */
+function requirementTurnIns(need, bag) {
+    return Math.floor(qtyOf(inBag(asList(bag), need.ItemID)) / requirementQty(need));
 }
 
 /** CmdEquip's own IsEquipped: an inventory row carrying the same id and the worn flag. */
@@ -1286,6 +1316,9 @@ module.exports = {
     maximumShopBuys: maximumShopBuys,
     shopItemById: shopItemById,
     maximumTurnIns: maximumTurnIns,
+    requirementIsTemporary: requirementIsTemporary,
+    requirementQty: requirementQty,
+    requirementTurnIns: requirementTurnIns,
     pickEquipTarget: pickEquipTarget,
     EQUIP_TRIES: EQUIP_TRIES,
     ACCEPT_TRIES: ACCEPT_TRIES,

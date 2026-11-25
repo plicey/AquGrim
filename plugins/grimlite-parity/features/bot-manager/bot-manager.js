@@ -1070,7 +1070,7 @@ function createBotManager(deps) {
                 });
             }
             if (fields.chkQRewards) collect(row.rewards || row.Rewards);
-            if (fields.chkQRequirements) collect(row.reqd || row.RequiredItems);
+            if (fields.chkQRequirements) collect(row.RequiredItems);
             if (!names.length) {
                 return { ok: false, error: 'the quest has no rewards or requirements to add' };
             }

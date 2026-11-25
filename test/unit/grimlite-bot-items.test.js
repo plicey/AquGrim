@@ -809,9 +809,10 @@ test('ghost accept sends the reference frame and waits, without touching the loa
   assert.ok(r.slept.indexOf(600) !== -1, 'the reference waits 600 ms after the frame');
 });
 
-test('CmdCompleteQuest turns in once, and -1 or less means as many as the game allows', async () => {
+test('CmdCompleteQuest turns in once by default, and -1 turns in the max the counters allow', async () => {
   // CmdCompleteQuest.cs: CompleteTry defaults to 1; -1 or less sets max, which Quest.Complete
-  // turns into getMax() before the loader Complete call.
+  // turns into getMax(). The count goes through the loader's own Complete, whose fourth argument
+  // is the quantity World.tryQuestComplete forwards.
   const once = questGame({});
   await run('CmdCompleteQuest', { Quest: { QuestID: 31 }, CompleteTry: 1 }, null, { game: once });
   assert.deepStrictEqual(once.state.completed, ['31', '1', '-1', 'False'],
@@ -827,12 +828,12 @@ test('CmdCompleteQuest turns in once, and -1 or less means as many as the game a
 
 test('Quest.getMax counts the required items the bag and the temp bag hold, per turn-in', async () => {
   // Quest.getMax: for each RequiredItems row, owned / required, the smallest wins; a row marked
-  // temporary is looked for in Player.TempInventory. Then Math.Max with the game's own answer.
+  // temporary is looked for in Player.TempInventory. GetQuestTree supplies the loader's shape.
   const quest = {
     QuestID: 31,
-    reqd: [
-      { ItemID: 5, iQty: 2 },
-      { ItemID: 6, iQty: 1, bTemp: 1 }
+    RequiredItems: [
+      { sName: 'Bone', ItemID: 5, iQty: 2 },
+      { sName: 'Fang', ItemID: 6, iQty: 1, bTemp: 1 }
     ]
   };
   const game = questGame(quest, {
@@ -841,6 +842,60 @@ test('Quest.getMax counts the required items the bag and the temp bag hold, per 
   await run('CmdCompleteQuest', { Quest: { QuestID: 31 }, CompleteTry: -1 }, null, { game: game });
   assert.deepStrictEqual(game.state.completed, ['31', '4', '-1', 'False'],
     'floor(9/2) = 4 beats floor(11/1) = 11, and 4 beats the game own 3');
+});
+
+test('a failed quest read falls back to the game maximum, not 10000', async () => {
+  // GetQuestTree refusing must not resurrect the 10000 sentinel; the game's own answer (or one)
+  // is the count the completion can carry.
+  const game = questGame({}, { unloaded: true });
+  await run('CmdCompleteQuest', { Quest: { QuestID: 31 }, CompleteTry: -1 }, null, { game: game });
+  assert.deepStrictEqual(game.state.completed, ['31', '3', '-1', 'False']);
+});
+
+test('a failed inventory read does not end a max turn-in', async () => {
+  // The requirement loop must not turn a bag that cannot be read into a stopped bot: the game's
+  // own maximum is still a count the completion can carry.
+  const quest = { QuestID: 31, RequiredItems: [{ sName: 'Bone', ItemID: 5, iQty: 2 }] };
+  const game = questGame(quest);
+  game.answers.GetInventoryItems = function () { return Promise.reject(new Error('no bag')); };
+  await run('CmdCompleteQuest', { Quest: { QuestID: 31 }, CompleteTry: -1 }, null, { game: game });
+  assert.deepStrictEqual(game.state.completed, ['31', '3', '-1', 'False']);
+});
+
+test('a failed temp bag read falls back like the normal bag', async () => {
+  const quest = { QuestID: 31, RequiredItems: [{ sName: 'Medal', ItemID: 7, bTemp: 1, iQty: 5 }] };
+  const game = questGame(quest);
+  game.answers.GetTempItems = function () { return Promise.reject(new Error('no temp bag')); };
+  await run('CmdCompleteQuest', { Quest: { QuestID: 31 }, CompleteTry: -1 }, null, { game: game });
+  assert.deepStrictEqual(game.state.completed, ['31', '3', '-1', 'False']);
+});
+
+test('a failed temp bag read only matters to the requirements that use it', async () => {
+  const quest = { QuestID: 31, RequiredItems: [{ sName: 'Bone', ItemID: 5, iQty: 2 }] };
+  const game = questGame(quest, { state: { bag: [{ ItemID: 5, iQty: 9 }] } });
+  game.answers.GetTempItems = function () { return Promise.reject(new Error('no temp bag')); };
+  await run('CmdCompleteQuest', { Quest: { QuestID: 31 }, CompleteTry: -1 }, null, { game: game });
+  assert.deepStrictEqual(game.state.completed, ['31', '4', '-1', 'False'],
+    'the normal bag still counts four turn-ins');
+});
+
+test('a failed normal bag read only matters to the requirements that use it', async () => {
+  const quest = { QuestID: 31, RequiredItems: [{ sName: 'Medal', ItemID: 7, iQty: 5, bTemp: 1 }] };
+  const game = questGame(quest, { state: { temp: [{ ItemID: 7, iQty: 25 }] } });
+  game.answers.GetInventoryItems = function () { return Promise.reject(new Error('no bag')); };
+  await run('CmdCompleteQuest', { Quest: { QuestID: 31 }, CompleteTry: -1 }, null, { game: game });
+  assert.deepStrictEqual(game.state.completed, ['31', '5', '-1', 'False'],
+    'the temp bag still counts five turn-ins');
+});
+
+test('the requirement rules are one shared pair for max turn-in and quest hunt', () => {
+  // CmdCompleteQuest and CmdQuestHunt read the same RequiredItems rows; the bag flag and the
+  // per-turn-in quantity are resolved here once, including the loader's string spellings.
+  assert.strictEqual(items.requirementIsTemporary({ bTemp: 'true' }), true);
+  assert.strictEqual(items.requirementIsTemporary({ bTemp: false }), false);
+  assert.strictEqual(items.requirementTurnIns({ ItemID: 7, iQty: 5 },
+    [{ ItemID: 7, iQty: 25 }]), 5);
+  assert.strictEqual(items.requirementTurnIns({ ItemID: 8, iQty: 5 }, []), 0);
 });
 
 test('CmdCompleteQuest carries the quest own ItemId when it has one, and -1 when it does not', async () => {

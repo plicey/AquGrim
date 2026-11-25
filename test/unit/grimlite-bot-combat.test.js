@@ -239,6 +239,7 @@ function engine(deps) {
     const records = [];
     const made = engineModel.createEngine({
         session: options.session || fakeSession(),
+        game: options.game,
         sleep: function (ms) { waited.push(ms); return Promise.resolve(); },
         log: function (line) { records.push(line); }
     });
@@ -1303,6 +1304,210 @@ test('a quest hunt without game access says what it cannot read', async () => {
     assert.ok(made.records.some(function (line) {
         return /quest access/.test(line) && /4321/.test(line);
     }), made.records.join(' | '));
+});
+
+test('CmdQuestHunt reads the loader RequiredItems and hunts a missing one', async () => {
+    // Quests.as:GetQuestTree builds RequiredItems with sName and bTemp; a row read that way must
+    // be hunted by name instead of skipped for carrying none.
+    const session = fakeSession({ map: 'battleontown' });
+    session.items = function () { return Promise.resolve([]); };
+    session.tempItems = function () { return Promise.resolve([]); };
+    session.join = function (map, cell, pad) {
+        session.calls.push({ name: 'join', args: [map, cell, pad] });
+        session.snapshot.map = map.split('-')[0];
+        return Promise.resolve();
+    };
+    session.attackMonster = function () { return Promise.reject(new Error('no live Avatar')); };
+    const game = {
+        quest: function () {
+            return Promise.resolve({
+                QuestID: 4321, iSlot: 0, iValue: 0, bOnce: 0,
+                RequiredItems: [{ sName: 'Grimskull War Medal', ItemID: 7, bTemp: 1, iQty: 5 }]
+            });
+        },
+        isInProgress: function () { return Promise.resolve(true); },
+        accept: function () { return Promise.resolve(); },
+        questProgress: function () { return Promise.resolve(0); }
+    };
+    const made = engine({ session: session, game: game });
+    await made.start({
+        Commands: [command('CmdQuestHunt', {
+            Map: 'necrodungeon', Cell: 'r22', Pad: 'Down', Monster: 'Dragon',
+            ItemName: '', Quantity: '', QID: 4321
+        })]
+    });
+    await made.tick();
+    assert.deepStrictEqual(session.asked('join')[0].args, ['necrodungeon', 'r22', 'Down'],
+        'a missing requirement sends the bot to the hunt map');
+});
+
+test('CmdQuestHunt matches a requirement by ItemID, not by a shared name', async () => {
+    // CmdQuestHunt.cs itemCollected reads the bag named by IsTemporary and matches the item Id;
+    // a same-named item of another id must not count as the requirement.
+    const session = fakeSession({ map: 'battleontown' });
+    session.items = function () { return Promise.resolve([]); };
+    session.tempItems = function () {
+        return Promise.resolve([{ sName: 'Grimskull War Medal', ItemID: 99, iQty: 5 }]);
+    };
+    session.join = function (map, cell, pad) {
+        session.calls.push({ name: 'join', args: [map, cell, pad] });
+        session.snapshot.map = map.split('-')[0];
+        return Promise.resolve();
+    };
+    session.attackMonster = function () { return Promise.reject(new Error('no live Avatar')); };
+    const game = {
+        quest: function () {
+            return Promise.resolve({
+                QuestID: 4321, iSlot: 0, iValue: 0, bOnce: 0,
+                RequiredItems: [{ sName: 'Grimskull War Medal', ItemID: 7, bTemp: 1, iQty: 5 }]
+            });
+        },
+        isInProgress: function () { return Promise.resolve(true); },
+        accept: function () { return Promise.resolve(); },
+        questProgress: function () { return Promise.resolve(0); }
+    };
+    const made = engine({ session: session, game: game });
+    await made.start({
+        Commands: [command('CmdQuestHunt', {
+            Map: 'necrodungeon', Cell: 'r22', Pad: 'Down', Monster: 'Dragon',
+            ItemName: '', Quantity: '', QID: 4321
+        })]
+    });
+    await made.tick();
+    assert.deepStrictEqual(session.asked('join')[0].args, ['necrodungeon', 'r22', 'Down'],
+        'the same name under another id is not the requirement');
+});
+
+test('CmdQuestHunt reports a map item that never arrives', async () => {
+    // The map-item branch waits for the requirement; a timeout must end the command with a
+    // reason, not look like success.
+    const session = fakeSession({ map: 'battleontown' });
+    session.items = function () { return Promise.resolve([]); };
+    session.tempItems = function () { return Promise.resolve([]); };
+    session.join = function (map, cell, pad) {
+        session.calls.push({ name: 'join', args: [map, cell, pad] });
+        session.snapshot.map = map.split('-')[0];
+        return Promise.resolve();
+    };
+    const game = {
+        quest: function () {
+            return Promise.resolve({
+                QuestID: 4321, iSlot: 0, iValue: 0, bOnce: 0,
+                RequiredItems: [{ sName: 'Grimskull War Medal', ItemID: 7, bTemp: 1, iQty: 5 }]
+            });
+        },
+        isInProgress: function () { return Promise.resolve(true); },
+        accept: function () { return Promise.resolve(); },
+        questProgress: function () { return Promise.resolve(0); },
+        getMapItem: function () { return Promise.resolve(); }
+    };
+    const made = engine({ session: session, game: game });
+    await made.start({
+        Commands: [command('CmdQuestHunt', {
+            Map: 'necrodungeon', Cell: 'r22', Pad: 'Down', Monster: 'Dragon',
+            ItemName: '7', Quantity: '5', QID: 4321
+        })]
+    });
+    await made.tick();
+    assert.ok(made.records.some(function (line) {
+        return /still missing/.test(line) && /7/.test(line);
+    }), made.records.join(' | '));
+});
+
+test('the quest list uses the requirement-aware max when SafeRelogin is on', async () => {
+    // Bot.StartQuestList turns in the first completable row; SafeRelogin asks for the max, which
+    // is the same requirement-aware count CmdCompleteQuest uses.
+    const session = fakeSession({});
+    const calls = [];
+    const game = {
+        quest: function () {
+            return Promise.resolve({
+                QuestID: 4321,
+                RequiredItems: [{ sName: 'Grimskull War Medal', ItemID: 7, bTemp: 1, iQty: 5 }]
+            });
+        },
+        inventoryItems: function () { return Promise.resolve([]); },
+        tempItems: function () { return Promise.resolve([{ ItemID: 7, iQty: 25 }]); },
+        maximumTurnIns: function () { return Promise.resolve(3); },
+        canComplete: function () { return Promise.resolve(true); },
+        complete: function (id, qty, itemId) {
+            calls.push({ id: id, qty: qty, itemId: itemId });
+            session.snapshot.signedIn = false;
+            return Promise.resolve();
+        }
+    };
+    const made = engine({ session: session, game: game });
+    await made.start({ Quests: [{ QuestID: 4321, SafeRelogin: true }], Commands: [command('CmdBlank', {})] });
+    await new Promise(function (resolve) { setTimeout(resolve, 20); });
+    assert.deepStrictEqual(calls, [{ id: 4321, qty: 5, itemId: undefined }],
+        '25 medals / 5 per turn-in = 5, not the game raw 3');
+});
+
+test('CmdQuestHunt continues past a numeric map item it obtained by id', async () => {
+    // The granted map item carries its real name, so the arrival check must use the id that was
+    // requested; the next entry still runs.
+    const session = fakeSession({ map: 'battleontown' });
+    const bag = [];
+    session.items = function () { return Promise.resolve(bag); };
+    session.join = function (map, cell, pad) {
+        session.calls.push({ name: 'join', args: [map, cell, pad] });
+        session.snapshot.map = map.split('-')[0];
+        return Promise.resolve();
+    };
+    session.attackMonster = function () { return Promise.reject(new Error('no live Avatar')); };
+    const got = [];
+    const game = {
+        getMapItem: function (id) {
+            got.push(id);
+            bag.push({ sName: 'Mystery Map Item', ItemID: id, iQty: 1 });
+            return Promise.resolve();
+        }
+    };
+    const made = engine({ session: session, game: game });
+    await made.start({
+        Commands: [command('CmdQuestHunt', {
+            Map: 'necrodungeon', Cell: 'r22', Pad: 'Down', Monster: 'Dragon',
+            ItemName: '7,Thing Two', Quantity: '1,1', ItemType: 0, QID: 0
+        })]
+    });
+    await made.tick();
+    assert.deepStrictEqual(got, [7]);
+    assert.strictEqual(session.asked('join').length, 2, 'the next entry is still hunted');
+    assert.ok(!made.records.some(function (line) { return /still missing/.test(line); }),
+        made.records.join(' | '));
+});
+
+test('CmdQuestHunt waits for a numeric map item in the temp bag', async () => {
+    const session = fakeSession({ map: 'battleontown' });
+    const bag = [];
+    session.tempItems = function () { return Promise.resolve(bag); };
+    session.items = function () { return Promise.resolve([]); };
+    session.join = function (map, cell, pad) {
+        session.calls.push({ name: 'join', args: [map, cell, pad] });
+        session.snapshot.map = map.split('-')[0];
+        return Promise.resolve();
+    };
+    session.attackMonster = function () { return Promise.reject(new Error('no live Avatar')); };
+    const got = [];
+    const game = {
+        getMapItem: function (id) {
+            got.push(id);
+            bag.push({ sName: 'Mystery Temp', ItemID: id, iQty: 1 });
+            return Promise.resolve();
+        }
+    };
+    const made = engine({ session: session, game: game });
+    await made.start({
+        Commands: [command('CmdQuestHunt', {
+            Map: 'necrodungeon', Cell: 'r22', Pad: 'Down', Monster: 'Dragon',
+            ItemName: '7,Thing Two', Quantity: '1,1', ItemType: 1, QID: 0
+        })]
+    });
+    await made.tick();
+    assert.deepStrictEqual(got, [7]);
+    assert.strictEqual(session.asked('join').length, 2, 'the next entry is still hunted');
+    assert.ok(!made.records.some(function (line) { return /still missing/.test(line); }),
+        made.records.join(' | '));
 });
 
 test('CmdFollow walks to the player it follows, then fights what is there', async () => {

@@ -21,6 +21,7 @@
 
 const bots = require('./bots.js');
 const catalog = require('./command-catalog.js');
+const itemsModel = require('./items.js');
 const miscCommands = require('./misc-commands.js');
 const miscRules = require('./misc.js');
 // The state-reading statements (#41) live in their own module: #42 adds its own table beside it,
@@ -675,7 +676,7 @@ function createEngine(deps) {
                 let qty = 1;
                 if (found.row && found.row.SafeRelogin === true &&
                     typeof game.maximumTurnIns === 'function') {
-                    qty = await game.maximumTurnIns(id).catch(function () { return 1; });
+                    qty = await itemsModel.maximumTurnIns(game, id).catch(function () { return 1; });
                 }
                 const itemId = found.row ? found.row.ItemId : undefined;
                 try {
@@ -1386,6 +1387,47 @@ function createEngine(deps) {
             return holdsItem(list.value, entry, qty[i] === undefined ? '*' : qty[i]);
         });
         return { ok: true, value: every };
+    }
+
+    /**
+     * Inventory.ContainsItem / TempInventory.ContainsItem for a quest requirement: CmdQuestHunt
+     * matches the requirement by Id, because names are not unique across items.
+     */
+    async function holdsRequirement(need) {
+        const list = await read(itemsModel.requirementIsTemporary(need) ? 'tempItems' : 'items');
+        if (!list.ok) return { ok: false, error: list.error };
+        return { ok: true, value: itemsModel.requirementTurnIns(need, list.value) >= 1 };
+    }
+
+    /** The same check for a map item, whose id is all the command knows. */
+    function holdsItemId(id, qty, itemType) {
+        return holdsRequirement({
+            ItemID: Number(id),
+            bTemp: itemType === 1,
+            iQty: itemsModel.requirementQty({ iQty: qty })
+        });
+    }
+
+    /**
+     * CmdQuestHunt's map-item branch: fetch the id, then wait for the item check; a timeout is a
+     * reason, not a pass.
+     */
+    async function getMapItemAndWait(id, held) {
+        try {
+            await game.getMapItem(Number(id));
+        } catch (error) {
+            return 'could not get map item ' + id + ': ' + message(error);
+        }
+        await waitUntil(async function () {
+            const now = await held();
+            return now.ok && now.value === true;
+        }, {});
+        const arrived = await held();
+        if (!arrived.ok) return 'could not read the inventory: ' + arrived.error;
+        if (arrived.value !== true) {
+            return 'could not get map item ' + id + ': the item is still missing';
+        }
+        return undefined;
     }
 
     /** CmdKill's KillPriority: the first name on the list that is in the cell wins. */
@@ -2202,8 +2244,9 @@ function createEngine(deps) {
             // the cells it was given and waits out a monster in one before moving on.
             const token = { cancelled: false };
             runCellJump(ctx, token, cells, pads, cells.length, String(varOf(command.Monster)));
-            const reason = await huntRounds(command, items, qty, itemType, varOf(command.Monster),
-                delayAfter, command.KillPriority, command.AntiCounter);
+            const reason = await huntRounds(command, items, qty, varOf(command.Monster),
+                delayAfter, command.KillPriority, command.AntiCounter,
+                function () { return collected(items, qty, itemType); });
             token.cancelled = true;
             return reason;
         },
@@ -2233,7 +2276,8 @@ function createEngine(deps) {
                 const quantities = qty.split(',');
                 const monsters = String(varOf(command.Monster)).split(',');
                 for (let i = 0; i < names.length && running; i++) {
-                    const done = await collected(names[i], quantities[i] === undefined ? '1' : quantities[i], itemType);
+                    const wantedQty = quantities[i] === undefined ? '1' : quantities[i];
+                    const done = await collected(names[i], wantedQty, itemType);
                     if (!done.ok || done.value) continue;
                     const joined = await readN('join', [written, String(cells[0]), String(pads[0])]);
                     if (!joined.ok) return 'could not reach ' + mapName + ': ' + joined.error;
@@ -2244,21 +2288,17 @@ function createEngine(deps) {
                     const named = String(names[i]).trim();
                     if (/^[0-9]+$/.test(named) && game && typeof game.getMapItem === 'function') {
                         // CmdQuestHunt's own branch: a numeric item name is a map item id.
-                        try {
-                            await game.getMapItem(Number(named));
-                        } catch (error) {
-                            return 'could not get map item ' + named + ': ' + message(error);
-                        }
-                        await waitUntil(async function () {
-                            const now = await collected(names[i], quantities[i] === undefined ? '1' : quantities[i], itemType);
-                            return now.ok && now.value === true;
-                        }, {});
+                        const reason = await getMapItemAndWait(named, function () {
+                            return holdsItemId(named, wantedQty, itemType);
+                        });
+                        if (reason) return reason;
                         continue;
                     }
-                    const reason = await huntRounds(command, names[i],
-                        quantities[i] === undefined ? '1' : quantities[i], itemType,
+                    const reason = await huntRounds(command, names[i], wantedQty,
                         monsters[i] === undefined ? '*' : monsters[i], 50, command.KillPriority,
-                        command.AntiCounter);
+                        command.AntiCounter, function () {
+                            return collected(names[i], wantedQty, itemType);
+                        });
                     if (reason) return reason;
                 }
                 return undefined;
@@ -2301,15 +2341,14 @@ function createEngine(deps) {
             } else if (typeof game.ghostAccept === 'function') {
                 await game.ghostAccept(qid).catch(function () {});
             }
-            const required = Array.isArray(row.reqd) ? row.reqd
-                : (Array.isArray(row.RequiredItems) ? row.RequiredItems : []);
+            const required = Array.isArray(row.RequiredItems) ? row.RequiredItems : [];
             const monsters = String(varOf(command.Monster)).split(',');
             for (let i = 0; i < required.length && running; i++) {
                 const need = required[i] || {};
                 const name = String(need.sName === undefined ? (need.Name === undefined ? '' : need.Name) : need.sName);
-                const quantity = String(need.iQty === undefined ? (need.Quantity === undefined ? '1' : need.Quantity) : need.iQty);
+                const quantity = String(itemsModel.requirementQty(need));
                 if (!name) continue;
-                const held = await collected(name, quantity, Number(need.bTemp) === 1 || need.bTemp === true ? 1 : 0);
+                const held = await holdsRequirement(need);
                 if (held.ok && held.value) continue;
                 const joined = await readN('join', [written, String(cells[0]), String(pads[0])]);
                 if (!joined.ok) return 'could not reach ' + mapName + ': ' + joined.error;
@@ -2319,16 +2358,15 @@ function createEngine(deps) {
                 }, {});
                 const writtenItem = String(items.split(',')[i] === undefined ? '' : items.split(',')[i]).trim();
                 if (/^[0-9]+$/.test(writtenItem) && typeof game.getMapItem === 'function') {
-                    try {
-                        await game.getMapItem(Number(writtenItem));
-                    } catch (error) {
-                        return 'could not get map item ' + writtenItem + ': ' + message(error);
-                    }
+                    const reason = await getMapItemAndWait(writtenItem, function () {
+                        return holdsRequirement(need);
+                    });
+                    if (reason) return reason;
                 } else {
                     const reason = await huntRounds(command, name, quantity,
-                        Number(need.bTemp) === 1 || need.bTemp === true ? 1 : 0,
                         monsters[i] === undefined || monsters[i] === '' ? '*' : monsters[i], 50,
-                        command.KillPriority, command.AntiCounter);
+                        command.KillPriority, command.AntiCounter,
+                        function () { return holdsRequirement(need); });
                     if (reason) return reason;
                 }
             }
@@ -2461,7 +2499,7 @@ function createEngine(deps) {
     const HUNT_JOIN_ROUNDS = 3;
 
     /** The kill half both hunt commands share: kill once, then look at the item again. */
-    async function huntRounds(command, names, quantities, itemType, monster, delay, killPriority, antiCounter) {
+    async function huntRounds(command, names, quantities, monster, delay, killPriority, antiCounter, done) {
         for (let round = 0; round < HUNT_SAFETY_ROUNDS && running; round++) {
             const reason = await killOnce({
                 monster: monster === undefined || monster === '' ? '*' : monster,
@@ -2470,9 +2508,9 @@ function createEngine(deps) {
                 untilDead: true
             });
             if (reason) return reason;
-            const done = await collected(names, quantities, itemType);
-            if (!done.ok) return 'could not read the inventory: ' + done.error;
-            if (done.value) return undefined;
+            const found = await done();
+            if (!found.ok) return 'could not read the inventory: ' + found.error;
+            if (found.value) return undefined;
             await sleep(Number(delay) || 0);
         }
         return 'stopped after ' + HUNT_SAFETY_ROUNDS + ' kill(s) without ' + names + ' ' + quantities + 'x';

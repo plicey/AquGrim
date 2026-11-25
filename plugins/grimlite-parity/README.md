@@ -329,9 +329,9 @@ accepts is in one of two tables with its evidence beside it:
 - `GAME_READS` - the four questions no loader name answers (the loaded shop's rows, the quest
   value behind a slot, the game's own maximum turn-ins, the inventory tree the game files drops
   in, and the avatar's coins). Each row records the game source that proves the path or call.
-- `OWN_ROUTES` - the three wants that are neither: `ExitCombat` and `cell refresh` are the
+- `OWN_ROUTES` - the wants that are neither: `ExitCombat` and `cell refresh` are the
   loader's own `Jump` on `Cell` and `Pad` with the reference's waits around them, and `GetDrop`
-  and `GhostAccept` are frames the reference builds by hand, sent through the packet path.
+  and `GhostAccept` are frames sent through the packet path.
 
 Three things are deliberately not the reference's own method, and each says so where it is read:
 `CmdBuyBack` reports that the reference drives it over account.aq.com's pages (out of scope per
