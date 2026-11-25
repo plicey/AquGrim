@@ -862,6 +862,14 @@ test('a failed inventory read does not end a max turn-in', async () => {
   assert.deepStrictEqual(game.state.completed, ['31', '3', '-1', 'False']);
 });
 
+test('a failed temp bag read falls back like the normal bag', async () => {
+  const quest = { QuestID: 31, RequiredItems: [{ sName: 'Medal', ItemID: 7, bTemp: 1, iQty: 5 }] };
+  const game = questGame(quest);
+  game.answers.GetTempItems = function () { return Promise.reject(new Error('no temp bag')); };
+  await run('CmdCompleteQuest', { Quest: { QuestID: 31 }, CompleteTry: -1 }, null, { game: game });
+  assert.deepStrictEqual(game.state.completed, ['31', '3', '-1', 'False']);
+});
+
 test('the requirement rules are one shared pair for max turn-in and quest hunt', () => {
   // CmdCompleteQuest and CmdQuestHunt read the same RequiredItems rows; the bag flag and the
   // per-turn-in quantity are resolved here once, including the loader's string spellings.

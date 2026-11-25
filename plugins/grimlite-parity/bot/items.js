@@ -627,9 +627,7 @@ async function maximumShopBuys(access, shopItem) {
     if (String(shopItem.sES) === 'ar') return 1;
 
     const inventory = asList(await access.inventoryItems());
-    const owned = inventory.filter(function (item) {
-        return Number(item.ItemID) === Number(shopItem.ItemID);
-    })[0];
+    const owned = inBag(inventory, shopItem.ItemID);
     const perBuy = Number(shopItem.iQty) || 1;
     const stackRemaining = owned
         ? (Number(shopItem.iStk) || 0) - qtyOf(owned)
@@ -651,9 +649,7 @@ async function maximumShopBuys(access, shopItem) {
     if (Array.isArray(turnin) && turnin.length) {
         for (let i = 0; i < turnin.length; i++) {
             const need = turnin[i];
-            const material = inventory.filter(function (item) {
-                return Number(item.ItemID) === Number(need.ItemID);
-            })[0];
+            const material = inBag(inventory, need.ItemID);
             if (!material) return 0;
             const materialLimit = Math.floor(qtyOf(material) / (Number(need.iQty) || 1));
             if (materialLimit === 0) return 0;
@@ -680,8 +676,8 @@ async function maximumTurnIns(access, id) {
         // A bag that cannot be read leaves the count unknowable; the game's own answer still
         // stands, and a missing requirement must not end the bot.
         const inventory = await access.inventoryItems().catch(function () { return null; });
-        if (!inventory) return Math.max(gameMax, 1);
-        const temp = asList(await access.tempItems().catch(function () { return []; }));
+        const temp = await access.tempItems().catch(function () { return null; });
+        if (!inventory || !temp) return Math.max(gameMax, 1);
         for (let i = 0; i < required.length; i++) {
             const need = required[i];
             // bTemp names the bag, as it does in CmdQuestHunt and in the reference's own getMax.
