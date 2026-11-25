@@ -98,6 +98,7 @@
       <option value="0">Basic attack (button 1)</option>
       <option value="1" selected>Skill 1</option><option value="2">Skill 2</option>
       <option value="3">Skill 3</option><option value="4">Skill 4</option>
+      <option value="5">Skill 5 (potion)</option>
     </select></label>
     <label>When<select id="stepCondition">
       <option value="">Always</option><option value="SH">My health (%)</option><option value="SM">My mana (%)</option>
@@ -134,9 +135,9 @@
     <p><code>if aura "Name"&gt;=2 { 3 }</code> reads my own stacks and <code>if target aura "Name"=0 { 1 }</code> reads the current target's; an absent aura, or no target, is 0.
     Names match case-insensitively. Quote names that contain spaces; an unquoted name needs a space before the comparison. Names cannot contain braces, quotes, semicolons, commas or line breaks.
     Stacks are the count the game shows on the aura icon. Aura conditions apply to If blocks only, not to spam stop conditions.</p>
-    <p>Slot 0 is button 1 (basic attack); slots 1–4 are buttons 2–5. <code>spam 0 2000ms</code> repeatedly casts basic attack when ready for 2000ms, then advances. Spam holds the rotation and pauses optional Cooldown casts; attempts run on the 150ms loop, so timing depends on game responsiveness.</p>
+    <p>Slot 0 is the basic attack; slots 1–4 are the class skills and slot 5 is the equipped potion (the game's Skill 5). <code>spam 0 2000ms</code> repeatedly casts basic attack when ready for 2000ms, then advances. Spam holds the rotation and pauses optional Cooldown casts; attempts run on the 150ms loop, so timing depends on game responsiveness.</p>
     <p><code>await spam 0 until SM&lt;=15 max 5000ms</code> awaits a ready, usable cast first, then checks mana on following ticks and repeats until it is at most 15%. Plain <code>spam 0 until SM&lt;=15</code> may skip immediately if the condition already holds. Both hold the rotation while active. The time limit still advances the rotation if no cast becomes usable. Use SH for health; comparisons support &lt;, &lt;=, =, &gt;= and &gt;. Without max, the limit is 60000ms. Unreadable HP/MP pauses casting until it recovers or the time limit expires. Timed spam also accepts <code>await spam 0 2000ms</code>.</p>
-    <p>Wait and Spam durations are 1–60000ms; await 0 waits for skill 0–4 and casts it; ready 0 only waits without casting. The old global wait marker still waits before normal casts.
+    <p>Wait and Spam durations are 1–60000ms; await 0 waits for skill 0–5 and casts it; ready 0 only waits without casting. The old global wait marker still waits before normal casts.
     Cooldown skills are checked in rotating order between combo steps and during waits, cast only when available, never forced. At most one casts per gap; the main combo keeps its position and gets the next turn. A waiting main skill gets priority when it becomes ready.</p>
   </details>
   </details>

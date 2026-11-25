@@ -1257,6 +1257,8 @@ What needs a real client: everything below.
 - [ ] Ticking it while not signed in, or while the bot is running, refuses with the engine's own
       wording and leaves the tick off
 - [ ] The rotation casts 1, 2, 3, 4 and wraps, at roughly the reference's 150 ms pace
+- [ ] Slot 5 is the equipped potion: `5`, `await 5` or `if aura "..."=0 { 5 }` drinks it, waits for
+      its cooldown, and with no potion equipped the game's own warning shows while the loop continues
 - [ ] In the Skill Set editor, **My aura** and **Target aura** wrap the chosen skill in an **If**
       block (`if aura "Name">=2 { 3 }` / `if target aura "Name"=0 { 1 }`): it casts only while the
       stacks meet the comparison (at least 1 means active), an absent aura or no target reads 0,

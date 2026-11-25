@@ -6,7 +6,7 @@
   var COMPARATOR_LABELS = shared.LABELS;
 
   function format(skill, condition, comparator, threshold) {
-    if (!/^[0-4]$/.test(skill)) throw new Error('Choose a skill from 0 to 4.');
+    if (!/^[0-5]$/.test(skill)) throw new Error('Choose a skill from 0 to 5.');
     if (condition === '') return skill;
     if (condition !== 'SH' && condition !== 'SM') throw new Error('Choose HP or MP.');
     if (COMPARATORS.indexOf(comparator) === -1) throw new Error('Choose a comparison.');
@@ -54,8 +54,8 @@
 
   function cooldown(text, skill) {
     var skills = text.trim() || skill;
-    if (!/^[0-4](?:[;,\s]+[0-4])*[;,\s]*$/.test(skills)) {
-      throw new Error('Select only skills 0 to 4 for Cooldown.');
+    if (!/^[0-5](?:[;,\s]+[0-5])*[;,\s]*$/.test(skills)) {
+      throw new Error('Select only skills 0 to 5 for Cooldown.');
     }
     return 'cooldown { ' + skills.split(/[;,\s]+/).filter(Boolean).join(';') + ' }';
   }
