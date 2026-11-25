@@ -844,6 +844,14 @@ test('Quest.getMax counts the required items the bag and the temp bag hold, per 
     'floor(9/2) = 4 beats floor(11/1) = 11, and 4 beats the game own 3');
 });
 
+test('a failed quest read falls back to the game maximum, not 10000', async () => {
+  // GetQuestTree refusing must not resurrect the 10000 sentinel; the game's own answer (or one)
+  // is the count the completion can carry.
+  const game = questGame({}, { unloaded: true });
+  await run('CmdCompleteQuest', { Quest: { QuestID: 31 }, CompleteTry: -1 }, null, { game: game });
+  assert.deepStrictEqual(game.state.completed, ['31', '3', '-1', 'False']);
+});
+
 test('a failed inventory read does not end a max turn-in', async () => {
   // The requirement loop must not turn a bag that cannot be read into a stopped bot: the game's
   // own maximum is still a count the completion can carry.

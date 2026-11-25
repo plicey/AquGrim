@@ -671,9 +671,10 @@ async function maximumShopBuys(access, shopItem) {
 async function maximumTurnIns(access, id) {
     let complete = 10000;
     const quest = await access.quest(id).catch(function () { return null; });
-    // GetQuestTree answers the requirements as RequiredItems, the shape the reference loader's
-    // Quests.as builds from turnin + oItems.
-    const required = quest && Array.isArray(quest.RequiredItems) ? quest.RequiredItems : [];
+    // A quest row that cannot be read is not a quest without requirements; the game's own
+    // answer (or one) is the only count that is not the 10000 sentinel.
+    if (!quest) return Math.max(await access.maximumTurnIns(id), 1);
+    const required = Array.isArray(quest.RequiredItems) ? quest.RequiredItems : [];
     if (Array.isArray(required) && required.length) {
         // A bag that cannot be read leaves the count unknowable; the game's own answer still
         // stands, and a missing requirement must not end the bot.
