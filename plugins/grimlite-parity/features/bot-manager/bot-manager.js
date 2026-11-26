@@ -23,6 +23,9 @@ const { createFromHost } = require('../../bot/bot-dialogs.js');
 // it the row's label rather than something the form should offer (the reference's own comparison
 // against the statement row's Text).
 const FORM_SKIP = ['Tag', 'Description1', 'Description2', '$type'];
+// The form's own key for the choice reward inside a CmdCompleteQuest's Quest object. Upstream
+// has no box for it; the synthetic key keeps it out of the command's real members.
+const QUEST_ITEM = 'Quest.ItemId';
 
 // The Bot Manager controls whose state is the window's rather than a Configuration member.
 const SPECIAL_SETTINGS = ['InventOnStart', 'QuestDelay', 'AutoCorrect', 'AntiMod', 'AntiModStopBot',
@@ -599,6 +602,17 @@ function createBotManager(deps) {
                     : (typeof command[key] === 'number' ? 'number' : 'text'),
                 value: value === undefined || value === null ? '' : String(value)
             });
+            // The reference's form shows the Quest row only, so a choice reward's id had no box.
+            // A turn-in that needs one is edited here rather than through the raw JSON.
+            if (key === 'Quest' && className === 'CmdCompleteQuest') {
+                fields.push({
+                    key: QUEST_ITEM,
+                    label: 'Item ID',
+                    type: 'text',
+                    value: command.Quest && command.Quest.ItemId !== undefined &&
+                        command.Quest.ItemId !== null ? String(command.Quest.ItemId) : ''
+                });
+            }
         });
         // The raw editor opens on the command's own JSON - RawCommandEditor.Show(content), where
         // content is JsonConvert.SerializeObject(obj, Formatting.Indented).
@@ -616,6 +630,14 @@ function createBotManager(deps) {
                     const id = Number(values[key]);
                     if (isFinite(id)) command.Quest.QuestID = id;
                 }
+                return;
+            }
+            if (key === QUEST_ITEM) {
+                if (!command.Quest) return;
+                const raw = values[key] === undefined || values[key] === null ? '' : String(values[key]).trim();
+                // Empty is no choice; the turn-in must not send an item id the author cleared.
+                if (!raw) delete command.Quest.ItemId;
+                else command.Quest.ItemId = raw;
                 return;
             }
             if (!(key in command)) return;
