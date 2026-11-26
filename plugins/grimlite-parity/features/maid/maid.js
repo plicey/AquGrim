@@ -85,6 +85,16 @@ const TARGET_ID_PATH = 'world.myAvatar.target.objData.MonMapID';
 // World.IsMapLoading is this flag.
 const MAP_LOADING_PATH = 'world.mapLoadInProgress';
 
+// The signed-in character's own name. The reference fills its target combo from Player.Username
+// in the form's constructor; this window exists before login, so the scheduler retries the same
+// prefill once it is signed in (the shipped default target is the literal placeholder below).
+const PLAYERNAME_PATH = 'world.myAvatar.objData.strUsername';
+
+// MaidConfig's shipped default target (Resources/Plugins/Maid/Default.json). The reference's own
+// constructor replaces it with Player.Username when the form is built after login; here it is
+// resolved lazily, because the plugin activates before the game is signed in.
+const PLACEHOLDER_TARGET = 'username';
+
 // Player.State.InCombat, from Player.cs's own enum (Dead, Idle, InCombat).
 const STATE_IN_COMBAT = 2;
 
@@ -140,6 +150,11 @@ function message(error) {
     return (error && error.message) || String(error);
 }
 
+/** Compare two cell names the way the loader's own GetCellPlayers does: case and spaces ignored. */
+function loose(value) {
+    return String(value === null || value === undefined ? '' : value).toLowerCase().replace(/ /g, '');
+}
+
 /**
  * @param {object} deps
  * @param {object} deps.game      loader calls: loaderCall(name, args) plus read(path)
@@ -193,6 +208,9 @@ function createMaid(deps) {
     let collisions = 0;
     let lastCollision = null;
     let lastSeenCommands = 0;
+    // The signed-in character's name, read once per session and cleared on logout/stop so a new
+    // character re-reads it instead of following the previous one.
+    let playerName = null;
     let status = STATUS.off;
     let lastNote = null;
     let running = false;
@@ -236,6 +254,17 @@ function createMaid(deps) {
         const answer = await game.read(path);
         if (!answer || answer.error) return { ok: false, error: (answer && answer.error) || 'the game did not answer' };
         return { ok: true, value: answer.value };
+    }
+
+    /**
+     * The signed-in character's name, lower-case, or null when the game cannot answer yet. Read
+     * once per sign-in; a failed read is retried on the next tick rather than cached as a name.
+     */
+    async function resolvePlayerName() {
+        const answer = await readPath(PLAYERNAME_PATH);
+        if (!answer.ok || answer.value === null || answer.value === undefined) return null;
+        const name = String(answer.value).trim().toLowerCase();
+        return name === '' ? null : name;
     }
 
     /** A boolean a loader helper answered, or null when it could not be established. */
@@ -330,6 +359,7 @@ function createMaid(deps) {
         if (signedIn !== true) {
             status = STATUS.waitingSignIn;
             firstJoinDone = false;
+            playerName = null;
             return { ok: true, status: status };
         }
         // The reference's waitForFirstJoin: wait out the loading screen first, then RelogDelay
@@ -347,13 +377,27 @@ function createMaid(deps) {
             return { ok: true, status: status, error: map.error || cell.error };
         }
 
+        // The window is constructed at plugin activation, usually before login, so its prefill
+        // cannot always replace the shipped `username` placeholder. Resolve it here too: the
+        // reference's constructor line (`cmbGotoUsername.Text = Player.Username`) means "stay on
+        // me", and an empty box means the same. Without this, a Maid enabled across login keeps
+        // following a master that does not exist and never reaches the combat branch - which is
+        // why it looked like it only attacked once Unfollow was ticked.
+        if (playerName === null) playerName = await resolvePlayerName();
+        if (playerName && (!target || target === PLACEHOLDER_TARGET)) target = playerName;
+
         const inMap = await playerInMap();
         const inCell = await playerInCell();
+        // Following yourself is not a chase: the character is always in its own cell. Skipping
+        // the branch also keeps a master that cannot be read (the placeholder, or a blank box)
+        // from starving combat; a real other player still follows exactly as the reference does.
+        const following = !unfollow && !!target && target !== PLACEHOLDER_TARGET &&
+            !(playerName !== null && target === playerName);
 
         // The reference's chain runs the chase and the goto while onPause stands (`!onPause` gates
         // the combat branch, not the movement branches), which is why paused still gotos and
         // chases the target's cell.
-        if (!unfollow && (inMap !== true || inCell !== true)) {
+        if (following && (inMap !== true || inCell !== true)) {
             status = STATUS.following;
             await follow(inMap === true);
             return { ok: true, status: status };
@@ -644,12 +688,45 @@ function createMaid(deps) {
         return false;
     }
 
-    /** Is the master in my cell? The loader's own GetCellPlayers, by name. */
+    /**
+     * Is the master in my cell? Read their own leaf's cell directly first (`world.uoTree.<name>
+     * .strFrame`), which is a primitive and does not depend on the whole player tree surviving
+     * the bridge's JSON boundary. The loader's own `GetCellPlayers` stays as the fallback, so a
+     * stock leaf the direct read cannot see still answers the reference's way.
+     */
     async function playerInCell() {
         if (!target) return false;
-        const answer = await call('GetCellPlayers', [target]);
-        if (!answer.ok) return null;
-        return answer.value === true;
+        const answer = await readPath('world.uoTree.' + target + '.strFrame');
+        if (answer.ok && answer.value !== null && answer.value !== undefined &&
+            String(answer.value) !== '') {
+            const mine = await call('Cell');
+            return mine.ok && loose(answer.value) === loose(mine.value);
+        }
+        const fallback = await call('GetCellPlayers', [target]);
+        if (!fallback.ok) return null;
+        return fallback.value === true || fallback.value === 'true';
+    }
+
+    /**
+     * The master's cell and pad. The direct leaf read is preferred for the same reason as
+     * playerInCell; `PlayerByName` is the reference's own lookup and remains the fallback.
+     */
+    async function targetPlace() {
+        const cell = await readPath('world.uoTree.' + target + '.strFrame');
+        if (cell.ok && cell.value !== null && cell.value !== undefined &&
+            String(cell.value) !== '') {
+            const pad = await readPath('world.uoTree.' + target + '.strPad');
+            return {
+                cell: String(cell.value),
+                pad: pad.ok && pad.value ? String(pad.value) : 'Spawn'
+            };
+        }
+        const player = await call('PlayerByName', [target]);
+        const where = player.ok ? player.value : null;
+        return {
+            cell: where && where.strFrame ? String(where.strFrame) : '',
+            pad: where && where.strPad ? String(where.strPad) : 'Spawn'
+        };
     }
 
     /**
@@ -711,10 +788,9 @@ function createMaid(deps) {
      * what keeps a chase from being swallowed by the fight it leaves behind.
      */
     async function chaseTargetCell() {
-        const player = await call('PlayerByName', [target]);
-        const where = player.ok ? player.value : null;
-        const cell = where && where.strFrame ? String(where.strFrame) : '';
-        const pad = where && where.strPad ? String(where.strPad) : 'Spawn';
+        const where = await targetPlace();
+        const cell = where.cell;
+        const pad = where.pad;
         const mine = await call('Cell');
         const inCombat = await call('State');
         const fighting = inCombat.ok && Number(inCombat.value) === STATE_IN_COMBAT;
@@ -824,6 +900,7 @@ function createMaid(deps) {
             stop();
         } else {
             firstJoinDone = false;
+            playerName = null;
             status = STATUS.waitingSignIn;
             enableEffects();
         }
@@ -990,6 +1067,7 @@ function createMaid(deps) {
         enabled = false;
         status = STATUS.off;
         firstJoinDone = false;
+        playerName = null;
         forcedSkill = null;
         // stopMaid (:863-996) unticks Unfollow and clears onPause on the way out.
         unfollow = false;
@@ -1011,6 +1089,8 @@ module.exports = {
     TARGET_NAME_PATH: TARGET_NAME_PATH,
     TARGET_ID_PATH: TARGET_ID_PATH,
     MAP_LOADING_PATH: MAP_LOADING_PATH,
+    PLAYERNAME_PATH: PLAYERNAME_PATH,
+    PLACEHOLDER_TARGET: PLACEHOLDER_TARGET,
     EQUIPPABLE_CATEGORIES: EQUIPPABLE_CATEGORIES,
     ENRAGE_NAME: ENRAGE_NAME
 };

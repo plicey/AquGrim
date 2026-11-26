@@ -966,6 +966,7 @@ call, so that is what this section is for.
 
 - [ ] With the target in another map the character joins it and the log shows the reference's own frame `%xt%zm%cmd%1%goto%<name>%`; with the target in the map but another cell the character walks to that cell and pad without re-joining
 - [ ] A target who is in the same map but whose cell and pad are unreadable is walked to with the loader's own `GoTo` rather than a frame
+- [ ] With the target left at `username` (the shipped default) or empty, the Maid fights in its own cell without **Unfollow** being ticked; ticking Unfollow is not needed to get combat started
 - [ ] **Stop goto after 5 failures** ticked stops the Maid after five failed gotos and says so; unticked it keeps trying
 - [ ] **Use** with `if health<` fires the heal list below that percentage and the skill list otherwise; an empty heal list never heals whatever the box says
 - [ ] **Buff If StopAttack** fires the buff list once per pass while StopAttack is on, and cancelling the attack and target happens the moment StopAttack is ticked
