@@ -32,6 +32,10 @@ const statements = require('./statements.js');
 const DEFAULT_INTERVAL_MS = 1000;
 const PAUSE_POLL_MS = 100;
 const PAUSE_NEEDED = 'the game is not ready yet (loading a map, or no character in the world)';
+// How often a running bot with DisableAutoBasicAttack clears the game's auto attack. The game
+// restarts it when an action is acknowledged (World.as getActionResult/showActionResult), so a
+// cancel before or after a cast is undone; the Auto Attack toolbar clears it every 150 ms too.
+const AUTO_ATTACK_GUARD_MS = 150;
 
 const ERRORS = {
     empty: 'this bot has no commands: add some before starting it',
@@ -166,7 +170,7 @@ function evaluate(input) {
  * @param {(file: string) => boolean} [deps.exists] whether that file is there
  * @param {() => string} [deps.botsDirectory] where a relative bot path resolves
  * @param {object} [deps.spammer] the spammer window own controls (#27)
- * @param {object} [deps.timers] setTimeout/clearTimeout, injected for tests
+ * @param {object} [deps.timers] setTimeout/clearTimeout/setInterval/clearInterval, injected for tests
  * @param {(line: string) => void} [deps.logDebug] the Debug pane CmdLog writes to
  * @param {() => void} [deps.logClear] the CLEAR marker own action on that pane
  * @param {(text: string) => void} [deps.popup] the shell own modal, for CmdPing
@@ -215,6 +219,8 @@ function createEngine(deps) {
     let boostCheckedAt = 0;
     // CmdDelayedAnims' background task, and the pause it holds while it runs.
     const delayed = { pending: false };
+    // The DisableAutoBasicAttack guard, while the bot runs with that tick on.
+    let autoAttackGuard = null;
     // DropStack.GetDrop's three-second per-item cooldown.
     const dropCooldowns = {};
 
@@ -1157,6 +1163,34 @@ function createEngine(deps) {
     async function stopAutoAttack() {
         if (basicAttackAllowed() || !session || typeof session.cancelAutoAttack !== 'function') return;
         await read('cancelAutoAttack');
+    }
+
+    /**
+     * Keep clearing the game's auto attack while the bot runs with DisableAutoBasicAttack. One
+     * cancel is not enough: the game restarts the swing when an action is acknowledged
+     * (`World.as` getActionResult), and again when the auto attack's own acknowledgement lands
+     * (showActionResult starts `autoActionTimer`), so the cast paths below are undone a moment
+     * later. The Auto Attack toolbar clears it on this same cadence for the same reason.
+     */
+    function startAutoAttackGuard() {
+        stopAutoAttackGuard();
+        if (basicAttackAllowed()) return;
+        const set = deps.timers && typeof deps.timers.setInterval === 'function'
+            ? deps.timers.setInterval : setInterval;
+        autoAttackGuard = set(function () {
+            stopAutoAttack().catch(function () {});
+        }, AUTO_ATTACK_GUARD_MS);
+        // A bot that is running should not be what keeps the process alive, and a test that never
+        // stops its engine should not either.
+        if (autoAttackGuard && typeof autoAttackGuard.unref === 'function') autoAttackGuard.unref();
+    }
+
+    function stopAutoAttackGuard() {
+        if (autoAttackGuard === null) return;
+        const clear = deps.timers && typeof deps.timers.clearInterval === 'function'
+            ? deps.timers.clearInterval : clearInterval;
+        clear(autoAttackGuard);
+        autoAttackGuard = null;
     }
 
     /**
@@ -2689,6 +2723,7 @@ function createEngine(deps) {
         if (!running) return;
         running = false;
         paused = false;
+        stopAutoAttackGuard();
         stopQuestList();
         unsubscribeDrops();
         if (misc && typeof misc.stopBackground === 'function') misc.stopBackground();
@@ -2922,6 +2957,7 @@ function createEngine(deps) {
         subscribeDrops();
 
         if (!basicAttackAllowed()) await stopAutoAttack();
+        startAutoAttackGuard();
 
         // Bot.Start's preloads, in its own order: the quests the commands name, the bank a bank
         // command needs, the quest list, and then the options manager. LoadAllQuests and

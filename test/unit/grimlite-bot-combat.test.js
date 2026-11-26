@@ -240,6 +240,7 @@ function engine(deps) {
     const made = engineModel.createEngine({
         session: options.session || fakeSession(),
         game: options.game,
+        timers: options.timers,
         sleep: function (ms) { waited.push(ms); return Promise.resolve(); },
         log: function (line) { records.push(line); }
     });
@@ -485,6 +486,31 @@ test('DisableAutoBasicAttack passes the flag off on CmdUseSkill and on forced ca
     assert.deepStrictEqual(forced.asked('forceUseSkill')[0].args, ['4']);
     assert.strictEqual(forced.asked('cancelAutoAttack').length, 2,
         'one cancel at Start, one after the forced cast');
+});
+
+test('DisableAutoBasicAttack keeps clearing the swing the game restarts after an action', async () => {
+    // World.as restarts the basic attack when an action is acknowledged (getActionResult's
+    // `testAction(getAutoAttack())`), and the auto attack's own acknowledgement starts
+    // `autoActionTimer` again. A cancel at Start and around a cast is therefore undone, which is
+    // why a running bot with the tick clears it on the Auto Attack toolbar's own 150 ms cadence.
+    const session = fakeSession({ hasTarget: true });
+    const timers = { every: [], cleared: [] };
+    const made = engine({
+        session: session,
+        timers: {
+            setInterval: function (fn, ms) { timers.every.push({ fn: fn, ms: ms }); return timers.every.length; },
+            clearInterval: function (id) { timers.cleared.push(id); }
+        }
+    });
+    await made.start({ Commands: [command('CmdStop', {})], DisableAutoBasicAttack: true });
+    assert.strictEqual(timers.every.length, 1, 'the running bot arms one guard');
+    assert.strictEqual(timers.every[0].ms, 150);
+    const before = session.asked('cancelAutoAttack').length;
+    await timers.every[0].fn();
+    assert.strictEqual(session.asked('cancelAutoAttack').length, before + 1,
+        'each pass cancels the swing the game restarted');
+    await made.stop();
+    assert.deepStrictEqual(timers.cleared, [1], 'stopping the bot gives the guard back');
 });
 
 test('CmdUseSkill with Wait waits out the skill own cooldown before casting', async () => {
