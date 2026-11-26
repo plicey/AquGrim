@@ -485,6 +485,32 @@ test('Auto Attack runs the loaded draft and skips a safe skill whose condition i
   h.chrome.stop();
 });
 
+test('slot 5 is the potion: it waits for its cooldown and casts through UseSkill', async () => {
+  const potion = { ready: 400 };
+  const h = await rotationHarness('await 5;2', {
+    skillAvailable: function (index) { return index === '5' ? potion.ready : 0; }
+  });
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h), [], 'the potion is still cooling down');
+  potion.ready = 0;
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h), [['useSkill', '5']], 'the potion casts in its own slot');
+  h.chrome.stop();
+});
+
+test('an aura If can gate the potion slot as a priority cast', async () => {
+  const aura = { value: 0 };
+  const h = await rotationHarness('1;if aura "Felicitous Philtre"=0 {5};2', {
+    selfAura: function () { return aura.value; }
+  });
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h), [['useSkill', '5']], 'a missing potion aura drinks the potion first');
+  aura.value = 1;
+  await h.chrome.tick();
+  assert.deepStrictEqual(casts(h).slice(-1), [['useSkill', '1']], 'the live aura lets the rotation continue');
+  h.chrome.stop();
+});
+
 test('aura If blocks read self and target stacks and skip when their condition is not met', async () => {
   const auras = { self: 2, target: 0 };
   const cooldown = {};

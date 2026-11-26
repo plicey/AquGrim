@@ -204,7 +204,8 @@ test('selection persistence failures return IPC errors without changing the live
 
 test('step controls generate only parser-supported HP/MP percentages and preserve insertion boundaries', () => {
   const step = require('../../plugins/grimlite-parity/features/auto-attack/skill-step.js');
-  ['0', '1', '2', '3', '4'].forEach(function (skill) {
+  assert.deepStrictEqual(step.slots, presets.SLOTS, 'the builder and parser share one slot table');
+  step.slots.forEach(function (skill) {
     assert.strictEqual(step.format(skill, '', '', ''), skill);
     ['SH', 'SM'].forEach(function (condition) {
       ['>=', '<=', '='].forEach(function (op) {
@@ -219,7 +220,7 @@ test('step controls generate only parser-supported HP/MP percentages and preserv
   ['', '-1', '1.5', '101', 'NaN', '50;4', '1e2'].forEach(function (value) {
     assert.throws(function () { step.format('2', 'SM', '<=', value); }, /percentage/);
   });
-  assert.throws(function () { step.format('5', '', '', ''); }, /skill/);
+  assert.throws(function () { step.format('6', '', '', ''); }, /skill/);
   assert.throws(function () { step.format('1', 'TH', '>=', '50'); }, /HP or MP/);
   assert.throws(function () { step.format('1', 'SH', '>', '50'); }, /comparison/);
   [
@@ -280,6 +281,8 @@ test('Insert uses the editor input flow and Default failures leave its text inta
     setTimeout: function (fn) { timer = fn; return 1; }, clearTimeout: function () { timer = null; }
   });
   await new Promise(setImmediate);
+  assert.deepStrictEqual(nodes.stepSkill.options.map(function (option) { return option.value; }),
+    step.slots, 'the editor builds its skill choices from the shared slots');
   nodes.stepSkill = element();
   nodes.stepSkill.value = '2';
   nodes.stepCondition.value = 'SM';
@@ -484,11 +487,17 @@ test('Auto Attack parses blocks, cooldown skills and bounded waits without chang
     { type: 'cooldown', index: '4' }, { type: 'cooldown', index: '3' }
   ]);
   assert.strictEqual(presets.parsePreset('wait;1;wait 1ms')[0].wait, true);
+  assert.deepStrictEqual(presets.parsePreset('await 5;ready 5;cooldown { 5 };if SH<50 { 5 }'), [
+    { index: '5', safe: false, wait: true }, { type: 'ready', index: '5' },
+    { type: 'cooldown', index: '5' }, { type: 'if', isMp: false, op: '<', value: 50, skip: 5,
+      priority: true },
+    { index: '5', safe: false, wait: false }
+  ]);
   ['if SH<50 { 1', 'if SH<50 1', 'if SH<50 {}', '1}', '{1}',
     'if SM>101 { 1 }', 'if SH<50 { if SM>20 { 1 } }', 'if SH<50 { 1 } else { 2 }',
-    'cooldown { ready 1 }', 'cooldown { 5 }', 'wait 0ms', 'wait 60001ms',
-    'await 5', 'await', 'await 1:SH<50', 'cooldown { await 1 }',
-    'wait -5ms', 'wait 1.5ms', 'ready 5', 'cooldown { 1 };garbage'].forEach(function (text) {
+    'cooldown { ready 1 }', 'wait 0ms', 'wait 60001ms',
+    'await', 'await 1:SH<50', 'cooldown { await 1 }',
+    'wait -5ms', 'wait 1.5ms', 'cooldown { 1 };garbage'].forEach(function (text) {
     assert.throws(function () { presets.parsePreset(text); }, Error, text);
   });
 });
@@ -650,6 +659,9 @@ test('automatic basic attack is saved per preset and restored across classes and
 test('timed spam and basic attack work with advanced rotation syntax and validate bounds', () => {
   const step = require('../../plugins/grimlite-parity/features/auto-attack/skill-step.js');
   assert.strictEqual(step.spam('0', '2000'), 'spam 0 2000ms');
+  assert.strictEqual(step.spam('5', '2000'), 'spam 5 2000ms');
+  assert.deepStrictEqual(presets.parsePreset('spam 5 2000ms'),
+    [{ type: 'spam', index: '5', ms: 2000 }]);
   assert.deepStrictEqual(presets.parsePreset('await 0;spam 0 2000ms;ready 0;cooldown { 0 };0'), [
     { index: '0', safe: false, wait: true },
     { type: 'spam', index: '0', ms: 2000 },
@@ -662,13 +674,13 @@ test('timed spam and basic attack work with advanced rotation syntax and validat
     { type: 'spam', index: '0', ms: 1 },
     { type: 'spam', index: '4', ms: 60000 }
   ]);
-  for (const text of ['spam', 'spam 0', 'spam 5 2000ms', 'spam 0 0ms',
+  for (const text of ['spam', 'spam 0', 'spam 6 2000ms', 'spam 0 0ms',
     'spam 0 60001ms', 'spam 0 -1ms', 'spam 0 1.5ms', 'spam 0 2s',
     'cooldown { spam 0 2000ms }']) {
     assert.throws(() => presets.parsePreset(text), Error, text);
   }
   assert.throws(() => step.spam('0', '0'), /1 to 60000/);
-  assert.throws(() => step.spam('5', '2000'), /skill/);
+  assert.throws(() => step.spam('6', '2000'), /skill/);
 });
 
 test('conditional spam parses bounded self HP and MP comparisons and validates builder input', () => {
@@ -688,8 +700,10 @@ test('conditional spam parses bounded self HP and MP comparisons and validates b
   ]);
   assert.throws(() => step.spamUntil('0', '', '<=', '15', '5000'), /HP or MP/);
   assert.throws(() => step.spamUntil('0', 'SM', '<=', '101', '5000'), /percentage/);
+  assert.deepStrictEqual(presets.parsePreset('spam 5 until SM=15'),
+    [{ type: 'spam', index: '5', ms: 60000, until: true, isMp: true, op: '=', value: 15 }]);
   for (const text of ['spam 0 until SM<101', 'spam 0 until SH<-1', 'spam 0 until SH<1.5',
-    'spam 0 until TH<15', 'spam 0 until SM==15', 'spam 5 until SM=15',
+    'spam 0 until TH<15', 'spam 0 until SM==15', 'spam 6 until SM=15',
     'spam 0 until SM<15 max 0ms', 'spam 0 until SM<15 max 60001ms',
     'spam 0 until SM<15 max -1ms', 'spam 0 until SM<15 max 1.5ms',
     'cooldown { spam 0 until SM<15 }']) {
@@ -704,7 +718,9 @@ test('explicit await spam parses timed and conditional forms without changing pl
     [Object.assign({}, plain, { wait: true })]);
   assert.deepStrictEqual(presets.parsePreset('AWAIT SPAM 0 2000ms'),
     [{ type: 'spam', index: '0', ms: 2000, wait: true }]);
-  for (const text of ['await spam', 'await spam 0', 'await spam 5 2000ms',
+  assert.deepStrictEqual(presets.parsePreset('await spam 5 2000ms'),
+    [{ type: 'spam', index: '5', ms: 2000, wait: true }]);
+  for (const text of ['await spam', 'await spam 0', 'await spam 6 2000ms',
     'await spam 0 until SM<101', 'cooldown { await spam 0 2000ms }']) {
     assert.throws(() => presets.parsePreset(text), Error, text);
   }
