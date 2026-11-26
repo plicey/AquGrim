@@ -255,6 +255,28 @@ test('the property form and the raw editor write back, and a bad edit is refused
   assert.strictEqual(catalog.classNameOf(o.feature.editor().items()[1]), 'CmdDelay');
 });
 
+test('the Complete form edits the choice reward id its Quest row carries', async () => {
+  const o = await opened('plain.gbot');
+  await o.feature.handle('botManagerAdd', null, ['btnQuestComplete', {
+    numQuestID: '3046', chkQuestItem: true, numQuestItem: '18768', numEnsureTries: '1'
+  }, {}]);
+  const index = o.feature.editor().items().length - 1;
+
+  const form = await o.feature.handle('botManagerForm', null, [index]);
+  const field = form.fields.filter(function (f) { return f.key === 'Quest.ItemId'; })[0];
+  assert.ok(field, 'the form has an Item ID box next to Quest ID');
+  assert.strictEqual(field.label, 'Item ID');
+  assert.strictEqual(field.value, '18768');
+
+  await o.feature.handle('botManagerEdit', null, [index, { 'Quest.ItemId': '9001' }]);
+  const command = o.feature.editor().items()[index];
+  assert.strictEqual(command.Quest.ItemId, '9001');
+  assert.strictEqual(catalog.display(command), 'Complete quest [1x]: 3046^9001 ');
+
+  await o.feature.handle('botManagerEdit', null, [index, { 'Quest.ItemId': '' }]);
+  assert.strictEqual('ItemId' in command.Quest, false, 'an empty box clears the choice');
+});
+
 test('a statement form states the two labels the shipped catalog gives it', async () => {
   const o = await opened('skill-sets.gbot');
   await o.feature.handle('botManagerSelect', null, ['Commands', [0]]);

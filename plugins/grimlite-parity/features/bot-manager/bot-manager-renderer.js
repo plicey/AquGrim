@@ -337,7 +337,6 @@
     values.cbBoostsSelected = selectedBoost();
     values.rbTemp = checked('rbTemp');
     values.cbJoinMapSwf = checked('cbJoinMapSwf');
-    values.chkQuestItem = checked('chkQuestListItem');
     values.chkIsTempF = checked('chkIsTempF');
     values.cbBlankFirstF = checked('cbBlankFirstF');
     values.chkQAddToWhitelistItem = checked('chkQRewards');
