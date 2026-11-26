@@ -21,6 +21,7 @@
 
 const bots = require('./bots.js');
 const catalog = require('./command-catalog.js');
+const autoAttack = require('./auto-attack.js');
 const itemsModel = require('./items.js');
 const miscCommands = require('./misc-commands.js');
 const miscRules = require('./misc.js');
@@ -166,7 +167,7 @@ function evaluate(input) {
  * @param {(file: string) => boolean} [deps.exists] whether that file is there
  * @param {() => string} [deps.botsDirectory] where a relative bot path resolves
  * @param {object} [deps.spammer] the spammer window own controls (#27)
- * @param {object} [deps.timers] setTimeout/clearTimeout, injected for tests
+ * @param {object} [deps.timers] setTimeout/clearTimeout/setInterval/clearInterval, injected for tests
  * @param {(line: string) => void} [deps.logDebug] the Debug pane CmdLog writes to
  * @param {() => void} [deps.logClear] the CLEAR marker own action on that pane
  * @param {(text: string) => void} [deps.popup] the shell own modal, for CmdPing
@@ -215,6 +216,8 @@ function createEngine(deps) {
     let boostCheckedAt = 0;
     // CmdDelayedAnims' background task, and the pause it holds while it runs.
     const delayed = { pending: false };
+    // The DisableAutoBasicAttack guard, while the bot runs with that tick on.
+    let autoAttackGuard = null;
     // DropStack.GetDrop's three-second per-item cooldown.
     const dropCooldowns = {};
 
@@ -1154,9 +1157,43 @@ function createEngine(deps) {
         return !(config && config.DisableAutoBasicAttack === true);
     }
 
-    async function stopAutoAttack() {
-        if (basicAttackAllowed() || !session || typeof session.cancelAutoAttack !== 'function') return;
-        await read('cancelAutoAttack');
+    /** One pass of the keep-off policy; nothing is sent while the basic attack may run. */
+    function stopAutoAttack() {
+        return autoAttack.keepOff(read, !basicAttackAllowed());
+    }
+
+    /**
+     * Keep clearing the game's auto attack for the whole run. Each pass asks the live config, so
+     * a CmdLoadBot (or CmdReturn) that changes DisableAutoBasicAttack needs no re-arming - the
+     * next pass follows whatever the running document now says.
+     */
+    function startAutoAttackGuard() {
+        if (!running) return;
+        stopAutoAttackGuard();
+        const set = deps.timers && typeof deps.timers.setInterval === 'function'
+            ? deps.timers.setInterval : setInterval;
+        autoAttackGuard = set(function () {
+            // A stop that lands while start() is still awaiting its first cancel must not leave
+            // this interval behind; stop() clears it too, and this is the second guard.
+            if (!running) return;
+            return Promise.resolve(stopAutoAttack()).then(function (answer) {
+                if (answer && answer.ok === false) {
+                    reportOnce('auto-attack-guard:' + answer.error,
+                        'could not keep the auto attack cleared: ' + answer.error);
+                }
+            }).catch(function () {});
+        }, autoAttack.KEEP_CLEAR_MS);
+        // A bot that is running should not be what keeps the process alive, and a test that never
+        // stops its engine should not either.
+        if (autoAttackGuard && typeof autoAttackGuard.unref === 'function') autoAttackGuard.unref();
+    }
+
+    function stopAutoAttackGuard() {
+        if (autoAttackGuard === null) return;
+        const clear = deps.timers && typeof deps.timers.clearInterval === 'function'
+            ? deps.timers.clearInterval : clearInterval;
+        clear(autoAttackGuard);
+        autoAttackGuard = null;
     }
 
     /**
@@ -2686,6 +2723,9 @@ function createEngine(deps) {
 
     function stop() {
         externallyPaused = false;
+        // Clear the guard before the running check: a stop that lands while start() is awaiting
+        // its first cancel must release an interval that is already armed.
+        stopAutoAttackGuard();
         if (!running) return;
         running = false;
         paused = false;
@@ -2920,8 +2960,8 @@ function createEngine(deps) {
         delayed.pending = false;
         Object.keys(dropCooldowns).forEach(function (key) { delete dropCooldowns[key]; });
         subscribeDrops();
-
-        if (!basicAttackAllowed()) await stopAutoAttack();
+        startAutoAttackGuard();
+        await stopAutoAttack();
 
         // Bot.Start's preloads, in its own order: the quests the commands name, the bank a bank
         // command needs, the quest list, and then the options manager. LoadAllQuests and
