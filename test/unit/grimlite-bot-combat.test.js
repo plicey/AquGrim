@@ -233,6 +233,13 @@ function fakeSession(overrides) {
 }
 
 /** The engine as the plugin builds it, with pacing collapsed. */
+function fakeTimers(record) {
+    return {
+        setInterval: function (fn, ms) { record.every.push({ fn: fn, ms: ms }); return record.every.length; },
+        clearInterval: function (id) { record.cleared.push(id); }
+    };
+}
+
 function engine(deps) {
     const options = deps || {};
     const waited = [];
@@ -241,6 +248,9 @@ function engine(deps) {
         session: options.session || fakeSession(),
         game: options.game,
         timers: options.timers,
+        readFile: options.readFile,
+        exists: options.exists,
+        botsDirectory: options.botsDirectory,
         sleep: function (ms) { waited.push(ms); return Promise.resolve(); },
         log: function (line) { records.push(line); }
     });
@@ -495,13 +505,7 @@ test('DisableAutoBasicAttack keeps clearing the swing the game restarts after an
     // why a running bot with the tick clears it on the Auto Attack toolbar's own 150 ms cadence.
     const session = fakeSession({ hasTarget: true });
     const timers = { every: [], cleared: [] };
-    const made = engine({
-        session: session,
-        timers: {
-            setInterval: function (fn, ms) { timers.every.push({ fn: fn, ms: ms }); return timers.every.length; },
-            clearInterval: function (id) { timers.cleared.push(id); }
-        }
-    });
+    const made = engine({ session: session, timers: fakeTimers(timers) });
     await made.start({ Commands: [command('CmdStop', {})], DisableAutoBasicAttack: true });
     assert.strictEqual(timers.every.length, 1, 'the running bot arms one guard');
     assert.strictEqual(timers.every[0].ms, 150);
@@ -511,6 +515,59 @@ test('DisableAutoBasicAttack keeps clearing the swing the game restarts after an
         'each pass cancels the swing the game restarted');
     await made.stop();
     assert.deepStrictEqual(timers.cleared, [1], 'stopping the bot gives the guard back');
+});
+
+test('the guard reads the live configuration, so a loaded tick takes effect without re-arming', async () => {
+    // CmdLoadBot replaces the run's Configuration while the bot keeps going (engine loadBot).
+    // One guard for the whole run is what makes that transition work: the next pass asks the
+    // new document. The reverse transition (tick off) is the same check in the other direction.
+    const session = fakeSession({ hasTarget: true });
+    const timers = { every: [], cleared: [] };
+    const loaded = JSON.stringify({
+        Commands: [command('CmdStop', {})],
+        DisableAutoBasicAttack: true
+    });
+    const files = { '/b/x.gbot': loaded };
+    const made = engine({
+        session: session,
+        timers: fakeTimers(timers),
+        botsDirectory: function () { return '/b'; },
+        exists: function (file) { return Object.prototype.hasOwnProperty.call(files, file); },
+        readFile: function (file) { return files[file]; }
+    });
+    await made.start({ Commands: [command('CmdLoadBot', { BotFilePath: 'x.gbot' }), command('CmdStop', {})] });
+    assert.strictEqual(timers.every.length, 1, 'the guard is armed for the whole run');
+    const before = session.asked('cancelAutoAttack').length;
+    await timers.every[0].fn();
+    assert.strictEqual(session.asked('cancelAutoAttack').length, before,
+        'the starting document allows the basic attack, so the pass does nothing');
+    await made.tick();
+    await timers.every[0].fn();
+    assert.strictEqual(session.asked('cancelAutoAttack').length, before + 1,
+        'the loaded document turns the tick on, and the next pass follows it');
+});
+
+test('a stop during Start releases the guard instead of leaving it running', async () => {
+    let release = null;
+    let reached = null;
+    const signal = new Promise(function (resolve) { reached = resolve; });
+    const session = fakeSession({ hasTarget: true });
+    session.cancelAutoAttack = function () {
+        reached();
+        return new Promise(function (resolve) { release = resolve; });
+    };
+    const timers = { every: [], cleared: [] };
+    const made = engine({ session: session, timers: fakeTimers(timers) });
+
+    const starting = made.start({ Commands: [command('CmdStop', {})], DisableAutoBasicAttack: true });
+    await signal;
+    await made.stop();
+    release();
+    await starting;
+
+    assert.strictEqual(made.running(), false, 'the bot stayed stopped');
+    assert.deepStrictEqual(timers.cleared, [1], 'the stop released the armed guard');
+    assert.strictEqual(timers.every.length, 1, 'and Start did not arm a second one');
 });
 
 test('CmdUseSkill with Wait waits out the skill own cooldown before casting', async () => {

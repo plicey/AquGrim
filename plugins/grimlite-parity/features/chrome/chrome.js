@@ -22,6 +22,7 @@
 // to answered in ticket #49, which the strip needs no change for: it asks for the name either way.
 
 const engine = require('../../bot/engine.js');
+const basicAttackPolicy = require('../../bot/auto-attack.js');
 const skillPresets = require('./skill-presets.js');
 
 /** splitContainer1's own height in Root.cs, which is the strip's height here. */
@@ -69,8 +70,9 @@ const CLASS_COMBOS = [
 const COMBO_AURAS = ['Rounds Empty', 'XX - Judgement', 'End of the world', 'XXI - The World',
     '0 - The Fool', 'Arcane Flux', 'Corporeal Ascension', 'Arcane Sigil'];
 
-// chkAutoAttack's own interval (Task.Delay(150) at the top of its loop).
-const TICK_MS = 150;
+// chkAutoAttack's own interval (Task.Delay(150) at the top of its loop), shared with the bot's
+// DisableAutoBasicAttack guard (bot/auto-attack.js).
+const TICK_MS = basicAttackPolicy.KEEP_CLEAR_MS;
 
 const ERRORS = {
     unknownControl: function (id) { return 'this strip has no control "' + id + '"'; },
@@ -529,12 +531,10 @@ function createChrome(deps) {
             const again = await checked(read('hasTarget'));
             if (again.value !== true) return;
         }
-        if (!basicAttackEnabled()) {
-            const stopped = await checked(read('cancelAutoAttack'));
-            if (stopped.error) {
-                autoAttackError = stopped.error;
-                return;
-            }
+        const stopped = await checked(basicAttackPolicy.keepOff(read, !basicAttackEnabled()));
+        if (stopped && stopped.error) {
+            autoAttackError = stopped.error;
+            return;
         }
         // A single-skill conditional wins over the rotation and any hold.
         if (await priorityConditional(version, checked)) return;
