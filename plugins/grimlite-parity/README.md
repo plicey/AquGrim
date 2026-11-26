@@ -150,7 +150,8 @@ its tick is on. The client never turns one of these on by itself.
 
 The **Hotkeys** window (Client → Hotkeys, Alt+Shift+H) binds one key to one action from the
 reference's own 23-item vocabulary, in its order, and fires it. The set ships empty, the picker
-offers single keys only, a bound key fires while this app has focus except **Minimize to tray**,
+offers single keys only, a bound key fires while this app has focus except **Minimize to tray**
+(which is app-wide where the session delivers the app-wide hook, and focus-scoped on Wayland),
 and a key the app or the game plugin already holds is refused with its owner named rather than
 stolen.
 
@@ -246,12 +247,17 @@ hook was needed and none was added.
 
 **The keys.** Unfollow and StopAttack are the reference's own two (`cbUnfollow "Unfollow (R)"`,
 `cbStopAttack "StopAttack (T)"`), and its `Global Hotkey` box decides whether they work while the
-form has focus or app-wide (`MaidRemake.cs:1026-1045`). Here they are the plugin's own keybind ids
-`grimliteMaidUnfollow` (Alt+Shift+U) and `grimliteMaidStopAttack` (Alt+Shift+X), registered by the
-window on whichever of the app's two shortcut layers the box asks for - the same injected layers
-the Hotkeys window (#34) uses - so they are rebindable from the app's Settings like any other
-binding. They are the only ids in `keybinds.js` with no `registerKeybinds` entry, because the
-platform puts a registered binding on the local layer unconditionally and these two have to move.
+form has focus or app-wide (`MaidRemake.cs:1720-1784`). Here the form's half is the Maid page's own
+R/T handler. Ticking the box puts the same two keys on the app's focus-scoped shortcut layer, so
+they work in the game and the other AquGrim windows as well. That layer is deliberately not
+Electron's `globalShortcut`: the reference's low-level hook is system-wide and bare letters, which
+would take R and T from every other application, and on Wayland the hook is not delivered at all.
+The app-wide layer skips the Maid window, where the page owns the keys, so one press does not
+toggle the box twice. The two are the plugin's own keybind ids `grimliteMaidUnfollow` and
+`grimliteMaidStopAttack`, defaulting to R and T, so the app-wide layer can be rebound from the
+app's Settings like any other binding; the form's own R/T remain the reference's fixed keys. They
+are the only ids in `keybinds.js` with no `registerKeybinds` entry, because the platform puts a
+registered binding on the local layer unconditionally and these two have to move with the box.
 
 **The state is visible.** The window's line above the form is the scheduler's own `status`,
 pushed to every open window on each pass and on every key, so it says `unfollowed`, `stop attack

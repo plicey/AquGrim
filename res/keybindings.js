@@ -10,10 +10,12 @@ const { globalShortcut, BrowserWindow, ipcMain, app, dialog } = require('electro
 const electronLocalshortcut = require('electron-localshortcut');
 const ruffleUpdate    = require('./ruffleUpdate.js');
 
-// Wayland's global-shortcut portal asks the user to approve every shortcut. App-window
-// shortcuts already reach the focused game; register those locally instead.
-const useLocalGlobalShortcuts =
-    process.platform === 'linux' && process.env.XDG_SESSION_TYPE === 'wayland';
+// Wayland's global-shortcut portal asks the user to approve every shortcut, and on desktops that
+// do not serve the portal the key is accepted but never delivered. App-window shortcuts already
+// reach the focused game, so those sessions register app-wide keys on the focus-scoped layer.
+// The rule lives in one place so the plugin's own app-wide keys follow it too.
+const shortcutLayers = require('./platform/shortcut-layers.js');
+const useLocalGlobalShortcuts = shortcutLayers.usesLocalGlobalShortcuts;
 
 var finalKeybinds = {};
 var recordingWinId = 0;

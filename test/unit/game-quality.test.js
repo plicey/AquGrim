@@ -33,7 +33,11 @@ test('game quality does not enable background throttling', () => {
 });
 
 test('Wayland shortcuts avoid the global shortcut approval portal', () => {
-  const source = fs.readFileSync(path.join(ROOT, 'res/keybindings.js'), 'utf8');
-  assert.ok(source.includes("process.env.XDG_SESSION_TYPE === 'wayland'"));
-  assert.ok(source.includes('addKeybind(keybind, func, onlyHTML, considerDF);'));
+  const keybindings = fs.readFileSync(path.join(ROOT, 'res/keybindings.js'), 'utf8');
+  const layers = fs.readFileSync(path.join(ROOT, 'res/platform/shortcut-layers.js'), 'utf8');
+  assert.ok(layers.includes("XDG_SESSION_TYPE === 'wayland'"),
+    'the Wayland rule lives in the shared shortcut-layer module');
+  assert.ok(keybindings.includes('shortcutLayers.usesLocalGlobalShortcuts'),
+    'the platform keybindings follow the shared rule');
+  assert.ok(keybindings.includes('addKeybind(keybind, func, onlyHTML, considerDF);'));
 });
